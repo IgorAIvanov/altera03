@@ -84,7 +84,7 @@ function buildEnvelope(extra: Record<string, unknown>, messages: string[] = []) 
     data: {
       item: null,
       rows: [],
-      lookups: {},
+      options: {},
       totals: {},
       extra,
     },
@@ -162,7 +162,7 @@ export async function currencyClassifierFetchHandler(payload: Record<string, unk
     data: {
       item: null,
       rows,
-      lookups: {},
+      options: {},
       totals: {
         count: Number(counted[0]?.total ?? "0"),
         page,

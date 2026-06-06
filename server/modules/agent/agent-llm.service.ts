@@ -12,7 +12,7 @@ const MAX_MODELS_IN_TOOL_CONTEXT = 8;
 const MAX_ROUTER_CANDIDATES = 3;
 const ROUTER_HIGH_CONFIDENCE = 0.75;
 const ROUTER_LOW_CONFIDENCE = 0.55;
-const STANDARD_COMMANDS = new Set(["load", "fetch", "update", "index", "delete", "post", "unpost"]);
+const STANDARD_COMMANDS = new Set(["get", "lookup", "save", "list", "delete", "post", "unpost"]);
 
 // Build agent metadata from generated routes
 function getModelAliases(): Record<string, string[]> {
@@ -176,12 +176,12 @@ function buildTools(): ResponsesTool[] {
       .replace(/^\//, "");
     const label = routePath || model.replace(/_/g, " ");
 
-    // load – template + lookups
-    if (isCommandAllowed("load")) {
+    // get – single record + options
+    if (isCommandAllowed("get")) {
       tools.push({
         type: "function",
-        name: `${model}__load`,
-        description: `Отримати порожній шаблон "${label}" (type: ${modelType}) з переліком доступних значень для lookup-полів. Викликай перед update щоб побачити структуру item та доступні id в lookups.`,
+        name: `${model}__get`,
+        description: `Отримати запис "${label}" (type: ${modelType}) або порожній шаблон з переліком доступних значень для полів-посилань. Викликай перед save щоб побачити структуру item та доступні id в options.`,
         parameters: {
           type: "object",
           properties: {
@@ -194,11 +194,11 @@ function buildTools(): ResponsesTool[] {
       });
     }
 
-    // update – create / save
-    if (isCommandAllowed("update")) {
+    // save – create / update
+    if (isCommandAllowed("save")) {
       tools.push({
         type: "function",
-        name: `${model}__update`,
+        name: `${model}__save`,
         description: `Створити або зберегти запис "${label}". item – поля запису, rows – табличні рядки для документів. Суми/ціни передавай рядком ("250.00").`,
         parameters: {
           type: "object",
@@ -218,12 +218,12 @@ function buildTools(): ResponsesTool[] {
       });
     }
 
-    // index – list
-    if (isCommandAllowed("index")) {
+    // list – records list
+    if (isCommandAllowed("list")) {
       tools.push({
         type: "function",
-        name: `${model}__index`,
-        description: `Отримати список записів "${label}". Можна передати query, page, pageSize.`,
+        name: `${model}__list`,
+        description: `Отримати список записів "${label}". Можна передати fragment, page, pageSize.`,
         parameters: {
           type: "object",
           properties: {
@@ -266,28 +266,28 @@ function buildTools(): ResponsesTool[] {
       });
     }
 
-    // fetch – стандартна команда-пікер; повертає список {value, label} за рядком пошуку
-    if (isCommandAllowed("fetch")) {
+    // lookup – picker/autocomplete search
+    if (isCommandAllowed("lookup")) {
       tools.push({
         type: "function",
-        name: `${model}__fetch`,
-        description: `Пошук записів "${label}" за рядком запиту. Використовуй для підстановки в lookup-поля. Повертає { rows: [{value, label}] }.`,
+        name: `${model}__lookup`,
+        description: `Пошук записів "${label}" за рядком запиту. Використовуй для підстановки в поля-посилання. Повертає { rows: [{id, name}] }.`,
         parameters: {
           type: "object",
           properties: {
-            query: { type: "string", description: "Рядок пошуку (назва або код)" },
+            fragment: { type: "string", description: "Рядок пошуку (назва або код)" },
             limit: { type: "number", description: "Максимальна кількість результатів" },
           },
         },
       });
     }
 
-    // extra sql commands (picker and other non-standard)
+    // extra sql commands (non-standard)
     if (config?.sqlCommands) {
       for (const cmd of Object.keys(config.sqlCommands)) {
         if (STANDARD_COMMANDS.has(cmd)) continue;
         if (!isCommandAllowed(cmd)) continue;
-        const isPicker = cmd === "picker" || cmd.endsWith("_fetch") || cmd.endsWith("Fetch");
+        const isPicker = cmd === "lookup";
         const isNextCode = cmd === "nextCode";
         tools.push({
           type: "function",
@@ -793,26 +793,20 @@ export class AgentLlmService {
 
     // Build payload based on command
     let payload: Record<string, unknown>;
-    if (command === "load") {
+    if (command === "get") {
       payload = args.id ? { id: String(args.id) } : {};
-    } else if (command === "fetch") {
+    } else if (command === "lookup") {
       payload = {
-        search: args.query ?? args.search,
+        fragment: args.fragment ?? args.query ?? args.search,
         ...(args.limit !== undefined ? { limit: Number(args.limit) } : {}),
       };
     } else if (command === "nextCode") {
-      // catalog_next_code expects model/tableName in payload; enforce stable shape.
-      payload = {
-        model,
-        tableName: model,
-        schemaName: "app",
-      };
-    } else if (command === "update") {
+      payload = { model, tableName: model, schemaName: "app" };
+    } else if (command === "save") {
       payload = { item: args.item ?? {}, ...(args.rows ? { rows: args.rows } : {}) };
     } else if (command === "post" || command === "unpost") {
       payload = { id: args.id };
     } else {
-      // picker, index, custom — pass args directly
       payload = args;
     }
 
@@ -824,7 +818,7 @@ export class AgentLlmService {
     }
 
     // Collect UI action for successful mutations
-    if (command === "update" || command === "post") {
+    if (command === "save" || command === "post") {
       const envelope = result as Record<string, unknown>;
       if (envelope?.ok) {
         const item = (envelope.data as Record<string, unknown>)?.item as Record<string, unknown> | undefined;

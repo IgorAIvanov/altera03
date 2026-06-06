@@ -28,7 +28,7 @@ function asStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
 }
 
-export async function userUpdateHandler(payload: Record<string, unknown>, context: ModelCommandContext) {
+export async function userSaveHandler(payload: Record<string, unknown>, context: ModelCommandContext) {
   const item = asRecord(payload.item);
   if (!item) {
     throw new Error("item обов'язковий для update");

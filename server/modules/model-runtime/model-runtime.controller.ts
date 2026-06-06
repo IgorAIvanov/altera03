@@ -9,7 +9,7 @@ function modelError(message: string) {
     data: {
       item: null,
       rows: [],
-      lookups: {},
+      options: {},
       totals: {},
       extra: {},
     },

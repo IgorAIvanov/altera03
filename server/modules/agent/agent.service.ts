@@ -8,7 +8,7 @@ import type {
   AgentUiAction,
 } from "./agent.types.ts";
 
-const SAFE_COMMANDS = new Set(["index", "load", "update", "delete", "fetch"]);
+const SAFE_COMMANDS = new Set(["list", "get", "save", "delete", "lookup"]);
 const CONFIRM_COMMANDS = new Set(["post", "unpost"]);
 
 @Injectable()
@@ -82,7 +82,7 @@ export class AgentService {
   ): AgentUiAction[] {
     const actions: AgentUiAction[] = [];
 
-    if ((command === "update" || command === "post") && id && routes.editPath) {
+    if ((command === "save" || command === "post") && id && routes.editPath) {
       const route = `${routes.editPath}?id=${id}`;
       actions.push({ type: "openRoute", route, model, id });
       return actions;

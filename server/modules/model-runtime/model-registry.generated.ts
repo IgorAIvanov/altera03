@@ -20,7 +20,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "folders": "bank_folders",
-    "picker": "bank_fetch"
+    "lookup": "bank_fetch"
     }
   },
   "bank_account": {
@@ -28,7 +28,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "bank_account_fetch"
+    "lookup": "bank_account_fetch"
     }
   },
   "basImportProcess": {
@@ -44,7 +44,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "cash_flow_item_fetch"
+    "lookup": "cash_flow_item_fetch"
     }
   },
   "chart_of_account": {
@@ -59,7 +59,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
   
     return null;
   } },
-    "picker": "chart_of_account_fetch"
+    "lookup": "chart_of_account_fetch"
     }
   },
   "construction_object": {
@@ -68,7 +68,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     sqlCommands: {
     "folders": "construction_object_folders",
     "nextCode": "catalog_next_code",
-    "picker": "construction_object_fetch"
+    "lookup": "construction_object_fetch"
     }
   },
   "counterparty": {
@@ -77,7 +77,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     sqlCommands: {
     "folders": "counterparty_folders",
     "nextCode": "catalog_next_code",
-    "picker": "counterparty_fetch"
+    "lookup": "counterparty_fetch"
     }
   },
   "counterparty_contract": {
@@ -86,14 +86,14 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     sqlCommands: {
     "folders": "counterparty_contract_folders",
     "nextCode": "catalog_next_code",
-    "picker": "counterparty_contract_fetch"
+    "lookup": "counterparty_contract_fetch"
     }
   },
   "currency": {
     type: "catalog",
     schema: "app",
     sqlCommands: {
-    "picker": "currency_fetch"
+    "lookup": "currency_fetch"
     }
   },
   "currency_rate": {
@@ -114,7 +114,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "expense_item_fetch"
+    "lookup": "expense_item_fetch"
     }
   },
   "income_item": {
@@ -122,7 +122,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "income_item_fetch"
+    "lookup": "income_item_fetch"
     }
   },
   "intangible_asset": {
@@ -131,7 +131,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     sqlCommands: {
     "folders": "intangible_asset_folders",
     "nextCode": "catalog_next_code",
-    "picker": "intangible_asset_fetch",
+    "lookup": "intangible_asset_fetch",
     "printData": "intangible_asset_print_data"
     }
   },
@@ -156,7 +156,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     sqlCommands: {
     "folders": "nomenclature_folders",
     "nextCode": "catalog_next_code",
-    "picker": "nomenclature_fetch",
+    "lookup": "nomenclature_fetch",
     "vatRates": "vat_rate_fetch"
     }
   },
@@ -165,7 +165,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "nomenclature_group_fetch"
+    "lookup": "nomenclature_group_fetch"
     }
   },
   "notImplement": {
@@ -177,14 +177,14 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "organization_fetch"
+    "lookup": "organization_fetch"
     }
   },
   "organization_department": {
     type: "catalog",
     schema: "app",
     sqlCommands: {
-    "picker": "organization_department_fetch"
+    "lookup": "organization_department_fetch"
     }
   },
   "physical_person": {
@@ -193,7 +193,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     sqlCommands: {
     "folders": "physical_person_folders",
     "nextCode": "catalog_next_code",
-    "picker": "physical_person_fetch"
+    "lookup": "physical_person_fetch"
     }
   },
   "price_type": {
@@ -201,7 +201,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "price_type_fetch"
+    "lookup": "price_type_fetch"
     }
   },
   "print_template": {
@@ -213,7 +213,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "reserve_fetch"
+    "lookup": "reserve_fetch"
     }
   },
   "supplier_invoice": {
@@ -228,14 +228,14 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "tax_fetch"
+    "lookup": "tax_fetch"
     }
   },
   "tax_activity_kind": {
     type: "catalog",
     schema: "app",
     sqlCommands: {
-    "picker": "tax_activity_kind_fetch"
+    "lookup": "tax_activity_kind_fetch"
     }
   },
   "tax_declaration_item": {
@@ -243,7 +243,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "tax_declaration_item_fetch"
+    "lookup": "tax_declaration_item_fetch"
     }
   },
   "tax_purpose": {
@@ -251,7 +251,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "tax_purpose_fetch"
+    "lookup": "tax_purpose_fetch"
     }
   },
   "tax_rate_scale": {
@@ -267,7 +267,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     type: "catalog",
     schema: "app",
     sqlCommands: {
-    "picker": "unit_classifier_fetch"
+    "lookup": "unit_classifier_fetch"
     }
   },
   "user": {
@@ -287,7 +287,7 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
     schema: "app",
     sqlCommands: {
     "nextCode": "catalog_next_code",
-    "picker": "warehouse_fetch"
+    "lookup": "warehouse_fetch"
     }
   }
 };
@@ -307,6 +307,6 @@ export const generatedTsCommandBindings: GeneratedTsCommandBinding[] = [
   { model: "supplier_invoice", command: "exportExcel", handlerKey: "runtime.exportExcel" },
   { model: "supplier_invoice", command: "printPdf", handlerKey: "runtime.printPdf" },
   { model: "user", command: "exportExcel", handlerKey: "runtime.exportExcel" },
-  { model: "user", command: "update", handlerKey: "user.update" }
+  { model: "user", command: "save", handlerKey: "user.save" }
 ];
 

@@ -248,7 +248,7 @@ function buildEnvelope(extra: Record<string, unknown>, messages: string[] = []) 
     data: {
       item: null,
       rows: [],
-      lookups: {},
+      options: {},
       totals: {},
       extra,
     },
@@ -280,12 +280,12 @@ function resolveTotalCount(value: unknown) {
   return 0;
 }
 
-async function executeIndexCommand(
+async function executeListCommand(
   context: ModelCommandContext,
   schema: string,
   payload: Record<string, unknown>,
 ) {
-  const functionName = `${context.model}_index`;
+  const functionName = `${context.model}_list`;
   const rows = await context.db.sql<{ result: ModelIndexEnvelope }[]>`
     select ${context.db.sql(schema)}.${context.db.sql(functionName)}(
       ${context.userId}::bigint,
@@ -304,7 +304,7 @@ export async function exportExcelHandler(payload: Record<string, unknown>, conte
 
   const baseQuery = { ...payload };
   const schema = config.schema ?? "app";
-  const previewResult = await executeIndexCommand(context, schema, {
+  const previewResult = await executeListCommand(context, schema, {
     ...baseQuery,
     page: 1,
     pageSize: 1,
@@ -319,7 +319,7 @@ export async function exportExcelHandler(payload: Record<string, unknown>, conte
   const exportRowCount = Math.min(Math.max(totalCount, 1), maxRows);
   const result = totalCount <= 1
     ? previewResult
-    : await executeIndexCommand(context, schema, {
+    : await executeListCommand(context, schema, {
       ...baseQuery,
       page: 1,
       pageSize: exportRowCount,

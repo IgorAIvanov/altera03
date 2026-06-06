@@ -6,7 +6,7 @@ import type { ModelCommandContext } from "../model-runtime.types.ts";
 //import type { PrintTemplateColumnAlign, PrintTemplateSchema, PrintTemplateTableColumnItem } from "../../../../../app/_shared/printTemplateSchema.ts";
 //import { buildPrintTemplateRenderPlan } from "../../../../../app/_shared/printTemplateRenderPlan.ts";
 
-const STANDARD_COMMANDS = new Set(["index", "load", "update", "delete", "fetch"]);
+const STANDARD_COMMANDS = new Set(["list", "get", "save", "delete", "lookup"]);
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 type JsonPrimitive = string | number | boolean | null;
@@ -62,7 +62,7 @@ function createEnvelope(extra: Record<string, unknown>) {
     data: {
       item: null,
       rows: [],
-      lookups: {},
+      options: {},
       totals: {},
       extra,
     },

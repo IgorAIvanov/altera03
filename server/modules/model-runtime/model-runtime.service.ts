@@ -9,7 +9,7 @@ import type {
   TsModelCommandConfig,
 } from "./model-runtime.types.ts";
 
-const STANDARD_COMMANDS = new Set(["index", "load", "update", "delete", "fetch"]);
+const STANDARD_COMMANDS = new Set(["list", "get", "save", "delete", "lookup"]);
 const STANDARD_DOCUMENT_COMMANDS = new Set(["post", "unpost"]);
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 const COMMAND_IDENTIFIER_PATTERN = /^[a-z][a-zA-Z0-9_]*$/;
@@ -75,9 +75,9 @@ function validateStandardCommand(command: string, payload: Record<string, unknow
     }
   }
 
-  if (command === "update") {
+  if (command === "save") {
     if (!payload.item || typeof payload.item !== "object" || Array.isArray(payload.item)) {
-      return "item обов'язковий для update";
+      return "item обов'язковий для save";
     }
   }
 
@@ -107,16 +107,17 @@ function getSqlCommandConfig(
 ): SqlModelCommandConfig | null {
   const configuredCommand = resolveSqlCommandConfig(config?.sqlCommands?.[command]);
 
+  // Explicit sqlCommands always override standard auto-routing
+  if (configuredCommand) {
+    return configuredCommand;
+  }
+
   if (STANDARD_COMMANDS.has(command)) {
     return {
       schema: config?.schema,
       functionName: `${model}_${command}`,
       validate: (payload) => validateStandardCommand(command, payload),
     };
-  }
-
-  if (configuredCommand) {
-    return configuredCommand;
   }
 
   if (supportsPosting(model) && STANDARD_DOCUMENT_COMMANDS.has(command)) {
