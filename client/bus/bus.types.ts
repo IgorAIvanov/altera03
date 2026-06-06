@@ -21,6 +21,7 @@ export interface PickerOpenMessage {
   type: "picker.open";
   route: string;
   callbackId: string;
+  params?: Record<string, unknown>;
 }
 export interface PickerSelectMessage {
   type: "picker.select";

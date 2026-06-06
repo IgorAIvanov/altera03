@@ -5,6 +5,7 @@ import { t } from "../locale.ts";
 import "@app/home-tab.ts";
 import "@app/menu/app-menu.ts";
 import "@app/header/app-header.ts";
+import "@client/ui-kit/picker-host.ts";
 
 const MAX_TABS = 10;
 const HOME_TAB_ID = "home";
@@ -225,6 +226,7 @@ export class TabController extends LitElement {
             </div>`
         )}
       </div>
+      <picker-host></picker-host>
       <div class="workspace">
         <app-menu></app-menu>
         <div class="panels">

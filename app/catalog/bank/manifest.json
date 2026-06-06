@@ -10,6 +10,10 @@
     "edit": {
       "module": "./bankEdit.ts",
       "titleKey": "bank.titleOne"
+    },
+    "picker": {
+      "module": "./bankPicker.ts",
+      "titleKey": "bank.titleMany"
     }
   }
 }

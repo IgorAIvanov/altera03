@@ -73,12 +73,12 @@ class Bus {
 
   // --- picker ---
 
-  async pick(route: string): Promise<PickerValue> {
+  async pick(route: string, params?: Record<string, unknown>): Promise<PickerValue> {
     const callbackId = crypto.randomUUID();
     const promise = new Promise<PickerValue>((resolve, reject) => {
       this.pending.set(callbackId, { resolve, reject });
     });
-    this.emit({ type: "picker.open", route, callbackId });
+    this.emit({ type: "picker.open", route, callbackId, params });
     return promise;
   }
 }
