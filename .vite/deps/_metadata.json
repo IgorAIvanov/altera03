@@ -1,0 +1,43 @@
+{
+  "hash": "b483ea98",
+  "configHash": "243082f3",
+  "lockfileHash": "e3b0c442",
+  "browserHash": "cf973264",
+  "optimized": {
+    "@lit-labs/signals": {
+      "src": "../../node_modules/.deno/@lit-labs+signals@0.1.3/node_modules/@lit-labs/signals/development/index.js",
+      "file": "@lit-labs_signals.js",
+      "fileHash": "7c8d7442",
+      "needsInterop": false
+    },
+    "lit": {
+      "src": "../../node_modules/.deno/lit@3.3.1/node_modules/lit/index.js",
+      "file": "lit.js",
+      "fileHash": "d4710350",
+      "needsInterop": false
+    },
+    "lit/decorators.js": {
+      "src": "../../node_modules/.deno/lit@3.3.1/node_modules/lit/decorators.js",
+      "file": "lit_decorators__js.js",
+      "fileHash": "e38c4392",
+      "needsInterop": false
+    },
+    "signal-polyfill": {
+      "src": "../../node_modules/.deno/signal-polyfill@0.2.2/node_modules/signal-polyfill/dist/index.js",
+      "file": "signal-polyfill.js",
+      "fileHash": "c0131f3b",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-ZRB6CQA3": {
+      "file": "chunk-ZRB6CQA3.js"
+    },
+    "chunk-I6EOEPTM": {
+      "file": "chunk-I6EOEPTM.js"
+    },
+    "chunk-E3V3GIFD": {
+      "file": "chunk-E3V3GIFD.js"
+    }
+  }
+}

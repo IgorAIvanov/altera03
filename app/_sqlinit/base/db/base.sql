@@ -1,0 +1,1 @@
+-- Base SQL init does not publish model-local SQL functions.

@@ -1,0 +1,12 @@
+{
+  "common.save": "Save",
+  "common.cancel": "Cancel",
+  "common.delete": "Delete",
+  "common.create": "Create",
+  "common.refresh": "Refresh",
+  "common.code": "Code",
+  "common.name": "Name",
+  "common.noData": "No data",
+  "common.loading": "Loading...",
+  "common.noOpenTabs": "No open tabs"
+}

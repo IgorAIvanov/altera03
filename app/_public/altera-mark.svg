@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Altera mark</title>
+  <desc id="desc">Rounded blue square with a stylized white A and ledger column accents.</desc>
+  <defs>
+    <linearGradient id="bg" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5f87ac" />
+      <stop offset="1" stop-color="#2b5277" />
+    </linearGradient>
+    <linearGradient id="ledger" x1="42" y1="18" x2="50" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dbe9f5" stop-opacity="0.95" />
+      <stop offset="1" stop-color="#b9d1e6" stop-opacity="0.72" />
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="52" height="52" rx="14" fill="url(#bg)" />
+  <path d="M32 15L18 49H24.6L27.7 41.1H36.3L39.4 49H46L32 15ZM30 35.1L32 30L34 35.1H30Z" fill="#ffffff" />
+  <rect x="45" y="17" width="3" height="30" rx="1.5" fill="url(#ledger)" />
+  <rect x="50" y="22" width="2" height="20" rx="1" fill="#dfeaf4" fill-opacity="0.78" />
+  <path d="M15 19C19 14.1 25.1 11 32 11C38.4 11 44.2 13.6 48.3 17.9" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2.2" stroke-linecap="round" />
+</svg>

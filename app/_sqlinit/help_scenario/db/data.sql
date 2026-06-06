@@ -1,0 +1,1 @@
+-- Intentionally empty. Seed or corrective data for help_scenario will be added here when needed.

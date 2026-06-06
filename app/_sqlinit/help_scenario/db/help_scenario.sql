@@ -1,0 +1,1 @@
+-- Intentionally empty. Re-runnable SQL functions for help_scenario will be added here when needed.

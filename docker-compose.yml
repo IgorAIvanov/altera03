@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: altera-pg-03
+    environment:
+      POSTGRES_DB: altera
+      POSTGRES_USER: altera
+      POSTGRES_PASSWORD: altera_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:

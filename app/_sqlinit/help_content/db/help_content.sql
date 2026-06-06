@@ -1,0 +1,1 @@
+-- Intentionally empty. Re-runnable SQL functions for help_content will be added here when needed.

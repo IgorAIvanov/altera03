@@ -1,0 +1,22 @@
+{
+  "name": "@scope/server",
+  "version": "0.3.0",
+  "exports": "./main.ts",
+  "imports": {
+    "@danet/core": "jsr:@danet/core@^2.9.6",
+    "@danet/validatte": "jsr:@danet/validatte@^0.7.9",
+    "postgres": "npm:postgres@^3.4.5",
+    "decimal.js": "npm:decimal.js@^10.6.0",
+    "@std/assert": "jsr:@std/assert@^1.0.15",
+    "@std/fs": "jsr:@std/fs@^1.0.19",
+    "@std/path": "jsr:@std/path@^1.1.2",
+    "@std/http": "jsr:@std/http@^1.0.18",
+    "typebox": "npm:@sinclair/typebox@^0.34.0"
+  },
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strict": true,
+    "lib": ["deno.ns", "deno.unstable", "esnext"]
+  }
+}

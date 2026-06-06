@@ -1,0 +1,11 @@
+{
+  "name": "@scope/client",
+  "version": "0.3.0",
+  "exports":  "./main.ts",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strict": true,
+    "lib": ["dom", "dom.iterable", "esnext"]
+  }
+}

@@ -1,0 +1,1 @@
+-- Base SQL init does not publish seed data.

@@ -1,0 +1,1 @@
+-- Intentionally empty. Structural migration steps for help_content will be added here when needed.

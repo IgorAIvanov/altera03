@@ -1,0 +1,1 @@
+-- Intentionally empty. Structural migration steps for help_scenario will be added here when needed.

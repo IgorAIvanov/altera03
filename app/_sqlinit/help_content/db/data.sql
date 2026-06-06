@@ -1,0 +1,1 @@
+-- Intentionally empty. Seed or corrective data for help_content will be added here when needed.

@@ -1,0 +1,15 @@
+{
+  "model": "bank",
+  "type": "catalog",
+  "schema": "app",
+  "views": {
+    "list": {
+      "module": "./bankList.ts",
+      "titleKey": "bank.titleMany"
+    },
+    "edit": {
+      "module": "./bankEdit.ts",
+      "titleKey": "bank.titleOne"
+    }
+  }
+}
