@@ -1,6 +1,7 @@
 import { defineConfig } from "npm:vite@^6.3.5";
 import { resolve } from "node:path";
 import { viteStaticCopy } from "npm:vite-plugin-static-copy@^2.3.0";
+import tailwindcss from "npm:@tailwindcss/vite@^4.3.0";
 import { appModulesPlugin } from "./vite-plugin-app-modules.ts";
 
 export default defineConfig({
@@ -38,6 +39,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    tailwindcss(),
     appModulesPlugin(),
     viteStaticCopy({
       targets: [

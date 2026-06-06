@@ -1,11 +1,11 @@
 import {
-  Signal
-} from "./chunk-FE2LUJ52.js";
-import {
   _$LH,
   html,
   svg
 } from "./chunk-BBX6RG7F.js";
+import {
+  Signal
+} from "./chunk-FE2LUJ52.js";
 
 // node_modules/.deno/@lit-labs+signals@0.1.3/node_modules/@lit-labs/signals/development/lib/signal-watcher.js
 var signalWatcherBrand = Symbol("SignalWatcherBrand");

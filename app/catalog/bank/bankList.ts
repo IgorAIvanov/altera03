@@ -1,8 +1,9 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
+import { tw } from "@client/shared/styles.ts";
 
 export const tagName = "bank-list";
 
@@ -14,17 +15,7 @@ interface BankRow {
 
 @customElement(tagName)
 export class BankList extends SignalWatcher(LitElement) {
-  static styles = css`
-    :host { display: block; padding: 1rem; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 0.5rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-    th { font-weight: 600; color: #6b7280; font-size: 0.875rem; }
-    tr:hover td { background: #f9fafb; cursor: pointer; }
-    .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-    button { padding: 0.4rem 1rem; border-radius: 6px; border: 1px solid #d1d5db; background: white; cursor: pointer; }
-    button:hover { background: #f3f4f6; }
-    .empty { text-align: center; padding: 2rem; color: #9ca3af; }
-  `;
+  static styles = [tw];
 
   @state() private rows: BankRow[] = [];
   @state() private loading = false;
@@ -33,7 +24,6 @@ export class BankList extends SignalWatcher(LitElement) {
 
   connectedCallback() {
     super.connectedCallback();
-    // обновляемся когда кто-то изменил банк
     this.unsub = bus.on("model.changed", (msg) => {
       if (msg.model === "bank") this.load();
     });
@@ -61,33 +51,35 @@ export class BankList extends SignalWatcher(LitElement) {
 
   render() {
     return html`
-      <div class="toolbar">
-        <button @click=${() => this.load()}>${t("common.refresh")}</button>
-        <button @click=${() => this.openEdit(null)}>${t("common.create")}</button>
-      </div>
+      <div class="p-4">
+        <div class="flex gap-2 mb-4">
+          <button class="btn btn-sm" @click=${() => this.load()}>${t("common.refresh")}</button>
+          <button class="btn btn-sm btn-primary" @click=${() => this.openEdit(null)}>${t("common.create")}</button>
+        </div>
 
-      ${this.loading
-        ? html`<div class="empty">...</div>`
-        : this.rows.length === 0
-          ? html`<div class="empty">${t("common.noData")}</div>`
-          : html`
-            <table>
-              <thead>
-                <tr>
-                  <th>${t("common.code")}</th>
-                  <th>${t("common.name")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${this.rows.map(row => html`
-                  <tr @click=${() => this.openEdit(row.id)}>
-                    <td>${row.code}</td>
-                    <td>${row.name}</td>
+        ${this.loading
+          ? html`<div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>`
+          : this.rows.length === 0
+            ? html`<div class="text-center p-8 text-base-content/40">${t("common.noData")}</div>`
+            : html`
+              <table class="table table-zebra w-full">
+                <thead>
+                  <tr>
+                    <th>${t("common.code")}</th>
+                    <th>${t("common.name")}</th>
                   </tr>
-                `)}
-              </tbody>
-            </table>
-          `}
+                </thead>
+                <tbody>
+                  ${this.rows.map(row => html`
+                    <tr class="cursor-pointer hover" @click=${() => this.openEdit(row.id)}>
+                      <td>${row.code}</td>
+                      <td>${row.name}</td>
+                    </tr>
+                  `)}
+                </tbody>
+              </table>
+            `}
+      </div>
     `;
   }
 }

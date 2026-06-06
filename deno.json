@@ -26,6 +26,7 @@
 
     "vite": "npm:vite@^6.3.5",
     "vite-plugin-static-copy": "npm:vite-plugin-static-copy@^2.3.0",
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.3.0",
     "lit": "npm:lit@^3.3.1",
     "@lit-labs/signals": "npm:@lit-labs/signals@^0.1.3",
     "signal-polyfill": "npm:signal-polyfill@^0.2.2",
