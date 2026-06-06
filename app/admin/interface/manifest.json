@@ -1,0 +1,15 @@
+{
+  "model": "interface",
+  "type": "admin",
+  "schema": "app",
+  "views": {
+    "edit": {
+      "module": "./interfaceCardPage.tsx",
+      "titleKey": "interface.titleOne"
+    },
+    "list": {
+      "module": "./interfacePage.tsx",
+      "titleKey": "interface.titleMany"
+    }
+  }
+}

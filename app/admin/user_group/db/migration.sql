@@ -1,0 +1,1 @@
+-- user_group model uses existing app.user_group and related access tables.

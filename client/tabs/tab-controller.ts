@@ -2,7 +2,9 @@ import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
-import "./home-tab.ts";
+import "@app/home-tab.ts";
+import "@app/menu/app-menu.ts";
+import "@app/header/app-header.ts";
 
 const MAX_TABS = 10;
 const HOME_TAB_ID = "home";
@@ -63,43 +65,53 @@ export class TabController extends LitElement {
       display: flex;
       flex-direction: column;
       height: 100%;
+      font-family: "Roboto", sans-serif;
+      font-size: 12px;
     }
     .tab-bar {
       display: flex;
+      align-items: flex-end;
       gap: 2px;
       padding: 4px 4px 0;
-      background: #f3f4f6;
-      border-bottom: 1px solid #e5e7eb;
+      background: #2B5598;
       overflow-x: auto;
       flex-shrink: 0;
     }
     .tab {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
-      border-radius: 6px 6px 0 0;
-      background: #e5e7eb;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 2px 2px 0 0;
+      background: #3a6ea8;
+      color: #d0e0f5;
       cursor: pointer;
-      font-size: 0.875rem;
+      font-size: 12px;
       white-space: nowrap;
       user-select: none;
-      color: #374151;
+      border: 1px solid #1e3f7a;
+      border-bottom: none;
     }
-    .tab.active { background: white; font-weight: 500; }
-    .tab.home { padding: 6px 12px; }
+    .tab.active {
+      background: #ECF0F5;
+      color: #1f2937;
+      font-weight: 500;
+    }
+    .tab.home { padding: 3px 8px; }
     .tab-close {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      font-size: 12px;
-      opacity: 0.5;
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      font-size: 11px;
+      opacity: 0.6;
+      margin-left: 2px;
     }
-    .tab-close:hover { background: #d1d5db; opacity: 1; }
-    .panels { flex: 1; position: relative; overflow: hidden; }
+    .tab-close:hover { background: #b0bec5; opacity: 1; color: #111; }
+    .workspace { display: flex; flex: 1; overflow: hidden; }
+    .panels { flex: 1; position: relative; overflow: hidden; background: #ECF0F5; }
     .panel {
       position: absolute;
       inset: 0;
@@ -200,6 +212,7 @@ export class TabController extends LitElement {
 
   render() {
     return html`
+      <app-header></app-header>
       <div class="tab-bar">
         ${this.tabs.map(tab => tab.permanent
           ? html`<div class="tab home ${tab.id === this.activeTabId ? "active" : ""}"
@@ -212,12 +225,15 @@ export class TabController extends LitElement {
             </div>`
         )}
       </div>
-      <div class="panels">
-        ${this.tabs.map(tab => html`
-          <div class="panel ${tab.id === this.activeTabId ? "active" : ""}">
-            ${tab.element}
-          </div>
-        `)}
+      <div class="workspace">
+        <app-menu></app-menu>
+        <div class="panels">
+          ${this.tabs.map(tab => html`
+            <div class="panel ${tab.id === this.activeTabId ? "active" : ""}">
+              ${tab.element}
+            </div>
+          `)}
+        </div>
       </div>
     `;
   }

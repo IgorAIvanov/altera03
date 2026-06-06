@@ -1,0 +1,15 @@
+{
+  "model": "print_template",
+  "type": "admin",
+  "schema": "app",
+  "views": {
+    "edit": {
+      "module": "./printTemplateCardPage.tsx",
+      "titleKey": "printTemplate.titleOne"
+    },
+    "list": {
+      "module": "./printTemplatePage.tsx",
+      "titleKey": "printTemplate.titleMany"
+    }
+  }
+}

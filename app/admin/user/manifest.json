@@ -1,0 +1,25 @@
+{
+  "model": "user",
+  "type": "admin",
+  "schema": "app",
+  "commands": {
+    "ts": {
+      "exportExcel": {
+        "handlerKey": "runtime.exportExcel"
+      },
+      "update": {
+        "handlerKey": "user.update"
+      }
+    }
+  },
+  "views": {
+    "edit": {
+      "module": "./userCardPage.tsx",
+      "titleKey": "user.titleOne"
+    },
+    "list": {
+      "module": "./userPage.tsx",
+      "titleKey": "user.titleMany"
+    }
+  }
+}

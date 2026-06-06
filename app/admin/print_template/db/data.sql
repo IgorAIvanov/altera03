@@ -1,0 +1,1 @@
+-- Print templates declared in model manifests are published by scripts/assemble-sql-package.ts.

@@ -1,7 +1,7 @@
 import { LitElement, html } from "lit";
 import { customElement } from "lit/decorators.js";
-import { bus } from "../bus/bus.ts";
-import { tw } from "../shared/styles.ts";
+import { bus } from "@client/bus/bus.ts";
+import { tw } from "@client/shared/styles.ts";
 
 @customElement("home-tab")
 export class HomeTab extends LitElement {
