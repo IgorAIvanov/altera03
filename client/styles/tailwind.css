@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @source "../../app";
+@source "../../client";
 @plugin "daisyui" {
   themes: false;
 }

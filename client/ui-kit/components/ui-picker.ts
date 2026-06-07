@@ -83,11 +83,13 @@ export class UiPicker extends GlobalStyledLitElement {
     this.displayValue = String(item[this.displayField] ?? "");
     this.selectedId   = String(item[this.idField] ?? "");
     this._items = [];
+    this._popover?.hidePopover();
     this._emit(item);
   }
 
   private _onClear() {
     this.displayValue = ""; this.selectedId = ""; this._items = [];
+    this._popover?.hidePopover();
     this._emitCleared();
   }
 
@@ -166,8 +168,8 @@ export class UiPicker extends GlobalStyledLitElement {
       <ul
         popover
         @toggle=${this._onPopoverToggle}
-        class="menu menu-xs bg-base-100 border border-base-300 rounded-box shadow-md overflow-y-auto p-1"
-        style="position:fixed; margin:0; inset:unset; max-height:calc(${this.listSize} * 2.25rem);"
+        class="menu menu-xs rounded-box shadow-md overflow-y-auto p-1"
+        style="position:fixed; margin:0; inset:unset; max-height:calc(${this.listSize} * 1.75rem); background:#ffffff; border:1px solid var(--color-base-300,#d1d5db); flex-direction:column; flex-wrap:nowrap;${this._items.length === 0 ? "display:none;" : ""}"
       >
         ${this._items.map(item => html`
           <li>
