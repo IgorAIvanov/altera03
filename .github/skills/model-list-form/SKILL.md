@@ -64,9 +64,11 @@ That is the whole file. Do not add `render()`, `static styles`, load logic, or p
 | `title`    | Localization key (preferred, e.g. `"common.code"`) or literal — passed through `t()`. |
 | `width`    | CSS width, e.g. `"8rem"`. Omit for a flexible (stretch) column. Use a CSS value, **not** a Tailwind `w-*` class — dynamic Tailwind classes don't survive in shadow DOM here. |
 | `align`    | `"left"` (default) \| `"right"` \| `"center"`.                    |
+| `overflow` | `"wrap"` (default) \| `"nowrap"` \| `"ellipsis"`. `ellipsis` truncates with `…` and needs `width`. |
 | `muted`    | `true` → dimmed text for secondary data (codes, dates).           |
 | `sortable` | `true` → header is clickable, toggles asc/desc on the server.      |
-| `render`   | `(row) => TemplateResult \| string` — custom cell (badges, formatted dates, picker labels). |
+| `tooltip`  | `(row) => string` — native cell tooltip (the `title` attribute).   |
+| `render`   | `(row) => TemplateResult \| string` — custom cell (buttons, badges, two-line, formatted dates, picker labels). |
 
 `sortable: true` requires the SQL `list` function to accept that `key` in its `sortBy` whitelist — see [db-function-contract](../db-function-contract/SKILL.md).
 
@@ -79,10 +81,49 @@ That is the whole file. Do not add `render()`, `static styles`, load logic, or p
 | `listCommand`            | Use a non-standard list command instead of `"list"`.         |
 | `rowLabel(row)`          | Text shown in the delete-confirm dialog (defaults to `row.name`). |
 | `rowClass(row)`          | Extra CSS classes per row (status highlight).                |
+| `rowStyle(row)`          | Inline row style (text/background colour). Applied to each `<td>` so it beats `table-zebra`; selection still wins. E.g. `row.isActive === false ? "color:#9ca3af" : ""`. |
 | `onActivate(row)`        | Double-click action (defaults to open edit).                 |
 | `extraPayload()`         | Extra fields merged into the list payload — **the seam for a filter panel**. |
 | `renderToolbarExtra()`   | Extra toolbar buttons between the standard actions and search.|
 | `renderHeaderArea()`     | Full-width zone under the toolbar — **the seam for a filter bar or group breadcrumbs**. |
+
+## Rich cells
+
+A column's `render` returns arbitrary Lit content — buttons, badges, marks,
+two-line text. Two helpers from `model-list-base.ts` cover the common needs, and
+`this.t(...)` is available in `render` for localization.
+
+- **Buttons / actions in a cell** — wrap the handler in `stopRow(...)` so the
+  click does not select or activate the row:
+
+  ```ts
+  import { html } from "lit";
+  import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+
+  { key: "_actions", title: "", width: "3rem", align: "center",
+    render: (row) => html`
+      <button class="btn btn-ghost btn-xs" title=${this.t("common.open")}
+        @click=${stopRow(() => this.openEdit(row.id))}>✎</button>` }
+  ```
+
+- **Badge / mark** — return a daisyUI badge:
+
+  ```ts
+  { key: "status", title: "doc.status", width: "7rem",
+    render: (row) => html`<span class="badge ${row.posted ? "badge-success" : "badge-ghost"}">
+      ${row.posted ? this.t("doc.posted") : this.t("doc.draft")}</span>` }
+  ```
+
+- **Two-line cell** — use `twoLine(primary, secondary)`:
+
+  ```ts
+  import { twoLine } from "@client/ui-kit/base/model-list-base.ts";
+
+  { key: "name", title: "common.name", render: (row) => twoLine(row.name, row.edrpou) }
+  ```
+
+- **Row colour** — override `rowStyle(row)` (see Optional overrides).
+- **Tooltip** — set the column `tooltip` field, or `title=` inside `render`.
 
 ## Variants (build as sibling subclasses)
 

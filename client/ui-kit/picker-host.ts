@@ -1,11 +1,14 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "../bus/bus.ts";
+import { t } from "../locale.ts";
 import type { PickerOpenMessage } from "../bus/bus.types.ts";
 
 interface ActivePicker {
   callbackId: string;
   element: HTMLElement;
+  width?: string;
+  height?: string;
 }
 
 async function resolveChunk(route: string): Promise<string | null> {
@@ -47,8 +50,9 @@ export class PickerHost extends LitElement {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--color-base-300, #e5e7eb);
+      padding: 0.5rem 1rem;
+      background: var(--color-primary, #2B5598);
+      color: var(--color-primary-content, #fff);
       font-weight: 600;
       font-size: 0.875rem;
     }
@@ -60,7 +64,7 @@ export class PickerHost extends LitElement {
     }
     .close-btn {
       cursor: pointer;
-      opacity: 0.5;
+      opacity: 0.8;
       font-size: 1.2rem;
       line-height: 1;
       padding: 0 4px;
@@ -98,11 +102,18 @@ export class PickerHost extends LitElement {
       const el = document.createElement(tagName) as HTMLElement & {
         callbackId?: string;
         params?: Record<string, unknown>;
+        dialogWidth?: string;
+        dialogHeight?: string;
       };
       el.callbackId = msg.callbackId;
       if (msg.params) el.params = msg.params;
 
-      this._picker = { callbackId: msg.callbackId, element: el };
+      this._picker = {
+        callbackId: msg.callbackId,
+        element: el,
+        width: el.dialogWidth,
+        height: el.dialogHeight,
+      };
 
       // закриваємо після resolve/reject (select або cancel)
       const unsub1 = bus.on("picker.select", (e) => {
@@ -131,9 +142,9 @@ export class PickerHost extends LitElement {
     if (!this._picker) return html``;
     return html`
       <div class="overlay" @click=${this._onOverlayClick}>
-        <div class="dialog">
+        <div class="dialog" style=${`${this._picker.width ? `width:${this._picker.width};` : ""}${this._picker.height ? `height:${this._picker.height};` : ""}`}>
           <div class="dialog-header">
-            <span>Підбір</span>
+            <span>${t("common.pick")}</span>
             <span class="close-btn" @click=${() => this._picker && bus.emit({ type: "picker.cancel", callbackId: this._picker.callbackId })}>×</span>
           </div>
           <div class="dialog-body">

@@ -1,4 +1,4 @@
-import { LitElement, html, css, type TemplateResult } from "lit";
+import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { t } from "@client/locale.ts";
@@ -16,10 +16,23 @@ export interface ListColumn<Row> {
   /** Ширина CSS, напр. "8rem". Без значення — гнучка колонка. */
   width?: string;
   align?: "left" | "right" | "center";
+  /**
+   * Поведінка тексту в комірці:
+   *  - "wrap" (за замовч.) — переноситься на кілька рядків;
+   *  - "nowrap" — один рядок без переносу;
+   *  - "ellipsis" — один рядок, обрізається з "…" (потребує `width`).
+   */
+  overflow?: "wrap" | "nowrap" | "ellipsis";
   /** Приглушений текст (вторинні дані: коди, дати). */
   muted?: boolean;
   sortable?: boolean;
-  /** Кастомний рендер комірки. За замовчуванням — row[key]. */
+  /** Нативний tooltip комірки (атрибут title). */
+  tooltip?: (row: Row) => string;
+  /**
+   * Кастомний рендер комірки. За замовчуванням — row[key].
+   * Сюди можна повернути кнопки, бейджі, дворядковий вміст тощо.
+   * Для кнопок гортай обробник через `stopRow(...)`, щоб клік не виділяв рядок.
+   */
   render?: (row: Row) => TemplateResult | string;
 }
 
@@ -27,6 +40,43 @@ export interface ListTotals {
   count: number;
   page: number;
   pageSize: number;
+}
+
+/** CSS-клас вирівнювання для th/td. */
+export function alignClass(align?: string): string {
+  return align === "right" ? "text-right" : align === "center" ? "text-center" : "";
+}
+
+/** Inline-стиль комірки: перенос/обрізка тексту + max-width для ellipsis. */
+export function cellStyle<Row>(col: ListColumn<Row>): string {
+  const parts: string[] = [];
+  if (col.overflow === "nowrap") parts.push("white-space:nowrap");
+  if (col.overflow === "ellipsis") {
+    parts.push("white-space:nowrap", "overflow:hidden", "text-overflow:ellipsis");
+    if (col.width) parts.push(`max-width:${col.width}`);
+  }
+  return parts.join(";");
+}
+
+/**
+ * Обгортка обробника події в комірці, що зупиняє спливання —
+ * клік по кнопці в рядку не виділяє/не активує рядок.
+ * Приклад: `@click=${stopRow(() => this.openEdit(row.id))}`
+ */
+export function stopRow(fn: (e: Event) => void) {
+  return (e: Event) => { e.stopPropagation(); fn(e); };
+}
+
+/** Дворядкова комірка: основний текст + приглушений другий рядок. */
+export function twoLine(primary: unknown, secondary?: unknown): TemplateResult {
+  return html`
+    <div class="leading-tight">
+      <div>${primary}</div>
+      ${secondary != null && secondary !== ""
+        ? html`<div class="text-xs text-base-content/50">${secondary}</div>`
+        : ""}
+    </div>
+  `;
 }
 
 const icon = {
@@ -53,9 +103,12 @@ const icon = {
  */
 export abstract class ModelListBase<Row extends { id: string }> extends SignalWatcher(LitElement) {
   static styles = [tw, css`
-    tr.selected { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
+    tr.selected td { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
     th.sortable { cursor: pointer; user-select: none; }
   `];
+
+  /** Локалізатор — доступний у render підкласу: `this.t("common.open")`. */
+  protected t = t;
 
   // ── Обов'язкові для підкласу ──────────────────────────────────────────────
   protected abstract model: string;
@@ -106,6 +159,12 @@ export abstract class ModelListBase<Row extends { id: string }> extends SignalWa
   protected renderToolbarExtra(): TemplateResult | string { return ""; }
   /** Додаткові CSS-класи рядка (підсвітка за статусом тощо). */
   protected rowClass(_row: Row): string { return ""; }
+  /**
+   * Inline-стиль рядка (колір тексту/фону за статусом). Застосовується до
+   * кожної `<td>`, щоб перекрити zebra; виділення рядка має пріоритет.
+   * Напр.: `return row.isActive === false ? "color:#9ca3af" : "";`
+   */
+  protected rowStyle(_row: Row): string { return ""; }
   /** Підпис рядка для діалогу видалення. */
   protected rowLabel(row: Row): string {
     return (row as Record<string, unknown>).name as string ?? row.id;
@@ -191,8 +250,6 @@ export abstract class ModelListBase<Row extends { id: string }> extends SignalWa
   // ── Рендер ──────────────────────────────────────────────────────────────────
   override render() {
     const totalPages = this.#totalPages();
-    const alignClass = (a?: string) =>
-      a === "right" ? "text-right" : a === "center" ? "text-center" : "";
 
     return html`
       <div class="flex flex-col h-full">
@@ -253,7 +310,9 @@ export abstract class ModelListBase<Row extends { id: string }> extends SignalWa
                         @dblclick=${() => this.onActivate(row)}
                       >
                         ${this.columns.map((col) => html`
-                          <td class="${col.muted ? "text-base-content/60" : ""} ${alignClass(col.align)}">
+                          <td class="${col.muted ? "text-base-content/60" : ""} ${alignClass(col.align)}"
+                            style=${[cellStyle(col), this.rowStyle(row)].filter(Boolean).join(";")}
+                            title=${col.tooltip ? col.tooltip(row) : nothing}>
                             ${this.#cell(row, col)}
                           </td>
                         `)}

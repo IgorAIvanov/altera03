@@ -107,9 +107,11 @@ export class ContractorList extends ModelListBase<ContractorRow> {
 | `title`    | Ключ локализации (`"common.code"`) или литерал — проходит через `t()`.|
 | `width`    | Ширина CSS, напр. `"8rem"`. Без значения — гибкая (растягивается) колонка. |
 | `align`    | `"left"` (по умолч.) \| `"right"` \| `"center"`.                     |
+| `overflow` | `"wrap"` (по умолч.) \| `"nowrap"` \| `"ellipsis"`. `ellipsis` обрезает с `…`, требует `width`. |
 | `muted`    | `true` → приглушённый текст для вторичных данных (коды, даты).        |
 | `sortable` | `true` → заголовок кликабельный, сортирует на сервере.                |
-| `render`   | `(row) => TemplateResult \| string` — кастомная ячейка (бейджи, форматированные даты, метки пикеров). |
+| `tooltip`  | `(row) => string` — нативный tooltip ячейки (атрибут `title`).       |
+| `render`   | `(row) => TemplateResult \| string` — кастомная ячейка (кнопки, бейджи, две строки, форматированные даты, метки пикеров). |
 
 > ⚠️ **`width` задавайте CSS-значением, а не Tailwind-классом `w-32`.**
 > Динамические Tailwind-классы не доезжают в Shadow DOM этих компонентов
@@ -140,13 +142,45 @@ export class ContractorList extends ModelListBase<ContractorRow> {
 | `pageSizeOptions`                   | Свой набор размеров страницы вместо `[10,20,50,100]`.       |
 | `listCommand`                       | Нестандартная команда вместо `"list"`.                     |
 | `rowLabel(row)`                     | Текст в диалоге удаления (по умолч. `row.name`).            |
-| `rowClass(row)`                     | Доп. CSS-классы строки (подсветка по статусу).             |
+| `rowClass(row)`                     | Доп. CSS-классы строки.                                    |
+| `rowStyle(row)`                     | Inline-стиль строки (цвет текста/фона). Применяется к каждой `<td>` (перебивает zebra; выделение приоритетнее). Напр. `row.isActive === false ? "color:#9ca3af" : ""`. |
 | `onActivate(row)`                   | Действие по двойному клику (по умолч. — открыть edit).     |
 | `extraPayload()`                    | Доп. поля в payload — **шов для панели фильтров**.         |
 | `renderToolbarExtra()`              | Доп. кнопки тулбара между стандартными действиями и поиском.|
 | `renderHeaderArea()`                | Полноширинная зона под тулбаром — **шов для панели фильтров / навигации по группам**. |
 
 ---
+
+## Богатые ячейки
+
+`render` колонки возвращает любой Lit-контент. Два helper'а из
+`model-list-base.ts` закрывают типовые задачи, а `this.t(...)` доступен в `render`.
+
+```ts
+import { html } from "lit";
+import { ModelListBase, stopRow, twoLine, type ListColumn }
+  from "@client/ui-kit/base/model-list-base.ts";
+
+// Кнопка в ячейке — обработчик через stopRow, чтобы клик не выделял строку:
+{ key: "_act", title: "", width: "3rem", align: "center",
+  render: (row) => html`<button class="btn btn-ghost btn-xs"
+    title=${this.t("common.open")}
+    @click=${stopRow(() => this.openEdit(row.id))}>✎</button>` }
+
+// Бейдж / отметка:
+{ key: "status", title: "doc.status", width: "7rem",
+  render: (row) => html`<span class="badge ${row.posted ? "badge-success" : "badge-ghost"}">
+    ${row.posted ? "Проведён" : "Черновик"}</span>` }
+
+// Две строки в ячейке:
+{ key: "name", title: "common.name", render: (row) => twoLine(row.name, row.edrpou) }
+```
+
+- **Цвет строки** — override `rowStyle(row)`.
+- **Tooltip** — поле `tooltip` колонки или `title=` внутри `render`.
+
+> ⚠️ Кнопки в ячейке всегда оборачивайте обработчик в `stopRow(...)` —
+> иначе клик «протекает» в строку и выделяет/открывает её.
 
 ## Будущие варианты
 
@@ -193,9 +227,11 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
   `client/styles/tailwind.css` под `[data-theme="1c"], :root, :host` — добавленный
   `:host` нужен, чтобы `var(--color-primary)` и др. резолвились внутри Shadow DOM.
   Без него `bg-primary`, выделение строки и пр. оказываются прозрачными.
-- **Подсветка выделенной строки** — через класс `tr.selected` с
-  `!important` в `static styles` базы, а не inline-стилем (у inline нет
-  приоритета над `table-zebra`).
+- **Подсветка выделенной строки** — правило `tr.selected td { … !important }`
+  в `static styles` базы. Красить нужно именно `td`, а не `tr`: `table-zebra`
+  ставит фон на `<td>` чётных строк, который иначе перекрывает фон строки
+  (белый текст на светлом фоне → невидим). Inline-стиль не годится — нет
+  приоритета над `table-zebra`.
 - **`<select>` с динамическими `<option>`** — выбранный пункт помечается
   `?selected=${...}`, а не байндингом `.value` на самом `<select>`
   (Lit не успевает применить `.value` до появления опций).
