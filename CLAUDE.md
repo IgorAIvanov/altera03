@@ -112,6 +112,8 @@ Picker-поля використовують компонент `<ui-picker url=
 
 ## TypeBox-схема
 
+> Деталі та шаблон — у skill [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md).
+
 `app/<family>/<model>/<model>.schema.ts` — єдине джерело типів для frontend і backend:
 - `BankItemSchema` — поля форми + id (`Type.Union([Type.String(), Type.Null()])` для нового запису)
 - `BankRowSchema` — колонки списку
@@ -122,6 +124,8 @@ Primary key: `bigint` у БД, `string` у TypeScript/JSON (щоб уникну�
 Анотації `x-form`, `x-list`, `x-lookup` керують відображенням у UI.
 
 ## Додати нову модель (чек-лист)
+
+> **Перед створенням моделі застосуй skill [`model-feature-architecture`](.github/skills/model-feature-architecture/SKILL.md)** — він описує структуру feature-папки, manifest-маршрути та контракт SQL-функцій. Цей skill, своєю чергою, посилається на [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md) для визначення `<model>.schema.ts`.
 
 1. Створити `app/<family>/<model>/manifest.json`
 2. Створити `<model>.schema.ts` з TypeBox-схемами

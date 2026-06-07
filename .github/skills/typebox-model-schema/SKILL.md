@@ -12,6 +12,13 @@ Use this skill when:
 - replacing manual interfaces with TypeBox schemas
 - designing the shape of list, form, picker, and payload data
 
+## TypeBox
+
+Library: [`@sinclair/typebox`](https://github.com/sinclairzx81/typebox)  
+Import: `import { Type, type Static } from "@sinclair/typebox";`
+
+TypeBox schemas are standard JSON Schema objects with TypeScript types derived via `Static<typeof Schema>`. They work at runtime (validation) and compile time (types) from a single definition.
+
 ## Core principle
 
 One `<model>.schema.ts` file is the single source of truth for:
@@ -60,24 +67,29 @@ create table if not exists app.bank (
 Import common types from the project shared schema file — do not redefine them per model:
 
 ```ts
-import type { SortDir, PagePayload, OptionRow } from "@shared/schema.ts";
+import { type SortDir, type PagePayload, type OptionRow } from "@shared/schema.ts";
 ```
 
+The actual `app/shared/schema.ts`:
+
 ```ts
-// @shared/schema.ts
+// app/shared/schema.ts
+import { Type, type Static } from "@sinclair/typebox";
+
 export const OptionRowSchema = Type.Object({
-  id:    Type.String(),
-  name:  Type.String(),
+  id:   Type.String(),
+  name: Type.String(),
 });
 export type OptionRow = Static<typeof OptionRowSchema>;
 
 export const PagePayloadSchema = Type.Object({
-  page:      Type.Optional(Type.Number({ minimum: 1, default: 1 })),
-  pageSize:  Type.Optional(Type.Number({ minimum: 1, maximum: 200, default: 50 })),
+  page:     Type.Optional(Type.Number({ minimum: 1, default: 1 })),
+  pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 200, default: 50 })),
 });
 export type PagePayload = Static<typeof PagePayloadSchema>;
 
-export type SortDir = "asc" | "desc";
+export const SortDirSchema = Type.Union([Type.Literal("asc"), Type.Literal("desc")]);
+export type SortDir = Static<typeof SortDirSchema>;
 ```
 
 ## Field annotations
@@ -129,12 +141,13 @@ export const BankItemSchema = Type.Object({
     "x-list": { sortable: true },
     "x-lookup": true,
   }),
-  mfo: Type.String({
+  mfo: Type.Optional(Type.String({
     title: "МФО", maxLength: 6,
     "x-form": { order: 3, width: "sm" },
     "x-list": { width: "sm" },
     "x-lookup": true,
-  }),
+  })),
+  isActive: Type.Optional(Type.Boolean({ title: "Активний", default: true })),
 });
 export type BankItem = Static<typeof BankItemSchema>;
 
@@ -160,14 +173,15 @@ export type BankLookupRow = Static<typeof BankLookupRowSchema>;
 // ── 4. Payload schemas — what each command accepts ────────────────────────────
 
 export const BankListPayloadSchema = Type.Object({
-  fragment:      Type.Optional(Type.String()),
-  page:          Type.Optional(Type.Number({ minimum: 1 })),
-  pageSize:      Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
-  sortBy:        Type.Optional(Type.Union([
-                   Type.Literal("code"),
-                   Type.Literal("name"),
-                 ])),
-  sortDir:       Type.Optional(Type.Union([Type.Literal("asc"), Type.Literal("desc")])),
+  search:   Type.Optional(Type.String()),          // SQL functions expect "search", not "fragment"
+  page:     Type.Optional(Type.Number({ minimum: 1 })),
+  pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
+  sortBy:   Type.Optional(Type.Union([
+              Type.Literal("code"),
+              Type.Literal("name"),
+              Type.Literal("mfo"),
+            ])),
+  sortDir:  Type.Optional(SortDirSchema),
 });
 export type BankListPayload = Static<typeof BankListPayloadSchema>;
 
@@ -187,8 +201,8 @@ export const BankDeletePayloadSchema = Type.Object({
 export type BankDeletePayload = Static<typeof BankDeletePayloadSchema>;
 
 export const BankLookupPayloadSchema = Type.Object({
-  fragment:  Type.Optional(Type.String()),
-  limit:     Type.Optional(Type.Number({ minimum: 1, maximum: 100, default: 20 })),
+  search: Type.Optional(Type.String()),
+  limit:  Type.Optional(Type.Number({ minimum: 1, maximum: 100, default: 20 })),
 });
 export type BankLookupPayload = Static<typeof BankLookupPayloadSchema>;
 
@@ -237,4 +251,5 @@ export type BankLookupData = Static<typeof BankLookupDataSchema>;
 
 ## Related
 
+- [TypeBox on GitHub](https://github.com/sinclairzx81/typebox) — library source, full API reference, and examples
 - [db-function-contract](../db-function-contract/SKILL.md) — SQL function naming and response envelope

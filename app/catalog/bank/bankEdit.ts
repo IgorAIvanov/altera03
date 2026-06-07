@@ -4,15 +4,9 @@ import { SignalWatcher } from "@lit-labs/signals";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
+import type { BankItem } from "./bank.schema.ts";
 
 export const tagName = "bank-edit";
-
-interface BankItem {
-  id?: string;
-  code: string;
-  name: string;
-  mfo: string;
-}
 
 @customElement(tagName)
 export class BankEdit extends SignalWatcher(LitElement) {
@@ -20,7 +14,7 @@ export class BankEdit extends SignalWatcher(LitElement) {
 
   @property({ type: String }) modelId: string | null = null;
 
-  @state() private item: BankItem = { code: "", name: "", mfo: "" };
+  @state() private item: BankItem = { id: null, code: "", name: "", mfo: "" };
   @state() private loading = false;
   @state() private saving = false;
 

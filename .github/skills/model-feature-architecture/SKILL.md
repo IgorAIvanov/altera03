@@ -14,7 +14,7 @@ Use this skill when:
 - defining manifest-driven routes for a feature and keeping shell metadata ownership explicit
 
 Target structure:
-- /app/<famile>/<model>/
+- /app/<family>/<model>/
 - UI files stay with the model
 - manifest.json in the model folder declares the model key, required model family `type`, SQL `schema`, routed views
 - model-local print template source files belong under app/<model>/prints/ when the model owns system print forms
@@ -27,14 +27,14 @@ Target structure:
 Recommended model contents:
 - manifest.json
 - optional prints/<template>.template.json files when the model ships seeded print forms through manifest `prints` metadata
-- <Model>Edit.tsx
-- <Model>List.tsx
-- <Model>Dialog.tsx
-- <Model>Picker.tsx
-- optional <Model>CardPage.tsx when create/edit lives on its own routed card page
-- optional <Model>PickerDialog.tsx when picker and nested create flow need one host component
+- <Model>Edit.ts
+- <Model>List.ts
+- <Model>Dialog.ts
+- <Model>Picker.ts
+- optional <Model>CardPage.ts when create/edit lives on its own routed card page
+- optional <Model>PickerDialog.ts when picker and nested create flow need one host component
 - optional <model>.api.ts when the feature has non-standard frontend transport or extra model-specific commands
-- <model>.types.ts
+- <model>.schema.ts — the TypeBox single source of truth for item, row, lookup, payload, and response shapes. Define it with the [typebox-model-schema](../typebox-model-schema/SKILL.md) skill. Do not hand-write parallel `<model>.types.ts` interfaces.
 - db/struc.sql
 - db/migration.sql
 - db/data.sql
@@ -51,13 +51,14 @@ Workflow:
 1. Identify the model boundary and its screens.
 2. Group all model-specific UI and contract files together.
 3. Add manifest.json and declare the model key, required `type`, SQL `schema`, routed views such as list, picker and edit.
-4. Identify the model family before locking the SQL contract: catalog-style models usually use List, Pick, Edit, Delete. Loockup; document models use the same base contract plus standard `post` and `unpost`; information registers may need history, slice, actual-on-date, or bulk-record commands.
-5. Assume the backend generic runtime can serve the standard commands without a dedicated model module.
-6. Use the shared frontend model runtime helper directly for standard commands unless a thin model-local wrapper adds real value.
-7. Add a backend model config file only when the model needs extra domain commands or backend-side customization.
-8. Add extra domain commands only when the model needs them.
-9. Keep app shell concerns such as router, layout, providers, and shared localization dictionaries outside the model folder.
-10. Keep app-shell route resolution, menu highlighting, and workspace-tab recognition tied to the same generated feature route list from buildFeatureRoutes(); do not use an empty or manually stubbed route map in layout code.
+4. Define `<model>.schema.ts` with the [typebox-model-schema](../typebox-model-schema/SKILL.md) skill before writing UI or SQL. This TypeBox file is the single source of truth: every UI component imports its types from here, and the SQL function contract mirrors its payload and response shapes. Do not start a model without it.
+5. Identify the model family before locking the SQL contract: catalog-style models usually use List, Pick, Edit, Delete. Loockup; document models use the same base contract plus standard `post` and `unpost`; information registers may need history, slice, actual-on-date, or bulk-record commands.
+6. Assume the backend generic runtime can serve the standard commands without a dedicated model module.
+7. Use the shared frontend model runtime helper directly for standard commands unless a thin model-local wrapper adds real value.
+8. Add a backend model config file only when the model needs extra domain commands or backend-side customization.
+9. Add extra domain commands only when the model needs them.
+10. Keep app shell concerns such as router, layout, providers, and shared localization dictionaries outside the model folder.
+11. Keep app-shell route resolution, menu highlighting, and workspace-tab recognition tied to the same generated feature route list from buildFeatureRoutes(); do not use an empty or manually stubbed route map in layout code.
 
 Localization notes:
 - Keep translatable business UI text in shared locale JSON files rather than embedding permanent user-facing strings in feature components.
@@ -80,3 +81,9 @@ Architecture notes:
 - The app shell can build routes from model-local manifest.json files at build time. Standard models should fit that routed-feature contract instead of registering routes manually.
 - For standard model commands, direct use of the shared frontend runtime client is preferred over duplicating identical <model>.api.ts wrappers in every model folder.
 - A dedicated backend controller/service/module should be treated as an exception path for specialized behavior, not as the default for every model.
+
+## Related
+
+- [typebox-model-schema](../typebox-model-schema/SKILL.md) — define the model's `<model>.schema.ts` (TypeBox single source of truth for types, validation, and UI roles). Always pair with this skill when building a model.
+- [db-function-contract](../db-function-contract/SKILL.md) — SQL function naming and the JSON response envelope.
+- [TypeBox on GitHub](https://github.com/sinclairzx81/typebox) — schema library reference.

@@ -4,21 +4,11 @@ import { SignalWatcher } from "@lit-labs/signals";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
+import type { BankRow, BankListData } from "./bank.schema.ts";
 
 export const tagName = "bank-list";
 
-interface BankRow {
-  id: string;
-  code: string;
-  name: string;
-  mfo: string;
-}
-
-interface Totals {
-  count: number;
-  page: number;
-  pageSize: number;
-}
+type Totals = BankListData["totals"];
 
 type SortDir = "asc" | "desc";
 

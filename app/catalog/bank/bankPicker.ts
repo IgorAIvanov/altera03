@@ -2,14 +2,9 @@ import { LitElement, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
+import type { BankLookupRow } from "./bank.schema.ts";
 
 export const tagName = "bank-picker";
-
-interface BankRow {
-  id: string;
-  name: string;
-  mfo?: string;
-}
 
 @customElement(tagName)
 export class BankPicker extends LitElement {
@@ -18,7 +13,7 @@ export class BankPicker extends LitElement {
   @property({ type: String }) callbackId = "";
   @property({ type: Object }) params: Record<string, unknown> = {};
 
-  @state() private rows: BankRow[] = [];
+  @state() private rows: BankLookupRow[] = [];
   @state() private loading = false;
   @state() private fragment = "";
   @state() private selectedId = "";
@@ -51,7 +46,7 @@ export class BankPicker extends LitElement {
     this._load(this.fragment);
   }
 
-  private _select(row: BankRow) {
+  private _select(row: BankLookupRow) {
     bus.emit({
       type: "picker.select",
       callbackId: this.callbackId,
