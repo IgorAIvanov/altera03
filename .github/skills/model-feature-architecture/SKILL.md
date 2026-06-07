@@ -28,7 +28,7 @@ Recommended model contents:
 - manifest.json
 - optional prints/<template>.template.json files when the model ships seeded print forms through manifest `prints` metadata
 - <Model>Edit.ts
-- <Model>List.ts
+- <Model>List.ts — extend `ModelListBase` via the [model-list-form](../model-list-form/SKILL.md) skill; the subclass only declares model, edit route, and columns
 - <Model>Dialog.ts
 - <Model>Picker.ts
 - optional <Model>CardPage.ts when create/edit lives on its own routed card page
@@ -85,5 +85,6 @@ Architecture notes:
 ## Related
 
 - [typebox-model-schema](../typebox-model-schema/SKILL.md) — define the model's `<model>.schema.ts` (TypeBox single source of truth for types, validation, and UI roles). Always pair with this skill when building a model.
+- [model-list-form](../model-list-form/SKILL.md) — build `<Model>List.ts` by extending the shared `ModelListBase` instead of hand-writing the toolbar, table, sort, and pagination.
 - [db-function-contract](../db-function-contract/SKILL.md) — SQL function naming and the JSON response envelope.
 - [TypeBox on GitHub](https://github.com/sinclairzx81/typebox) — schema library reference.

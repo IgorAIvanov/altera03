@@ -2,6 +2,7 @@
   "common.save": "Зберегти",
   "common.cancel": "Скасувати",
   "common.delete": "Видалити",
+  "common.confirmDelete": "Видалити запис",
   "common.create": "Створити",
   "common.open": "Відкрити",
   "common.refresh": "Оновити",

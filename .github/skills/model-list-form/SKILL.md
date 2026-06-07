@@ -1,0 +1,104 @@
+---
+name: model-list-form
+description: Build a model list screen (catalog/document table) by extending the shared ModelListBase class instead of hand-writing toolbar, table, server sort, pagination and selection each time.
+argument-hint: Describe the model name, its edit route, and which columns the list shows (key, title, width, sortable, muted).
+---
+
+# Model List Form Skill
+
+Use this skill when:
+- creating a `<Model>List.ts` screen for a catalog or document model
+- you need the standard 1С-style list: toolbar with icons, searchable, server-side sort, pagination, row selection
+- adding or changing columns on an existing list
+
+**Do not hand-write the toolbar, table, pagination or sort logic.** All of it lives in the shared base class `ModelListBase`. A list screen is a thin subclass that declares the model, the edit route, and the columns.
+
+## Base class
+
+`client/ui-kit/base/model-list-base.ts` → `ModelListBase<Row>`
+
+It owns: data load via `bus.request("data.load", …)`, server-side `sortBy`/`sortDir`, pagination (`page`/`pageSize` + footer), debounced search (300 ms), row selection with contrast highlight, delete with confirm, and re-load on the `model.changed` bus event. The global loading bar (in `tab-controller`) already covers request progress — the list shows its own spinner only on the very first load.
+
+The `Row` type comes from the model's TypeBox schema — see [typebox-model-schema](../typebox-model-schema/SKILL.md). Never re-declare a row interface by hand.
+
+## Canonical example
+
+`app/catalog/bank/bankList.ts` — keep it as the reference. A full list screen:
+
+```ts
+import { customElement } from "lit/decorators.js";
+import { ModelListBase, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+import type { BankRow } from "./bank.schema.ts";
+
+export const tagName = "bank-list";
+
+@customElement(tagName)
+export class BankList extends ModelListBase<BankRow> {
+  protected model = "bank";
+  protected editRoute = "catalog/bank/edit";
+  protected defaultSortBy = "code";
+
+  protected columns: ListColumn<BankRow>[] = [
+    { key: "code", title: "common.code", width: "8rem", sortable: true },
+    { key: "name", title: "common.name", sortable: true },
+    { key: "mfo",  title: "bank.mfo", width: "7rem", muted: true, sortable: true },
+  ];
+}
+```
+
+That is the whole file. Do not add `render()`, `static styles`, load logic, or pagination markup.
+
+## Required members
+
+| Member         | Purpose                                                        |
+|----------------|---------------------------------------------------------------|
+| `model`        | Model key — same as `manifest.json` `model`. Drives API + `model.changed`. |
+| `editRoute`    | Route opened by Create / Open / double-click, e.g. `"catalog/bank/edit"`. |
+| `columns`      | `ListColumn[]` — the table columns.                           |
+
+## Column config (`ListColumn`)
+
+| Field      | Meaning                                                            |
+|------------|-------------------------------------------------------------------|
+| `key`      | Row field key **and** the `sortBy` value sent to the server.      |
+| `title`    | Localization key (preferred, e.g. `"common.code"`) or literal — passed through `t()`. |
+| `width`    | CSS width, e.g. `"8rem"`. Omit for a flexible (stretch) column. Use a CSS value, **not** a Tailwind `w-*` class — dynamic Tailwind classes don't survive in shadow DOM here. |
+| `align`    | `"left"` (default) \| `"right"` \| `"center"`.                    |
+| `muted`    | `true` → dimmed text for secondary data (codes, dates).           |
+| `sortable` | `true` → header is clickable, toggles asc/desc on the server.      |
+| `render`   | `(row) => TemplateResult \| string` — custom cell (badges, formatted dates, picker labels). |
+
+`sortable: true` requires the SQL `list` function to accept that `key` in its `sortBy` whitelist — see [db-function-contract](../db-function-contract/SKILL.md).
+
+## Optional overrides
+
+| Member / hook            | When to use                                                   |
+|--------------------------|---------------------------------------------------------------|
+| `defaultSortBy` / `defaultSortDir` | Initial sort column/direction. Defaults to first column, asc. |
+| `pageSizeOptions`        | Override the `[10, 20, 50, 100]` page-size choices.           |
+| `listCommand`            | Use a non-standard list command instead of `"list"`.         |
+| `rowLabel(row)`          | Text shown in the delete-confirm dialog (defaults to `row.name`). |
+| `rowClass(row)`          | Extra CSS classes per row (status highlight).                |
+| `onActivate(row)`        | Double-click action (defaults to open edit).                 |
+| `extraPayload()`         | Extra fields merged into the list payload — **the seam for a filter panel**. |
+| `renderToolbarExtra()`   | Extra toolbar buttons between the standard actions and search.|
+| `renderHeaderArea()`     | Full-width zone under the toolbar — **the seam for a filter bar or group breadcrumbs**. |
+
+## Variants (build as sibling subclasses)
+
+- **Document list with filters (`отбори`)**: override `renderHeaderArea()` to draw a filter panel, and `extraPayload()` to send the selected filters into the `list` command. Call `this.reload()` when a filter changes.
+- **Catalog with groups**: a two-pane group-tree + element-list layout is a separate base (a future `ModelTreeListBase`) — do not force it into `ModelListBase`. Reuse the same column/selection/pagination conventions documented here.
+
+## Rules
+
+- One subclass per model, named `<Model>List.ts`, exporting `tagName`.
+- The `Row` type is imported from `<model>.schema.ts`, never re-declared.
+- Column `title` should be a localization key; add the key to `client/_locales/*.json` (shared) or `app/_locales/*.json` (model-specific).
+- Do not duplicate toolbar/table/pagination markup into the subclass — if you need a change for all lists, edit `ModelListBase`; if it's model-specific, use the documented hooks.
+- Keep `width` as CSS values, never dynamic Tailwind classes.
+
+## Related
+
+- [typebox-model-schema](../typebox-model-schema/SKILL.md) — defines the `Row` type and `x-list` column annotations.
+- [model-feature-architecture](../model-feature-architecture/SKILL.md) — where the list file sits in the model folder.
+- [db-function-contract](../db-function-contract/SKILL.md) — the `list` SQL function: payload (`search`, `page`, `pageSize`, `sortBy`, `sortDir`) and response envelope (`rows`, `totals`).

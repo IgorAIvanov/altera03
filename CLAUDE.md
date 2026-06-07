@@ -110,6 +110,8 @@ Lit Web Components, Shadow DOM увімкнений (стандартна інк
 Picker-поля використовують компонент `<ui-picker url="/api/model/bank/lookup">`.  
 Локалізація: `t("bank.titleOne")` через сигнальний store + JSON-файли у `app/_locales/`.
 
+**Форма списку** — наслідуй `ModelListBase` (`client/ui-kit/base/model-list-base.ts`): підклас задає лише `model`, `editRoute` та `columns`. Тулбар, серверне сортування, пагінація, пошук, вибір рядка — у базі. Документація для розробника — [`docs/ui-list-form.md`](docs/ui-list-form.md); skill для агента — [`model-list-form`](.github/skills/model-list-form/SKILL.md); еталон — `app/catalog/bank/bankList.ts`.
+
 ## TypeBox-схема
 
 > Деталі та шаблон — у skill [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md).
@@ -129,7 +131,7 @@ Primary key: `bigint` у БД, `string` у TypeScript/JSON (щоб уникну�
 
 1. Створити `app/<family>/<model>/manifest.json`
 2. Створити `<model>.schema.ts` з TypeBox-схемами
-3. Створити UI-компоненти: `<Model>List.ts`, `<Model>Edit.ts`, `<Model>Picker.ts`
+3. Створити UI-компоненти: `<Model>List.ts` (skill [`model-list-form`](.github/skills/model-list-form/SKILL.md) — наслідувати `ModelListBase`, не писати тулбар/таблицю/пагінацію вручну), `<Model>Edit.ts`, `<Model>Picker.ts`
 4. Створити `db/struc.sql`, `db/<model>.sql` (функції list/get/save/delete/lookup)
 5. Додати модель у `app/sql.json`
 6. Запустити `deno task sql:registry` → оновить generated-файли
