@@ -8,7 +8,6 @@
   },
   "models": [
     "_sqlinit/base",
-    "_sqlinit/document_core",
     "_sqlinit/help_content",
     "_sqlinit/help_scenario",
     "catalog/bank"

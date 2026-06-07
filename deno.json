@@ -9,7 +9,7 @@
     "stopdb": "docker compose down",
     "sql:registry": "deno run -A ./scripts/generate-model-runtime-registry.ts ./app ./server/modules/model-runtime/model-registry.generated.ts ./server/modules/agent/agent-routes.generated.ts --verbose",
     "sql:assemble": "deno run -A ./scripts/assemble-sql-package.ts ./app --verbose",
-    "sql:publish": "deno run -A ./scripts/publish-sql.ts --verbose"
+    "sql:publish": "deno run -A --env-file ./scripts/publish-sql.ts --verbose"
   },
 
   "workspace": ["./server", "./client", "./app"],

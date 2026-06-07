@@ -5,10 +5,8 @@ import { bus } from "../../bus/bus.ts";
 
 @customElement("ui-picker")
 export class UiPicker extends GlobalStyledLitElement {
-  // уникальное имя якоря на каждый экземпляр
-  private readonly _anchor = `--pk${Math.random().toString(36).slice(2, 8)}`;
-
   @property({ type: String }) label = "";
+  @property({ type: String, attribute: "label-position" }) labelPosition: "top" | "left" = "top";
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
   @property({ type: String }) url = "";
@@ -17,22 +15,36 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String }) displayField = "name";
   @property({ type: String }) idField = "id";
   @property({ type: Number }) listSize = 10;
-  @property({ type: Boolean }) showClear = false;
+  @property({ type: Boolean, attribute: "show-clear" }) showClear = false;
   @property({ type: Object }) pickerParams: Record<string, unknown> = {};
   @property({ type: Object }) fetchParams: Record<string, unknown> = {};
   @property({ type: String }) displayValue = "";
   @property({ type: String }) selectedId = "";
+  @property({ type: String }) width = "";
+  @property({ type: Boolean }) visible = true;
 
   @state() private _items: Array<Record<string, unknown>> = [];
 
   @query("ul") private _popover?: HTMLUListElement;
+  @query("input") private _input?: HTMLInputElement;
 
   // синхронизируем состояние popover с _items
   protected override updated() {
     if (!this._popover) return;
     const open = this._popover.matches(":popover-open");
-    if (this._items.length > 0 && !open) this._popover.showPopover();
-    if (this._items.length === 0 && open)  this._popover.hidePopover();
+    if (this._items.length > 0 && !open) {
+      this._positionPopover();
+      this._popover.showPopover();
+    }
+    if (this._items.length === 0 && open) this._popover.hidePopover();
+  }
+
+  private _positionPopover() {
+    if (!this._popover || !this._input) return;
+    const rect = this._input.getBoundingClientRect();
+    this._popover.style.top    = `${rect.bottom + 2}px`;
+    this._popover.style.left   = `${rect.left}px`;
+    this._popover.style.width  = `${rect.width}px`;
   }
 
   // браузер закрыл popover (Esc или клик снаружи) — очищаем список
@@ -104,78 +116,65 @@ export class UiPicker extends GlobalStyledLitElement {
   }
 
   override render() {
-    const hasBrowse  = !!this.url;
-    const hasButtons = hasBrowse || (this.showClear && !!this.displayValue);
+    const hasBrowse = !!this.url;
 
-    return html`
-      ${this.label ? html`
-        <div class="mb-1">
-          <span class="text-sm pl-1 fieldset-legend">${this.label}</span>
-        </div>
-      ` : ""}
+    if (!this.visible) return html``;
 
-      <div style="display:flex;">
+    const inputGroup = html`
+      <div class="join flex-1${this.width ? "" : ""}">
         <input
           type="text"
-          class="input input-bordered"
-          style="anchor-name:${this._anchor}; flex:1; min-width:0; ${hasButtons ? "border-right:none;" : ""}"
+          class="input join-item flex-1 min-w-0"
           .value=${this.displayValue}
           placeholder="${this.placeholder}"
           ?disabled=${this.disabled}
           @input=${this._onInput}
         />
-
-        ${this.showClear && this.displayValue ? html`
-          <button class="btn btn-square btn-xs"
-            style="height:24px;min-height:24px;width:24px;border-left:none;border-radius:0;"
-            title="Очистити" @click=${this._onClear}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        ${this.showClear ? html`
+          <button class="btn btn-square btn-sm join-item"
+            title="Очистити" ?disabled=${this.disabled || !this.displayValue} @click=${this._onClear}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
         ` : ""}
-
         ${hasBrowse ? html`
-          <button class="btn btn-square btn-xs"
-            style="height:24px;min-height:24px;width:24px;border-left:none;border-radius:0 var(--radius-field) var(--radius-field) 0;"
+          <button class="btn btn-square btn-sm join-item"
             title="Підібрати" ?disabled=${this.disabled || !this.url}
             @click=${this._onBrowse}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
           </button>
         ` : ""}
       </div>
+    `;
 
-      <!-- popover + CSS Anchor Positioning: браузер управляет z-index, Esc и кликом снаружи -->
+    return html`
+      ${this.labelPosition === "left" ? html`
+        <div class="flex items-center gap-2${this.width ? ` w-[${this.width}]` : ""}">
+          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}</span>` : ""}
+          ${inputGroup}
+        </div>
+      ` : html`
+        <div class="flex flex-col gap-1${this.width ? ` w-[${this.width}]` : ""}">
+          ${this.label ? html`<span class="label text-sm">${this.label}</span>` : ""}
+          ${inputGroup}
+        </div>
+      `}
+
       <ul
         popover
         @toggle=${this._onPopoverToggle}
-        style="
-          position: fixed;
-          position-anchor: ${this._anchor};
-          top: anchor(bottom);
-          left: anchor(left);
-          width: anchor-size(width);
-          margin: 2px 0 0; padding: 0; inset: unset;
-          border: 1px solid var(--color-base-300,#d1d5db);
-          border-radius: var(--radius-box,2px);
-          box-shadow: 0 2px 8px rgba(0,0,0,.12);
-          background: var(--color-base-100,#fff);
-          overflow-y: auto;
-          max-height: calc(${this.listSize} * 2.5rem);
-          list-style: none;
-        "
+        class="menu menu-xs bg-base-100 border border-base-300 rounded-box shadow-md overflow-y-auto p-1"
+        style="position:fixed; margin:0; inset:unset; max-height:calc(${this.listSize} * 2.25rem);"
       >
         ${this._items.map(item => html`
-          <li
-            style="padding:4px 10px;cursor:pointer;font-size:12px;"
-            @mouseenter=${(e: Event) => { (e.currentTarget as HTMLElement).style.background = "var(--color-base-200,#f3f4f6)"; }}
-            @mouseleave=${(e: Event) => { (e.currentTarget as HTMLElement).style.background = ""; }}
-            @mousedown=${(e: Event) => { e.preventDefault(); this._onSelect(item); }}
-          >
-            ${item[this.displayField] ?? item.name}
-            ${item[this.idField] ? html`<span style="font-size:11px;opacity:.4;margin-left:4px;">#${item[this.idField]}</span>` : ""}
+          <li>
+            <button @mousedown=${(e: Event) => { e.preventDefault(); this._onSelect(item); }}>
+              ${item[this.displayField] ?? item.name}
+              ${item[this.idField] ? html`<span class="text-xs opacity-40">#${item[this.idField]}</span>` : ""}
+            </button>
           </li>
         `)}
       </ul>

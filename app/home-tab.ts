@@ -32,7 +32,8 @@ export class HomeTab extends LitElement {
             fetch="lookup"
             label="Банк"
             placeholder="Введіть назву або МФО..."
-            show-clear
+            ?show-clear=${true}
+            label-position="left"
             @item-selected=${(e: CustomEvent) => {
               this.pickerResult = `id=${e.detail.id}, label=${e.detail.label}`;
             }}

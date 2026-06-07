@@ -105,7 +105,7 @@ server/                     # Danet backend (Deno workspace)
 
 ## Фронтенд-компоненти
 
-Lit Web Components, Shadow DOM вимкнений (глобальні стилі через `tw` / `GlobalStyledLitElement`).  
+Lit Web Components, Shadow DOM увімкнений (стандартна інкапсуляція стилів).  
 Дані отримують через `bus.request("data.load", { model, command, payload })`.  
 Picker-поля використовують компонент `<ui-picker url="/api/model/bank/lookup">`.  
 Локалізація: `t("bank.titleOne")` через сигнальний store + JSON-файли у `app/_locales/`.
