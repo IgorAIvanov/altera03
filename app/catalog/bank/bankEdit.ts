@@ -36,8 +36,8 @@ export class BankEdit extends SignalWatcher(LitElement) {
         model: "bank",
         command: "get",
         payload: { id: this.modelId },
-      }) as { item?: BankItem };
-      this.item = data?.item ?? { code: "", name: "", mfo: "" };
+      }) as { data?: { item?: BankItem } };
+      this.item = data?.data?.item ?? { code: "", name: "", mfo: "" };
     } finally {
       this.loading = false;
     }

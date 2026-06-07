@@ -1,14 +1,31 @@
 drop function if exists app.bank_list(bigint, jsonb);
 create or replace function app.bank_list(user_id bigint, payload jsonb)
 returns jsonb
-language sql
+language plpgsql
 as $$
-  with params as (
-    select
-      greatest(coalesce((payload->>'page')::int, 1), 1)         as page,
-      greatest(coalesce((payload->>'pageSize')::int, 50), 1)    as page_size
-  ),
-  filtered as (
+declare
+  v_page      int  := greatest(coalesce((payload->>'page')::int, 1), 1);
+  v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 20), 1);
+  v_sort_by   text := coalesce(payload->>'sortBy', 'code');
+  v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
+  v_rows      jsonb;
+  v_total     int;
+begin
+  if v_sort_by not in ('code','name','mfo') then
+    v_sort_by := 'code';
+  end if;
+
+  select count(*)::int into v_total
+  from app.bank b
+  where (
+    coalesce(payload->>'search', '') = ''
+    or b.code ilike '%' || (payload->>'search') || '%'
+    or b.name ilike '%' || (payload->>'search') || '%'
+    or coalesce(b.mfo, '') ilike '%' || (payload->>'search') || '%'
+  );
+
+  select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
+  from (
     select
       b.id::text  as id,
       b.code,
@@ -22,31 +39,25 @@ as $$
       or b.name ilike '%' || (payload->>'search') || '%'
       or coalesce(b.mfo, '') ilike '%' || (payload->>'search') || '%'
     )
-    and (
-      not (payload ? 'isActive')
-      or (payload->>'isActive') is null
-      or b.is_active = (payload->>'isActive')::boolean
-    )
-  ),
-  counted as (
-    select count(*)::int as total from filtered
-  ),
-  paged as (
-    select filtered.*
-    from filtered
-    cross join params
-    order by filtered.code asc, filtered.name asc
-    limit (select page_size from params)
-    offset ((select page from params) - 1) * (select page_size from params)
-  )
-  select jsonb_build_object(
+    order by
+      case when v_sort_by = 'code' and v_sort_dir = 'asc'  then b.code end asc,
+      case when v_sort_by = 'code' and v_sort_dir = 'desc' then b.code end desc,
+      case when v_sort_by = 'name' and v_sort_dir = 'asc'  then b.name end asc,
+      case when v_sort_by = 'name' and v_sort_dir = 'desc' then b.name end desc,
+      case when v_sort_by = 'mfo'  and v_sort_dir = 'asc'  then b.mfo  end asc,
+      case when v_sort_by = 'mfo'  and v_sort_dir = 'desc' then b.mfo  end desc
+    limit v_page_size
+    offset (v_page - 1) * v_page_size
+  ) r;
+
+  return jsonb_build_object(
     'ok', true,
     'data', jsonb_build_object(
-      'rows',   coalesce((select jsonb_agg(row_to_json(paged)) from paged), '[]'::jsonb),
+      'rows',   v_rows,
       'totals', jsonb_build_object(
-        'count',    (select total from counted),
-        'page',     (select page from params),
-        'pageSize', (select page_size from params)
+        'count',    v_total,
+        'page',     v_page,
+        'pageSize', v_page_size
       ),
       'item',    null,
       'options', '{}'::jsonb,
@@ -55,6 +66,7 @@ as $$
     'messages', '[]'::jsonb,
     'meta', '{}'::jsonb
   );
+end;
 $$;
 
 drop function if exists app.bank_get(bigint, jsonb);

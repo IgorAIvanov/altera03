@@ -1,14 +1,12 @@
 import { Signal } from "signal-polyfill";
 
-export type Locale = "ru" | "en";
+export type Locale = "uk" | "en";
 
-const _locale = new Signal.State<Locale>("ru");
+const _locale = new Signal.State<Locale>("uk");
 const _translations = new Map<string, string>();
 
 async function loadLocale(locale: Locale) {
   _translations.clear();
-  if (locale === "ru") return;
-
   const results = await Promise.allSettled([
     fetch(`/locales/client/${locale}.json`).then((r) => r.json()),
     fetch(`/locales/app/${locale}.json`).then((r) => r.json()),

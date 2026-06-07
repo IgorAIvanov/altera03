@@ -1,0 +1,15 @@
+{
+  "common.save": "Зберегти",
+  "common.cancel": "Скасувати",
+  "common.delete": "Видалити",
+  "common.create": "Створити",
+  "common.open": "Відкрити",
+  "common.refresh": "Оновити",
+  "common.search": "Пошук",
+  "common.records": "записів",
+  "common.code": "Код",
+  "common.name": "Назва",
+  "common.noData": "Немає даних",
+  "common.loading": "Завантаження...",
+  "common.noOpenTabs": "Немає відкритих вкладок"
+}

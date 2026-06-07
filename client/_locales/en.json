@@ -8,5 +8,8 @@
   "common.name": "Name",
   "common.noData": "No data",
   "common.loading": "Loading...",
+  "common.open": "Open",
+  "common.search": "Search",
+  "common.records": "records",
   "common.noOpenTabs": "No open tabs"
 }

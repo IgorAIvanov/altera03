@@ -25,7 +25,7 @@ export class HomeTab extends LitElement {
           <button class="btn" @click=${() => this.open("catalog/bank/edit", "1")}>Банк edit id=1</button>
         </div>
 
-        <div class="card bg-base-100 border border-base-300 p-4 w-80">
+        <div class="card bg-base-200 border border-base-300 p-4 w-80">
           <h4 class="text-sm font-semibold mb-3 text-base-content/70">Тест ui-picker (bank)</h4>
           <ui-picker
             url="catalog/bank"

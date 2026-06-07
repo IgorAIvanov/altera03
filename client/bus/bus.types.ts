@@ -53,6 +53,10 @@ export interface ModelChangedMessage {
   model: string;
 }
 
+// --- Індикатор завантаження ---
+export interface LoadingStartMessage { type: "loading.start"; }
+export interface LoadingEndMessage   { type: "loading.end"; }
+
 // --- Union ---
 export type BusMessage =
   | TabOpenMessage
@@ -63,7 +67,9 @@ export type BusMessage =
   | PickerCancelMessage
   | DataLoadMessage
   | DataSaveMessage
-  | ModelChangedMessage;
+  | ModelChangedMessage
+  | LoadingStartMessage
+  | LoadingEndMessage;
 
 export type BusMessageType = BusMessage["type"];
 

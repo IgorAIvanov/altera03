@@ -12,14 +12,14 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String }) url = "";
   @property({ type: String }) fetch = "fetch";
   @property({ type: String }) picker = "picker";
-  @property({ type: String }) displayField = "name";
-  @property({ type: String }) idField = "id";
-  @property({ type: Number }) listSize = 10;
+  @property({ type: String, attribute: "display-field" }) displayField = "name";
+  @property({ type: String, attribute: "id-field" }) idField = "id";
+  @property({ type: Number, attribute: "list-size" }) listSize = 10;
   @property({ type: Boolean, attribute: "show-clear" }) showClear = false;
-  @property({ type: Object }) pickerParams: Record<string, unknown> = {};
-  @property({ type: Object }) fetchParams: Record<string, unknown> = {};
-  @property({ type: String }) displayValue = "";
-  @property({ type: String }) selectedId = "";
+  @property({ type: Object, attribute: "picker-params" }) pickerParams: Record<string, unknown> = {};
+  @property({ type: Object, attribute: "fetch-params" }) fetchParams: Record<string, unknown> = {};
+  @property({ type: String, attribute: "display-value" }) displayValue = "";
+  @property({ type: String, attribute: "selected-id" }) selectedId = "";
   @property({ type: String }) width = "";
   @property({ type: Boolean }) visible = true;
 

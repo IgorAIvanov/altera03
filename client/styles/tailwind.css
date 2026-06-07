@@ -11,7 +11,8 @@
 
 /* ── 1С тема ─────────────────────────────────────────── */
 [data-theme="1c"],
-:root {
+:root,
+:host {
   /* DaisyUI цвета */
   --color-primary:         #2B5598;
   --color-primary-content: #ffffff;
@@ -84,6 +85,16 @@ html, body {
   outline: 1px solid var(--color-primary);
   border-color: var(--color-primary);
 }
+/* Коли input всередині join — outline на весь join, не на input */
+.join:focus-within {
+  outline: 1px solid var(--color-primary);
+  border-radius: var(--radius-field);
+}
+.join .input:focus,
+.join .input:focus-within {
+  outline: none;
+  border-color: var(--color-primary);
+}
 
 /* Label */
 .label { padding: 2px 0; }
@@ -104,7 +115,7 @@ html, body {
   font-size: 12px;
 }
 .table td {
-  padding: 2px 8px;
+  padding: 5px 8px;
   border: 1px solid #dde3ea;
   line-height: 1.4;
 }
@@ -116,6 +127,18 @@ html, body {
 .table-zebra tbody tr:nth-child(even) td {
   background: #f4f7fb;
 }
+
+/* Join — групування елементів в один блок */
+.join { display: flex; align-items: stretch; }
+.join .join-item {
+  border-radius: 0 !important;
+  margin-inline-start: -1px;
+}
+.join .join-item:first-child { border-radius: var(--radius-field) 0 0 var(--radius-field) !important; margin-inline-start: 0; }
+.join .join-item:last-child  { border-radius: 0 var(--radius-field) var(--radius-field) 0 !important; }
+.join .join-item:only-child  { border-radius: var(--radius-field) !important; margin-inline-start: 0; }
+.join .join-item:focus,
+.join .join-item:focus-within { position: relative; z-index: 1; }
 
 /* Загрузка */
 .loading { width: 16px; height: 16px; }

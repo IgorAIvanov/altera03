@@ -120,10 +120,27 @@ export class TabController extends LitElement {
       display: none;
     }
     .panel.active { display: block; }
+    .loading-bar {
+      height: 3px;
+      background: #2B5598;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .loading-bar-inner {
+      height: 100%;
+      background: #60a5fa;
+      width: 40%;
+      animation: loading-slide 1s ease-in-out infinite;
+    }
+    @keyframes loading-slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
   `;
 
   @state() private tabs: Tab[] = [];
   @state() private activeTabId: string = HOME_TAB_ID;
+  @state() private _loadingCount = 0;
 
   private unsubs: Array<() => void> = [];
 
@@ -140,6 +157,8 @@ export class TabController extends LitElement {
     this.unsubs.push(
       bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params)),
       bus.on("tab.close", (msg) => this.handleClose(msg.tabId)),
+      bus.on("loading.start", () => { this._loadingCount++; }),
+      bus.on("loading.end",   () => { this._loadingCount = Math.max(0, this._loadingCount - 1); }),
     );
   }
 
@@ -225,6 +244,9 @@ export class TabController extends LitElement {
                 @click=${(e: Event) => { e.stopPropagation(); this.handleClose(tab.id); }}>×</span>
             </div>`
         )}
+      </div>
+      <div class="loading-bar">
+        ${this._loadingCount > 0 ? html`<div class="loading-bar-inner"></div>` : ""}
       </div>
       <picker-host></picker-host>
       <div class="workspace">
