@@ -50,7 +50,7 @@ export class UiPicker extends GlobalStyledLitElement {
       const res = await globalThis.fetch(`/api/model/${this._modelName}/${this.fetch}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fragment, ...this.fetchParams }),
+        body: JSON.stringify({ search: fragment, ...this.fetchParams }),
       });
       const data = await res.json();
       const rows = data?.data?.rows ?? data?.rows ?? [];

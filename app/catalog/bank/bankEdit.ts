@@ -34,7 +34,7 @@ export class BankEdit extends SignalWatcher(LitElement) {
     try {
       const data = await bus.request("data.load", {
         model: "bank",
-        command: "load",
+        command: "get",
         payload: { id: this.modelId },
       }) as { item?: BankItem };
       this.item = data?.item ?? { code: "", name: "", mfo: "" };
@@ -48,7 +48,7 @@ export class BankEdit extends SignalWatcher(LitElement) {
     try {
       await bus.request("data.save", {
         model: "bank",
-        command: "update",
+        command: "save",
         payload: { item: this.item },
       });
     } finally {

@@ -1,0 +1,144 @@
+# Altera — бухгалтерська система для України
+
+Deno monorepo. Три workspace-пакети: `app/` (фронтенд-модулі та SQL-джерела), `client/` (ui-kit, runtime), `server/` (Danet/Deno backend). База даних — PostgreSQL. Фронтенд — Lit Web Components + Vite + Tailwind CSS v4 + daisyUI v5.
+
+## Команди
+
+```bash
+deno task dev          # запустити frontend + backend одночасно
+deno task dev:server   # тільки backend (--watch)
+deno task dev:front    # тільки Vite dev server
+deno task sql:registry # згенерувати model-registry.generated.ts та agent-routes.generated.ts з manifest.json
+deno task sql:assemble # зібрати SQL-пакет з db/ файлів моделей
+deno task sql:publish  # опублікувати SQL у PostgreSQL
+deno task startdb      # docker compose up -d (PostgreSQL)
+deno task stopdb       # docker compose down
+```
+
+## Структура репозиторію
+
+```
+app/                        # фронтенд-модулі та SQL-джерела (Deno workspace)
+  <family>/<model>/         # один каталог на модель
+    manifest.json           # декларація моделі (model, type, schema, views, agent)
+    <Model>Edit.ts          # форма редагування (Lit)
+    <Model>List.ts          # список (Lit)
+    <Model>Picker.ts        # picker / autocomplete (Lit)
+    <model>.schema.ts       # TypeBox-схема (єдине джерело типів)
+    db/
+      struc.sql             # DDL таблиць
+      <model>.sql           # PostgreSQL-функції моделі
+      migration.sql         # міграції
+      data.sql              # seed-дані
+  _locales/                 # локалізація: en.json, uk.json ...
+  _sqlpackage/              # зібрані SQL-файли (генеруються, не редагувати)
+  shared/schema.ts          # спільні TypeBox-типи: OptionRow, PagePayload, SortDir
+  sql.json                  # список моделей для sql:assemble
+
+client/                     # ui-kit та клієнтський runtime (Deno workspace)
+  ui-kit/components/        # web components: ui-picker, ...
+  bus/bus.ts                # event bus: bus.request("data.load", { model, command, payload })
+
+server/                     # Danet backend (Deno workspace)
+  modules/model-runtime/
+    model-runtime.controller.ts   # REST: POST /api/model/:model/:command
+    model-runtime.service.ts      # викликає PostgreSQL-функцію або TS-handler
+    model-registry.ts             # збирає реєстр з generated + TS-handlers
+    model-registry.generated.ts   # авто-генерація (deno task sql:registry)
+  modules/agent/
+    agent.service.ts              # прямий диспетчер команд (без LLM)
+    agent-llm.service.ts          # LLM-агент (OpenAI Responses API)
+    agent-routes.generated.ts     # авто-генерація (deno task sql:registry)
+  modules/auth/                   # JWT-авторизація
+  database/
+    publish-app-sql.ts            # публікація SQL у БД
+```
+
+## Модель — основна одиниця
+
+Кожна модель живе у `app/<family>/<model>/` і має `manifest.json`:
+
+```json
+{
+  "model": "bank",
+  "type": "catalog",
+  "schema": "app",
+  "views": {
+    "list":   { "module": "./bankList.ts",   "titleKey": "bank.titleMany" },
+    "edit":   { "module": "./bankEdit.ts",   "titleKey": "bank.titleOne" },
+    "picker": { "module": "./bankPicker.ts", "titleKey": "bank.titleMany" }
+  },
+  "agent": {
+    "allow": true,
+    "allowCommands": ["get", "save", "list", "lookup"],
+    "aliases": ["банк", "банки"],
+    "priority": 10
+  }
+}
+```
+
+Типи моделей: `catalog` (довідник), `document` (документ з проведенням), `register` (регістр).
+
+## SQL-функції моделі
+
+Кожна модель реалізує набір PostgreSQL-функцій. Сигнатура:
+
+```sql
+{schema}.{model}_{command}(user_id bigint, payload jsonb) returns jsonb
+```
+
+Стандартні команди: `list`, `get`, `save`, `delete`, `lookup`.  
+Документи додатково: `post`, `unpost`.
+
+Відповідь завжди у форматі:
+```json
+{ "ok": true, "data": { "item": {}, "rows": [], "options": {}, "totals": {} }, "messages": [] }
+```
+
+## Backend runtime
+
+`ModelRuntimeService.execute(model, command, payload, userId)`:
+1. Якщо є TS-handler у реєстрі — викликає його.
+2. Інакше будує ім'я функції `{schema}.{model}_{command}` і викликає PostgreSQL.
+
+Додати нестандартну TS-команду: зареєструвати handler у `model-registry.ts` → `tsCommandHandlers`.
+
+## Фронтенд-компоненти
+
+Lit Web Components, Shadow DOM вимкнений (глобальні стилі через `tw` / `GlobalStyledLitElement`).  
+Дані отримують через `bus.request("data.load", { model, command, payload })`.  
+Picker-поля використовують компонент `<ui-picker url="/api/model/bank/lookup">`.  
+Локалізація: `t("bank.titleOne")` через сигнальний store + JSON-файли у `app/_locales/`.
+
+## TypeBox-схема
+
+`app/<family>/<model>/<model>.schema.ts` — єдине джерело типів для frontend і backend:
+- `BankItemSchema` — поля форми + id (`Type.Union([Type.String(), Type.Null()])` для нового запису)
+- `BankRowSchema` — колонки списку
+- `BankLookupRowSchema` — рядки picker (`id` + `name`)
+- `BankListPayloadSchema`, `BankGetPayloadSchema`, `BankSavePayloadSchema` тощо
+
+Primary key: `bigint` у БД, `string` у TypeScript/JSON (щоб уникнути втрати точності).  
+Анотації `x-form`, `x-list`, `x-lookup` керують відображенням у UI.
+
+## Додати нову модель (чек-лист)
+
+1. Створити `app/<family>/<model>/manifest.json`
+2. Створити `<model>.schema.ts` з TypeBox-схемами
+3. Створити UI-компоненти: `<Model>List.ts`, `<Model>Edit.ts`, `<Model>Picker.ts`
+4. Створити `db/struc.sql`, `db/<model>.sql` (функції list/get/save/delete/lookup)
+5. Додати модель у `app/sql.json`
+6. Запустити `deno task sql:registry` → оновить generated-файли
+7. Запустити `deno task sql:assemble && deno task sql:publish` → опублікувати SQL у БД
+
+Окремий backend-модуль/контролер потрібен лише для нестандартної логіки.
+
+## Змінні середовища (server/.env)
+
+```
+DATABASE_URL=postgres://...
+JWT_SECRET=...
+OPENAI_API_KEY=...          # для LLM-агента
+OPENAI_MODEL=gpt-4o-mini    # модель-виконавець
+OPENAI_ROUTER_MODEL=gpt-4o-mini  # модель-роутер
+```

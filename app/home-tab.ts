@@ -29,7 +29,7 @@ export class HomeTab extends LitElement {
           <h4 class="text-sm font-semibold mb-3 text-base-content/70">Тест ui-picker (bank)</h4>
           <ui-picker
             url="catalog/bank"
-            fetch="picker"
+            fetch="lookup"
             label="Банк"
             placeholder="Введіть назву або МФО..."
             show-clear

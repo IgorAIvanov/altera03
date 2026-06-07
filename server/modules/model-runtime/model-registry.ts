@@ -2,7 +2,7 @@ import { currencyClassifierFetchHandler, currencyLoadRatesHandler, currencySeedP
 import { exportExcelHandler } from "./handlers/exportExcel.runtime.ts";
 // import { genericPrintPdfHandler } from "./handlers/printPdf.runtime.ts";
 const genericPrintPdfHandler: TsModelCommandConfig["handler"] = async () => { throw new Error("printPdf не реалізовано"); };
-import { userSaveHandler } from "./handlers/user.handlers.ts";
+import { userSaveHandler as userUpdateHandler } from "./handlers/user.handlers.ts";
 import { generatedModelRegistry, generatedTsCommandBindings } from "./model-registry.generated.ts";
 import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
 
@@ -12,7 +12,7 @@ const tsCommandHandlers: Record<string, TsModelCommandConfig["handler"]> = {
   "currency.seedPredefined": currencySeedPredefinedHandler,
   "runtime.exportExcel": exportExcelHandler,
   "runtime.printPdf": genericPrintPdfHandler,
-  "user.save": userSaveHandler,
+  "user.update": userUpdateHandler,
 };
 
 function buildRegistry(): Record<string, ModelBackendConfig> {

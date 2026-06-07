@@ -1,0 +1,15 @@
+/app/
+  sql.json
+  _sqlpackedg/
+  <model>/
+    manifest.json
+    <Model>Edit.tsx
+    <Model>List.tsx
+    <Model>Picker.tsx
+    <model>.types.ts
+    db/
+      struc.sql
+      migration.sql
+      data.sql
+      <model>.sql
+    prints/

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev:front",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["run", "-A", "npm:vite"],
+      "port": 5173
+    }
+  ]
+}

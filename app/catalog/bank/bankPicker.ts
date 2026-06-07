@@ -31,10 +31,10 @@ export class BankPicker extends LitElement {
   private async _load(fragment: string) {
     this.loading = true;
     try {
-      const res = await fetch(`/api/model/bank/picker`, {
+      const res = await fetch(`/api/model/bank/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fragment, ...this.params }),
+        body: JSON.stringify({ search: fragment, ...this.params }),
       });
       const data = await res.json();
       const rows = data?.data?.rows ?? data?.rows ?? [];

@@ -1,6 +1,6 @@
 import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.2";
 import postgres from "postgres";
-import { buildRepoPrintTemplateRepublishSql } from "../../../scripts/assemble-sql-package.ts";
+import { buildRepoPrintTemplateRepublishSql } from "../../scripts/assemble-sql-package.ts";
 
 interface SqlManifest {
   output?: string;
@@ -14,7 +14,7 @@ const DB_USERNAME = Deno.env.get("DB_USERNAME") || "altera";
 const DB_PASSWORD = Deno.env.get("DB_PASSWORD") || "";
 
 const backendDatabaseDir = dirname(fromFileUrl(import.meta.url));
-const repoRootDir = resolve(backendDatabaseDir, "../../..");
+const repoRootDir = resolve(backendDatabaseDir, "../..");
 const appDir = join(repoRootDir, "app");
 const manifestPath = join(appDir, "sql.json");
 

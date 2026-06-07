@@ -38,7 +38,7 @@ export class BankList extends SignalWatcher(LitElement) {
   async load() {
     this.loading = true;
     try {
-      const data = await bus.request("data.load", { model: "bank", command: "index" }) as { rows?: BankRow[] };
+      const data = await bus.request("data.load", { model: "bank", command: "list" }) as { rows?: BankRow[] };
       this.rows = data?.rows ?? [];
     } finally {
       this.loading = false;

@@ -1,16 +1,16 @@
 {
   "output": "altera.app.sql",
   "outputs": {
-    "structure": "altera.struc_app.sql",
-    "models": "altera.models_app.sql",
+    "structure":  "altera.struc_app.sql",
+    "models":     "altera.models_app.sql",
     "migrations": "altera.migration_app.sql",
-    "data": "altera.data_app.sql"
+    "data":       "altera.data_app.sql"
   },
   "models": [
     "_sqlinit/base",
+    "_sqlinit/document_core",
     "_sqlinit/help_content",
     "_sqlinit/help_scenario",
-    "_shared/numbering",
-    "_shared/vat_rate",
+    "catalog/bank"
   ]
 }
