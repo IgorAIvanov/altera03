@@ -1,16 +1,6 @@
 // Generated from model manifests. Do not edit manually.
 
-export interface AgentModelRoute {
-  editPath?: string;
-  listPath?: string;
-  type: string;
-  allow?: boolean;
-  allowCommands?: string[];
-  aliases?: string[];
-  priority?: number;
-}
-
-export const agentModelRoutes: Record<string, AgentModelRoute> = {
+export const agentModelRoutes = {
   "bank": {
     editPath: "/catalog/bank/edit",
     listPath: "/catalog/bank/list",

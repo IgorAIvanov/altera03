@@ -23,7 +23,7 @@ type ManifestRecord = {
     sql?: Record<string, ManifestSqlCommand>;
     ts?: Record<string, ManifestTsCommand>;
   };
-  views?: Record<string, unknown>;
+  views?: Record<string, { module: string; titleKey?: string }>;
   agent?: {
     allow?: boolean;
     allowCommands?: string[];
@@ -45,7 +45,7 @@ function createRequiredStringValidatorSource(fields: string[], commandName: stri
     }
   `).join("");
 
-  return `(payload) => {${checks}
+  return `(payload: Record<string, unknown>) => {${checks}
     return null;
   }`;
 }
@@ -90,7 +90,7 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
     return [`  ${JSON.stringify(manifest.model)}: {\n${bodyParts.join(",\n")}\n  }`];
   });
 
-  return `export const generatedModelRegistry: Record<string, ModelBackendConfig> = {\n${entries.join(",\n")}\n};\n`;
+  return `export const generatedModelRegistry = {\n${entries.join(",\n")}\n};\n`;
 }
 
 function resolveAppDirForManifest(manifestPath: string, appDirs: string[]): string {
@@ -137,7 +137,31 @@ function renderAgentRoutes(manifests: Array<{ manifestPath: string; manifest: Ma
     return [`  ${JSON.stringify(manifest.model)}: {\n${parts.join(",\n")}\n  }`];
   });
 
-  return `export interface AgentModelRoute {\n  editPath?: string;\n  listPath?: string;\n  type: string;\n  allow?: boolean;\n  allowCommands?: string[];\n  aliases?: string[];\n  priority?: number;\n}\n\nexport const agentModelRoutes: Record<string, AgentModelRoute> = {\n${entries.join(",\n")}\n};\n`;
+  return `export const agentModelRoutes = {\n${entries.join(",\n")}\n};\n`;
+}
+
+function renderViewManifest(
+  manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
+  appDirs: string[],
+) {
+  const entries = manifests.flatMap(({ manifestPath, manifest }) => {
+    if (!manifest.model || !manifest.views) return [];
+    const modelDir = dirname(manifestPath);
+    const appDir = resolveAppDirForManifest(manifestPath, appDirs);
+    const routeBase = toPosixPath(relative(appDir, modelDir));
+
+    return Object.entries(manifest.views).map(([viewName, view]) => {
+      const route = `${routeBase}/${viewName}`;
+      const moduleAbs = resolve(modelDir, view.module);
+      // moduleFile — відносно кореня репо, .tsx нормалізуємо в .ts (як у model-view)
+      const moduleFile = toPosixPath(relative(Deno.cwd(), moduleAbs)).replace(/\.tsx?$/, ".ts");
+      const parts = [`route: ${JSON.stringify(route)}`, `moduleFile: ${JSON.stringify(moduleFile)}`];
+      if (view.titleKey) parts.push(`titleKey: ${JSON.stringify(view.titleKey)}`);
+      return `  { ${parts.join(", ")} }`;
+    });
+  });
+
+  return `export const viewManifest = [\n${entries.join(",\n")}\n];\n`;
 }
 
 
@@ -184,7 +208,7 @@ function renderTsBindings(
     }
   }
 
-  const block = `export interface GeneratedTsCommandBinding {\n  model: string;\n  command: string;\n  handler: TsModelCommandConfig["handler"];\n}\n\nexport const generatedTsCommandBindings: GeneratedTsCommandBinding[] = [\n${bindings.join(",\n")}\n];\n`;
+  const block = `export const generatedTsCommandBindings = [\n${bindings.join(",\n")}\n];\n`;
 
   return { imports, block };
 }
@@ -226,8 +250,9 @@ async function collectManifests(appDir: string) {
 
 export async function generateModelRuntimeRegistry(
   appDirArgs: string | string[] = "./app",
-  outputPathArg = "./backend/src/modules/model-runtime/model-registry.generated.ts",
-  agentRoutesPathArg = "./backend/src/modules/agent/agent-routes.generated.ts",
+  outputPathArg = "./app/_generated/model-registry.generated.ts",
+  agentRoutesPathArg = "./app/_generated/agent-routes.generated.ts",
+  viewManifestPathArg = "./app/_generated/view-manifest.generated.ts",
   options?: { watch?: boolean; verbose?: boolean },
 ) {
   const watchMode = options?.watch ?? false;
@@ -236,17 +261,16 @@ export async function generateModelRuntimeRegistry(
     .map((d) => resolve(Deno.cwd(), d));
   const outputPath = resolve(Deno.cwd(), outputPathArg);
   const agentRoutesPath = resolve(Deno.cwd(), agentRoutesPathArg);
+  const viewManifestPath = resolve(Deno.cwd(), viewManifestPathArg);
 
   const writeRegistry = async () => {
     const allManifests = (await Promise.all(appDirs.map(collectManifests))).flat();
     allManifests.sort((left, right) => (left.manifest.model ?? "").localeCompare(right.manifest.model ?? ""));
 
+    // Згенеровані файли — чисті дані (живуть в app/, типи належать server-бібліотеці).
     const tsBindings = renderTsBindings(allManifests, outputPath);
-    const headerImports = [
-      `import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";`,
-      ...tsBindings.imports,
-    ].join("\n");
-    const source = `${headerImports}\n\n// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}\n${tsBindings.block}`;
+    const headerImports = tsBindings.imports.join("\n");
+    const source = `${headerImports ? `${headerImports}\n\n` : ""}// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}\n${tsBindings.block}`;
 
     await Deno.mkdir(dirname(outputPath), { recursive: true });
     await Deno.writeTextFile(outputPath, `${source}\n`);
@@ -257,9 +281,15 @@ export async function generateModelRuntimeRegistry(
     await Deno.mkdir(dirname(agentRoutesPath), { recursive: true });
     await Deno.writeTextFile(agentRoutesPath, `${agentRoutesSource}\n`);
 
+    // View-manifest: route → moduleFile (відносно кореня репо) → titleKey
+    const viewManifestSource = `// Generated from model manifests. Do not edit manually.\n\n${renderViewManifest(allManifests, appDirs)}`;
+    await Deno.mkdir(dirname(viewManifestPath), { recursive: true });
+    await Deno.writeTextFile(viewManifestPath, `${viewManifestSource}\n`);
+
     if (verboseMode) {
       console.log(`Generated model runtime registry: ${toPosixPath(relative(Deno.cwd(), outputPath))}`);
       console.log(`Generated agent routes: ${toPosixPath(relative(Deno.cwd(), agentRoutesPath))}`);
+      console.log(`Generated view manifest: ${toPosixPath(relative(Deno.cwd(), viewManifestPath))}`);
     }
   };
 
@@ -311,12 +341,13 @@ async function main() {
   const appDirArgsList = positional.filter((a) => !a.endsWith(".ts"));
 
   const appDirsResolved = appDirArgsList.length > 0 ? appDirArgsList : ["./app"];
-  const outputPathArg = outputArgs[0] ?? "./backend/src/modules/model-runtime/model-registry.generated.ts";
-  const agentRoutesPathArg = outputArgs[1] ?? "./backend/src/modules/agent/agent-routes.generated.ts";
+  const outputPathArg = outputArgs[0] ?? "./app/_generated/model-registry.generated.ts";
+  const agentRoutesPathArg = outputArgs[1] ?? "./app/_generated/agent-routes.generated.ts";
+  const viewManifestPathArg = outputArgs[2] ?? "./app/_generated/view-manifest.generated.ts";
   const watchMode = flags.includes("--watch");
   const verboseMode = flags.includes("--verbose");
 
-  await generateModelRuntimeRegistry(appDirsResolved, outputPathArg, agentRoutesPathArg, { watch: watchMode, verbose: verboseMode });
+  await generateModelRuntimeRegistry(appDirsResolved, outputPathArg, agentRoutesPathArg, viewManifestPathArg, { watch: watchMode, verbose: verboseMode });
 }
 
 if (import.meta.main) {

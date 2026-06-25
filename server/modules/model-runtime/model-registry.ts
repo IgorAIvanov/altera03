@@ -1,32 +1,50 @@
-import { generatedModelRegistry, generatedTsCommandBindings } from "./model-registry.generated.ts";
-import type { ModelBackendConfig } from "./model-runtime.types.ts";
+import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
 
-function buildRegistry(): Record<string, ModelBackendConfig> {
-  const registry: Record<string, ModelBackendConfig> = {};
+/** Прив'язка TS-команди до моделі (дані приходять з app/_generated). */
+export interface GeneratedTsCommandBinding {
+  model: string;
+  command: string;
+  handler: TsModelCommandConfig["handler"];
+}
 
-  for (const [model, config] of Object.entries(generatedModelRegistry)) {
-    registry[model] = {
+let registry: Record<string, ModelBackendConfig> = {};
+
+/**
+ * Реєструє модельний реєстр. Дані застосунок завантажує з app/_generated і
+ * передає сюди у composition root (app/server.ts) ДО bootstrap().
+ */
+export function registerModelRegistry(
+  generated: Record<string, ModelBackendConfig>,
+  bindings: GeneratedTsCommandBinding[],
+): void {
+  registry = buildRegistry(generated, bindings);
+}
+
+function buildRegistry(
+  generated: Record<string, ModelBackendConfig>,
+  bindings: GeneratedTsCommandBinding[],
+): Record<string, ModelBackendConfig> {
+  const result: Record<string, ModelBackendConfig> = {};
+
+  for (const [model, config] of Object.entries(generated)) {
+    result[model] = {
       ...config,
       sqlCommands: config.sqlCommands ? { ...config.sqlCommands } : undefined,
       tsCommands: config.tsCommands ? { ...config.tsCommands } : undefined,
     };
   }
 
-  for (const binding of generatedTsCommandBindings) {
-    const modelConfig = registry[binding.model] ?? {};
+  for (const binding of bindings) {
+    const modelConfig = result[binding.model] ?? {};
     modelConfig.tsCommands = {
       ...(modelConfig.tsCommands ?? {}),
-      [binding.command]: {
-        handler: binding.handler,
-      },
+      [binding.command]: { handler: binding.handler },
     };
-    registry[binding.model] = modelConfig;
+    result[binding.model] = modelConfig;
   }
 
-  return registry;
+  return result;
 }
-
-const registry = buildRegistry();
 
 export function getModelConfig(model: string): ModelBackendConfig | undefined {
   return registry[model];

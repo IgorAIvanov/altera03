@@ -1,7 +1,7 @@
 import { Injectable } from "@danet/core";
 import { ModelRuntimeService } from "../model-runtime/model-runtime.service.ts";
 import { getModelConfig } from "../model-runtime/model-registry.ts";
-import { agentModelRoutes, type AgentModelRoute } from "./agent-routes.generated.ts";
+import { agentModelRoutes, type AgentModelRoute } from "./agent-routes.ts";
 import type { AgentResponse, AgentUiAction } from "./agent.types.ts";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";

@@ -2,9 +2,7 @@ import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
-import "@app/home-tab.ts";
-import "@app/menu/app-menu.ts";
-import "@app/header/app-header.ts";
+import { shellTags } from "../shell/shell-registry.ts";
 import "@client/ui-kit/picker-host.ts";
 
 const MAX_TABS = 10;
@@ -144,13 +142,21 @@ export class TabController extends LitElement {
 
   private unsubs: Array<() => void> = [];
 
+  // Елементи оболонки беремо з реєстру (заповнюється composition root застосунку),
+  // тож фреймворк не залежить від конкретних app-компонентів.
+  private headerEl!: HTMLElement;
+  private menuEl!: HTMLElement;
+
   connectedCallback() {
     super.connectedCallback();
+    const shell = shellTags();
+    this.headerEl = document.createElement(shell.header);
+    this.menuEl = document.createElement(shell.menu);
     this.tabs = [{
       id: HOME_TAB_ID,
       route: "",
       modelId: null,
-      element: document.createElement("home-tab"),
+      element: document.createElement(shell.home),
       lastUsedAt: Date.now(),
       permanent: true,
     }];
@@ -235,7 +241,7 @@ export class TabController extends LitElement {
 
   render() {
     return html`
-      <app-header></app-header>
+      ${this.headerEl}
       <div class="tab-bar">
         ${this.tabs.map(tab => tab.permanent
           ? html`<div class="tab home ${tab.id === this.activeTabId ? "active" : ""}"
@@ -253,7 +259,7 @@ export class TabController extends LitElement {
       </div>
       <picker-host></picker-host>
       <div class="workspace">
-        <app-menu></app-menu>
+        ${this.menuEl}
         <div class="panels">
           ${this.tabs.map(tab => html`
             <div class="panel ${tab.id === this.activeTabId ? "active" : ""}">

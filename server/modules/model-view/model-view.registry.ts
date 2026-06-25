@@ -1,70 +1,38 @@
-import { fromFileUrl, join, relative, dirname } from "@std/path";
-import type { ViewEntry, ViewManifest, ViteManifest } from "./model-view.types.ts";
+import type { ViewEntry, ViteManifest } from "./model-view.types.ts";
 
-const APP_DIR = fromFileUrl(new URL("../../../app/", import.meta.url));
-const DIST_MANIFEST = fromFileUrl(new URL("../../../dist/.vite/manifest.json", import.meta.url));
+/** Запис view-маніфесту: маршрут → файл модуля (відносно кореня репо) → titleKey. */
+export interface ViewManifestEntry {
+  route: string;
+  moduleFile: string;
+  titleKey?: string;
+}
+
+let _entries: ViewManifestEntry[] = [];
+let _projectRoot = "";
+
+/**
+ * Реєструє view-маніфест (з app/_generated) та корінь проєкту. Викликається у
+ * composition root застосунку (app/server.ts) ДО bootstrap(); runtime ФС не сканує.
+ */
+export function registerViewManifest(entries: ViewManifestEntry[], projectRoot: string): void {
+  _entries = entries;
+  _projectRoot = projectRoot.replaceAll("\\", "/").replace(/\/$/, "");
+}
 
 async function readJson<T>(path: string): Promise<T | null> {
   try {
-    const raw = await Deno.readTextFile(path);
-    return JSON.parse(raw) as T;
+    return JSON.parse(await Deno.readTextFile(path)) as T;
   } catch {
     return null;
   }
 }
 
-async function scanManifests(): Promise<Array<{ route: string; moduleFile: string; titleKey?: string }>> {
-  const results: Array<{ route: string; moduleFile: string; titleKey?: string }> = [];
-
-  async function walk(dir: string) {
-    for await (const entry of Deno.readDir(dir)) {
-      const fullPath = join(dir, entry.name);
-
-      if (entry.isDirectory) {
-        await walk(fullPath);
-      } else if (entry.name === "manifest.json") {
-        const manifest = await readJson<ViewManifest>(fullPath);
-        if (!manifest?.views) continue;
-
-        const modelDir = dirname(fullPath);
-        const routeBase = relative(APP_DIR, modelDir).replaceAll("\\", "/");
-
-        for (const [viewName, view] of Object.entries(manifest.views)) {
-          // нормализуем путь: ./supplierInvoiceCardPage.ts → app/operation/.../supplierInvoiceCardPage.ts
-          const moduleFile = join(modelDir, view.module)
-            .replace(/\\/g, "/")
-            .replace(/\.tsx?$/, ".ts");
-
-          results.push({
-            route: `${routeBase}/${viewName}`,
-            moduleFile: relative(fromFileUrl(new URL("../../../", import.meta.url)), moduleFile)
-              .replaceAll("\\", "/"),
-            titleKey: view.titleKey,
-          });
-        }
-      }
-    }
-  }
-
-  await walk(APP_DIR);
-  return results;
-}
-
-async function buildDevRegistry(
-  entries: Array<{ route: string; moduleFile: string; titleKey?: string }>,
-  _viteDevUrl: string,
-): Promise<Map<string, ViewEntry>> {
+function buildDevRegistry(entries: ViewManifestEntry[], projectRoot: string): Map<string, ViewEntry> {
   const registry = new Map<string, ViewEntry>();
-  const projectRoot = fromFileUrl(new URL("../../../", import.meta.url))
-    .replaceAll("\\", "/").replace(/\/$/, "");
-
   for (const entry of entries) {
-    // /@fs/ позволяет Vite отдавать файлы вне своего root.
     // chunkUrl навмисно origin-relative (без хоста): динамічний import у браузері
-    // резолвить його відносно origin сторінки. Якщо вшити сюди VITE_DEV_URL
-    // ("http://localhost:5173"), а вкладку відкрити на http://127.0.0.1:5173 —
-    // оболонка й view вантажаться з РІЗНИХ origin, і браузер дублює кожен модуль
-    // (два bus → "немає обробника", дві копії lit → "Multiple versions of Lit").
+    // резолвить його відносно origin сторінки. Інакше localhost vs 127.0.0.1
+    // дублюють модулі (два bus → "немає обробника", дві копії lit).
     const absPath = `${projectRoot}/${entry.moduleFile}`;
     registry.set(entry.route, {
       route: entry.route,
@@ -72,15 +40,15 @@ async function buildDevRegistry(
       titleKey: entry.titleKey,
     });
   }
-
   return registry;
 }
 
 async function buildProdRegistry(
-  entries: Array<{ route: string; moduleFile: string; titleKey?: string }>,
+  entries: ViewManifestEntry[],
+  projectRoot: string,
 ): Promise<Map<string, ViewEntry>> {
   const registry = new Map<string, ViewEntry>();
-  const viteManifest = await readJson<ViteManifest>(DIST_MANIFEST);
+  const viteManifest = await readJson<ViteManifest>(`${projectRoot}/dist/.vite/manifest.json`);
 
   if (!viteManifest) {
     console.warn("[model-view] dist/.vite/manifest.json не знайдено, view routing недоступний");
@@ -89,12 +57,10 @@ async function buildProdRegistry(
 
   for (const entry of entries) {
     const viteEntry = viteManifest[entry.moduleFile];
-
     if (!viteEntry) {
       console.warn(`[model-view] чанк для ${entry.moduleFile} не знайдено в manifest.json`);
       continue;
     }
-
     registry.set(entry.route, {
       route: entry.route,
       chunkUrl: `/${viteEntry.file}`,
@@ -106,15 +72,11 @@ async function buildProdRegistry(
 }
 
 export async function buildViewRegistry(): Promise<Map<string, ViewEntry>> {
-  const entries = await scanManifests();
-  const viteDevUrl = Deno.env.get("VITE_DEV_URL");
-  const isDev = !!viteDevUrl;
-
+  const isDev = !!Deno.env.get("VITE_DEV_URL");
   const registry = isDev
-    ? await buildDevRegistry(entries, viteDevUrl!)
-    : await buildProdRegistry(entries);
+    ? buildDevRegistry(_entries, _projectRoot)
+    : await buildProdRegistry(_entries, _projectRoot);
 
   console.log(`[model-view] режим: ${isDev ? "dev" : "prod"}, маршрутів: ${registry.size}`);
-
   return registry;
 }

@@ -1,19 +1,23 @@
 {
   "tasks": {
-    "dev:server": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./server/main.ts",
+    "dev:server": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./app/server.ts",
     "dev:front": "deno run -A npm:vite",
     "dev": "deno task dev:server & deno task dev:front",
     "build:front": "deno run -A npm:vite build",
     "preview:front": "deno run -A npm:vite preview",
     "startdb": "docker compose up -d",
     "stopdb": "docker compose down",
-    "sql:registry": "deno run -A ./scripts/generate-model-runtime-registry.ts ./app ./server/modules/model-runtime/model-registry.generated.ts ./server/modules/agent/agent-routes.generated.ts --verbose",
+    "sql:registry": "deno run -A ./scripts/generate-model-runtime-registry.ts ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
+    "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "sql:assemble": "deno run -A ./scripts/assemble-sql-package.ts ./app --verbose",
     "sql:publish": "deno run -A --env-file ./scripts/publish-sql.ts --verbose"
   },
 
   "workspace": ["./server", "./client", "./app"],
   "imports": {
+    "@app/": "./app/",
+    "@client/": "./client/",
+    "@shared/": "./app/shared/",
     "@danet/core": "jsr:@danet/core@^2.9.6",
     "@danet/validatte": "jsr:@danet/validatte@^0.7.9",
     "@fontsource/roboto": "npm:@fontsource/roboto@^5.2.10",
@@ -25,6 +29,7 @@
     "@std/fs": "jsr:@std/fs@^1.0.19",
     "@std/path": "jsr:@std/path@^1.1.2",
     "typebox": "npm:@sinclair/typebox@^0.34.0",
+    "@sinclair/typebox": "npm:@sinclair/typebox@^0.34.0",
 
 
     "vite": "npm:vite@^6.3.5",

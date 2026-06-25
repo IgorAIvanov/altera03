@@ -1,6 +1,6 @@
 import { Injectable } from "@danet/core";
 import { ModelRuntimeService } from "../model-runtime/model-runtime.service.ts";
-import { agentModelRoutes } from "./agent-routes.generated.ts";
+import { agentModelRoutes } from "./agent-routes.ts";
 import type {
   AgentChatRequest,
   AgentCommandResult,

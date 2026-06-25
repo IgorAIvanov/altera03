@@ -8,7 +8,8 @@ Deno monorepo. Три workspace-пакети: `app/` (фронтенд-моду�
 deno task dev          # запустити frontend + backend одночасно
 deno task dev:server   # тільки backend (--watch)
 deno task dev:front    # тільки Vite dev server
-deno task sql:registry # згенерувати model-registry.generated.ts та agent-routes.generated.ts з manifest.json
+deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest) з manifest.json
+deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task sql:assemble # зібрати SQL-пакет з db/ файлів моделей
 deno task sql:publish  # опублікувати SQL у PostgreSQL
 deno task startdb      # docker compose up -d (PostgreSQL)
@@ -32,6 +33,8 @@ app/                        # фронтенд-модулі та SQL-джере�
       data.sql              # seed-дані
   _locales/                 # локалізація: en.json, uk.json ...
   _sqlpackage/              # зібрані SQL-файли (генеруються, не редагувати)
+  _generated/               # авто-генерація (deno task sql:registry): model-registry, agent-routes, view-manifest
+  server.ts                 # composition root бекенду: реєструє дані з _generated → bootstrap (Danet)
   shared/schema.ts          # спільні TypeBox-типи: OptionRow, PagePayload, SortDir
   sql.json                  # список моделей для sql:assemble
 
@@ -39,20 +42,26 @@ client/                     # ui-kit та клієнтський runtime (Deno w
   ui-kit/components/        # web components: ui-picker, ...
   bus/bus.ts                # event bus: bus.request("data.load", { model, command, payload })
 
-server/                     # Danet backend (Deno workspace)
+server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace), не залежить від app
+  main.ts                         # public API бібліотеки: bootstrap + register* (барель)
   modules/model-runtime/
     model-runtime.controller.ts   # REST: POST /api/model/:model/:command
     model-runtime.service.ts      # викликає PostgreSQL-функцію або TS-handler
-    model-registry.ts             # збирає реєстр з generated + TS-handlers
-    model-registry.generated.ts   # авто-генерація (deno task sql:registry)
+    model-registry.ts             # холдер реєстру; наповнюється registerModelRegistry() з app/_generated
   modules/agent/
     agent.service.ts              # прямий диспетчер команд (без LLM)
     agent-llm.service.ts          # LLM-агент (OpenAI Responses API)
-    agent-routes.generated.ts     # авто-генерація (deno task sql:registry)
+    agent-routes.ts               # холдер маршрутів агента; registerAgentRoutes()
+  modules/model-view/
+    model-view.registry.ts        # холдер view-маніфесту; registerViewManifest() (без ФС-скану)
   modules/auth/                   # JWT-авторизація
   database/
     publish-app-sql.ts            # публікація SQL у БД
 ```
+
+> **Напрямок залежностей:** `app → client/server`, ніколи навпаки. Бекенд-runtime отримує
+> дані про моделі/маршрути/в'ю ззовні (composition root `app/server.ts` реєструє їх із
+> `app/_generated`). Перевірка — `deno task check:deps`.
 
 ## Модель — основна одиниця
 
