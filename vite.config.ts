@@ -35,8 +35,22 @@ export default defineConfig({
   // Явна entry для dep-сканера: інакше оптимізатор бере build.rollupOptions.input
   // ("client/index.html" — шлях відносно кореня репо) і не може його зрезолвити
   // відносно root:"client", що валить холодний старт (masked TypeError у Vite).
+  //
+  // include: view-модулі з app/ вантажаться динамічно (@vite-ignore /@fs), тож їх
+  // залежності (@lit-labs/signals, @sinclair/typebox) не потрапляють у стартовий
+  // scan і виявляються пізно → Vite дооптимізовує й робить full-reload, а до
+  // перезавантаження виникає другий екземпляр Lit ("Multiple versions of Lit")
+  // і роздвоєний граф (другий bus → "немає обробника для data.load").
+  // Пре-бандлимо весь набір залежностей одразу, щоб не було пізнього re-optimize.
   optimizeDeps: {
     entries: ["index.html"],
+    include: [
+      "lit",
+      "lit/decorators.js",
+      "@lit-labs/signals",
+      "@sinclair/typebox",
+      "signal-polyfill",
+    ],
   },
   resolve: {
     alias: {

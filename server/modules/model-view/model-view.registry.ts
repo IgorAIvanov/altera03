@@ -52,18 +52,23 @@ async function scanManifests(): Promise<Array<{ route: string; moduleFile: strin
 
 async function buildDevRegistry(
   entries: Array<{ route: string; moduleFile: string; titleKey?: string }>,
-  viteDevUrl: string,
+  _viteDevUrl: string,
 ): Promise<Map<string, ViewEntry>> {
   const registry = new Map<string, ViewEntry>();
   const projectRoot = fromFileUrl(new URL("../../../", import.meta.url))
     .replaceAll("\\", "/").replace(/\/$/, "");
 
   for (const entry of entries) {
-    // /@fs/ позволяет Vite отдавать файлы вне своего root
+    // /@fs/ позволяет Vite отдавать файлы вне своего root.
+    // chunkUrl навмисно origin-relative (без хоста): динамічний import у браузері
+    // резолвить його відносно origin сторінки. Якщо вшити сюди VITE_DEV_URL
+    // ("http://localhost:5173"), а вкладку відкрити на http://127.0.0.1:5173 —
+    // оболонка й view вантажаться з РІЗНИХ origin, і браузер дублює кожен модуль
+    // (два bus → "немає обробника", дві копії lit → "Multiple versions of Lit").
     const absPath = `${projectRoot}/${entry.moduleFile}`;
     registry.set(entry.route, {
       route: entry.route,
-      chunkUrl: `${viteDevUrl}/@fs/${absPath}`,
+      chunkUrl: `/@fs/${absPath}`,
       titleKey: entry.titleKey,
     });
   }
