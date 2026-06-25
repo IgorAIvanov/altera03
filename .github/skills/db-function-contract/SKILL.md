@@ -39,7 +39,7 @@ Extra commands follow the same naming style: `nextCode`, `nextNumber`, `<verb><N
 - For new models, function contracts should assume sequence-based technical primary keys by default, with UUID only for explicit exceptions.
 - Backend calls functions by name and does not embed screen-oriented SQL.
 - Standard function calls are reachable through a generic backend runtime route `/api/model/<model>/<command>`.
-- Extra model commands may be implemented either as extra SQL functions or as TS handlers declared in a model config file.
+- Extra model commands may be implemented either as extra SQL functions or as TS handlers declared in the model's `manifest.json` under `commands.ts`.
 - When a function signature changes, the publication script should drop the legacy signature before creating the new one.
 - Result JSON must be explicit about item data, rows, options, totals, messages, and metadata.
 
@@ -141,12 +141,37 @@ Register-oriented naming examples:
 - Standard commands are dispatched by convention from the generic route `/api/model/<model>/<command>`.
 - For `type: "document"`, the generic runtime also resolves `post` and `unpost` by convention.
 - Do not create a dedicated backend module for a model that only uses list, get, save, delete, and lookup.
-- Use a model config file when the model needs extra commands, special validation, or TS-side orchestration.
+- Declare a TS-backed command in the model's `manifest.json` when the model needs extra commands, special validation, or TS-side orchestration.
 - Keep extra command names stable because frontend callers and generic routing depend on them directly.
 
-## Model config
+## TS-backed commands
 
-- Model config files live under `server/modules/model-runtime/handlers/` or equivalent.
-- SQL-backed extra commands map command names to PostgreSQL function names.
-- TS-backed extra commands return the same response envelope shape as SQL-backed commands.
-- The `lookup` command is registered in `sqlCommands` as `"lookup": "app.<model>_lookup"`.
+Use a TS handler only when the command cannot be expressed as a plain SQL function
+(password hashing, external API calls, file generation, multi-step orchestration with
+non-SQL side effects). Otherwise stay on the SQL function contract above.
+
+- Declare the command in the model's `manifest.json` under `commands.ts`, pointing at a
+  TS file colocated with the model. `module` is the path relative to the model folder;
+  `export` is optional (defaults to the `default` export):
+
+  ```jsonc
+  "commands": {
+    "ts": {
+      "recalc": { "module": "./db/<model>.commands.ts" }
+    }
+  }
+  ```
+
+- The handler signature is `(payload, ctx: ModelCommandContext) => Promise<unknown>`.
+  The SQL context arrives as an argument: `ctx.db.sql\`...\`` and
+  `ctx.db.transaction(...)`. `ctx` also carries `model`, `command`, `userId`.
+- TS-backed commands return the same response envelope shape as SQL-backed commands.
+- A TS command overrides the SQL function of the same name for that command.
+- `deno task sql:registry` regenerates `model-registry.generated.ts` from the manifests
+  (it emits a static import + binding). There is no manual handler registration.
+- The command file joins the server import graph — import only server-safe modules
+  (no client/Lit dependencies).
+- Standard `lookup`/`list`/`get`/`save`/`delete` stay on SQL functions by convention;
+  do not turn them into TS commands without a real reason.
+
+See [docs/ts-model-command.md](../../../docs/ts-model-command.md) for the full developer guide.

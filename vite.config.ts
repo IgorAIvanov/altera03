@@ -32,6 +32,12 @@ export default defineConfig({
   esbuild: {
     target: "es2022",
   },
+  // Явна entry для dep-сканера: інакше оптимізатор бере build.rollupOptions.input
+  // ("client/index.html" — шлях відносно кореня репо) і не може його зрезолвити
+  // відносно root:"client", що валить холодний старт (masked TypeError у Vite).
+  optimizeDeps: {
+    entries: ["index.html"],
+  },
   resolve: {
     alias: {
       "@app": resolve("app"),

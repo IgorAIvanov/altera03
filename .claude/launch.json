@@ -5,7 +5,8 @@
       "name": "dev:front",
       "runtimeExecutable": "deno",
       "runtimeArgs": ["run", "-A", "npm:vite"],
-      "port": 5173
+      "port": 5173,
+      "autoPort": false
     }
   ]
 }

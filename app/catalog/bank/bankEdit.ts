@@ -17,6 +17,8 @@ export class BankEdit extends SignalWatcher(LitElement) {
   @state() private item: BankItem = { id: null, code: "", name: "", mfo: "" };
   @state() private loading = false;
   @state() private saving = false;
+  @state() private pinging = false;
+  @state() private pingResult: string | null = null;
 
   connectedCallback() {
     super.connectedCallback();
@@ -47,6 +49,28 @@ export class BankEdit extends SignalWatcher(LitElement) {
       });
     } finally {
       this.saving = false;
+    }
+  }
+
+  async ping() {
+    this.pinging = true;
+    this.pingResult = null;
+    try {
+      const res = await bus.request("data.load", {
+        model: "bank",
+        command: "ping",
+        payload: { id: this.modelId },
+      }) as {
+        data?: { item?: Record<string, unknown> };
+        messages?: { text?: string }[];
+      };
+      const message = res?.messages?.[0]?.text ?? "";
+      const item = res?.data?.item ?? {};
+      this.pingResult = `${message}\n${JSON.stringify(item, null, 2)}`;
+    } catch (error) {
+      this.pingResult = `Помилка: ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.pinging = false;
     }
   }
 
@@ -86,7 +110,15 @@ export class BankEdit extends SignalWatcher(LitElement) {
             ${this.saving ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             ${t("common.save")}
           </button>
+          <button class="btn btn-outline" ?disabled=${this.pinging} @click=${this.ping}>
+            ${this.pinging ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+            TS-команда (ping)
+          </button>
         </div>
+
+        ${this.pingResult
+          ? html`<pre class="mt-4 p-3 rounded bg-base-200 text-xs whitespace-pre-wrap">${this.pingResult}</pre>`
+          : ""}
       </div>
     `;
   }

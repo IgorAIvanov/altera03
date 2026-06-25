@@ -1,19 +1,5 @@
-import { currencyClassifierFetchHandler, currencyLoadRatesHandler, currencySeedPredefinedHandler } from "./handlers/currency.handlers.ts";
-import { exportExcelHandler } from "./handlers/exportExcel.runtime.ts";
-// import { genericPrintPdfHandler } from "./handlers/printPdf.runtime.ts";
-const genericPrintPdfHandler: TsModelCommandConfig["handler"] = async () => { throw new Error("printPdf не реалізовано"); };
-import { userSaveHandler as userUpdateHandler } from "./handlers/user.handlers.ts";
 import { generatedModelRegistry, generatedTsCommandBindings } from "./model-registry.generated.ts";
-import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
-
-const tsCommandHandlers: Record<string, TsModelCommandConfig["handler"]> = {
-  "currency.classifierFetch": currencyClassifierFetchHandler,
-  "currency.loadRates": currencyLoadRatesHandler,
-  "currency.seedPredefined": currencySeedPredefinedHandler,
-  "runtime.exportExcel": exportExcelHandler,
-  "runtime.printPdf": genericPrintPdfHandler,
-  "user.update": userUpdateHandler,
-};
+import type { ModelBackendConfig } from "./model-runtime.types.ts";
 
 function buildRegistry(): Record<string, ModelBackendConfig> {
   const registry: Record<string, ModelBackendConfig> = {};
@@ -27,16 +13,11 @@ function buildRegistry(): Record<string, ModelBackendConfig> {
   }
 
   for (const binding of generatedTsCommandBindings) {
-    const handler = tsCommandHandlers[binding.handlerKey];
-    if (!handler) {
-      throw new Error(`TS command handler '${binding.handlerKey}' is not registered`);
-    }
-
     const modelConfig = registry[binding.model] ?? {};
     modelConfig.tsCommands = {
       ...(modelConfig.tsCommands ?? {}),
       [binding.command]: {
-        handler,
+        handler: binding.handler,
       },
     };
     registry[binding.model] = modelConfig;

@@ -9,7 +9,10 @@ type ManifestSqlCommand = string | {
 };
 
 type ManifestTsCommand = {
-  handlerKey: string;
+  /** Шлях до TS-файлу команди відносно каталогу моделі (поряд із SQL). */
+  module: string;
+  /** Імʼя експорту в module-файлі. За замовчуванням "default". */
+  export?: string;
 };
 
 type ManifestRecord = {
@@ -138,14 +141,52 @@ function renderAgentRoutes(manifests: Array<{ manifestPath: string; manifest: Ma
 }
 
 
-function renderTsBindings(manifests: Array<{ manifest: ManifestRecord }>) {
-  const bindings = manifests.flatMap(({ manifest }) =>
-    Object.entries(manifest.commands?.ts ?? {})
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([command, definition]) => `  { model: ${JSON.stringify(manifest.model)}, command: ${JSON.stringify(command)}, handlerKey: ${JSON.stringify(definition.handlerKey)} }`)
-  );
+function sanitizeIdentifier(value: string) {
+  return value.replace(/[^a-zA-Z0-9_]/g, "_");
+}
 
-  return `export interface GeneratedTsCommandBinding {\n  model: string;\n  command: string;\n  handlerKey: string;\n}\n\nexport const generatedTsCommandBindings: GeneratedTsCommandBinding[] = [\n${bindings.join(",\n")}\n];\n`;
+function toModuleSpecifier(outputPath: string, manifestPath: string, modulePath: string) {
+  const moduleAbs = resolve(dirname(manifestPath), modulePath);
+  let specifier = toPosixPath(relative(dirname(outputPath), moduleAbs));
+  if (!specifier.startsWith(".")) {
+    specifier = `./${specifier}`;
+  }
+  return specifier;
+}
+
+function renderTsBindings(
+  manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
+  outputPath: string,
+): { imports: string[]; block: string } {
+  const imports: string[] = [];
+  const bindings: string[] = [];
+
+  for (const { manifestPath, manifest } of manifests) {
+    const tsCommands = Object.entries(manifest.commands?.ts ?? {})
+      .sort(([left], [right]) => left.localeCompare(right));
+
+    for (const [command, definition] of tsCommands) {
+      if (!definition.module) {
+        throw new Error(`TS command '${manifest.model}.${command}' must declare 'module'`);
+      }
+
+      const ident = `ts_${sanitizeIdentifier(manifest.model ?? "")}_${sanitizeIdentifier(command)}`;
+      const specifier = toModuleSpecifier(outputPath, manifestPath, definition.module);
+      const exportName = definition.export ?? "default";
+      imports.push(
+        exportName === "default"
+          ? `import ${ident} from ${JSON.stringify(specifier)};`
+          : `import { ${exportName} as ${ident} } from ${JSON.stringify(specifier)};`,
+      );
+      bindings.push(
+        `  { model: ${JSON.stringify(manifest.model)}, command: ${JSON.stringify(command)}, handler: ${ident} }`,
+      );
+    }
+  }
+
+  const block = `export interface GeneratedTsCommandBinding {\n  model: string;\n  command: string;\n  handler: TsModelCommandConfig["handler"];\n}\n\nexport const generatedTsCommandBindings: GeneratedTsCommandBinding[] = [\n${bindings.join(",\n")}\n];\n`;
+
+  return { imports, block };
 }
 
 async function collectManifests(appDir: string) {
@@ -200,7 +241,12 @@ export async function generateModelRuntimeRegistry(
     const allManifests = (await Promise.all(appDirs.map(collectManifests))).flat();
     allManifests.sort((left, right) => (left.manifest.model ?? "").localeCompare(right.manifest.model ?? ""));
 
-    const source = `import type { ModelBackendConfig } from "./model-runtime.types.ts";\n\n// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}\n${renderTsBindings(allManifests)}`;
+    const tsBindings = renderTsBindings(allManifests, outputPath);
+    const headerImports = [
+      `import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";`,
+      ...tsBindings.imports,
+    ].join("\n");
+    const source = `${headerImports}\n\n// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}\n${tsBindings.block}`;
 
     await Deno.mkdir(dirname(outputPath), { recursive: true });
     await Deno.writeTextFile(outputPath, `${source}\n`);

@@ -45,7 +45,7 @@ Recommended backend contents for the generic runtime pattern:
 - model-runtime/model-runtime.controller.ts
 - model-runtime/model-runtime.service.ts
 - model-runtime/model-registry.ts
-- model-runtime/models/<model>.config.ts only when the model needs explicit backend configuration
+- a TS command file colocated with the model (`app/<family>/<model>/db/<model>.commands.ts`) only when the model needs an extra command that cannot be a plain SQL function; declare it in `manifest.json` under `commands.ts` (see [db-function-contract](../db-function-contract/SKILL.md))
 
 Workflow:
 1. Identify the model boundary and its screens.
@@ -55,7 +55,7 @@ Workflow:
 5. Identify the model family before locking the SQL contract: catalog-style models usually use List, Pick, Edit, Delete. Loockup; document models use the same base contract plus standard `post` and `unpost`; information registers may need history, slice, actual-on-date, or bulk-record commands.
 6. Assume the backend generic runtime can serve the standard commands without a dedicated model module.
 7. Use the shared frontend model runtime helper directly for standard commands unless a thin model-local wrapper adds real value.
-8. Add a backend model config file only when the model needs extra domain commands or backend-side customization.
+8. Add a TS command (manifest `commands.ts` → colocated `db/<model>.commands.ts`) only when the model needs an extra command that cannot be a plain SQL function; standard commands stay SQL-backed.
 9. Add extra domain commands only when the model needs them.
 10. Keep app shell concerns such as router, layout, providers, and shared localization dictionaries outside the model folder.
 11. Keep app-shell route resolution, menu highlighting, and workspace-tab recognition tied to the same generated feature route list from buildFeatureRoutes(); do not use an empty or manually stubbed route map in layout code.

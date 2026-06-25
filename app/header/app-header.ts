@@ -3,7 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 
 @customElement("app-header")
 export class AppHeader extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: flex;
       align-items: center;

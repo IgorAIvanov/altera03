@@ -2,6 +2,11 @@
   "model": "bank",
   "type": "catalog",
   "schema": "app",
+  "commands": {
+    "ts": {
+      "ping": { "module": "./db/bank.commands.ts" }
+    }
+  },
   "views": {
     "list": {
       "module": "./bankList.ts",

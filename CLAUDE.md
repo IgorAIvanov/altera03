@@ -101,7 +101,7 @@ server/                     # Danet backend (Deno workspace)
 1. Якщо є TS-handler у реєстрі — викликає його.
 2. Інакше будує ім'я функції `{schema}.{model}_{command}` і викликає PostgreSQL.
 
-Додати нестандартну TS-команду: зареєструвати handler у `model-registry.ts` → `tsCommandHandlers`.
+Додати нестандартну TS-команду: оголосити її в `manifest.json` моделі в блоці `commands.ts` (поле `module` — шлях до TS-файлу поряд із моделлю, напр. `./db/<model>.commands.ts`), потім `deno task sql:registry`. Хендлер має сигнатуру `(payload, ctx) => Promise<envelope>`, SQL-контекст приходить аргументом `ctx.db`. Деталі — [`docs/ts-model-command.md`](docs/ts-model-command.md); skill — [`db-function-contract`](.github/skills/db-function-contract/SKILL.md).
 
 ## Фронтенд-компоненти
 

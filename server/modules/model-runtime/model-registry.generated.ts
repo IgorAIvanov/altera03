@@ -1,4 +1,5 @@
-import type { ModelBackendConfig } from "./model-runtime.types.ts";
+import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
+import ts_bank_ping from "../../../app/catalog/bank/db/bank.commands.ts";
 
 // Generated from model manifests. Do not edit manually.
 
@@ -28,11 +29,10 @@ export const generatedModelRegistry: Record<string, ModelBackendConfig> = {
 export interface GeneratedTsCommandBinding {
   model: string;
   command: string;
-  handlerKey: string;
+  handler: TsModelCommandConfig["handler"];
 }
 
 export const generatedTsCommandBindings: GeneratedTsCommandBinding[] = [
-  { model: "user", command: "exportExcel", handlerKey: "runtime.exportExcel" },
-  { model: "user", command: "update", handlerKey: "user.update" }
+  { model: "bank", command: "ping", handler: ts_bank_ping }
 ];
 
