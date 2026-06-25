@@ -157,8 +157,11 @@ export class TabController extends LitElement {
     this.unsubs.push(
       bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params)),
       bus.on("tab.close", (msg) => this.handleClose(msg.tabId)),
-      bus.on("loading.start", () => { this._loadingCount++; }),
-      bus.on("loading.end",   () => { this._loadingCount = Math.max(0, this._loadingCount - 1); }),
+      // Лічильник зміщуємо в микротаск: loading.start/end часто прилітають синхронно
+      // під час коміту апдейта (коли монтується вью й одразу вантажить дані), а пряме
+      // присвоєння реактивної властивості в цей момент дає Lit-warning "change-in-update".
+      bus.on("loading.start", () => { queueMicrotask(() => { this._loadingCount++; }); }),
+      bus.on("loading.end",   () => { queueMicrotask(() => { this._loadingCount = Math.max(0, this._loadingCount - 1); }); }),
     );
   }
 
