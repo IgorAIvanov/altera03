@@ -9,7 +9,7 @@ const MAX_TABS = 10;
 const HOME_TAB_ID = "home";
 
 const iconHome = svg`
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
     <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
   </svg>
 `;
@@ -65,7 +65,7 @@ export class TabController extends LitElement {
       flex-direction: column;
       height: 100%;
       font-family: "Roboto", sans-serif;
-      font-size: 12px;
+      font-size: var(--default-font-size, 0.875rem);
     }
     .tab-bar {
       display: flex;
@@ -80,12 +80,12 @@ export class TabController extends LitElement {
       display: flex;
       align-items: center;
       gap: 4px;
-      padding: 3px 10px;
+      padding: 3px 6px 3px 10px;
       border-radius: 2px 2px 0 0;
       background: #3a6ea8;
       color: #d0e0f5;
       cursor: pointer;
-      font-size: 12px;
+      font-size: inherit;
       white-space: nowrap;
       user-select: none;
       border: 1px solid #1e3f7a;
@@ -101,12 +101,12 @@ export class TabController extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 14px;
-      height: 14px;
+      width: 18px;
+      height: 18px;
       border-radius: 2px;
-      font-size: 11px;
+      font-size: 15px;
       opacity: 0.6;
-      margin-left: 2px;
+      margin-left: 4px;
     }
     .tab-close:hover { background: #b0bec5; opacity: 1; color: #111; }
     .workspace { display: flex; flex: 1; overflow: hidden; }

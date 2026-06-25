@@ -13,7 +13,7 @@ export class AppHeader extends LitElement {
       background: #1a3a6b;
       color: #e8f0fb;
       font-family: "Roboto", sans-serif;
-      font-size: 13px;
+      font-size: var(--default-font-size, 0.875rem);
       flex-shrink: 0;
     }
 
@@ -48,7 +48,7 @@ export class AppHeader extends LitElement {
     }
 
     .user-name {
-      font-size: 12px;
+      font-size: inherit;
       opacity: 0.9;
       max-width: 140px;
       overflow: hidden;
@@ -86,7 +86,7 @@ export class AppHeader extends LitElement {
     }
     .dropdown-header strong {
       display: block;
-      font-size: 12px;
+      font-size: inherit;
       color: #1f2937;
       margin-bottom: 1px;
     }
@@ -96,7 +96,7 @@ export class AppHeader extends LitElement {
       align-items: center;
       gap: 8px;
       padding: 6px 12px;
-      font-size: 12px;
+      font-size: inherit;
       cursor: pointer;
     }
     .dropdown-item:hover { background: #ECF0F5; }
@@ -164,7 +164,7 @@ export class AppHeader extends LitElement {
     console.log("logout");
   }
 
-  render() {
+  override render() {
     return html`
       <div class="app-name">${this.appName}</div>
 

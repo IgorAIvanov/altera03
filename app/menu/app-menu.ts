@@ -19,7 +19,6 @@ export class AppMenu extends LitElement {
       background: #2a3a54;
       color: #c8d6e8;
       font-family: "Roboto", sans-serif;
-      font-size: 12px;
       flex-shrink: 0;
       transition: width 0.2s ease;
       overflow: hidden;
@@ -44,8 +43,8 @@ export class AppMenu extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       border-radius: 2px;
       cursor: pointer;
       color: #8aabcc;
@@ -77,8 +76,8 @@ export class AppMenu extends LitElement {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
       opacity: 0.85;
     }
     .item:hover .icon, .item.active .icon { opacity: 1; }
@@ -90,6 +89,7 @@ export class AppMenu extends LitElement {
     .arrow {
       display: flex;
       align-items: center;
+      justify-content: center;
       flex-shrink: 0;
       opacity: 0.5;
       transition: transform 0.15s;
@@ -100,7 +100,7 @@ export class AppMenu extends LitElement {
     .children { overflow: hidden; }
     .children .item {
       padding-left: 30px;
-      font-size: 11.5px;
+      font-size: inherit;
       color: #a8c0d8;
     }
     .children .item:hover { color: #fff; }
@@ -120,7 +120,7 @@ export class AppMenu extends LitElement {
       color: #f9fafb;
       padding: 3px 8px;
       border-radius: 2px;
-      font-size: 12px;
+      font-size: inherit;
       white-space: nowrap;
       pointer-events: none;
       z-index: 1001;
@@ -149,7 +149,7 @@ export class AppMenu extends LitElement {
 
     .flyout-title {
       padding: 5px 12px;
-      font-size: 11px;
+      font-size: inherit;
       font-weight: 500;
       color: #8aabcc;
       border-bottom: 1px solid #3d5070;
@@ -162,13 +162,13 @@ export class AppMenu extends LitElement {
       align-items: center;
       gap: 8px;
       padding: 5px 12px;
-      font-size: 12px;
+      font-size: inherit;
       color: #c8d6e8;
       cursor: pointer;
       white-space: nowrap;
     }
     .flyout-item:hover { background: #3d5070; color: #fff; }
-    .flyout-item .icon { width: 16px; height: 16px; opacity: 0.8; }
+    .flyout-item .icon { width: 20px; height: 20px; opacity: 0.8; }
     .flyout-item:hover .icon { opacity: 1; }
   `;
 
@@ -178,7 +178,7 @@ export class AppMenu extends LitElement {
   @state() private tooltip: { label: string; y: number } | null = null;
   @state() private flyout: Flyout | null = null;
 
-  private icon(path: string, size = 16) {
+  private icon(path: string, size = 18) {
     return svg`
       <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
         <path d="${path}"/>
@@ -188,7 +188,7 @@ export class AppMenu extends LitElement {
 
   private iconChevron() {
     return svg`
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
         <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
       </svg>
     `;
@@ -196,8 +196,8 @@ export class AppMenu extends LitElement {
 
   private iconCollapse(collapsed: boolean) {
     return collapsed
-      ? svg`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>`
-      : svg`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>`;
+      ? svg`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>`
+      : svg`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>`;
   }
 
   private toggle() {
