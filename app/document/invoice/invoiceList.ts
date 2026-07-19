@@ -9,7 +9,7 @@ export const tagName = "invoice-list";
 export class InvoiceList extends ModelListBase<InvoiceRow> {
   protected model = "invoice";
   protected editRoute = "document/invoice/edit";
-  protected defaultSortBy = "number";
+  protected override defaultSortBy = "number";
 
   protected columns: ListColumn<InvoiceRow>[] = [
     { key: "number", title: "invoice.number", width: "10rem", sortable: true },

@@ -8,7 +8,7 @@ export const tagName = "counterparty-picker";
 @customElement(tagName)
 export class CounterpartyPicker extends ModelPickerBase<CounterpartyLookupRow> {
   protected model = "counterparty";
-  protected defaultSortBy = "name";
+  protected override defaultSortBy = "name";
 
   protected columns: ListColumn<CounterpartyLookupRow>[] = [
     { key: "name", title: "common.name", sortable: true },

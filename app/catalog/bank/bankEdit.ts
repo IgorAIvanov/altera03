@@ -1,16 +1,19 @@
 import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
-import { BankItemSchema, type BankItem } from "./bank.schema.ts";
+import {
+  BankEditRootSchema,
+  type BankEditRoot,
+  type BankItem,
+} from "./bank.schema.ts";
 
 export const tagName = "bank-edit";
 
-/** Дані, які повертає `bank_get` / `bank_ping`. */
-interface BankGetData { item: BankItem | null; }
+/** Дані, які повертає `bank_ping`. */
 interface BankPingData { item: Record<string, unknown>; }
 
 @customElement(tagName)
-export class BankEdit extends BaseUI<BankItem> {
+export class BankEdit extends BaseUI<BankEditRoot> {
   protected model = "bank";
 
   @property({ type: String }) modelId: string | null = null;
@@ -19,8 +22,9 @@ export class BankEdit extends BaseUI<BankItem> {
   private pingResult: string | null = null;
 
   constructor() {
-    // $root ← Value.Create(BankItemSchema) = { id: null, code: "", name: "", isActive: true }
-    super(BankItemSchema);
+    // $root ← Value.Create(BankEditRootSchema)
+    //   = { item: { id: null, code: "", name: "", isActive: true }, options: {} }
+    super(BankEditRootSchema);
   }
 
   override connectedCallback() {
@@ -29,12 +33,13 @@ export class BankEdit extends BaseUI<BankItem> {
   }
 
   private async load() {
-    const env = await this.run<BankGetData>("get", { id: this.modelId });
-    if (env.ok && env.data?.item) this.assign(env.data.item);
+    // get повертає data = { item, options } → assign домержує обидва ключі
+    const env = await this.run<Partial<BankEditRoot>>("get", { id: this.modelId });
+    if (env.ok && env.data) this.assign(env.data);
   }
 
   private async save() {
-    await this.run("save", { item: this.$root }, "save");
+    await this.run("save", { item: this.$root.item }, "save");
   }
 
   private async ping() {
@@ -51,24 +56,26 @@ export class BankEdit extends BaseUI<BankItem> {
       </div>
     `;
 
+    const item = this.$root.item;
+
     return html`
       <div class="p-4 max-w-md">
         <div class="form-control mb-4">
           <label class="label"><span class="label-text">${this.t("common.code")}</span></label>
-          <input class="input input-bordered" .value=${this.$root.code ?? ""}
-            @input=${this.bind("code")} />
+          <input class="input input-bordered" .value=${item.code ?? ""}
+            @input=${this.bindTo(item, "code")} />
         </div>
 
         <div class="form-control mb-4">
           <label class="label"><span class="label-text">${this.t("common.name")}</span></label>
-          <input class="input input-bordered" .value=${this.$root.name ?? ""}
-            @input=${this.bind("name")} />
+          <input class="input input-bordered" .value=${item.name ?? ""}
+            @input=${this.bindTo(item, "name")} />
         </div>
 
         <div class="form-control mb-4">
           <label class="label"><span class="label-text">${this.t("bank.mfo")}</span></label>
-          <input class="input input-bordered" .value=${this.$root.mfo ?? ""}
-            @input=${this.bind("mfo")} />
+          <input class="input input-bordered" .value=${item.mfo ?? ""}
+            @input=${this.bindTo(item, "mfo")} />
         </div>
 
         <div class="flex gap-2 mt-6">

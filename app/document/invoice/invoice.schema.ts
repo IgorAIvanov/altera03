@@ -49,6 +49,43 @@ export const InvoiceItemSchema = Type.Object({
 });
 export type InvoiceItem = Static<typeof InvoiceItemSchema>;
 
+// ── Form ($root форми редагування) — item з display-ref'ами ───────────────────
+
+/** Відображуване посилання (id + name), що приходить з `get` для показу в UI. */
+const RefSchema = Type.Union([
+  Type.Object({ id: Type.String(), name: Type.String() }),
+  Type.Null(),
+], { default: null });
+
+/** Рядок табличної частини у формі: поля БД + display-ref `bank`. */
+export const InvoiceFormLineSchema = Type.Object({
+  id:     Type.Union([Type.String(), Type.Null()], { default: null }),
+  lineNo: Type.Number({ default: 0 }),
+  bankId: Type.String({ default: "" }),
+  bank:   Type.Optional(RefSchema),
+  qty:    Type.Number({ default: 0 }),
+  price:  Type.Number({ default: 0 }),
+});
+export type InvoiceFormLine = Static<typeof InvoiceFormLineSchema>;
+
+/** Шапка у формі: поля БД + display-ref `counterparty` + рядки. */
+export const InvoiceFormSchema = Type.Object({
+  id:             Type.Union([Type.String(), Type.Null()], { default: null }),
+  number:         Type.String({ default: "" }),
+  invoiceDate:    Type.String({ default: "" }),
+  counterpartyId: Type.String({ default: "" }),
+  counterparty:   Type.Optional(RefSchema),
+  lines:          Type.Array(InvoiceFormLineSchema, { default: [] }),
+});
+export type InvoiceForm = Static<typeof InvoiceFormSchema>;
+
+/** `$root` форми редагування: `item` (форма) + `options`. */
+export const InvoiceEditRootSchema = Type.Object({
+  item:    InvoiceFormSchema,
+  options: Type.Object({}),
+});
+export type InvoiceEditRoot = Static<typeof InvoiceEditRootSchema>;
+
 // ── Row (список) — ссылка як вкладений об'єкт ─────────────────────────────────
 
 export const InvoiceRowSchema = Type.Object({

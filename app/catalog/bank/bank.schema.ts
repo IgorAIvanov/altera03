@@ -112,3 +112,12 @@ export const BankLookupDataSchema = Type.Object({
   rows: Type.Array(BankLookupRowSchema),
 });
 export type BankLookupData = Static<typeof BankLookupDataSchema>;
+
+// ── 6. Root schema — дзеркало `data` форми редагування ($root) ────────────────
+
+/** `$root` форми редагування: `item` (дані) + `options`. */
+export const BankEditRootSchema = Type.Object({
+  item:    BankItemSchema,
+  options: Type.Object({}),
+});
+export type BankEditRoot = Static<typeof BankEditRootSchema>;

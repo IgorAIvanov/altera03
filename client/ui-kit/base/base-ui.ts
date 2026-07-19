@@ -87,7 +87,12 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     }
   }
 
-  /** Часткове злиття патча у реактивний `$root` (лише наявні ключі патча). */
+  /**
+   * Злиття `data` з відповіді SQL у реактивний `$root` — тільки ключі, що
+   * прийшли (partial merge). Модельні поля (`item`, `rows`, `totals`…) і
+   * службові (`$query`) зеркаляться однаково; чого сервер не повернув —
+   * лишається як є (напр. клієнтський `$query`, якщо БД його не віддала).
+   */
   protected assign(patch: Partial<T>): void {
     for (const key of Object.keys(patch) as (keyof T)[]) {
       this.$root[key] = patch[key] as T[keyof T];
@@ -95,12 +100,14 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   }
 
   /**
-   * Прив'язка текстового інпута до поля `$root`:
-   * `.value=${this.$root.code ?? ""} @input=${this.bind("code")}`.
+   * Прив'язка текстового інпута до поля вкладеного об'єкта `$root`:
+   * `.value=${this.$root.item.code ?? ""} @input=${this.bindTo(this.$root.item, "code")}`.
+   * Працює для будь-якого вузла (`$root.item`, `$root.$query`) — deep-проксі
+   * робить запис реактивним.
    */
-  protected bind(field: keyof T) {
+  protected bindTo<O extends Record<string, unknown>>(obj: O, field: keyof O) {
     return (e: Event) => {
-      this.$root[field] = (e.target as HTMLInputElement).value as T[keyof T];
+      obj[field] = (e.target as HTMLInputElement).value as O[keyof O];
     };
   }
 }

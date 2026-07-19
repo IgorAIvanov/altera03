@@ -1,11 +1,28 @@
-import { LitElement, html, css, nothing, type TemplateResult } from "lit";
+import { html, css, nothing, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
-import { SignalWatcher } from "@lit-labs/signals";
+import { Type } from "@sinclair/typebox";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
+import { BaseUI } from "./base-ui.ts";
+import { QuerySchema, TotalsSchema, type Query, type Totals } from "@shared/schema.ts";
 
 export type SortDir = "asc" | "desc";
+
+/** Форма `$root` списку: службовий `$query` + дані `rows`/`totals`. */
+export type ListRoot<Row> = { $query: Query; rows: Row[]; totals: Totals };
+
+/**
+ * Generic root-схема списку/пікера для `Value.Create`: форма рядка важлива лише
+ * на рівні TS-типу (`Row`), а для ініціалізації достатньо порожнього `rows`.
+ * Тож підкласам не потрібен власний конструктор чи `<Model>RootSchema`.
+ * Спільна для `ModelListBase` та `ModelPickerBase`.
+ */
+export const listRootSchema = Type.Object({
+  $query: QuerySchema,
+  rows:   Type.Array(Type.Unknown()),
+  totals: TotalsSchema,
+});
 
 /** Описание однієї колонки списку. */
 export interface ListColumn<Row> {
@@ -101,17 +118,13 @@ const icon = {
  *  - `rowClass()`            — додаткові класи рядка (підсвітка статусів)
  *  - `onActivate()`          — дія по подвійному кліку (за замовч. — відкрити edit)
  */
-export abstract class ModelListBase<Row extends { id: string }> extends SignalWatcher(LitElement) {
+export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<ListRoot<Row>> {
   static override styles = [tw, css`
     tr.selected td { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
     th.sortable { cursor: pointer; user-select: none; }
   `];
 
-  /** Локалізатор — доступний у render підкласу: `this.t("common.open")`. */
-  protected t = t;
-
-  // ── Обов'язкові для підкласу ──────────────────────────────────────────────
-  protected abstract model: string;
+  // ── Обов'язкові для підкласу (`model` успадковано з BaseUI) ────────────────
   protected abstract columns: ListColumn<Row>[];
   protected abstract editRoute: string;
 
@@ -122,15 +135,35 @@ export abstract class ModelListBase<Row extends { id: string }> extends SignalWa
   protected pageSizeOptions = [10, 20, 50, 100];
 
   // ── Стан ──────────────────────────────────────────────────────────────────
-  @state() protected rows: Row[] = [];
-  @state() protected loading = false;
+  /** Виділений рядок — клієнтський транзиент, не частина data-контракту. */
   @state() protected selectedId = "";
-  @state() protected search = "";
-  @state() protected page = 1;
-  @state() protected pageSize = 20;
-  @state() protected sortBy = "";
-  @state() protected sortDir: SortDir = "asc";
-  @state() protected total = 0;
+
+  // Проєкції старих імен полів на службовий `$query` та дані `$root`.
+  // Логіка/рендер нижче лишаються без змін; читання трекає SignalWatcher,
+  // запис у deep-проксі перемальовує.
+  protected get rows(): Row[] { return this.$root.rows; }
+  protected get total(): number { return this.$root.totals.count; }
+  /**
+   * Спіннер на місці таблиці — лише для першого завантаження (порожній список).
+   * Перезавантаження (сортування/пагінація/пошук) показує глобальна смужка
+   * на тулбарі (loading.start/end у data-service), тож таблиця не блимає.
+   */
+  protected get loading(): boolean {
+    return this.running === this.listCommand && this.$root.rows.length === 0;
+  }
+
+  protected get search(): string { return this.$root.$query.search; }
+  protected set search(v: string) { this.$root.$query.search = v; }
+  protected get page(): number { return this.$root.$query.page; }
+  protected set page(v: number) { this.$root.$query.page = v; }
+  protected get pageSize(): number { return this.$root.$query.pageSize; }
+  protected set pageSize(v: number) { this.$root.$query.pageSize = v; }
+  protected get sortBy(): string { return this.$root.$query.sortBy; }
+  protected set sortBy(v: string) { this.$root.$query.sortBy = v; }
+  protected get sortDir(): SortDir { return this.$root.$query.sortDir as SortDir; }
+  protected set sortDir(v: SortDir) { this.$root.$query.sortDir = v; }
+
+  constructor() { super(listRootSchema); }
 
   #searchTimer?: number;
   #unsub?: () => void;
@@ -174,25 +207,14 @@ export abstract class ModelListBase<Row extends { id: string }> extends SignalWa
 
   // ── Логіка ──────────────────────────────────────────────────────────────────
   protected async load() {
-    if (this.rows.length === 0) this.loading = true;
-    try {
-      const data = await bus.request("data.load", {
-        model: this.model,
-        command: this.listCommand,
-        payload: {
-          search: this.search,
-          page: this.page,
-          pageSize: this.pageSize,
-          sortBy: this.sortBy,
-          sortDir: this.sortDir,
-          ...this.extraPayload(),
-        },
-      }) as { data?: { rows?: Row[]; totals?: ListTotals } };
-      this.rows = data?.data?.rows ?? [];
-      this.total = data?.data?.totals?.count ?? 0;
-    } finally {
-      this.loading = false;
-    }
+    // payload = службовий $query (+ розширення підкласу).
+    // Відповідь `{ rows, totals[, $query] }` домержується у $root через assign:
+    // якщо БД поверне ефективний $query — він віддзеркалиться назад.
+    const env = await this.run<Partial<ListRoot<Row>>>(this.listCommand, {
+      ...this.$root.$query,
+      ...this.extraPayload(),
+    });
+    if (env.ok && env.data) this.assign(env.data);
   }
 
   /** Перезавантаження з першої сторінки (виклик з підкласу при зміні фільтрів). */
@@ -206,11 +228,8 @@ export abstract class ModelListBase<Row extends { id: string }> extends SignalWa
     if (!this.selectedId) return;
     const row = this.rows.find((r) => r.id === this.selectedId);
     if (!confirm(`${t("common.confirmDelete")} "${row ? this.rowLabel(row) : ""}"?`)) return;
-    await bus.request("data.save", {
-      model: this.model,
-      command: "delete",
-      payload: { id: this.selectedId },
-    });
+    // kind:"save" → data-service емітить model.changed → підписка нижче перезавантажує.
+    await this.run("delete", { id: this.selectedId }, "save");
     this.selectedId = "";
   }
 

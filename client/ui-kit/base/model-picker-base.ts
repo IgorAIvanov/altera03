@@ -1,10 +1,17 @@
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
 import { property, state, query } from "lit/decorators.js";
-import { SignalWatcher } from "@lit-labs/signals";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
-import { alignClass, cellStyle, type ListColumn, type ListTotals, type SortDir } from "./model-list-base.ts";
+import { BaseUI } from "./base-ui.ts";
+import {
+  alignClass,
+  cellStyle,
+  listRootSchema,
+  type ListColumn,
+  type ListRoot,
+  type SortDir,
+} from "./model-list-base.ts";
 
 const searchIcon = html`<svg class="h-4 w-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
 
@@ -22,18 +29,14 @@ const searchIcon = html`<svg class="h-4 w-4 opacity-50" viewBox="0 0 24 24" fill
  * Колонки описуються тим самим типом `ListColumn`, що й у списку:
  * `align` керує вирівнюванням, `sortable` вмикає серверне сортування колонки.
  */
-export abstract class ModelPickerBase<Row extends { id: string }> extends SignalWatcher(LitElement) {
+export abstract class ModelPickerBase<Row extends { id: string }> extends BaseUI<ListRoot<Row>> {
   static override styles = [tw, css`
     :host { display: block; height: 100%; }
     tr.selected td { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
     th.sortable { cursor: pointer; user-select: none; }
   `];
 
-  /** Локалізатор — доступний у render підкласу: `this.t("...")`. */
-  protected t = t;
-
-  // ── Обов'язкові для підкласу ──────────────────────────────────────────────
-  protected abstract model: string;
+  // ── Обов'язкові для підкласу (`model` успадковано з BaseUI) ────────────────
   protected abstract columns: ListColumn<Row>[];
 
   // ── Опційні налаштування ──────────────────────────────────────────────────
@@ -45,27 +48,42 @@ export abstract class ModelPickerBase<Row extends { id: string }> extends Signal
   protected dialogHeight = "480px";
   protected defaultSortBy = "";
   protected defaultSortDir: SortDir = "asc";
+  protected defaultPageSize = 10;
   protected pageSizeOptions = [10, 20, 50];
 
   // ── Контракт picker-host ──────────────────────────────────────────────────
   @property({ type: String }) callbackId = "";
   @property({ type: Object }) params: Record<string, unknown> = {};
 
-  @state() protected rows: Row[] = [];
-  @state() protected loading = false;
-  @state() protected search = "";
+  /** Виділений рядок — клієнтський транзиент. */
   @state() protected selectedId = "";
-  @state() protected page = 1;
-  @state() protected pageSize = 10;
-  @state() protected sortBy = "";
-  @state() protected sortDir: SortDir = "asc";
-  @state() protected total = 0;
+
+  // ── $root-проєкції: старі імена полів → службовий $query / дані ────────────
+  // У модалці глобальна смужка тулбара не видна, тож спіннер лишається на кожне
+  // завантаження (єдина зворотна зв'язок усередині діалогу).
+  protected get rows(): Row[] { return this.$root.rows; }
+  protected get total(): number { return this.$root.totals.count; }
+  protected get loading(): boolean { return this.running === this.lookupCommand; }
+
+  protected get search(): string { return this.$root.$query.search; }
+  protected set search(v: string) { this.$root.$query.search = v; }
+  protected get page(): number { return this.$root.$query.page; }
+  protected set page(v: number) { this.$root.$query.page = v; }
+  protected get pageSize(): number { return this.$root.$query.pageSize; }
+  protected set pageSize(v: number) { this.$root.$query.pageSize = v; }
+  protected get sortBy(): string { return this.$root.$query.sortBy; }
+  protected set sortBy(v: string) { this.$root.$query.sortBy = v; }
+  protected get sortDir(): SortDir { return this.$root.$query.sortDir as SortDir; }
+  protected set sortDir(v: SortDir) { this.$root.$query.sortDir = v; }
+
+  constructor() { super(listRootSchema); }
 
   @query("input") private _input?: HTMLInputElement;
   #searchTimer?: number;
 
   override connectedCallback() {
     super.connectedCallback();
+    this.pageSize = this.defaultPageSize;
     if (!this.sortBy) this.sortBy = this.defaultSortBy || this.columns.find((c) => c.sortable)?.key || "";
     this.sortDir = this.defaultSortDir;
     this.#load();
@@ -83,25 +101,13 @@ export abstract class ModelPickerBase<Row extends { id: string }> extends Signal
   protected rowStyle(_row: Row): string { return ""; }
 
   async #load() {
-    this.loading = true;
-    try {
-      const data = await bus.request("data.load", {
-        model: this.model,
-        command: this.lookupCommand,
-        payload: {
-          search: this.search,
-          page: this.page,
-          pageSize: this.pageSize,
-          sortBy: this.sortBy,
-          sortDir: this.sortDir,
-          ...this.params,
-        },
-      }) as { data?: { rows?: Row[]; totals?: ListTotals } };
-      this.rows = data?.data?.rows ?? [];
-      this.total = data?.data?.totals?.count ?? 0;
-    } finally {
-      this.loading = false;
-    }
+    // payload = службовий $query + params діалогу; відповідь `{ rows, totals }`
+    // домержується у $root через assign (як і в списку).
+    const env = await this.run<Partial<ListRoot<Row>>>(this.lookupCommand, {
+      ...this.$root.$query,
+      ...this.params,
+    });
+    if (env.ok && env.data) this.assign(env.data);
   }
 
   #onSearch(e: Event) {

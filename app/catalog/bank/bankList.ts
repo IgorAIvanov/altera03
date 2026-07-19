@@ -9,7 +9,7 @@ export const tagName = "bank-list";
 export class BankList extends ModelListBase<BankRow> {
   protected model = "bank";
   protected editRoute = "catalog/bank/edit";
-  protected defaultSortBy = "code";
+  protected override defaultSortBy = "code";
 
   protected columns: ListColumn<BankRow>[] = [
     { key: "code", title: "common.code", width: "8rem", sortable: true },

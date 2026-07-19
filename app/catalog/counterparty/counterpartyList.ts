@@ -9,7 +9,7 @@ export const tagName = "counterparty-list";
 export class CounterpartyList extends ModelListBase<CounterpartyRow> {
   protected model = "counterparty";
   protected editRoute = "catalog/counterparty/edit";
-  protected defaultSortBy = "code";
+  protected override defaultSortBy = "code";
 
   protected columns: ListColumn<CounterpartyRow>[] = [
     { key: "code", title: "common.code", width: "8rem", sortable: true },
