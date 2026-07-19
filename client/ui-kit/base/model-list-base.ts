@@ -102,7 +102,7 @@ const icon = {
  *  - `onActivate()`          — дія по подвійному кліку (за замовч. — відкрити edit)
  */
 export abstract class ModelListBase<Row extends { id: string }> extends SignalWatcher(LitElement) {
-  static styles = [tw, css`
+  static override styles = [tw, css`
     tr.selected td { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
     th.sortable { cursor: pointer; user-select: none; }
   `];

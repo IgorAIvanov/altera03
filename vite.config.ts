@@ -11,6 +11,9 @@ export default defineConfig({
     outDir: "../dist",
     emptyOutDir: true,
     manifest: true,
+    // top-level await у точці входу (setLocale, динамічний preload) потребує
+    // es2022; інакше rollup-мініфікація падає з дефолтним es2020-таргетом.
+    target: "es2022",
     rollupOptions: {
       input: {
         client: "client/index.html",
@@ -49,6 +52,8 @@ export default defineConfig({
       "lit/decorators.js",
       "@lit-labs/signals",
       "@sinclair/typebox",
+      "@sinclair/typebox/value",
+      "signal-utils/deep",
       "signal-polyfill",
     ],
   },
@@ -56,6 +61,7 @@ export default defineConfig({
     alias: {
       "@app": resolve("app"),
       "@client": resolve("client"),
+      "@shared": resolve("app/shared"),
     },
   },
   plugins: [

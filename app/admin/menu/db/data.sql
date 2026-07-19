@@ -42,6 +42,7 @@ declare
 	    { "menuCode": "default", "code": "documents", "parentCode": null, "name": "menu.documents", "iconKey": "file-text", "sortOrder": 50, "routePath": "/operation/document/list", "isActive": true },
 	    { "menuCode": "default", "code": "manual_entry", "parentCode": "documents", "name": "menu.manualEntry", "iconKey": "form", "sortOrder": 5, "routePath": "/operation/manual_entry/list", "isActive": true },
 	    { "menuCode": "default", "code": "supplier_invoice", "parentCode": "documents", "name": "menu.supplierInvoice", "iconKey": "file-text", "sortOrder": 10, "routePath": "/operation/supplier_invoice/list", "isActive": true },
+	    { "menuCode": "default", "code": "invoice", "parentCode": "documents", "name": "menu.invoice", "iconKey": "file-text", "sortOrder": 15, "routePath": "/document/invoice/list", "isActive": true },
 	    { "menuCode": "default", "code": "administration", "parentCode": null, "name": "menu.administration", "iconKey": "setting", "sortOrder": 90, "routePath": null, "isActive": true },
 	    { "menuCode": "default", "code": "interfaces", "parentCode": "administration", "name": "menu.interfaces", "iconKey": "appstore", "sortOrder": 10, "routePath": "/admin/interface/list", "isActive": true },
 	    { "menuCode": "default", "code": "print_templates", "parentCode": "administration", "name": "menu.printTemplates", "iconKey": "file-text", "sortOrder": 15, "routePath": "/admin/print_template/list", "isActive": true },

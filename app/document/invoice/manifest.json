@@ -1,0 +1,9 @@
+{
+  "model": "invoice",
+  "type": "document",
+  "schema": "app",
+  "views": {
+    "list": { "module": "./invoiceList.ts", "titleKey": "invoice.titleMany" },
+    "edit": { "module": "./invoiceEdit.ts", "titleKey": "invoice.titleOne" }
+  }
+}

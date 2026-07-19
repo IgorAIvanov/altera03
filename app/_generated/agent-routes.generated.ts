@@ -6,25 +6,15 @@ export const agentModelRoutes = {
     listPath: "/catalog/bank/list",
     type: "catalog"
   },
-  "interface": {
-    editPath: "/admin/interface/edit",
-    listPath: "/admin/interface/list",
-    type: "admin"
+  "counterparty": {
+    editPath: "/catalog/counterparty/edit",
+    listPath: "/catalog/counterparty/list",
+    type: "catalog"
   },
-  "print_template": {
-    editPath: "/admin/print_template/edit",
-    listPath: "/admin/print_template/list",
-    type: "admin"
-  },
-  "user": {
-    editPath: "/admin/user/edit",
-    listPath: "/admin/user/list",
-    type: "admin"
-  },
-  "user_group": {
-    editPath: "/admin/user_group/edit",
-    listPath: "/admin/user_group/list",
-    type: "admin"
+  "invoice": {
+    editPath: "/document/invoice/edit",
+    listPath: "/document/invoice/list",
+    type: "document"
   }
 };
 

@@ -24,7 +24,7 @@ async function resolveChunk(route: string): Promise<string | null> {
 
 @customElement("picker-host")
 export class PickerHost extends LitElement {
-  static styles = css`
+  static override styles = css`
     .overlay {
       position: fixed;
       inset: 0;
@@ -76,12 +76,12 @@ export class PickerHost extends LitElement {
 
   private _unsub?: () => void;
 
-  connectedCallback() {
+  override connectedCallback() {
     super.connectedCallback();
     this._unsub = bus.on("picker.open", (msg) => this._open(msg));
   }
 
-  disconnectedCallback() {
+  override disconnectedCallback() {
     super.disconnectedCallback();
     this._unsub?.();
   }
@@ -138,7 +138,7 @@ export class PickerHost extends LitElement {
     }
   }
 
-  render() {
+  override render() {
     if (!this._picker) return html``;
     return html`
       <div class="overlay" @click=${this._onOverlayClick}>

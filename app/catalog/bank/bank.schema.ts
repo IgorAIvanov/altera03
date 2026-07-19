@@ -4,23 +4,26 @@ import { SortDirSchema } from "@shared/schema.ts";
 // ── 1. Item — форма редагування та payload для save ───────────────────────────
 
 export const BankItemSchema = Type.Object({
-  id:   Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint" }),
+  id:   Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
   code: Type.String({
     title: "Код", minLength: 1, maxLength: 9,
     "x-form": { order: 1, width: "sm" },
     "x-list": { width: "sm", sortable: true },
+    "x-search": true,
   }),
   name: Type.String({
     title: "Назва", minLength: 1, maxLength: 100,
     "x-form": { order: 2, width: "full" },
     "x-list": { sortable: true },
     "x-lookup": true,
+    "x-search": true,
   }),
   mfo: Type.Optional(Type.String({
     title: "МФО", maxLength: 6,
     "x-form": { order: 3, width: "sm" },
     "x-list": { width: "sm", sortable: true },
     "x-lookup": true,
+    "x-search": true,
   })),
   isActive: Type.Optional(Type.Boolean({ title: "Активний", default: true })),
 });

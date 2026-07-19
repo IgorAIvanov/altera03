@@ -59,7 +59,7 @@ async function createTabElement(chunkUrl: string, modelId: string | null): Promi
 
 @customElement("tab-controller")
 export class TabController extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: flex;
       flex-direction: column;
@@ -147,7 +147,7 @@ export class TabController extends LitElement {
   private headerEl!: HTMLElement;
   private menuEl!: HTMLElement;
 
-  connectedCallback() {
+  override connectedCallback() {
     super.connectedCallback();
     const shell = shellTags();
     this.headerEl = document.createElement(shell.header);
@@ -171,7 +171,7 @@ export class TabController extends LitElement {
     );
   }
 
-  disconnectedCallback() {
+  override disconnectedCallback() {
     super.disconnectedCallback();
     this.unsubs.forEach(fn => fn());
     this.unsubs = [];
@@ -239,7 +239,7 @@ export class TabController extends LitElement {
     return tab.modelId ? `${base} #${tab.modelId}` : base;
   }
 
-  render() {
+  override render() {
     return html`
       ${this.headerEl}
       <div class="tab-bar">

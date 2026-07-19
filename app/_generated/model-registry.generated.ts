@@ -7,8 +7,16 @@ export const generatedModelRegistry = {
     type: "catalog",
     schema: "app"
   },
+  "counterparty": {
+    type: "catalog",
+    schema: "app"
+  },
   "interface": {
     type: "admin",
+    schema: "app"
+  },
+  "invoice": {
+    type: "document",
     schema: "app"
   },
   "print_template": {

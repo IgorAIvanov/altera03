@@ -1,0 +1,10 @@
+{
+  "model": "counterparty",
+  "type": "catalog",
+  "schema": "app",
+  "views": {
+    "list":   { "module": "./counterpartyList.ts",   "titleKey": "counterparty.titleMany" },
+    "edit":   { "module": "./counterpartyEdit.ts",   "titleKey": "counterparty.titleOne" },
+    "picker": { "module": "./counterpartyPicker.ts", "titleKey": "counterparty.titleMany" }
+  }
+}

@@ -30,6 +30,7 @@ export const menuMock: MenuItem[] = [
     icon: icons.document,
     children: [
       { id: "supplier_invoice", label: "Надходження товарів", icon: icons.invoice, route: "operation/supplier_invoice/list" },
+      { id: "invoice_in", label: "Invoice", icon: icons.invoice, route: "document/invoice/list" },
     ],
   },
   {

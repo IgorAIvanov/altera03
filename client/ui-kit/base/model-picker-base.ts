@@ -23,7 +23,7 @@ const searchIcon = html`<svg class="h-4 w-4 opacity-50" viewBox="0 0 24 24" fill
  * `align` керує вирівнюванням, `sortable` вмикає серверне сортування колонки.
  */
 export abstract class ModelPickerBase<Row extends { id: string }> extends SignalWatcher(LitElement) {
-  static styles = [tw, css`
+  static override styles = [tw, css`
     :host { display: block; height: 100%; }
     tr.selected td { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
     th.sortable { cursor: pointer; user-select: none; }

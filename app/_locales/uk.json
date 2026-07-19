@@ -1,5 +1,22 @@
 {
   "bank.titleMany": "Банки",
   "bank.titleOne": "Банк",
-  "bank.mfo": "МФО"
+  "bank.mfo": "МФО",
+
+  "counterparty.titleMany": "Контрагенти",
+  "counterparty.titleOne": "Контрагент",
+
+  "invoice.titleMany": "Накладні",
+  "invoice.titleOne": "Накладна",
+  "menu.invoice": "Накладні",
+  "invoice.number": "Номер",
+  "invoice.date": "Дата",
+  "invoice.counterparty": "Контрагент",
+  "invoice.lines": "Рядки",
+  "invoice.bank": "Банк",
+  "invoice.qty": "Кількість",
+  "invoice.price": "Ціна",
+  "invoice.amount": "Сума",
+  "invoice.addLine": "Додати рядок",
+  "invoice.total": "Разом"
 }

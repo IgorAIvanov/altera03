@@ -12,6 +12,49 @@ Use this skill when:
 - replacing inline backend SQL with function calls
 - designing multidataset responses
 
+## Generated CRUD (default path — do not hand-write the five)
+
+Standard `list / get / save / delete / lookup` are produced **deterministically by a
+build script**, not written by hand and not written by the agent. The single source
+of truth is the model's `<model>.schema.ts` (TypeBox) + `manifest.json`. The script
+`scripts/generate-model-sql.ts` (task `sql:gen`) reads the schema and emits
+`db/_generated/<model>.crud.gen.sql`.
+
+So when adding a model, the agent writes **only**:
+- `manifest.json`, `<model>.schema.ts`,
+- `db/struc.sql` (DDL),
+- UI components,
+- and a `db/<model>.custom.sql` **only** if a command needs non-standard logic.
+
+Then run `deno task model:build` (= `sql:registry → sql:gen → sql:assemble → sql:publish`).
+
+**Schema annotations the generator reads** (in `<model>.schema.ts`):
+- `x-search: true` — field participates in the `ilike` search (fallback: all string fields).
+- `x-list.sortable: true` — field is allowed in `sortBy`.
+- `x-lookup: true` — field shown in the picker.
+- `x-ref: { model, fk?, display?, as?, sortable?, searchable? }` — reference to another
+  model: stores the FK id, returns a nested `{id, <display>}` object in get/list, sorts
+  and searches by the target's display column.
+- `x-table: { table, parentFk, orderBy? }` — tabular part (master-detail); the array's
+  item schema describes the line columns (which may themselves carry `x-ref`).
+- `x-db-type` / `x-db-col` — column type cast / column-name override.
+
+**Override semantics (standard vs custom):** decided by file presence, per function.
+The assembler concatenates, in order, `db/_generated/<model>.crud.gen.sql` then
+`db/<model>.custom.sql`. Both use `drop function … (argtypes); create function …`, so a
+function present in the custom file overrides the generated one; the other four stay
+generated. The runtime is unchanged — it still calls `{schema}.{model}_{command}`.
+
+**Documents:** the generator emits `save` as `MERGE` (header upsert + one `MERGE` per
+tabular part, with the mandatory `when not matched by source and <parentFk> = v_id`
+guard). `post`/`unpost` are emitted as stubs — implement real posting in
+`db/<model>.custom.sql`.
+
+Hand-write a SQL function only as an exception (non-standard logic), and put it in
+`db/<model>.custom.sql`. Full design: [docs/sql-codegen.md](../../../docs/sql-codegen.md).
+
+The sections below describe the *contract* every command (generated or custom) must honor.
+
 ## Standard command names
 
 Use these names consistently everywhere: SQL functions, backend command routing, frontend API calls, and model config files.

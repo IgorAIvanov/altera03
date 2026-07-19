@@ -10,6 +10,8 @@
     "_sqlinit/base",
     "_sqlinit/help_content",
     "_sqlinit/help_scenario",
-    "catalog/bank"
+    "catalog/bank",
+    "catalog/counterparty",
+    "document/invoice"
   ]
 }

@@ -1,5 +1,22 @@
 {
   "bank.titleMany": "Banks",
   "bank.titleOne": "Bank",
-  "bank.mfo": "MFO"
+  "bank.mfo": "MFO",
+
+  "counterparty.titleMany": "Counterparties",
+  "counterparty.titleOne": "Counterparty",
+
+  "invoice.titleMany": "Invoices",
+  "invoice.titleOne": "Invoice",
+  "menu.invoice": "Invoices",
+  "invoice.number": "Number",
+  "invoice.date": "Date",
+  "invoice.counterparty": "Counterparty",
+  "invoice.lines": "Lines",
+  "invoice.bank": "Bank",
+  "invoice.qty": "Qty",
+  "invoice.price": "Price",
+  "invoice.amount": "Amount",
+  "invoice.addLine": "Add line",
+  "invoice.total": "Total"
 }

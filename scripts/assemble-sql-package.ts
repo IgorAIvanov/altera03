@@ -3,29 +3,45 @@ import { basename, join, relative, resolve, SEPARATOR } from "jsr:@std/path";
 type PackageStep = {
   key: string;
   defaultOutput: string;
-  resolveFile: (model: string) => string;
+  // Список файлів-кандидатів моделі для цього кроку (у порядку підключення).
+  // Відсутні файли пропускаються — усі файли необов'язкові.
+  resolveFiles: (appDir: string, model: string) => Promise<string[]>;
 };
 
 const PACKAGE_STEPS: PackageStep[] = [
   {
     key: "structure",
     defaultOutput: "struc_app.sql",
-    resolveFile: (model) => `${model}/db/struc.sql`,
+    resolveFiles: (_appDir, model) => Promise.resolve([`${model}/db/struc.sql`]),
   },
   {
     key: "migrations",
     defaultOutput: "migration_app.sql",
-    resolveFile: (model) => `${model}/db/migration.sql`,
+    resolveFiles: (_appDir, model) => Promise.resolve([`${model}/db/migration.sql`]),
   },
   {
+    // Порядок підключення: згенерована п'ятірка → custom-override.
+    // Legacy-файл <model>.sql береться ЛИШЕ якщо генерації немає
+    // (інфраструктурні пакети _sqlinit/* та ще не мігровані моделі).
     key: "models",
     defaultOutput: "models_app.sql",
-    resolveFile: (model) => `${model}/db/${basename(model)}.sql`,
+    resolveFiles: async (appDir, model) => {
+      const name = basename(model);
+      const generated = `${model}/db/_generated/${name}.crud.gen.sql`;
+      const custom = `${model}/db/${name}.custom.sql`;
+      const legacy = `${model}/db/${name}.sql`;
+      const files: string[] = [];
+      const hasGenerated = await fileExists(join(appDir, generated));
+      if (hasGenerated) files.push(generated);
+      if (await fileExists(join(appDir, custom))) files.push(custom);
+      if (!hasGenerated && await fileExists(join(appDir, legacy))) files.push(legacy);
+      return files;
+    },
   },
   {
     key: "data",
     defaultOutput: "data_app.sql",
-    resolveFile: (model) => `${model}/db/data.sql`,
+    resolveFiles: (_appDir, model) => Promise.resolve([`${model}/db/data.sql`]),
   },
 ];
 
@@ -362,14 +378,17 @@ export async function assembleSqlPackage(appDirArg = "./src/app", options?: { ve
       const sectionChunks: string[] = [];
 
       for (const model of manifest.models) {
-        const relativeFile = step.resolveFile(model);
-        const filePath = join(appDir, relativeFile);
+        const relativeFiles = await step.resolveFiles(appDir, model);
         const sqlContext = await resolveModelSqlContext(appDir, model);
-        const fileContent = applyModelSqlPlaceholders(await Deno.readTextFile(filePath), {
-          model: sqlContext.model,
-          schema: sqlContext.schema,
-        });
-        sectionChunks.push(...buildSection(relativeFile, fileContent));
+        for (const relativeFile of relativeFiles) {
+          const filePath = join(appDir, relativeFile);
+          if (!await fileExists(filePath)) continue;
+          const fileContent = applyModelSqlPlaceholders(await Deno.readTextFile(filePath), {
+            model: sqlContext.model,
+            schema: sqlContext.schema,
+          });
+          sectionChunks.push(...buildSection(relativeFile, fileContent));
+        }
       }
 
       if (step.key === "data") {

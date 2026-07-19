@@ -30,8 +30,8 @@ class Bus {
     if (!this.listeners.has(type)) {
       this.listeners.set(type, new Set());
     }
-    this.listeners.get(type)!.add(handler as Handler<BusMessageType>);
-    return () => this.listeners.get(type)?.delete(handler as Handler<BusMessageType>);
+    this.listeners.get(type)!.add(handler as unknown as Handler<BusMessageType>);
+    return () => this.listeners.get(type)?.delete(handler as unknown as Handler<BusMessageType>);
   }
 
   emit(message: BusMessage): void {
@@ -59,7 +59,7 @@ class Bus {
     type: T,
     handler: RequestHandler<T>,
   ): void {
-    this.handlers.set(type, handler as RequestHandler<BusMessageType>);
+    this.handlers.set(type, handler as unknown as RequestHandler<BusMessageType>);
   }
 
   async request<T extends BusMessageType>(

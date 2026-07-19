@@ -8,9 +8,11 @@
     "startdb": "docker compose up -d",
     "stopdb": "docker compose down",
     "sql:registry": "deno run -A ./scripts/generate-model-runtime-registry.ts ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
+    "sql:gen": "deno run -A ./scripts/generate-model-sql.ts ./app --verbose",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "sql:assemble": "deno run -A ./scripts/assemble-sql-package.ts ./app --verbose",
-    "sql:publish": "deno run -A --env-file ./scripts/publish-sql.ts --verbose"
+    "sql:publish": "deno run -A --env-file ./scripts/publish-sql.ts --verbose",
+    "model:build": "deno task sql:registry && deno task sql:gen && deno task sql:assemble && deno task sql:publish"
   },
 
   "workspace": ["./server", "./client", "./app"],
@@ -30,6 +32,7 @@
     "@std/path": "jsr:@std/path@^1.1.2",
     "typebox": "npm:@sinclair/typebox@^0.34.0",
     "@sinclair/typebox": "npm:@sinclair/typebox@^0.34.0",
+    "@sinclair/typebox/value": "npm:@sinclair/typebox@^0.34.0/value",
 
 
     "vite": "npm:vite@^6.3.5",
