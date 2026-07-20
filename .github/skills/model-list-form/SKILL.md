@@ -15,9 +15,13 @@ Use this skill when:
 
 ## Base class
 
-`client/ui-kit/base/model-list-base.ts` → `ModelListBase<Row>`
+`client/ui-kit/base/model-list-base.ts` → `ModelListBase<Row> extends BaseUI<ListRoot<Row>>`
 
-It owns: data load via `bus.request("data.load", …)`, server-side `sortBy`/`sortDir`, pagination (`page`/`pageSize` + footer), debounced search (300 ms), row selection with contrast highlight, delete with confirm, and re-load on the `model.changed` bus event. The global loading bar (in `tab-controller`) already covers request progress — the list shows its own spinner only on the very first load.
+It owns: data load via `run()` / `assign()` on the shared envelope, server-side `sortBy`/`sortDir`, pagination (`page`/`pageSize` + footer), debounced search (300 ms), row selection, delete with confirm, and re-load on the `model.changed` bus event. The global loading bar (in `tab-controller`) already covers request progress — the list shows its own spinner only on the very first load.
+
+State lives in the shared `$root` container, not in local `@state`: the filter is the service field `$root.$query` (`search/page/pageSize/sortBy/sortDir`) and the data is `$root.rows` / `$root.totals`. The familiar member names (`this.page`, `this.search`, `this.sortBy`, `this.rows`, `this.total`) are kept as getters/setters projecting onto `$root`, so subclass code reads the same as before. `$query` is sent as the `list` payload and mirrors back if the server returns an effective (clamped/normalized) query. See [model-form-root](../model-form-root/SKILL.md) for the full contract.
+
+A list subclass needs **no constructor and no root schema** — the base passes a generic `listRootSchema` to `BaseUI` itself. `selectedId` stays a plain `@state` because it is transient UI, never sent to SQL.
 
 The `Row` type comes from the model's TypeBox schema — see [typebox-model-schema](../typebox-model-schema/SKILL.md). Never re-declare a row interface by hand.
 

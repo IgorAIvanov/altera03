@@ -86,6 +86,23 @@ Extra commands follow the same naming style: `nextCode`, `nextNumber`, `<verb><N
 - When a function signature changes, the publication script should drop the legacy signature before creating the new one.
 - Result JSON must be explicit about item data, rows, options, totals, messages, and metadata.
 
+### SQL never constructs empty entities
+
+`get` for a missing or null id returns **`item: null`** — do *not* hand-build a well-formed empty
+object so the form has something to show. Defaults are owned by the model's TypeBox schema and
+applied on the client by `Value.Create` before the first render; a form for a new record never calls
+`get` at all. Duplicating the defaults in SQL only guarantees they drift from the schema.
+
+What SQL must still guarantee: never raise on a missing/invalid id (the command is reachable by the
+agent and by direct API calls, not only by the form) and always return a valid envelope.
+
+The client relies on one more property of the envelope: **every data key is always present**, with
+`null` / `[]` / `{}` in the ones the command does not use (`list` → `item: null`, `get` → `rows: []`).
+Because of that, a top-level `null` unambiguously means "no data for this key", and the frontend
+`assign()` skips it instead of overwriting state. Keep emitting the full key set.
+
+See [model-form-root](../model-form-root/SKILL.md).
+
 ## SQL function naming
 
 The schema prefix comes from the `schema` field in the model's `manifest.json`.  

@@ -63,6 +63,33 @@ Dropdown позиціонується під полем введення чер�
 Кнопка 🔍 відкриває picker через `bus.pick("{url}/{picker}", pickerParams)`.  
 Picker-вʼю повинне викликати `bus.emit({ type: "picker.select", callbackId, value: { id, label } })` для підтвердження вибору.
 
+## Часті помилки
+
+### `url` — це маршрут вʼю, а не API-шлях
+
+```html
+<ui-picker url="catalog/bank" fetch="lookup">   <!-- ✅ -->
+<ui-picker url="/api/model/bank">               <!-- ❌ мовчки не працює -->
+```
+
+`url` має формат `family/model` (як у `view-manifest`), бо з нього збирається **маршрут вʼю**
+`"{url}/{picker}"` → `catalog/bank/picker`. `picker-host` розбирає його як `module/model/view`
+і резолвить через `/api/view/catalog/bank/picker`.
+
+Якщо передати API-шлях `/api/model/bank`, то:
+- 🔍 покличе `bus.pick("/api/model/bank/picker")` → після `split("/")` вийде
+  `module=""`, `model="api"`, `view="model"` → `[picker-host] view не знайдено`, діалог не відкриється;
+- автодоповнення піде на `/api/model/bank/fetch`.
+
+Ім'я моделі для API компонент бере окремо — останнім сегментом `url`, тож `catalog/bank` коректно
+дає `/api/model/bank/...`.
+
+### `fetch` за замовчуванням — `"fetch"`, а не `"lookup"`
+
+У цьому проєкті команда автодоповнення називається `lookup`, тож **завжди** вказуй `fetch="lookup"`.
+Без цього запит піде на неіснуючу команду `{model}_fetch` і випадаючий список буде порожній —
+без видимої помилки у формі.
+
 ## Приклади
 
 ```html

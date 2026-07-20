@@ -27,12 +27,25 @@ Do not confuse the two:
 
 ## Base class
 
-`client/ui-kit/base/model-picker-base.ts` → `ModelPickerBase<Row>`
+`client/ui-kit/base/model-picker-base.ts` → `ModelPickerBase<Row> extends BaseUI<ListRoot<Row>>`
 
-It owns: load via `bus.request("data.load", { model, command: "lookup", payload })`,
-debounced search (250 ms), autofocus on the search input, contrast row selection,
+It owns: load of the `lookup` command via `run()` / `assign()` on the shared envelope,
+debounced search (250 ms), autofocus on the search input, row selection,
 double-click / Enter to confirm, Escape to cancel, and emitting `picker.select` /
-`picker.cancel` on the bus. The global loading bar covers request progress.
+`picker.cancel` on the bus.
+
+State lives in the shared `$root`, exactly as in the list: the filter is the service field
+`$root.$query`, the data is `$root.rows` / `$root.totals`, and the familiar members
+(`this.page`, `this.search`, `this.rows`, …) are getters/setters projecting onto it.
+The dialog's own `params` are merged into the lookup payload next to `$query`.
+See [model-form-root](../model-form-root/SKILL.md) for the full contract.
+
+A picker subclass needs **no constructor and no root schema** — the base passes the generic
+`listRootSchema` to `BaseUI` itself. `callbackId` / `params` stay `@property` (host contract) and
+`selectedId` stays `@state` (transient UI).
+
+Unlike the list, the picker keeps its in-place spinner on **every** load: it is a modal, so the
+global loading bar in the toolbar is not visible behind it.
 
 The `Row` type is the model's `LookupRow` from its TypeBox schema — see
 [typebox-model-schema](../typebox-model-schema/SKILL.md). Never re-declare it.

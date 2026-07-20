@@ -116,8 +116,17 @@ server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace
 
 Lit Web Components, Shadow DOM увімкнений (стандартна інкапсуляція стилів).  
 Дані отримують через `bus.request("data.load", { model, command, payload })`.  
-Picker-поля використовують компонент `<ui-picker url="/api/model/bank/lookup">`.  
+Picker-поля використовують компонент `<ui-picker url="catalog/bank" fetch="lookup">` — `url` це
+**маршрут в'ю** (`family/model`), а не API-шлях; деталі й контр-приклад — [`ui-picker.md`](client/ui-kit/components/ui-picker.md).  
 Локалізація: `t("bank.titleOne")` через сигнальний store + JSON-файли у `app/_locales/`.
+
+**Контракт даних форм (`$root`)** — усі екрани (список, пікер, форма) наслідують `BaseUI`
+(`client/ui-kit/base/base-ui.ts`). `$root` — реактивне дзеркало поля `data` з конверта
+`{ ok, data, messages }`, засіяне зі схеми через `Value.Create` (жодних рукописних порожніх
+об'єктів). Поля без префікса — дані моделі (`item`, `rows`, `totals`); `$`-префікс — службовий стан,
+що дзеркалиться з БД (`$query`). Транзієнт (`running`, `busy`, `messages`) у `$root` не потрапляє.
+Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); еталони —
+`app/catalog/bank/bankEdit.ts` (проста форма), `app/document/invoice/invoiceEdit.ts` (з табличною частиною).
 
 **Форма списку** — наслідуй `ModelListBase` (`client/ui-kit/base/model-list-base.ts`): підклас задає лише `model`, `editRoute` та `columns`. Тулбар, серверне сортування, пагінація, пошук, вибір рядка — у базі. Документація для розробника — [`docs/ui-list-form.md`](docs/ui-list-form.md); skill для агента — [`model-list-form`](.github/skills/model-list-form/SKILL.md); еталон — `app/catalog/bank/bankList.ts`.
 
