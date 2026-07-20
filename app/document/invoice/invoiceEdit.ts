@@ -1,5 +1,6 @@
 import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { Decimal } from "decimal.js";
 import { t } from "@client/locale.ts";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import {
@@ -8,10 +9,25 @@ import {
   type InvoiceForm,
 } from "./invoice.schema.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import "@client/ui-kit/components/ui-decimal.ts";
 
 export const tagName = "invoice-edit";
 
+/** Точність десяткових полів табличної частини. */
+const QTY_PRECISION = 3;
+const MONEY_PRECISION = 2;
+
 type PickEvent = CustomEvent<{ id: string; label: string }>;
+type DecimalEvent = CustomEvent<{ value: string }>;
+
+/** Безпечний парсинг рядка з форми у Decimal (порожнє / сміття → 0). */
+function dec(raw: unknown): Decimal {
+  try {
+    return new Decimal(String(raw ?? "").replace(",", ".") || 0);
+  } catch {
+    return new Decimal(0);
+  }
+}
 
 @customElement(tagName)
 export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
@@ -34,10 +50,24 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     const env = await this.run<Partial<InvoiceEditRoot>>("get", { id: this.modelId });
     if (env.ok && env.data) this.assign(env.data);
     if (!this.$root.item.lines) this.$root.item.lines = [];
+    // SQL віддає numeric → JSON number; у формі десяткові поля живуть як рядки
+    this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
   }
 
   private async save() {
-    await this.run("save", { item: this.$root.item }, "save");
+    // страховка: нормалізуємо десяткові поля ще раз (раптом рядок не втратив фокус)
+    const item = { ...this.$root.item, lines: this.normalizedLines() };
+    this.$root.item = item;
+    await this.run("save", { item }, "save");
+  }
+
+  /** Усі рядки з qty/price у канонічному вигляді. */
+  private normalizedLines(): InvoiceForm["lines"] {
+    return this.$root.item.lines.map((l) => ({
+      ...l,
+      qty: dec(l.qty).toFixed(QTY_PRECISION),
+      price: dec(l.price).toFixed(MONEY_PRECISION),
+    }));
   }
 
   private setField<K extends keyof InvoiceForm>(field: K, value: InvoiceForm[K]) {
@@ -53,7 +83,14 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     const lineNo = this.$root.item.lines.length + 1;
     this.$root.item = {
       ...this.$root.item,
-      lines: [...this.$root.item.lines, { id: null, lineNo, bankId: "", bank: null, qty: 0, price: 0 }],
+      lines: [...this.$root.item.lines, {
+        id: null,
+        lineNo,
+        bankId: "",
+        bank: null,
+        qty: new Decimal(0).toFixed(QTY_PRECISION),
+        price: new Decimal(0).toFixed(MONEY_PRECISION),
+      }],
     };
   }
 
@@ -64,8 +101,15 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     this.$root.item = { ...this.$root.item, lines };
   }
 
-  private get total(): number {
-    return this.$root.item.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+  /** Сума рядка = кількість × ціна (точна десяткова арифметика). */
+  private lineAmount(line: InvoiceForm["lines"][number]): string {
+    return dec(line.qty).mul(dec(line.price)).toFixed(MONEY_PRECISION);
+  }
+
+  private get total(): string {
+    return this.$root.item.lines
+      .reduce((s, l) => s.plus(dec(l.qty).mul(dec(l.price))), new Decimal(0))
+      .toFixed(MONEY_PRECISION);
   }
 
   override render() {
@@ -140,17 +184,25 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
                   ></ui-picker>
                 </td>
                 <td>
-                  <input type="number" class="input input-bordered input-sm w-full text-right"
-                    .value=${String(line.qty)}
-                    @input=${(e: Event) => this.setLine(i, { qty: Number((e.target as HTMLInputElement).value) })} />
+                  <ui-decimal
+                    size="sm"
+                    .precision=${QTY_PRECISION}
+                    .value=${line.qty}
+                    @value-input=${(e: DecimalEvent) => this.setLine(i, { qty: e.detail.value })}
+                    @value-changed=${(e: DecimalEvent) => this.setLine(i, { qty: e.detail.value })}
+                  ></ui-decimal>
                 </td>
                 <td>
-                  <input type="number" class="input input-bordered input-sm w-full text-right"
-                    .value=${String(line.price)}
-                    @input=${(e: Event) => this.setLine(i, { price: Number((e.target as HTMLInputElement).value) })} />
+                  <ui-decimal
+                    size="sm"
+                    .precision=${MONEY_PRECISION}
+                    .value=${line.price}
+                    @value-input=${(e: DecimalEvent) => this.setLine(i, { price: e.detail.value })}
+                    @value-changed=${(e: DecimalEvent) => this.setLine(i, { price: e.detail.value })}
+                  ></ui-decimal>
                 </td>
                 <td class="text-right tabular-nums">
-                  ${((Number(line.qty) || 0) * (Number(line.price) || 0)).toFixed(2)}
+                  ${this.lineAmount(line)}
                 </td>
                 <td class="text-center">
                   <button class="btn btn-ghost btn-xs text-error" title=${t("common.delete")}
@@ -167,7 +219,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
           <tfoot>
             <tr>
               <th colspan="4" class="text-right">${t("invoice.total")}</th>
-              <th class="text-right tabular-nums">${this.total.toFixed(2)}</th>
+              <th class="text-right tabular-nums">${this.total}</th>
               <th></th>
             </tr>
           </tfoot>

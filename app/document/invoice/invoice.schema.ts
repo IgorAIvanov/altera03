@@ -63,8 +63,10 @@ export const InvoiceFormLineSchema = Type.Object({
   lineNo: Type.Number({ default: 0 }),
   bankId: Type.String({ default: "" }),
   bank:   Type.Optional(RefSchema),
-  qty:    Type.Number({ default: 0 }),
-  price:  Type.Number({ default: 0 }),
+  // Десяткові поля у формі — рядки: точність не втрачається, ввід не «стрибає».
+  // Канонічний вигляд задає <ui-decimal precision>; у SQL летять `e->>'qty'`.
+  qty:    Type.String({ default: "0.000" }),
+  price:  Type.String({ default: "0.00" }),
 });
 export type InvoiceFormLine = Static<typeof InvoiceFormLineSchema>;
 
