@@ -1,3 +1,4 @@
+import { html, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { deep } from "signal-utils/deep";
@@ -44,8 +45,20 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   /** Ім'я моделі, напр. `"bank"`. */
   protected abstract readonly model: string;
 
+  /**
+   * Ключ основної сутності у `data` — для edit-форм зазвичай `"item"`.
+   * Якщо заданий, `loadInto()` вміє відрізнити «запис не знайдено» від
+   * «нова порожня форма»: обидва стани виглядають однаково (бо `$root`
+   * засіяний зі схеми), але зберігати другий можна, а перший — ні.
+   * `null` — перевірка вимкнена (списки, пікери).
+   */
+  protected primaryKey: string | null = null;
+
   /** Реактивний контейнер даних форми (побудований зі схеми). */
   protected $root: T;
+
+  /** Запит пройшов, але основної сутності немає — запис видалено/невалідний id. */
+  @state() protected notFound = false;
 
   /** Ім'я команди, що зараз виконується (`null` — простій). Транзієнтний UI-стан. */
   @state() protected running: string | null = null;
@@ -88,14 +101,46 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   }
 
   /**
+   * Завантажити дані командою і злити їх у `$root`.
+   *
+   * Повертає `true`, якщо дані застосовано. Якщо оголошено `primaryKey` і
+   * сервер повернув по ньому `null` — це «не знайдено»: злиття не робиться,
+   * `$root` лишається засіяним зі схеми, вмикається `notFound`. Так
+   * «видалений запис» перестає виглядати як «нова порожня форма».
+   */
+  protected async loadInto(command: string, payload: unknown): Promise<boolean> {
+    this.notFound = false;
+    const env = await this.run<Partial<T>>(command, payload);
+    if (!env.ok || !env.data) return false;
+    if (this.primaryKey && (env.data as Record<string, unknown>)[this.primaryKey] == null) {
+      this.notFound = true;
+      return false;
+    }
+    this.assign(env.data);
+    return true;
+  }
+
+  /**
    * Злиття `data` з відповіді SQL у реактивний `$root` — тільки ключі, що
    * прийшли (partial merge). Модельні поля (`item`, `rows`, `totals`…) і
    * службові (`$query`) зеркаляться однаково; чого сервер не повернув —
    * лишається як є (напр. клієнтський `$query`, якщо БД його не віддала).
+   *
+   * `null`/`undefined` верхнього рівня ІГНОРУЮТЬСЯ. Конверт SQL завжди несе
+   * повний набір ключів (`item`, `rows`, `options`, `totals`, `extra`) і кладе
+   * `null` у ті, що не стосуються команди: `list` віддає `item: null`, `get` —
+   * `rows: []`. Тому `null` тут означає «даних немає», а не «очистити»:
+   * інакше `get` неіснуючого запису затер би засіяний зі схеми `$root.item`
+   * і рендер впав би. Значуще очищення приходить УСЕРЕДИНІ об'єкта
+   * (напр. `item.counterparty = null`), а не верхнім ключем.
+   *
+   * Завдяки цьому формам не треба писати захист у кожному `load()`.
    */
   protected assign(patch: Partial<T>): void {
     for (const key of Object.keys(patch) as (keyof T)[]) {
-      this.$root[key] = patch[key] as T[keyof T];
+      const value = patch[key];
+      if (value == null) continue;
+      this.$root[key] = value as T[keyof T];
     }
   }
 
@@ -109,5 +154,31 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     return (e: Event) => {
       obj[field] = (e.target as HTMLInputElement).value as O[keyof O];
     };
+  }
+
+  /**
+   * Чи можна зберігати: немає команди в польоті і сутність існує.
+   * Не даємо «зберегти» неіснуючий запис — інакше `item.id = null` зі схеми
+   * пішов би в `save` і мовчки створив НОВИЙ запис замість помилки.
+   */
+  protected get canSave(): boolean {
+    return !this.busy && !this.notFound;
+  }
+
+  /**
+   * Спільний банер: «запис не знайдено» + помилки з конверта.
+   * Підключається одним рядком у render підкласу: `${this.renderNotice()}`.
+   */
+  protected renderNotice(): TemplateResult | string {
+    const errors = this.messages.filter((m) => m.type === "error" || m.type === "warn");
+    if (!this.notFound && errors.length === 0) return "";
+    return html`
+      <div class="mb-3 flex flex-col gap-2">
+        ${this.notFound
+          ? html`<div class="alert alert-error py-2 text-sm">${t("common.recordNotFound")}</div>`
+          : ""}
+        ${errors.map((m) => html`<div class="alert alert-error py-2 text-sm">${m.text}</div>`)}
+      </div>
+    `;
   }
 }

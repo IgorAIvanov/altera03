@@ -32,6 +32,7 @@ function dec(raw: unknown): Decimal {
 @customElement(tagName)
 export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
   protected model = "invoice";
+  protected override primaryKey = "item";
 
   @property({ type: String }) modelId: string | null = null;
 
@@ -46,10 +47,9 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
   }
 
   private async load() {
-    // get повертає data = { item, options } → assign домержує; гарантуємо lines[]
-    const env = await this.run<Partial<InvoiceEditRoot>>("get", { id: this.modelId });
-    if (env.ok && env.data) this.assign(env.data);
-    if (!this.$root.item.lines) this.$root.item.lines = [];
+    // get повертає data = { item, options }; item === null → notFound
+    if (!await this.loadInto("get", { id: this.modelId })) return;
+    this.$root.item.lines ??= [];
     // SQL віддає numeric → JSON number; у формі десяткові поля живуть як рядки
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
   }
@@ -121,6 +121,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
 
     return html`
       <div class="p-4 max-w-3xl">
+        ${this.renderNotice()}
         <!-- Шапка -->
         <div class="grid grid-cols-3 gap-4 mb-4">
           <div class="form-control">
@@ -157,7 +158,9 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
           <button class="btn btn-sm" @click=${this.addLine}>+ ${t("invoice.addLine")}</button>
         </div>
 
-        <table class="table table-sm w-full">
+        <!-- table-tabular: контракт табличної частини (client/styles/tailwind.css).
+             Комірки з контролами — без класу (падінг 0), текстові — cell-text. -->
+        <table class="table table-sm w-full table-tabular">
           <thead>
             <tr>
               <th class="w-10">#</th>
@@ -171,9 +174,10 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
           <tbody>
             ${item.lines.map((line, i) => html`
               <tr>
-                <td>${line.lineNo}</td>
+                <td class="cell-text">${line.lineNo}</td>
                 <td>
                   <ui-picker
+                    cell
                     url="catalog/bank"
                     fetch="lookup"
                     .displayValue=${line.bank?.name ?? ""}
@@ -185,7 +189,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
                 </td>
                 <td>
                   <ui-decimal
-                    size="sm"
+                    cell
                     .precision=${QTY_PRECISION}
                     .value=${line.qty}
                     @value-input=${(e: DecimalEvent) => this.setLine(i, { qty: e.detail.value })}
@@ -194,14 +198,14 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
                 </td>
                 <td>
                   <ui-decimal
-                    size="sm"
+                    cell
                     .precision=${MONEY_PRECISION}
                     .value=${line.price}
                     @value-input=${(e: DecimalEvent) => this.setLine(i, { price: e.detail.value })}
                     @value-changed=${(e: DecimalEvent) => this.setLine(i, { price: e.detail.value })}
                   ></ui-decimal>
                 </td>
-                <td class="text-right tabular-nums">
+                <td class="cell-text text-right tabular-nums">
                   ${this.lineAmount(line)}
                 </td>
                 <td class="text-center">
@@ -226,7 +230,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
         </table>
 
         <div class="flex gap-2 mt-6">
-          <button class="btn btn-primary" ?disabled=${this.busy} @click=${this.save}>
+          <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
             ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             ${t("common.save")}
           </button>

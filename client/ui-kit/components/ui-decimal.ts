@@ -36,6 +36,11 @@ export class UiDecimal extends GlobalStyledLitElement {
   /** Розмір daisyUI-інпута: `xs` | `sm` | `md` | `lg`. Порожньо — типовий. */
   @property({ type: String }) size: "" | "xs" | "sm" | "md" | "lg" = "";
   @property({ type: String }) width = "";
+  /**
+   * Режим комірки табличної частини: контрол заповнює `<td>` цілком —
+   * без рамки, заокруглень і зовнішніх відступів. `<td>` має бути `p-0`.
+   */
+  @property({ type: Boolean, reflect: true }) cell = false;
   @property({ type: Boolean }) visible = true;
 
   /** Текст під час редагування; `null` — поле не редагується. */
@@ -153,7 +158,10 @@ export class UiDecimal extends GlobalStyledLitElement {
       <input
         type="text"
         inputmode="decimal"
-        class="input input-bordered w-full text-right tabular-nums ${this.size ? `input-${this.size}` : ""}"
+        class="input w-full text-right tabular-nums ${this.size ? `input-${this.size}` : ""} ${
+          // cell-control — контракт табличної частини з client/styles/tailwind.css
+          this.cell ? "cell-control" : "input-bordered"
+        }"
         .value=${this._draft ?? this.value}
         placeholder="${this.placeholder}"
         ?disabled=${this.disabled}
@@ -165,6 +173,9 @@ export class UiDecimal extends GlobalStyledLitElement {
         @keydown=${this._onKeyDown}
       />
     `;
+
+    // У комірці таблиці підпис не потрібен — жодних обгорток і відступів.
+    if (this.cell) return input;
 
     const style = this.width ? `width:${this.width}` : "";
 

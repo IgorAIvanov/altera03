@@ -12,6 +12,7 @@
   "common.name": "Назва",
   "common.noData": "Немає даних",
   "common.notFound": "Нічого не знайдено",
+  "common.recordNotFound": "Запис не знайдено або видалено",
   "common.select": "Вибрати",
   "common.active": "Активний",
   "common.pick": "Підбір",

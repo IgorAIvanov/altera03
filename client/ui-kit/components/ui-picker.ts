@@ -21,6 +21,11 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String, attribute: "display-value" }) displayValue = "";
   @property({ type: String, attribute: "selected-id" }) selectedId = "";
   @property({ type: String }) width = "";
+  /**
+   * Режим комірки табличної частини: контрол заповнює `<td>` цілком —
+   * без рамки, заокруглень і зовнішніх відступів. `<td>` має бути `p-0`.
+   */
+  @property({ type: Boolean, reflect: true }) cell = false;
   @property({ type: Boolean }) visible = true;
 
   @state() private _items: Array<Record<string, unknown>> = [];
@@ -122,8 +127,12 @@ export class UiPicker extends GlobalStyledLitElement {
 
     if (!this.visible) return html``;
 
+    // cell-control — контракт табличної частини з client/styles/tailwind.css:
+    // рамки, заокруглення й фон знімає він, сітку малює сама таблиця.
+    const flat = this.cell ? "cell-control" : "";
+
     const inputGroup = html`
-      <div class="join flex-1${this.width ? "" : ""}">
+      <div class="join flex-1 ${flat}">
         <input
           type="text"
           class="input join-item flex-1 min-w-0"
@@ -152,19 +161,7 @@ export class UiPicker extends GlobalStyledLitElement {
       </div>
     `;
 
-    return html`
-      ${this.labelPosition === "left" ? html`
-        <div class="flex items-center gap-2${this.width ? ` w-[${this.width}]` : ""}">
-          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}</span>` : ""}
-          ${inputGroup}
-        </div>
-      ` : html`
-        <div class="flex flex-col gap-1${this.width ? ` w-[${this.width}]` : ""}">
-          ${this.label ? html`<span class="label text-sm">${this.label}</span>` : ""}
-          ${inputGroup}
-        </div>
-      `}
-
+    const popover = html`
       <ul
         popover
         @toggle=${this._onPopoverToggle}
@@ -180,6 +177,24 @@ export class UiPicker extends GlobalStyledLitElement {
           </li>
         `)}
       </ul>
+    `;
+
+    // У комірці таблиці підпис не потрібен — жодних обгорток і відступів.
+    if (this.cell) return html`${inputGroup}${popover}`;
+
+    return html`
+      ${this.labelPosition === "left" ? html`
+        <div class="flex items-center gap-2${this.width ? ` w-[${this.width}]` : ""}">
+          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}</span>` : ""}
+          ${inputGroup}
+        </div>
+      ` : html`
+        <div class="flex flex-col gap-1${this.width ? ` w-[${this.width}]` : ""}">
+          ${this.label ? html`<span class="label text-sm">${this.label}</span>` : ""}
+          ${inputGroup}
+        </div>
+      `}
+      ${popover}
     `;
   }
 }

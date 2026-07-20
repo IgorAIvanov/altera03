@@ -15,6 +15,7 @@ interface BankPingData { item: Record<string, unknown>; }
 @customElement(tagName)
 export class BankEdit extends BaseUI<BankEditRoot> {
   protected model = "bank";
+  protected override primaryKey = "item";
 
   @property({ type: String }) modelId: string | null = null;
 
@@ -33,9 +34,8 @@ export class BankEdit extends BaseUI<BankEditRoot> {
   }
 
   private async load() {
-    // get повертає data = { item, options } → assign домержує обидва ключі
-    const env = await this.run<Partial<BankEditRoot>>("get", { id: this.modelId });
-    if (env.ok && env.data) this.assign(env.data);
+    // get повертає data = { item, options }; item === null → notFound
+    await this.loadInto("get", { id: this.modelId });
   }
 
   private async save() {
@@ -60,6 +60,7 @@ export class BankEdit extends BaseUI<BankEditRoot> {
 
     return html`
       <div class="p-4 max-w-md">
+        ${this.renderNotice()}
         <div class="form-control mb-4">
           <label class="label"><span class="label-text">${this.t("common.code")}</span></label>
           <input class="input input-bordered" .value=${item.code ?? ""}
@@ -79,7 +80,7 @@ export class BankEdit extends BaseUI<BankEditRoot> {
         </div>
 
         <div class="flex gap-2 mt-6">
-          <button class="btn btn-primary" ?disabled=${this.busy} @click=${this.save}>
+          <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
             ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             ${this.t("common.save")}
           </button>

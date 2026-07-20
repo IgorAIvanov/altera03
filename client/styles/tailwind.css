@@ -160,5 +160,60 @@ html, body {
 .join .join-item:focus,
 .join .join-item:focus-within { position: relative; z-index: 1; }
 
+/* ── Табличні частини документів ──────────────────────────
+   Контракт (перенесено з altera_danet, .app-table--tabular-section):
+   сітку малює ТІЛЬКИ таблиця, контрол у комірці не має власної рамки,
+   заокруглень, тіні й фону та займає комірку цілком.
+
+   Правила живуть тут, а не в компонентах, бо цей лист адоптується в кожен
+   shadow root (GlobalStyledLitElement) — отже дістає і до контролів усередині
+   ui-decimal / ui-picker.
+
+   ВАЖЛИВО: блок має йти ПІСЛЯ .input/.join/.table і теж поза @layer.
+   Утиліти Tailwind (шар utilities) тут не працюють — безшарові правила теми
+   перебивають будь-який шар незалежно від специфічності. */
+
+.table-tabular td {
+  padding: 0;
+  vertical-align: middle;
+}
+/* Текстові комірки (номер рядка, сума): горизонтальний відступ для читабельності,
+   вертикальний — нуль, інакше рядок стане вищим за контрол. */
+.table-tabular td.cell-text { padding: 0 8px; }
+
+.cell-control,
+.cell-control input,
+.cell-control .input,
+.cell-control .btn {
+  height: 24px;
+  min-height: 24px;
+  border: 0;
+  border-radius: 0 !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Контрол займає комірку по ширині (кнопки — фіксовані, див. нижче). */
+.cell-control,
+.cell-control input { width: 100%; }
+
+/* Рамки фокуса в комірці немає — межу малює сама таблиця (як в altera_danet). */
+.cell-control:focus,
+.cell-control input:focus,
+.cell-control .input:focus,
+.cell-control.join:focus-within,
+.cell-control .join-item:focus,
+.cell-control .join-item:focus-within {
+  outline: none;
+  border-color: transparent;
+}
+
+/* Іконкові кнопки в комірці — рівно 24×24 без падінгів. */
+.cell-control .btn {
+  width: 24px;
+  min-width: 24px;
+  padding-inline: 0;
+}
+
 /* Загрузка */
 .loading { width: 16px; height: 16px; }
