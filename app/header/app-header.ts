@@ -10,7 +10,7 @@ export class AppHeader extends LitElement {
       justify-content: space-between;
       height: 32px;
       padding: 0 10px;
-      background: #1a3a6b;
+      background: #234a6f;
       color: #e8f0fb;
       font-family: "Roboto", sans-serif;
       font-size: var(--default-font-size, 0.875rem);
@@ -99,7 +99,7 @@ export class AppHeader extends LitElement {
       font-size: inherit;
       cursor: pointer;
     }
-    .dropdown-item:hover { background: #ECF0F5; }
+    .dropdown-item:hover { background: var(--color-base-200, #dfe5ea); }
     .dropdown-item.danger { color: #dc2626; }
     .dropdown-item.danger:hover { background: #fef2f2; }
 

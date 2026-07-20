@@ -72,7 +72,7 @@ export class TabController extends LitElement {
       align-items: flex-end;
       gap: 2px;
       padding: 4px 4px 0;
-      background: #2B5598;
+      background: var(--color-primary, #2f5f8f);
       overflow-x: auto;
       flex-shrink: 0;
     }
@@ -82,18 +82,18 @@ export class TabController extends LitElement {
       gap: 4px;
       padding: 3px 6px 3px 10px;
       border-radius: 2px 2px 0 0;
-      background: #3a6ea8;
+      background: var(--color-secondary, #4a7ab5);
       color: #d0e0f5;
       cursor: pointer;
       font-size: inherit;
       white-space: nowrap;
       user-select: none;
-      border: 1px solid #1e3f7a;
+      border: 1px solid #244b71;
       border-bottom: none;
     }
     .tab.active {
-      background: #ECF0F5;
-      color: #1f2937;
+      background: var(--color-base-200, #dfe5ea);
+      color: var(--color-base-content, #243746);
       font-weight: 500;
     }
     .tab.home { padding: 3px 8px; }
@@ -108,9 +108,9 @@ export class TabController extends LitElement {
       opacity: 0.6;
       margin-left: 4px;
     }
-    .tab-close:hover { background: #b0bec5; opacity: 1; color: #111; }
+    .tab-close:hover { background: var(--app-border, #b8c3cc); opacity: 1; color: #111; }
     .workspace { display: flex; flex: 1; overflow: hidden; }
-    .panels { flex: 1; position: relative; overflow: hidden; background: #ECF0F5; }
+    .panels { flex: 1; position: relative; overflow: hidden; background: var(--app-surface, #f6f8fa); }
     .panel {
       position: absolute;
       inset: 0;
@@ -120,13 +120,13 @@ export class TabController extends LitElement {
     .panel.active { display: block; }
     .loading-bar {
       height: 3px;
-      background: #2B5598;
+      background: var(--color-primary, #2f5f8f);
       flex-shrink: 0;
       overflow: hidden;
     }
     .loading-bar-inner {
       height: 100%;
-      background: #60a5fa;
+      background: #7fb0e0;
       width: 40%;
       animation: loading-slide 1s ease-in-out infinite;
     }

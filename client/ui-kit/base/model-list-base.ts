@@ -120,7 +120,7 @@ const icon = {
  */
 export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<ListRoot<Row>> {
   static override styles = [tw, css`
-    tr.selected td { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
+    tr.selected td { background: #cfe0f3 !important; color: var(--color-base-content, #243746) !important; }
     th.sortable { cursor: pointer; user-select: none; }
   `];
 
@@ -301,7 +301,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
         ${this.renderHeaderArea()}
 
         <!-- Таблиця -->
-        <div class="flex-1 overflow-auto">
+        <div class="flex-1 overflow-auto px-2">
           ${this.loading
             ? html`<div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>`
             : this.rows.length === 0

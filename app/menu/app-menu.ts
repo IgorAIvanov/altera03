@@ -1,4 +1,4 @@
-import { LitElement, html, css, svg } from "lit";
+import { LitElement, html, css, svg, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "@client/bus/bus.ts";
 import { menuMock } from "./menu-mock.ts";
@@ -11,13 +11,13 @@ interface Flyout {
 
 @customElement("app-menu")
 export class AppMenu extends LitElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: #2a3a54;
-      color: #c8d6e8;
+      background: linear-gradient(180deg, #eaf0f4 0%, #d5dee6 100%);
+      color: var(--color-base-content, #243746);
       font-family: "Roboto", sans-serif;
       flex-shrink: 0;
       transition: width 0.2s ease;
@@ -34,7 +34,7 @@ export class AppMenu extends LitElement {
       align-items: center;
       justify-content: flex-end;
       padding: 4px 6px;
-      border-bottom: 1px solid #3d5070;
+      border-bottom: 1px solid #adb9c3;
       flex-shrink: 0;
     }
     :host([collapsed]) .toggle { justify-content: center; }
@@ -47,14 +47,14 @@ export class AppMenu extends LitElement {
       height: 24px;
       border-radius: 2px;
       cursor: pointer;
-      color: #8aabcc;
+      color: #617482;
     }
-    .toggle-btn:hover { background: #3d5070; color: #fff; }
+    .toggle-btn:hover { background: rgba(47,95,143,0.10); color: #1c3345; }
 
     /* Список пунктов */
     .menu { flex: 1; overflow-y: auto; overflow-x: hidden; }
     .menu::-webkit-scrollbar { width: 4px; }
-    .menu::-webkit-scrollbar-thumb { background: #3d5070; }
+    .menu::-webkit-scrollbar-thumb { background: #b8c3cc; }
 
     /* Пункт меню */
     .item {
@@ -67,8 +67,8 @@ export class AppMenu extends LitElement {
       border-left: 2px solid transparent;
       position: relative;
     }
-    .item:hover { background: #3d5070; color: #fff; }
-    .item.active { background: #1a5fa8; color: #fff; border-left-color: #5ba3f5; }
+    .item:hover { background: rgba(47,95,143,0.10); color: #1c3345; }
+    .item.active { background: #d4e2f0; color: #1c3345; border-left-color: var(--color-primary, #2f5f8f); }
 
     /* Иконка */
     .icon {
@@ -101,9 +101,9 @@ export class AppMenu extends LitElement {
     .children .item {
       padding-left: 30px;
       font-size: inherit;
-      color: #a8c0d8;
+      color: var(--color-base-content, #243746);
     }
-    .children .item:hover { color: #fff; }
+    .children .item:hover { color: #1c3345; }
 
     /* Свёрнутый режим */
     :host([collapsed]) .label,
@@ -138,10 +138,10 @@ export class AppMenu extends LitElement {
     .flyout {
       position: fixed;
       left: 36px;
-      background: #2a3a54;
-      border: 1px solid #3d5070;
+      background: #f2f6f9;
+      border: 1px solid #b8c3cc;
       border-radius: 0 2px 2px 0;
-      box-shadow: 4px 4px 12px rgba(0,0,0,0.3);
+      box-shadow: 4px 4px 12px rgba(47,66,88,0.18);
       z-index: 1002;
       min-width: 180px;
       overflow: hidden;
@@ -151,8 +151,8 @@ export class AppMenu extends LitElement {
       padding: 5px 12px;
       font-size: inherit;
       font-weight: 500;
-      color: #8aabcc;
-      border-bottom: 1px solid #3d5070;
+      color: #617482;
+      border-bottom: 1px solid #cfd7de;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -163,11 +163,11 @@ export class AppMenu extends LitElement {
       gap: 8px;
       padding: 5px 12px;
       font-size: inherit;
-      color: #c8d6e8;
+      color: var(--color-base-content, #243746);
       cursor: pointer;
       white-space: nowrap;
     }
-    .flyout-item:hover { background: #3d5070; color: #fff; }
+    .flyout-item:hover { background: rgba(47,95,143,0.10); color: #1c3345; }
     .flyout-item .icon { width: 20px; height: 20px; opacity: 0.8; }
     .flyout-item:hover .icon { opacity: 1; }
   `;
@@ -263,7 +263,7 @@ export class AppMenu extends LitElement {
     this.openRoute(item);
   }
 
-  private renderItem(item: MenuItem, level = 0) {
+  private renderItem(item: MenuItem, level = 0): TemplateResult {
     const hasChildren = item.children && item.children.length > 0;
     const isOpen = this.expanded.has(item.id);
 
@@ -288,7 +288,7 @@ export class AppMenu extends LitElement {
     `;
   }
 
-  render() {
+  override render() {
     return html`
       <div class="toggle">
         <div class="toggle-btn" @click=${this.toggle} title="${this.collapsed ? "Розгорнути" : "Згорнути"}">

@@ -51,7 +51,7 @@ export class PickerHost extends LitElement {
       align-items: center;
       justify-content: space-between;
       padding: 0.5rem 1rem;
-      background: var(--color-primary, #2B5598);
+      background: var(--color-primary, #2f5f8f);
       color: var(--color-primary-content, #fff);
       font-weight: 600;
       font-size: 0.875rem;

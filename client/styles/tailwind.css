@@ -9,26 +9,42 @@
 @import "@fontsource/roboto/500.css";
 @import "@fontsource/roboto/700.css";
 
-/* ── 1С тема ─────────────────────────────────────────── */
+/* ── 1С тема (гамма перенесена з altera_danet) ─────────── */
 [data-theme="1c"],
 :root,
 :host {
-  /* DaisyUI цвета */
-  --color-primary:         #2B5598;
-  --color-primary-content: #ffffff;
-  --color-secondary:       #4a7ab5;
-  --color-accent:          #3a6ea8;
-  --color-neutral:         #6b7280;
-  --color-base-100:        #ffffff;
-  --color-base-200:        #ECF0F5;
-  --color-base-300:        #d8e0ea;
-  --color-base-content:    #1f2937;
-  --color-info:            #3b82f6;
-  --color-success:         #22c55e;
-  --color-warning:         #f59e0b;
-  --color-error:           #ef4444;
+  /* DaisyUI цвета — холодні сіро-блакитні тони altera_danet */
+  --color-primary:          #2f5f8f;
+  --color-primary-content:  #ffffff;
+  --color-secondary:        #4a7ab5;
+  --color-secondary-content:#ffffff;
+  --color-accent:           #2f5f8f;
+  --color-accent-content:   #ffffff;
+  --color-neutral:          #617482;
+  --color-neutral-content:  #ffffff;
+  --color-base-100:         #ffffff;
+  --color-base-200:         #dfe5ea;
+  --color-base-300:         #b8c3cc;
+  --color-base-content:     #243746;
+  --color-info:             #2f5f8f;
+  --color-info-content:     #ffffff;
+  --color-success:          #2d8a57;
+  --color-warning:          #f59e0b;
+  --color-error:            #ef4444;
 
-  /* Радиусы — плоский стиль как в 1С */
+  /* Семантичні токени altera_danet — для майбутніх компонентів */
+  --app-bg:             #dfe5ea;
+  --app-surface:        #f6f8fa;
+  --app-surface-strong: #ffffff;
+  --app-header:         #e7edf2;
+  --app-border:         #b8c3cc;
+  --app-border-strong:  #98a7b4;
+  --app-text:           #243746;
+  --app-text-muted:     #617482;
+  --app-accent:         #2f5f8f;
+  --app-accent-soft:    #dfe8f1;
+
+  /* Радиусы — плоский стиль как в 1С (не частина гами) */
   --radius-field:   2px;
   --radius-box:     2px;
   --radius-btn:     2px;
@@ -59,17 +75,17 @@ html, body {
   padding-inline: 10px;
   border-radius: var(--radius-btn);
   font-weight: 400;
-  border: 1px solid #b0bec5;
+  border: 1px solid var(--app-border);
   background: #f5f7fa;
-  color: #1f2937;
+  color: var(--app-text);
 }
 .btn:hover { background: #e3eaf3; }
 .btn-primary {
   background: var(--color-primary);
   color: var(--color-primary-content);
-  border-color: #1e3f7a;
+  border-color: #244b71;
 }
-.btn-primary:hover { background: #1e3f7a; }
+.btn-primary:hover { background: #244b71; }
 
 /* Инпуты */
 .input, .select, .textarea {
@@ -78,8 +94,8 @@ html, body {
   min-height: 24px;
   padding-inline: 6px;
   border-radius: var(--radius-field);
-  border: 1px solid #b0bec5;
-  background: #ffffff;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-strong);
 }
 .input:focus, .select:focus, .textarea:focus {
   outline: 1px solid var(--color-primary);
@@ -98,37 +114,38 @@ html, body {
 
 /* Label */
 .label { padding: 2px 0; }
-.label-text { font-size: var(--default-font-size); color: #4b5563; }
+.label-text { font-size: var(--default-font-size); color: var(--app-text-muted); }
 .form-control { margin-bottom: 6px; }
 
 /* Таблицы — сетка как в 1С */
 .table {
   font-size: var(--default-font-size);
   border-collapse: collapse;
+  background: var(--app-surface-strong, #ffffff);
 }
 .table :not(thead, tfoot) tr {
   font-size: var(--default-font-size);
 }
 .table th {
-  background: #dce6f0;
-  color: #374151;
+  background: #e3eaf0;
+  color: #354a59;
   font-weight: 500;
   padding: 3px 8px;
-  border: 1px solid #b0bec5;
+  border: 1px solid var(--app-border);
   font-size: var(--default-font-size);
 }
 .table td {
   padding: 5px 8px;
-  border: 1px solid #dde3ea;
+  border: 1px solid #d9e0e6;
   line-height: 1.4;
 }
 .table tr.hover:hover td,
 .table-zebra tbody tr:hover td {
-  background: #cfe0f3;
+  background: #dcebf8;
   cursor: pointer;
 }
 .table-zebra tbody tr:nth-child(even) td {
-  background: #f4f7fb;
+  background: #fbfcfd;
 }
 
 /* Join — групування елементів в один блок */

@@ -32,7 +32,7 @@ const searchIcon = html`<svg class="h-4 w-4 opacity-50" viewBox="0 0 24 24" fill
 export abstract class ModelPickerBase<Row extends { id: string }> extends BaseUI<ListRoot<Row>> {
   static override styles = [tw, css`
     :host { display: block; height: 100%; }
-    tr.selected td { background: var(--color-primary) !important; color: var(--color-primary-content) !important; }
+    tr.selected td { background: #cfe0f3 !important; color: var(--color-base-content, #243746) !important; }
     th.sortable { cursor: pointer; user-select: none; }
   `];
 
