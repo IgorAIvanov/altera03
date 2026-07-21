@@ -7,10 +7,20 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
 import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
-import type { PrintTemplateRenderTableColumn } from "./print-render-plan.ts";
+import type {
+  PrintTemplateRenderBlock,
+  PrintTemplateRenderTableBlock,
+  PrintTemplateRenderTableColumn,
+} from "./print-render-plan.ts";
 
 const PAGE_SIZE_A4 = { width: 595.28, height: 841.89 } as const;
 const MARGIN = 40;
+
+/** Відступ між таблицею та блоком, який довелося зсунути під неї. */
+const BLOCK_GAP = 12;
+
+/** Менше цього місця під підвал — краще винести його на нову сторінку. */
+const FOOTER_MIN_SPACE = 24;
 
 // Кирилиці у StandardFonts немає — вантажимо Roboto з node_modules.
 const FONT_REGULAR_URL = new URL(
@@ -97,11 +107,13 @@ export async function renderPrintPdf(
   const boldAsciiFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   const landscape = template.orientation === "landscape";
-  const page = pdf.addPage(
-    landscape
-      ? [PAGE_SIZE_A4.height, PAGE_SIZE_A4.width]
-      : [PAGE_SIZE_A4.width, PAGE_SIZE_A4.height],
-  );
+  const pageSize: [number, number] = landscape
+    ? [PAGE_SIZE_A4.height, PAGE_SIZE_A4.width]
+    : [PAGE_SIZE_A4.width, PAGE_SIZE_A4.height];
+
+  // `page` — поточна сторінка: довга таблиця додає нові, і всі функції
+  // малювання нижче бачать саме її (замикання на змінну, а не на значення).
+  let page = pdf.addPage(pageSize);
   const contentWidth = page.getWidth() - MARGIN * 2;
   const contentHeight = page.getHeight() - MARGIN * 2;
 
@@ -173,6 +185,37 @@ export async function renderPrintPdf(
 
   type TableColumn = PrintTemplateRenderTableColumn & { width: number };
 
+  const CELL_PADDING = 4;
+
+  const columnFontSize = (column: TableColumn, isHeader: boolean, fallback: number) => {
+    const parsed = Number.parseFloat(isHeader ? column.headerFontSize : column.valueFontSize);
+    return Number.isFinite(parsed) ? Math.min(72, Math.max(6, parsed)) : fallback;
+  };
+
+  const columnBold = (column: TableColumn, isHeader: boolean) =>
+    (isHeader ? column.headerFontWeight : column.valueFontWeight) === "bold";
+
+  /** Текст комірок, розкладений по рядках у межах ширини колонки. */
+  const layoutRow = (columns: TableColumn[], values: Record<string, string>, isHeader: boolean, fallbackFontSize: number) =>
+    columns.map((column) => wrapText(
+      String(values[column.key] ?? ""),
+      Math.max(column.width - CELL_PADDING * 2, 12),
+      (value) => measure(value, columnFontSize(column, isHeader, fallbackFontSize), columnBold(column, isHeader)),
+    ));
+
+  const rowHeightOf = (columns: TableColumn[], cellLines: string[][], isHeader: boolean, fallbackFontSize: number) =>
+    columns.reduce((maxHeight, column, index) => {
+      const lineHeight = columnFontSize(column, isHeader, fallbackFontSize) + 2;
+      return Math.max(maxHeight, Math.max(cellLines[index]?.length ?? 1, 1) * lineHeight + CELL_PADDING * 2);
+    }, 0);
+
+  /**
+   * Висота рядка БЕЗ малювання — потрібна, щоб вирішити про перенос сторінки
+   * ще до того, як рядок ліг на аркуш.
+   */
+  const measureTableRow = (columns: TableColumn[], values: Record<string, string>, fallbackFontSize: number) =>
+    rowHeightOf(columns, layoutRow(columns, values, false, fallbackFontSize), false, fallbackFontSize);
+
   /** Малює рядок таблиці (заголовок або дані) і повертає його висоту. */
   const drawTableRow = (
     columns: TableColumn[],
@@ -183,24 +226,9 @@ export async function renderPrintPdf(
     fallbackFontSize: number,
     fallbackColor: ReturnType<typeof rgb>,
   ) => {
-    const padding = 4;
-    const columnFontSize = (column: TableColumn) => {
-      const parsed = Number.parseFloat(isHeader ? column.headerFontSize : column.valueFontSize);
-      return Number.isFinite(parsed) ? Math.min(72, Math.max(6, parsed)) : fallbackFontSize;
-    };
-    const columnBold = (column: TableColumn) =>
-      (isHeader ? column.headerFontWeight : column.valueFontWeight) === "bold";
-
-    const cellLines = columns.map((column) => wrapText(
-      String(values[column.key] ?? ""),
-      Math.max(column.width - padding * 2, 12),
-      (value) => measure(value, columnFontSize(column), columnBold(column)),
-    ));
-
-    const rowHeight = columns.reduce((maxHeight, column, index) => {
-      const lineHeight = columnFontSize(column) + 2;
-      return Math.max(maxHeight, Math.max(cellLines[index]?.length ?? 1, 1) * lineHeight + padding * 2);
-    }, 0);
+    const padding = CELL_PADDING;
+    const cellLines = layoutRow(columns, values, isHeader, fallbackFontSize);
+    const rowHeight = rowHeightOf(columns, cellLines, isHeader, fallbackFontSize);
 
     page.drawRectangle({
       x,
@@ -223,8 +251,8 @@ export async function renderPrintPdf(
         });
       }
 
-      const fontSize = columnFontSize(column);
-      const bold = columnBold(column);
+      const fontSize = columnFontSize(column, isHeader, fallbackFontSize);
+      const bold = columnBold(column, isHeader);
       const align: PrintTemplateColumnAlign = isHeader ? column.headerAlign : column.valueAlign;
       const rawColor = isHeader ? column.headerColor : column.valueColor;
       const color = rawColor ? hexToRgb(rawColor) : fallbackColor;
@@ -246,28 +274,30 @@ export async function renderPrintPdf(
     return rowHeight;
   };
 
-  for (const block of renderPlan) {
+  /**
+   * Малює один блок, крім таблиці, від заданої верхньої межі.
+   * Повертає використану висоту — щоб підвал можна було зсунути під таблицю.
+   */
+  const drawBlock = async (block: PrintTemplateRenderBlock, topY: number) => {
     // Розкладка блоків абсолютна у відсотках від області друку — так само,
-    // як її показує прев'ю редактора.
+    // як її показує полотно редактора.
     const blockX = MARGIN + contentWidth * (block.placement.xPercent / 100);
     const blockWidth = contentWidth * (block.placement.widthPercent / 100);
-    const blockTopY = page.getHeight() - MARGIN - contentHeight * (block.placement.yPercent / 100);
 
     if (block.type === "text") {
-      drawParagraph(block.text || "-", {
+      return drawParagraph(block.text || "-", {
         x: blockX,
-        y: blockTopY,
+        y: topY,
         width: blockWidth,
         fontSize: block.textOptions.fontSize,
         bold: block.textOptions.fontWeight === "bold",
         align: block.textOptions.align,
         color: hexToRgb(block.textOptions.color),
       });
-      continue;
     }
 
     if (block.type === "field-list") {
-      let fieldY = blockTopY;
+      let fieldY = topY;
       for (const item of block.items) {
         fieldY -= drawParagraph(`${item.label}: ${item.value}`, {
           x: blockX,
@@ -279,56 +309,12 @@ export async function renderPrintPdf(
           color: hexToRgb(block.textOptions.color),
         });
       }
-      continue;
-    }
-
-    if (block.type === "table") {
-      let tableY = blockTopY;
-      const color = hexToRgb(block.textOptions.color);
-
-      if (block.title.trim()) {
-        tableY -= drawParagraph(block.title, {
-          x: blockX,
-          y: tableY,
-          width: blockWidth,
-          fontSize: block.textOptions.fontSize + 2,
-          bold: true,
-          align: block.textOptions.align,
-          color,
-        });
-      }
-
-      // widthPercent колонок нормалізуємо до ширини блока: сума ваг може не
-      // дорівнювати 100, але таблиця однаково має заповнити відведене місце.
-      const rawColumns = block.columns.map((column) => ({
-        ...column,
-        width: blockWidth * (column.widthWeight / 100),
-      }));
-      const totalWidth = rawColumns.reduce((sum, column) => sum + column.width, 0) || blockWidth;
-      const columns: TableColumn[] = rawColumns.map((column) => ({
-        ...column,
-        width: column.width * (blockWidth / totalWidth),
-      }));
-
-      tableY -= drawTableRow(
-        columns,
-        Object.fromEntries(columns.map((column) => [column.key, column.title])),
-        true,
-        blockX,
-        tableY,
-        Math.max(block.textOptions.fontSize - 1, 6),
-        color,
-      );
-
-      for (const row of block.rows) {
-        tableY -= drawTableRow(columns, row, false, blockX, tableY, block.textOptions.fontSize, color);
-      }
-      continue;
+      return topY - fieldY;
     }
 
     if (block.type === "image") {
       const parsed = parseImageDataUrl(block.src);
-      if (!parsed) continue;
+      if (!parsed) return 0;
 
       const image = parsed.mimeType === "image/png"
         ? await pdf.embedPng(parsed.bytes)
@@ -338,8 +324,8 @@ export async function renderPrintPdf(
         ? contentHeight * (block.placement.heightPercent / 100)
         : image.height * (width / Math.max(image.width, 1));
 
-      page.drawImage(image, { x: blockX, y: blockTopY - height, width, height });
-      continue;
+      page.drawImage(image, { x: blockX, y: topY - height, width, height });
+      return height;
     }
 
     if (block.type === "horizontal-line" || block.type === "vertical-line") {
@@ -350,34 +336,150 @@ export async function renderPrintPdf(
         : block.lineOptions.lineStyle === "dotted"
         ? [2, 3]
         : undefined;
+      const height = block.type === "vertical-line"
+        ? (block.placement.heightPercent > 0
+          ? contentHeight * (block.placement.heightPercent / 100)
+          : contentHeight * 0.1)
+        : thickness;
 
-      const segments = block.type === "horizontal-line"
-        ? [{ start: { x: blockX, y: blockTopY }, end: { x: blockX + blockWidth, y: blockTopY } }]
+      const segment = block.type === "horizontal-line"
+        ? { start: { x: blockX, y: topY }, end: { x: blockX + blockWidth, y: topY } }
         : (() => {
-          const height = block.placement.heightPercent > 0
-            ? contentHeight * (block.placement.heightPercent / 100)
-            : contentHeight * 0.1;
           const lineX = blockX + blockWidth / 2;
-          return [{ start: { x: lineX, y: blockTopY }, end: { x: lineX, y: blockTopY - height } }];
+          return { start: { x: lineX, y: topY }, end: { x: lineX, y: topY - height } };
         })();
 
-      for (const segment of segments) {
-        if (block.lineOptions.lineStyle === "double") {
-          // Подвійна лінія — дві паралельні з розбіжністю перпендикулярно осі.
-          const gap = Math.max(thickness, 2);
-          const shift = block.type === "horizontal-line" ? { x: 0, y: gap } : { x: gap, y: 0 };
-          for (const sign of [1, -1]) {
-            page.drawLine({
-              start: { x: segment.start.x + shift.x * sign, y: segment.start.y + shift.y * sign },
-              end: { x: segment.end.x + shift.x * sign, y: segment.end.y + shift.y * sign },
-              thickness,
-              color,
-            });
-          }
-          continue;
+      if (block.lineOptions.lineStyle === "double") {
+        // Подвійна лінія — дві паралельні з розбіжністю перпендикулярно осі.
+        const gap = Math.max(thickness, 2);
+        const shift = block.type === "horizontal-line" ? { x: 0, y: gap } : { x: gap, y: 0 };
+        for (const sign of [1, -1]) {
+          page.drawLine({
+            start: { x: segment.start.x + shift.x * sign, y: segment.start.y + shift.y * sign },
+            end: { x: segment.end.x + shift.x * sign, y: segment.end.y + shift.y * sign },
+            thickness,
+            color,
+          });
         }
-
+      } else {
         page.drawLine({ ...segment, thickness, color, dashArray });
+      }
+
+      return height;
+    }
+
+    return 0;
+  };
+
+  /**
+   * Малює таблицю з перенесенням на наступні сторінки.
+   *
+   * Рядок, що не влазить до нижнього поля, починає нову сторінку, і шапка
+   * колонок повторюється — інакше «хвіст» документа лишався б без заголовків.
+   * Повертає y, на якому таблиця закінчилась (уже на останній сторінці).
+   */
+  const drawTable = (block: PrintTemplateRenderTableBlock, startY: number) => {
+    const blockX = MARGIN + contentWidth * (block.placement.xPercent / 100);
+    const blockWidth = contentWidth * (block.placement.widthPercent / 100);
+    const color = hexToRgb(block.textOptions.color);
+    const headerFontSize = Math.max(block.textOptions.fontSize - 1, 6);
+    let tableY = startY;
+
+    if (block.title.trim()) {
+      tableY -= drawParagraph(block.title, {
+        x: blockX,
+        y: tableY,
+        width: blockWidth,
+        fontSize: block.textOptions.fontSize + 2,
+        bold: true,
+        align: block.textOptions.align,
+        color,
+      });
+    }
+
+    // widthPercent колонок нормалізуємо до ширини блока: сума ваг може не
+    // дорівнювати 100, але таблиця однаково має заповнити відведене місце.
+    const rawColumns = block.columns.map((column) => ({
+      ...column,
+      width: blockWidth * (column.widthWeight / 100),
+    }));
+    const totalWidth = rawColumns.reduce((sum, column) => sum + column.width, 0) || blockWidth;
+    const columns: TableColumn[] = rawColumns.map((column) => ({
+      ...column,
+      width: column.width * (blockWidth / totalWidth),
+    }));
+    const headerValues = Object.fromEntries(columns.map((column) => [column.key, column.title]));
+
+    const drawHeader = () => {
+      tableY -= drawTableRow(columns, headerValues, true, blockX, tableY, headerFontSize, color);
+    };
+
+    drawHeader();
+
+    for (const row of block.rows) {
+      // Висота рядка залежить від перенесення тексту в комірках, тож рахуємо її
+      // окремо ДО малювання — інакше рядок наполовину виїхав би за поле.
+      const rowHeight = measureTableRow(columns, row, block.textOptions.fontSize);
+
+      if (tableY - rowHeight < MARGIN) {
+        page = pdf.addPage(pageSize);
+        tableY = page.getHeight() - MARGIN;
+        drawHeader();
+      }
+
+      tableY -= drawTableRow(columns, row, false, blockX, tableY, block.textOptions.fontSize, color);
+    }
+
+    return tableY;
+  };
+
+  // Блоки вище першої таблиці — «шапка» форми, вони лишаються на першій
+  // сторінці. Блоки нижче — підвал (разом, підписи): їх треба малювати після
+  // таблиці й на останній сторінці, інакше довга таблиця налізе на них.
+  const tables = renderPlan.filter((block): block is PrintTemplateRenderTableBlock => block.type === "table");
+  const firstTableTop = tables.length
+    ? Math.min(...tables.map((table) => table.placement.yPercent))
+    : Number.POSITIVE_INFINITY;
+  const headerBlocks = renderPlan.filter((block) => block.type !== "table" && block.placement.yPercent < firstTableTop);
+  const footerBlocks = renderPlan.filter((block) => block.type !== "table" && block.placement.yPercent >= firstTableTop);
+
+  const topYOf = (block: PrintTemplateRenderBlock) =>
+    page.getHeight() - MARGIN - contentHeight * (block.placement.yPercent / 100);
+
+  for (const block of headerBlocks) {
+    await drawBlock(block, topYOf(block));
+  }
+
+  let tableEndY: number | null = null;
+  for (const table of tables) {
+    // Перша таблиця стоїть на своєму місці; наступна — під попередньою, якщо
+    // та вже зайняла це місце (або перенеслася на іншу сторінку).
+    const naturalTop = topYOf(table);
+    const startY = tableEndY === null ? naturalTop : Math.min(naturalTop, tableEndY - BLOCK_GAP);
+    tableEndY = drawTable(table, startY);
+  }
+
+  if (footerBlocks.length) {
+    // Підвал іде під таблицю, якщо вона до нього дотягнулась; інакше лишається
+    // на своєму місці. Зсув однаковий для всіх блоків підвалу — щоб не
+    // розсипалась їхня взаємна розкладка.
+    const naturalTops = footerBlocks.map((block) => topYOf(block));
+    const highestFooterTop = Math.max(...naturalTops);
+    const shift = tableEndY !== null && tableEndY - BLOCK_GAP < highestFooterTop
+      ? (tableEndY - BLOCK_GAP) - highestFooterTop
+      : 0;
+
+    // Якщо після зсуву підвал не влазить у сторінку — переносимо його цілком.
+    const lowestFooterTop = Math.min(...naturalTops) + shift;
+    if (lowestFooterTop < MARGIN + FOOTER_MIN_SPACE) {
+      page = pdf.addPage(pageSize);
+      const offset = page.getHeight() - MARGIN - highestFooterTop;
+      for (const block of footerBlocks) {
+        await drawBlock(block, topYOf(block) + offset);
+      }
+    } else {
+      for (const block of footerBlocks) {
+        await drawBlock(block, topYOf(block) + shift);
       }
     }
   }

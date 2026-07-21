@@ -1,7 +1,9 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { ref } from "lit/directives/ref.js";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
+import { tw } from "@client/shared/styles.ts";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import {
   PrintTemplateEditRootSchema,
@@ -25,7 +27,66 @@ export const tagName = "print-template-edit";
 /** Пауза після правки, через яку перемальовується прев'ю. */
 const PREVIEW_DEBOUNCE_MS = 700;
 
+/**
+ * Поля друку (40pt) у відсотках від аркуша A4 (595.28 × 841.89pt).
+ * Ті самі числа, що в рендерері, — тому рамка на полотні стоїть там само,
+ * де блок опиниться в PDF.
+ */
+const PAGE_PADDING_PERCENT = { x: (40 / 595.28) * 100, y: (40 / 841.89) * 100 };
+
+/** Поріг прилипання до напрямної, у відсотках області друку. */
+const SNAP_THRESHOLD_PERCENT = 1.2;
+
+/** Крок зсуву стрілками (з Shift — більший). */
+const NUDGE_STEP = 1;
+const NUDGE_STEP_FAST = 5;
+
+/** Скільки рядків таблиці показувати на схемі — решта не додає інформації. */
+const SCHEMATIC_TABLE_ROWS = 8;
+
+/** Значення для схеми: як у рендерері, прочерк замість порожнечі та об'єктів. */
+function stringifyValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return "-";
+}
+
 interface PathOption { value: string; label: string; }
+
+/** Геометрія блока у відсотках області друку. */
+interface Box { x: number; y: number; w: number; h: number; }
+
+interface SnapGuide { orientation: "vertical" | "horizontal"; position: number; }
+
+function clampSize(value: number) {
+  return Math.min(100, Math.max(1, value));
+}
+
+/** Позиція не має виштовхувати блок за межі аркуша. */
+function clampPosition(value: number, size: number) {
+  return Math.min(Math.max(0, 100 - Math.max(size, 0)), Math.max(0, value));
+}
+
+function toNumber(value: string, fallback: number) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Прилипання: найближчий кандидат у межах порогу або нічого. */
+function findSnap(anchors: number[], candidates: number[]) {
+  let best: { delta: number; guide: number; distance: number } | null = null;
+
+  for (const anchor of anchors) {
+    for (const candidate of candidates) {
+      const delta = candidate - anchor;
+      const distance = Math.abs(delta);
+      if (distance > SNAP_THRESHOLD_PERCENT) continue;
+      if (!best || distance < best.distance) best = { delta, guide: candidate, distance };
+    }
+  }
+
+  return best;
+}
 
 /** Значення за крапковим шляхом — для вибірки зразка рядка таблиці. */
 function resolvePath(source: unknown, path: string): unknown {
@@ -108,9 +169,84 @@ function base64ToBlobUrl(base64: string, mimeType: string) {
  *
  * Дані для прив'язки полів редактор бере командою `dataCommand` цільової моделі
  * — тією самою, яку потім виконає рантайм друку.
+ *
+ * Розкладку блоків видно на окремому полотні: аркуш A4 з тими самими полями, що
+ * й у рендерера, і рамки блоків поверх нього. У рамках — СХЕМАТИЧНИЙ вміст
+ * (див. `renderFrameContent`): достатньо, щоб компонувати форму, але це не
+ * контракт вигляду — його показує вкладка PDF.
  */
 @customElement(tagName)
 export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
+  static override styles = [tw, css`
+    .sheet {
+      position: relative;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+      touch-action: none;
+      user-select: none;
+      /* Дає одиницю cqw: 1cqw = 1% ширини аркуша. Через неї розміри шрифтів
+         у пунктах перекладаються в екранні — схема виходить у масштабі. */
+      container-type: inline-size;
+      color: #262626;
+    }
+    /* Область друку. Поля задані через inset, а не padding: відсотковий padding
+       CSS рахує від ШИРИНИ з усіх боків, і вертикальні поля вийшли б вужчими. */
+    .sheet-content { position: absolute; }
+    .frame {
+      position: absolute;
+      border: 1px dashed rgba(22, 119, 255, 0.5);
+      border-radius: 3px;
+      background: rgba(22, 119, 255, 0.04);
+      cursor: move;
+      overflow: hidden;
+      min-height: 14px;
+    }
+    .frame.selected {
+      border: 2px solid rgba(22, 119, 255, 0.9);
+      background: rgba(22, 119, 255, 0.1);
+      z-index: 20;
+    }
+    /* Схематичний вміст рамки: тільки щоб було видно, що і де стоїть.
+       Джерело правди для вигляду — вкладка PDF. */
+    .frame-body { pointer-events: none; overflow: hidden; height: 100%; line-height: 1.3; }
+    .frame-fields { display: grid; gap: 0.4cqw; }
+    .frame-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .frame-table th, .frame-table td {
+      border: 0.1cqw solid #d9d9d9;
+      padding: 0.3cqw 0.5cqw;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .frame-table th { background: #f7f7f7; }
+    .frame-empty { padding: 1px 4px; font-size: 10px; color: #1c4e80; white-space: nowrap; overflow: hidden; }
+    .frame-handle {
+      position: absolute;
+      right: -6px;
+      bottom: -6px;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      background: #1677ff;
+      cursor: nwse-resize;
+    }
+    .frame-badge {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: rgba(22, 119, 255, 0.15);
+      color: #1677ff;
+      font-size: 9px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+    .guide { position: absolute; pointer-events: none; z-index: 30; }
+    .guide.vertical { top: 0; bottom: 0; border-left: 1px dashed rgba(250, 140, 22, 0.9); }
+    .guide.horizontal { left: 0; right: 0; border-top: 1px dashed rgba(250, 140, 22, 0.9); }
+  `];
+
   protected model = "print_template";
   protected override primaryKey = "item";
 
@@ -123,11 +259,29 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
   @state() private requestPayloadText = "{\n  \"id\": \"\"\n}";
   @state() private previewPdfUrl: string | null = null;
   @state() private previewError: string | null = null;
-  @state() private showDataTools = false;
+  /** Поки даних немає — панель відкрита: без них нема з чого будувати шляхи. */
+  @state() private showDataTools = true;
   @state() private selectedBlockKey: string | null = null;
   @state() private selectedColumnKey: string | null = null;
+  /** Що показуємо в правій колонці: полотно розкладки чи готовий PDF. */
+  @state() private viewMode: "layout" | "pdf" = "layout";
+  /** Геометрія блока під час перетягування — у $root потрапить лише на pointerup. */
+  @state() private dragBox: (Box & { key: string }) | null = null;
+  @state() private snapGuides: SnapGuide[] = [];
 
   #previewTimer?: number;
+  #sheet: HTMLElement | null = null;
+  /** Стан жесту: що тягнемо, звідки почали, розмір аркуша в пікселях. */
+  #drag: {
+    mode: "move" | "resize";
+    key: string;
+    startX: number;
+    startY: number;
+    origin: Box;
+    canResizeHeight: boolean;
+    sheetWidth: number;
+    sheetHeight: number;
+  } | null = null;
 
   constructor() {
     super(PrintTemplateEditRootSchema);
@@ -135,6 +289,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
   override connectedCallback() {
     super.connectedCallback();
+    globalThis.addEventListener("keydown", this.onKeyDown);
     if (this.modelId) {
       this.load();
     } else {
@@ -146,7 +301,198 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     super.disconnectedCallback();
     clearTimeout(this.#previewTimer);
     this.releasePreviewUrl();
+    globalThis.removeEventListener("keydown", this.onKeyDown);
   }
+
+  // ── Полотно розкладки ───────────────────────────────────────────────────────
+
+  /** Геометрія блока: під час жесту — транзієнтна, інакше — зі схеми. */
+  private boxOf(block: PrintTemplateBlock): Box {
+    if (this.dragBox?.key === block.key) return this.dragBox;
+    return {
+      x: toNumber(block.placement.xPercent, 0),
+      y: toNumber(block.placement.yPercent, 0),
+      w: toNumber(block.placement.widthPercent, 100),
+      h: toNumber(block.placement.heightPercent, 0),
+    };
+  }
+
+  /**
+   * Чи впливає висота на друк. Рендерер читає її для зображень і ліній; для
+   * тексту, списку полів і таблиці вміст ллється від верху рамки, і висота
+   * лишається розміткою — місцем, яке блок займає на аркуші. Міняти її можна
+   * скрізь (це зручно при компонуванні), але підказку показуємо чесно.
+   */
+  private heightAffectsPrint(block: PrintTemplateBlock) {
+    return block.type === "image" || block.type === "horizontal-line" || block.type === "vertical-line";
+  }
+
+  /** Кандидати прилипання: краї аркуша, середина та межі інших блоків. */
+  private snapCandidates(exceptKey: string) {
+    const x = [0, 50, 100];
+    const y = [0, 50, 100];
+
+    for (const block of this.blocks) {
+      if (block.key === exceptKey) continue;
+      const box = this.boxOf(block);
+      x.push(box.x, box.x + box.w / 2, box.x + box.w);
+      y.push(box.y, box.y + box.h / 2, box.y + box.h);
+    }
+
+    return { x, y };
+  }
+
+  private applySnap(box: Box, key: string, mode: "move" | "resize", canResizeHeight: boolean) {
+    const candidates = this.snapCandidates(key);
+    const guides: SnapGuide[] = [];
+    const next = { ...box };
+
+    if (mode === "move") {
+      const hit = findSnap([box.x, box.x + box.w / 2, box.x + box.w], candidates.x);
+      if (hit) {
+        next.x = clampPosition(box.x + hit.delta, box.w);
+        guides.push({ orientation: "vertical", position: hit.guide });
+      }
+
+      const hitY = findSnap([box.y, box.y + box.h / 2, box.y + box.h], candidates.y);
+      if (hitY) {
+        next.y = clampPosition(box.y + hitY.delta, box.h);
+        guides.push({ orientation: "horizontal", position: hitY.guide });
+      }
+    } else {
+      const hit = findSnap([box.x + box.w], candidates.x);
+      if (hit) {
+        next.w = clampSize(box.w + hit.delta);
+        guides.push({ orientation: "vertical", position: hit.guide });
+      }
+
+      if (canResizeHeight) {
+        const hitY = findSnap([box.y + box.h], candidates.y);
+        if (hitY) {
+          next.h = clampSize(box.h + hitY.delta);
+          guides.push({ orientation: "horizontal", position: hitY.guide });
+        }
+      }
+    }
+
+    return { box: next, guides };
+  }
+
+  private startDrag(event: PointerEvent, mode: "move" | "resize", block: PrintTemplateBlock) {
+    const sheet = this.#sheet;
+    if (!sheet) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.selectedBlockKey = block.key;
+    this.selectedColumnKey = null;
+
+    const bounds = sheet.getBoundingClientRect();
+    const origin = this.boxOf(block);
+
+    this.#drag = {
+      mode,
+      key: block.key,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin,
+      canResizeHeight: true,
+      // Рухаємось у координатах ОБЛАСТІ ДРУКУ, а не всього аркуша:
+      // відсотки блока рахуються саме від неї.
+      sheetWidth: bounds.width * (1 - (PAGE_PADDING_PERCENT.x * 2) / 100),
+      sheetHeight: bounds.height * (1 - (PAGE_PADDING_PERCENT.y * 2) / 100),
+    };
+    this.dragBox = { key: block.key, ...origin };
+    this.snapGuides = [];
+    // Захоплюємо вказівник: жест не загубиться, якщо курсор вийде за рамку.
+    sheet.setPointerCapture(event.pointerId);
+  }
+
+  private onSheetPointerMove = (event: PointerEvent) => {
+    const drag = this.#drag;
+    if (!drag) return;
+
+    event.preventDefault();
+    const dx = ((event.clientX - drag.startX) / Math.max(drag.sheetWidth, 1)) * 100;
+    const dy = ((event.clientY - drag.startY) / Math.max(drag.sheetHeight, 1)) * 100;
+
+    const raw: Box = drag.mode === "move"
+      ? {
+        x: clampPosition(drag.origin.x + dx, drag.origin.w),
+        y: clampPosition(drag.origin.y + dy, drag.origin.h),
+        w: drag.origin.w,
+        h: drag.origin.h,
+      }
+      : {
+        x: drag.origin.x,
+        y: drag.origin.y,
+        w: clampSize(drag.origin.w + dx),
+        h: drag.canResizeHeight ? clampSize(drag.origin.h + dy) : drag.origin.h,
+      };
+
+    const snapped = this.applySnap(raw, drag.key, drag.mode, drag.canResizeHeight);
+    this.dragBox = { key: drag.key, ...snapped.box };
+    this.snapGuides = snapped.guides;
+  };
+
+  private onSheetPointerUp = () => {
+    if (this.#drag) this.commitDragBox();
+    this.#drag = null;
+    this.snapGuides = [];
+  };
+
+  /** Транзієнтна геометрія → у шаблон (і, як наслідок, у прев'ю). */
+  private commitDragBox() {
+    const box = this.dragBox;
+    if (!box) return;
+
+    this.updatePlacement(box.key, {
+      xPercent: box.x.toFixed(2),
+      yPercent: box.y.toFixed(2),
+      widthPercent: box.w.toFixed(2),
+      heightPercent: box.h.toFixed(2),
+    });
+    this.dragBox = null;
+  }
+
+  /** Стрілки — точний зсув, Alt+стрілки — розмір, Escape — зняти виділення. */
+  private onKeyDown = (event: KeyboardEvent) => {
+    if (!this.selectedBlockKey || this.#drag) return;
+
+    if (event.key === "Escape") {
+      this.selectedBlockKey = null;
+      return;
+    }
+
+    if (!event.key.startsWith("Arrow")) return;
+
+    // Не перехоплюємо стрілки, поки користувач редагує поле у формі.
+    const active = this.shadowRoot?.activeElement;
+    if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) return;
+
+    const block = this.selectedBlock;
+    if (!block) return;
+
+    event.preventDefault();
+    const step = event.shiftKey ? NUDGE_STEP_FAST : NUDGE_STEP;
+    const box = this.dragBox?.key === block.key ? this.dragBox : this.boxOf(block);
+    const next: Box = { ...box };
+
+    if (event.altKey) {
+      if (event.key === "ArrowLeft") next.w = clampSize(box.w - step);
+      if (event.key === "ArrowRight") next.w = clampSize(box.w + step);
+      if (event.key === "ArrowUp") next.h = clampSize(box.h - step);
+      if (event.key === "ArrowDown") next.h = clampSize(box.h + step);
+    } else {
+      if (event.key === "ArrowLeft") next.x = clampPosition(box.x - step, box.w);
+      if (event.key === "ArrowRight") next.x = clampPosition(box.x + step, box.w);
+      if (event.key === "ArrowUp") next.y = clampPosition(box.y - step, box.h);
+      if (event.key === "ArrowDown") next.y = clampPosition(box.y + step, box.h);
+    }
+
+    this.dragBox = { key: block.key, ...next };
+    this.commitDragBox();
+  };
 
   // ── Дані моделі ─────────────────────────────────────────────────────────────
 
@@ -332,6 +678,8 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
       this.previewData = item;
       this.previewDataText = `${JSON.stringify(item, null, 2)}\n`;
+      // Дані є — панель більше не потрібна, звільняємо місце під розкладку.
+      this.showDataTools = false;
       this.schedulePreview();
     } catch (error) {
       this.previewError = error instanceof Error ? error.message : t("printTemplate.previewLoadError");
@@ -462,7 +810,20 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     `;
   }
 
+  /**
+   * Випадайка шляху прив'язки. Список будується з завантажених даних прев'ю —
+   * тому, коли їх немає, замість порожнього списку показуємо, що робити.
+   */
   private pathSelect(value: string, options: PathOption[], onChange: (value: string) => void) {
+    if (!options.length && !value.trim()) {
+      return html`
+        <button class="btn btn-sm btn-outline w-full justify-start font-normal"
+          @click=${() => { this.showDataTools = true; }}>
+          ${t("printTemplate.pathsNeedData")}
+        </button>
+      `;
+    }
+
     return html`
       <select class="select select-sm select-bordered w-full"
         @change=${(e: Event) => onChange((e.target as HTMLSelectElement).value)}>
@@ -497,7 +858,6 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     const scalarPaths = sortPaths(collectScalarPaths(this.previewData));
     const arrayPaths = sortPaths(collectArrayPaths(this.previewData));
     const supportsText = block.type !== "image" && block.type !== "horizontal-line" && block.type !== "vertical-line";
-    const supportsHeight = block.type === "image" || block.type === "horizontal-line" || block.type === "vertical-line";
 
     return html`
       <div class="flex flex-col gap-3 p-3">
@@ -513,9 +873,12 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           ${this.field(t("printTemplate.placementX"), this.textInput(block.placement.xPercent, (v) => this.updatePlacement(block.key, { xPercent: v })))}
           ${this.field(t("printTemplate.placementY"), this.textInput(block.placement.yPercent, (v) => this.updatePlacement(block.key, { yPercent: v })))}
           ${this.field(t("printTemplate.placementWidth"), this.textInput(block.placement.widthPercent, (v) => this.updatePlacement(block.key, { widthPercent: v })))}
-          ${supportsHeight
-            ? this.field(t("printTemplate.placementHeight"), this.textInput(block.placement.heightPercent, (v) => this.updatePlacement(block.key, { heightPercent: v })))
-            : nothing}
+          ${this.field(
+            this.heightAffectsPrint(block)
+              ? t("printTemplate.placementHeight")
+              : t("printTemplate.placementHeightLayout"),
+            this.textInput(block.placement.heightPercent, (v) => this.updatePlacement(block.key, { heightPercent: v })),
+          )}
         </div>
 
         ${supportsText ? html`
@@ -728,6 +1091,170 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     `;
   }
 
+  /**
+   * Схематичний вміст блока для полотна розкладки.
+   *
+   * Це навмисно НЕ рендер друку: перенесення рядків, розриви сторінок і точні
+   * метрики шрифтів тут не відтворюються. Задача одна — щоб під час компонування
+   * було видно, що саме стоїть у рамці. Точний вигляд показує вкладка PDF.
+   *
+   * Розміри шрифтів задані в `cqw` (1cqw = 1 % ширини аркуша), тому пункти PDF
+   * лягають на екран у масштабі: 1pt = 100/595.28 cqw.
+   */
+  private renderFrameContent(block: PrintTemplateBlock): TemplateResult {
+    const pt = (value: string | number, fallback = 10) => {
+      const size = typeof value === "number" ? value : toNumber(value, fallback);
+      return `${(size * 100) / 595.28}cqw`;
+    };
+    const common = (options: PrintTemplateBlockTextOptions) => [
+      `font-size:${pt(options.fontSize)}`,
+      `font-weight:${options.fontWeight === "bold" ? 700 : 400}`,
+      `text-align:${options.align}`,
+      `color:${options.color}`,
+    ].join(";");
+
+    if (block.type === "text") {
+      return html`<div class="frame-body" style="${common(block.text)};white-space:pre-wrap">${block.value}</div>`;
+    }
+
+    if (block.type === "field-list") {
+      return html`
+        <div class="frame-body frame-fields" style=${common(block.text)}>
+          ${block.items.map((item) => html`
+            <div><strong>${item.label}:</strong> ${stringifyValue(resolvePath(this.previewData, item.path))}</div>
+          `)}
+        </div>
+      `;
+    }
+
+    if (block.type === "table") {
+      const source = resolvePath(this.previewData, block.source);
+      const rows = Array.isArray(source) ? source.slice(0, SCHEMATIC_TABLE_ROWS) : [];
+      const columns = block.columns.filter((column) => column.key && column.title);
+      const totalWeight = columns.reduce((sum, column) => sum + (toNumber(column.widthPercent, 0) || 1), 0) || 1;
+
+      return html`
+        <div class="frame-body" style=${common(block.text)}>
+          ${block.title.trim()
+            ? html`<div style="font-weight:600;font-size:${pt(toNumber(block.text.fontSize, 10) + 2)}">${block.title}</div>`
+            : nothing}
+          <table class="frame-table">
+            <thead>
+              <tr>
+                ${columns.map((column) => html`
+                  <th style="
+                    width:${((toNumber(column.widthPercent, 0) || 1) / totalWeight) * 100}%;
+                    text-align:${column.headerAlign};
+                    font-weight:${column.headerFontWeight === "bold" ? 700 : 400};
+                    font-size:${pt(column.headerFontSize || block.text.fontSize)};
+                    color:${column.headerColor || block.text.color};
+                  ">${column.title}</th>
+                `)}
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row) => html`
+                <tr>
+                  ${columns.map((column) => html`
+                    <td style="
+                      text-align:${column.valueAlign};
+                      font-weight:${column.valueFontWeight === "bold" ? 700 : 400};
+                      font-size:${pt(column.valueFontSize || block.text.fontSize)};
+                      color:${column.valueColor || block.text.color};
+                    ">${stringifyValue(resolvePath(row, column.path))}</td>
+                  `)}
+                </tr>
+              `)}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    if (block.type === "image") {
+      return block.src.trim()
+        ? html`<img class="frame-body" src=${block.src} alt=${block.alt}
+            style="width:100%;height:100%;object-fit:contain" />`
+        : html`<div class="frame-empty">${t("printTemplate.imageEmpty")}</div>`;
+    }
+
+    if (block.type === "horizontal-line") {
+      return html`<div class="frame-body" style="display:flex;align-items:center">
+        <div style="width:100%;border-top:${block.lineWidth}px ${block.lineStyle} ${block.color}"></div>
+      </div>`;
+    }
+
+    return html`<div class="frame-body" style="display:flex;justify-content:center">
+      <div style="height:100%;border-left:${block.lineWidth}px ${block.lineStyle} ${block.color}"></div>
+    </div>`;
+  }
+
+  /** Аркуш із рамками блоків: перетягування, розмір, напрямні. */
+  private renderLayoutSheet() {
+    const landscape = this.$root.item.orientation === "landscape";
+    // Область друку — абсолютний блок із відступами у відсотках: по вертикалі
+    // вони рахуються від висоти аркуша, як і в рендерері.
+    const contentInset = [
+      `left:${PAGE_PADDING_PERCENT.x}%`,
+      `right:${PAGE_PADDING_PERCENT.x}%`,
+      `top:${PAGE_PADDING_PERCENT.y}%`,
+      `bottom:${PAGE_PADDING_PERCENT.y}%`,
+    ].join(";");
+
+    return html`
+      <div
+        class="sheet w-full rounded"
+        style="aspect-ratio:${landscape ? "297 / 210" : "210 / 297"}"
+        ${ref((element: Element | undefined) => { this.#sheet = (element as HTMLElement) ?? null; })}
+        @pointerdown=${(e: PointerEvent) => {
+          // Клік по вільному місцю аркуша знімає виділення.
+          if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.sheetArea === "content") {
+            this.selectedBlockKey = null;
+            this.selectedColumnKey = null;
+          }
+        }}
+        @pointermove=${this.onSheetPointerMove}
+        @pointerup=${this.onSheetPointerUp}
+        @pointercancel=${this.onSheetPointerUp}
+      >
+        <div class="sheet-content" style=${contentInset} data-sheet-area="content">
+          ${this.snapGuides.map((guide) => html`
+            <div class="guide ${guide.orientation}"
+              style=${guide.orientation === "vertical" ? `left:${guide.position}%` : `top:${guide.position}%`}></div>
+          `)}
+
+          ${this.blocks.map((block) => {
+            const box = this.boxOf(block);
+            const selected = block.key === this.selectedBlockKey;
+            const style = [
+              `left:${box.x}%`,
+              `top:${box.y}%`,
+              `width:${box.w}%`,
+              box.h > 0 ? `height:${box.h}%` : "",
+            ].filter(Boolean).join(";");
+
+            return html`
+              <div
+                class="frame ${selected ? "selected" : ""}"
+                style=${style}
+                title=${`${t(`printTemplate.blockType.${block.type}`)}: ${blockLabel(block)}`}
+                @pointerdown=${(e: PointerEvent) => this.startDrag(e, "move", block)}
+              >
+                ${this.renderFrameContent(block)}
+                ${selected ? html`
+                  <span class="frame-badge">
+                    ${box.x.toFixed(1)}, ${box.y.toFixed(1)} · ${box.w.toFixed(1)} × ${box.h.toFixed(1)}
+                  </span>
+                  <span class="frame-handle" @pointerdown=${(e: PointerEvent) => this.startDrag(e, "resize", block)}></span>
+                ` : nothing}
+              </div>
+            `;
+          })}
+        </div>
+      </div>
+    `;
+  }
+
   override render() {
     if (this.running === "get") {
       return html`<div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>`;
@@ -825,18 +1352,28 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
           <div class="flex min-w-[20rem] flex-1 flex-col gap-2">
             <div class="flex items-center gap-2">
-              <span class="text-sm font-semibold">${t("printTemplate.preview")}</span>
-              <button class="btn btn-xs" ?disabled=${this.busy} @click=${() => void this.refreshPreview()}>
-                ${this.running === "preview" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                ${t("printTemplate.refreshPreview")}
-              </button>
+              <span class="join">
+                <button class="join-item btn btn-xs ${this.viewMode === "layout" ? "btn-primary" : ""}"
+                  @click=${() => { this.viewMode = "layout"; }}>${t("printTemplate.viewLayout")}</button>
+                <button class="join-item btn btn-xs ${this.viewMode === "pdf" ? "btn-primary" : ""}"
+                  @click=${() => { this.viewMode = "pdf"; }}>${t("printTemplate.viewPdf")}</button>
+              </span>
+              ${this.viewMode === "pdf"
+                ? html`<button class="btn btn-xs" ?disabled=${this.busy} @click=${() => void this.refreshPreview()}>
+                    ${this.running === "preview" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+                    ${t("printTemplate.refreshPreview")}
+                  </button>`
+                : html`<span class="text-xs text-base-content/50">${t("printTemplate.layoutHint")}</span>`}
             </div>
-            ${this.previewPdfUrl
-              ? html`<iframe class="h-[42rem] w-full rounded-lg border border-base-300" src=${this.previewPdfUrl}
-                  title=${t("printTemplate.preview")}></iframe>`
-              : html`<div class="flex h-[42rem] items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/40">
-                  ${t("printTemplate.previewEmpty")}
-                </div>`}
+
+            ${this.viewMode === "layout"
+              ? this.renderLayoutSheet()
+              : this.previewPdfUrl
+                ? html`<iframe class="h-[42rem] w-full rounded-lg border border-base-300" src=${this.previewPdfUrl}
+                    title=${t("printTemplate.preview")}></iframe>`
+                : html`<div class="flex h-[42rem] items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/40">
+                    ${t("printTemplate.previewEmpty")}
+                  </div>`}
           </div>
         </div>
       </div>

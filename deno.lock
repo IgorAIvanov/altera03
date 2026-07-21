@@ -1457,8 +1457,10 @@
           "jsr:@std/fs@^1.0.19",
           "jsr:@std/http@^1.0.18",
           "jsr:@std/path@^1.1.2",
+          "npm:@pdf-lib/fontkit@^1.1.1",
           "npm:@sinclair/typebox@0.34",
           "npm:decimal.js@^10.6.0",
+          "npm:pdf-lib@^1.17.1",
           "npm:postgres@^3.4.5"
         ]
       }
