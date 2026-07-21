@@ -15,8 +15,10 @@ import {
   stringifyPrintTemplateValue,
 } from "./print-template.ts";
 import type {
+  PrintTemplateColumnAlign,
+  PrintTemplateFontWeight,
   PrintTemplateSchema,
-  PrintTemplateTableColumnItem,
+  PrintTemplateTableRow,
   ResolvedPrintTemplateBlockPlacement,
   ResolvedPrintTemplateBlockTextOptions,
   ResolvedPrintTemplateLineOptions,
@@ -47,12 +49,38 @@ export interface PrintTemplateRenderFieldListBlock {
 
 export interface PrintTemplateRenderTableColumn extends RenderablePrintTemplateTableColumn {}
 
+/** Комірка з уже підставленим значенням. */
+export interface PrintTemplateRenderTableCell {
+  key: string;
+  value: string;
+  colSpan: number;
+  rowSpan: number;
+  align: PrintTemplateColumnAlign;
+  fontWeight: PrintTemplateFontWeight;
+  /** `null` — успадкувати від блока. */
+  fontSize: number | null;
+  color: string;
+}
+
+export interface PrintTemplateRenderTableRow {
+  key: string;
+  cells: PrintTemplateRenderTableCell[];
+}
+
 export interface PrintTemplateRenderTableBlock {
   key: string;
   type: "table";
   title: string;
   columns: PrintTemplateRenderTableColumn[];
-  rows: Array<Record<string, string>>;
+  /** Шапка: друкується на кожній сторінці. */
+  header: PrintTemplateRenderTableRow[];
+  /**
+   * Тіло: по групі рядків на КОЖЕН запис джерела. Групування важливе для
+   * розривів — запис із кількох рядків не має розриватися між сторінками.
+   */
+  body: PrintTemplateRenderTableRow[][];
+  /** Підвал: друкується один раз, після останнього запису. */
+  footer: PrintTemplateRenderTableRow[];
   placement: ResolvedPrintTemplateBlockPlacement;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
@@ -87,11 +115,26 @@ export type PrintTemplateRenderBlock =
   | PrintTemplateRenderHorizontalLineBlock
   | PrintTemplateRenderVerticalLineBlock;
 
-function buildTableRows(source: unknown, columns: PrintTemplateTableColumnItem[]) {
-  const rows = Array.isArray(source) ? source as Array<Record<string, unknown>> : [];
-  return rows.map((row) => Object.fromEntries(
-    columns.map((column) => [column.key, stringifyPrintTemplateValue(resolvePrintTemplatePath(row, column.path))]),
-  ));
+/**
+ * Секція → рядки з підставленими значеннями.
+ * `scope` — корінь, від якого рахуються шляхи комірок: для шапки й підвалу це
+ * всі дані друку, для рядка тіла — конкретний запис.
+ */
+function buildSectionRows(rows: PrintTemplateTableRow[], scope: unknown): PrintTemplateRenderTableRow[] {
+  return rows.map((row) => ({
+    key: row.key,
+    cells: row.cells.map((cell) => ({
+      key: cell.key,
+      // Статичний текст має пріоритет: підпис у шапці не має залежати від даних.
+      value: cell.text || (cell.path ? stringifyPrintTemplateValue(resolvePrintTemplatePath(scope, cell.path)) : ""),
+      colSpan: cell.colSpan,
+      rowSpan: cell.rowSpan,
+      align: cell.align,
+      fontWeight: cell.fontWeight,
+      fontSize: cell.fontSize ? Number.parseFloat(cell.fontSize) || null : null,
+      color: cell.color,
+    })),
+  }));
 }
 
 export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source: unknown): PrintTemplateRenderBlock[] {
@@ -121,13 +164,17 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
     }
 
     if (block.type === "table") {
-      const columns = getRenderablePrintTemplateTableColumns(block.columns);
+      const records = resolvePrintTemplatePath(source, block.source);
+      const items = Array.isArray(records) ? records : [];
+
       return [{
         key: block.key,
         type: "table",
         title: block.title,
-        columns,
-        rows: buildTableRows(resolvePrintTemplatePath(source, block.source), columns),
+        columns: getRenderablePrintTemplateTableColumns(block.columns),
+        header: buildSectionRows(block.sections.header, source),
+        body: items.map((record) => buildSectionRows(block.sections.row, record)),
+        footer: buildSectionRows(block.sections.footer, source),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];

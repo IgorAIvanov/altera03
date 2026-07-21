@@ -9,8 +9,9 @@ import type {
   PrintTemplateBlockPlacement,
   PrintTemplateBlockTextOptions,
   PrintTemplateBlockType,
-  PrintTemplateTableColumnItem,
+  PrintTemplateTableColumn,
 } from "../../../server/modules/print/print-template.ts";
+import { createCell, createRow } from "./printTemplate.grid.ts";
 
 export const BLOCK_TYPES: PrintTemplateBlockType[] = [
   "text",
@@ -46,21 +47,9 @@ export function createTextOptions(patch?: Partial<PrintTemplateBlockTextOptions>
   };
 }
 
-export function createTableColumn(index: number): PrintTemplateTableColumnItem {
-  return {
-    key: newKey(),
-    title: `Колонка ${index}`,
-    path: "",
-    widthPercent: "20",
-    headerAlign: "left",
-    headerFontWeight: "bold",
-    headerFontSize: "",
-    headerColor: "",
-    valueAlign: "left",
-    valueFontWeight: "normal",
-    valueFontSize: "",
-    valueColor: "",
-  };
+/** Колонка сітки — лише ключ і ширина: заголовки живуть у комірках секцій. */
+export function createTableColumn(): PrintTemplateTableColumn {
+  return { key: newKey(), widthPercent: "20" };
 }
 
 export function createFieldItem(index: number) {
@@ -90,12 +79,19 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
   }
 
   if (type === "table") {
+    // Стартова сітка 3×(шапка+рядок): є що виділяти й об'єднувати одразу.
+    const columns = [createTableColumn(), createTableColumn(), createTableColumn()];
     return {
       key: newKey(),
       type: "table",
       title: "",
       source: "",
-      columns: [createTableColumn(1)],
+      columns,
+      sections: {
+        header: [{ key: newKey(), cells: ["Колонка 1", "Колонка 2", "Колонка 3"].map((text) => createCell({ text, fontWeight: "bold" })) }],
+        row: [createRow(columns.length)],
+        footer: [],
+      },
       placement: createPlacement({ heightPercent: "20" }),
       text: createTextOptions(),
     };
@@ -141,7 +137,19 @@ export function cloneBlock(block: PrintTemplateBlock): PrintTemplateBlock {
   }
 
   if (block.type === "table") {
-    return { ...block, key: newKey(), columns: block.columns.map((column) => ({ ...column, key: newKey() })) };
+    const cloneRows = (rows: typeof block.sections.header) =>
+      rows.map((row) => ({ key: newKey(), cells: row.cells.map((cell) => ({ ...cell, key: newKey() })) }));
+
+    return {
+      ...block,
+      key: newKey(),
+      columns: block.columns.map((column) => ({ ...column, key: newKey() })),
+      sections: {
+        header: cloneRows(block.sections.header),
+        row: cloneRows(block.sections.row),
+        footer: cloneRows(block.sections.footer),
+      },
+    };
   }
 
   return { ...block, key: newKey() };

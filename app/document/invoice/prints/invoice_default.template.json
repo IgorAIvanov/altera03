@@ -41,43 +41,60 @@
         "title": "Склад накладної",
         "source": "document.lines",
         "columns": [
-          {
-            "key": "index", "title": "№", "path": "index", "widthPercent": "8",
-            "headerAlign": "center", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
-            "valueAlign": "center", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
-          },
-          {
-            "key": "name", "title": "Найменування", "path": "name", "widthPercent": "44",
-            "headerAlign": "left", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
-            "valueAlign": "left", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
-          },
-          {
-            "key": "quantity", "title": "Кількість", "path": "quantity", "widthPercent": "14",
-            "headerAlign": "right", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
-            "valueAlign": "right", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
-          },
-          {
-            "key": "price", "title": "Ціна", "path": "price", "widthPercent": "16",
-            "headerAlign": "right", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
-            "valueAlign": "right", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
-          },
-          {
-            "key": "amount", "title": "Сума", "path": "amount", "widthPercent": "18",
-            "headerAlign": "right", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
-            "valueAlign": "right", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
-          }
+          { "key": "num", "widthPercent": "8" },
+          { "key": "id", "widthPercent": "14" },
+          { "key": "name", "widthPercent": "30" },
+          { "key": "quantity", "widthPercent": "14" },
+          { "key": "price", "widthPercent": "16" },
+          { "key": "amount", "widthPercent": "18" }
         ],
+        "sections": {
+          "header": {
+            "rows": [
+              {
+                "cells": [
+                  { "text": "№", "rowSpan": 2, "align": "center", "fontWeight": "bold", "fontSize": "9" },
+                  { "text": "Номенклатура", "colSpan": 2, "align": "center", "fontWeight": "bold", "fontSize": "9" },
+                  { "text": "Кількість", "rowSpan": 2, "align": "right", "fontWeight": "bold", "fontSize": "9" },
+                  { "text": "Ціна", "rowSpan": 2, "align": "right", "fontWeight": "bold", "fontSize": "9" },
+                  { "text": "Сума", "rowSpan": 2, "align": "right", "fontWeight": "bold", "fontSize": "9" }
+                ]
+              },
+              {
+                "cells": [
+                  { "text": "Код", "align": "center", "fontWeight": "bold", "fontSize": "9" },
+                  { "text": "Найменування", "align": "left", "fontWeight": "bold", "fontSize": "9" }
+                ]
+              }
+            ]
+          },
+          "row": {
+            "rows": [
+              {
+                "cells": [
+                  { "path": "index", "align": "center" },
+                  { "path": "id", "align": "center" },
+                  { "path": "name", "align": "left" },
+                  { "path": "quantity", "align": "right" },
+                  { "path": "price", "align": "right" },
+                  { "path": "amount", "align": "right" }
+                ]
+              }
+            ]
+          },
+          "footer": {
+            "rows": [
+              {
+                "cells": [
+                  { "text": "Разом", "colSpan": 5, "align": "right", "fontWeight": "bold" },
+                  { "path": "document.total", "align": "right", "fontWeight": "bold" }
+                ]
+              }
+            ]
+          }
+        },
         "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "26", "widthPercent": "100", "heightPercent": "45" },
         "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" }
-      },
-      {
-        "key": "total",
-        "type": "field-list",
-        "items": [
-          { "key": "total", "label": "Разом", "path": "document.total" }
-        ],
-        "placement": { "mode": "absolute", "xPercent": "55", "yPercent": "74", "widthPercent": "45", "heightPercent": "6" },
-        "text": { "fontSize": "12", "align": "right", "fontWeight": "bold", "color": "#262626" }
       },
       {
         "key": "signatures",

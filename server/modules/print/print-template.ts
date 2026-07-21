@@ -44,7 +44,55 @@ export interface PrintTemplateFieldListItem {
   path: string;
 }
 
-export interface PrintTemplateTableColumnItem {
+/**
+ * Колонка таблиці — це лише вертикаль сітки: ключ і ширина.
+ *
+ * Заголовки й прив'язки живуть у комірках секцій, бо одна колонка може мати над
+ * собою кілька рівнів заголовків, а один запис — друкуватися кількома рядками.
+ */
+export interface PrintTemplateTableColumn {
+  key: string;
+  widthPercent: string;
+}
+
+/**
+ * Комірка секції. Або статичний `text`, або значення за `path`
+ * (у секції `row` — від запису, у `header`/`footer` — від кореня даних).
+ * Порожні `fontSize`/`color` означають «успадкувати від блока».
+ */
+export interface PrintTemplateTableCell {
+  key: string;
+  text: string;
+  path: string;
+  colSpan: number;
+  rowSpan: number;
+  align: PrintTemplateColumnAlign;
+  fontWeight: PrintTemplateFontWeight;
+  fontSize: string;
+  color: string;
+}
+
+export interface PrintTemplateTableRow {
+  key: string;
+  cells: PrintTemplateTableCell[];
+}
+
+/** Секції необов'язкові: таблиця може бути без шапки або без підвалу. */
+export interface PrintTemplateTableSections {
+  header: PrintTemplateTableRow[];
+  row: PrintTemplateTableRow[];
+  footer: PrintTemplateTableRow[];
+}
+
+export type PrintTemplateTableSectionName = keyof PrintTemplateTableSections;
+
+export const PRINT_TEMPLATE_TABLE_SECTIONS: PrintTemplateTableSectionName[] = ["header", "row", "footer"];
+
+/**
+ * Стара форма колонки: заголовок і прив'язка прямо в колонці, без секцій.
+ * Лишається лише для підняття давніх шаблонів — див. `sectionsFromLegacyColumns`.
+ */
+interface LegacyPrintTemplateTableColumn {
   key: string;
   title: string;
   path: string;
@@ -74,7 +122,8 @@ export interface PrintTemplateTableBlock extends PrintTemplateBlockBase {
   type: "table";
   title: string;
   source: string;
-  columns: PrintTemplateTableColumnItem[];
+  columns: PrintTemplateTableColumn[];
+  sections: PrintTemplateTableSections;
 }
 
 export interface PrintTemplateImageBlock extends PrintTemplateBlockBase {
@@ -131,7 +180,7 @@ export interface ResolvedPrintTemplateLineOptions {
   lineWidth: number;
 }
 
-export interface RenderablePrintTemplateTableColumn extends PrintTemplateTableColumnItem {
+export interface RenderablePrintTemplateTableColumn extends PrintTemplateTableColumn {
   widthWeight: number;
 }
 
@@ -253,7 +302,7 @@ function normalizeFieldListItem(value: unknown): PrintTemplateFieldListItem | nu
   };
 }
 
-function normalizeTableColumn(value: unknown): PrintTemplateTableColumnItem | null {
+function normalizeLegacyTableColumn(value: unknown): LegacyPrintTemplateTableColumn | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -272,6 +321,108 @@ function normalizeTableColumn(value: unknown): PrintTemplateTableColumnItem | nu
     valueFontSize: normalizeString(value.valueFontSize ?? value.fontSize),
     valueColor: normalizeColor(value.valueColor, ""),
   };
+}
+
+function normalizeSpan(value: unknown) {
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function normalizeTableCell(value: unknown): PrintTemplateTableCell | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    key: normalizeString(value.key) || crypto.randomUUID(),
+    text: normalizeString(value.text),
+    path: normalizeString(value.path),
+    colSpan: normalizeSpan(value.colSpan),
+    rowSpan: normalizeSpan(value.rowSpan),
+    align: normalizeColumnAlign(value.align),
+    fontWeight: normalizeFontWeight(value.fontWeight),
+    fontSize: normalizeString(value.fontSize),
+    color: normalizeColor(value.color, ""),
+  };
+}
+
+function normalizeTableRows(value: unknown): PrintTemplateTableRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((row) => {
+    if (!isRecord(row)) return [];
+
+    const cells = Array.isArray(row.cells)
+      ? row.cells.map(normalizeTableCell).filter((cell): cell is PrintTemplateTableCell => Boolean(cell))
+      : [];
+
+    return cells.length ? [{ key: normalizeString(row.key) || crypto.randomUUID(), cells }] : [];
+  });
+}
+
+function createTableCell(patch: Partial<PrintTemplateTableCell>): PrintTemplateTableCell {
+  return {
+    key: crypto.randomUUID(),
+    text: "",
+    path: "",
+    colSpan: 1,
+    rowSpan: 1,
+    align: "left",
+    fontWeight: "normal",
+    fontSize: "",
+    color: "",
+    ...patch,
+  };
+}
+
+/**
+ * Підйом давнього шаблону: колонки з `title`/`path` перетворюються на секції —
+ * один рядок шапки із заголовків і один рядок даних із прив'язок.
+ *
+ * Так шаблони, збережені до появи секцій, і далі друкуються без міграції даних.
+ */
+function sectionsFromLegacyColumns(columns: LegacyPrintTemplateTableColumn[]): PrintTemplateTableSections {
+  return {
+    header: [{
+      key: crypto.randomUUID(),
+      cells: columns.map((column) => createTableCell({
+        text: column.title,
+        align: column.headerAlign,
+        fontWeight: column.headerFontWeight,
+        fontSize: column.headerFontSize,
+        color: column.headerColor,
+      })),
+    }],
+    row: [{
+      key: crypto.randomUUID(),
+      cells: columns.map((column) => createTableCell({
+        path: column.path,
+        align: column.valueAlign,
+        fontWeight: column.valueFontWeight,
+        fontSize: column.valueFontSize,
+        color: column.valueColor,
+      })),
+    }],
+    footer: [],
+  };
+}
+
+function normalizeTableSections(value: unknown, legacyColumns: LegacyPrintTemplateTableColumn[]): PrintTemplateTableSections {
+  if (!isRecord(value)) {
+    return sectionsFromLegacyColumns(legacyColumns);
+  }
+
+  const sections: PrintTemplateTableSections = {
+    header: normalizeTableRows(isRecord(value.header) ? value.header.rows : value.header),
+    row: normalizeTableRows(isRecord(value.row) ? value.row.rows : value.row),
+    footer: normalizeTableRows(isRecord(value.footer) ? value.footer.rows : value.footer),
+  };
+
+  // Секції є, але всі порожні — вважаємо, що їх не описали, і беремо колонки.
+  const hasAnyRow = PRINT_TEMPLATE_TABLE_SECTIONS.some((name) => sections[name].length > 0);
+  return hasAnyRow ? sections : sectionsFromLegacyColumns(legacyColumns);
 }
 
 function normalizeBlock(value: unknown): PrintTemplateBlock | null {
@@ -307,14 +458,19 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
   }
 
   if (type === "table") {
+    const legacyColumns = Array.isArray(value.columns)
+      ? value.columns
+        .map((column) => normalizeLegacyTableColumn(column))
+        .filter((column): column is LegacyPrintTemplateTableColumn => Boolean(column))
+      : [];
+
     return {
       key,
       type,
       title: normalizeString(value.title),
       source: normalizeString(value.source),
-      columns: Array.isArray(value.columns)
-        ? value.columns.map((column) => normalizeTableColumn(column)).filter((column): column is PrintTemplateTableColumnItem => Boolean(column))
-        : [],
+      columns: legacyColumns.map((column) => ({ key: column.key, widthPercent: column.widthPercent })),
+      sections: normalizeTableSections(value.sections, legacyColumns),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -404,13 +560,15 @@ export function stringifyPrintTemplateValue(value: unknown) {
   return "-";
 }
 
-export function getRenderablePrintTemplateTableColumns(columns: PrintTemplateTableColumnItem[]): RenderablePrintTemplateTableColumn[] {
-  return columns
-    .map((column) => ({
-      ...column,
-      widthWeight: Number(column.widthPercent) > 0 ? Number(column.widthPercent) : 1,
-    }))
-    .filter((column) => column.key && column.title);
+/**
+ * Сітка колонок для рендеру. Колонка без ширини важить 1 — тоді таблиця без
+ * заданих ширин ділиться нарівно, а не зникає.
+ */
+export function getRenderablePrintTemplateTableColumns(columns: PrintTemplateTableColumn[]): RenderablePrintTemplateTableColumn[] {
+  return columns.map((column) => ({
+    ...column,
+    widthWeight: Number(column.widthPercent) > 0 ? Number(column.widthPercent) : 1,
+  }));
 }
 
 function parseTemplateNumber(value: string, fallback: number) {

@@ -11,6 +11,19 @@ import {
   type PrintTemplateItem,
 } from "./printTemplate.schema.ts";
 import { BLOCK_TYPES, cloneBlock, createBlock, createDefaultBlocks, createFieldItem, createTableColumn } from "./printTemplate.blocks.ts";
+import {
+  addColumn,
+  buildGrid,
+  createCell,
+  createRow,
+  describeGrid,
+  mergeRange,
+  normalizeRange,
+  removeColumn,
+  removeRow,
+  splitCell,
+  type GridRange,
+} from "./printTemplate.grid.ts";
 // Тільки типи: формат шаблону визначає ядро (server/modules/print), і цей
 // import стирається при збірці — рантайм-коду ядра в бандл не потрапляє.
 import type {
@@ -19,7 +32,9 @@ import type {
   PrintTemplateBlockTextOptions,
   PrintTemplateBlockType,
   PrintTemplateColumnAlign,
-  PrintTemplateTableColumnItem,
+  PrintTemplateTableCell,
+  PrintTemplateTableRow,
+  PrintTemplateTableSectionName,
 } from "../../../server/modules/print/print-template.ts";
 
 export const tagName = "print-template-edit";
@@ -40,6 +55,9 @@ const SNAP_THRESHOLD_PERCENT = 1.2;
 /** Крок зсуву стрілками (з Shift — більший). */
 const NUDGE_STEP = 1;
 const NUDGE_STEP_FAST = 5;
+
+/** Порядок секцій у редакторі. */
+const PRINT_TEMPLATE_TABLE_SECTIONS: PrintTemplateTableSectionName[] = ["header", "row", "footer"];
 
 /** Скільки рядків таблиці показувати на схемі — решта не додає інформації. */
 const SCHEMATIC_TABLE_ROWS = 8;
@@ -139,6 +157,47 @@ function withSelected(options: PathOption[], value: string) {
   const normalized = value.trim();
   if (!normalized || options.some((option) => option.value === normalized)) return options;
   return [{ value: normalized, label: normalized }, ...options];
+}
+
+/**
+ * Секції в шаблоні можуть бути записані двома формами: масивом рядків або
+ * `{ "rows": [...] }`. Ядро приймає обидві, а редактор працює лише з масивом —
+ * тож усе, що приходить ззовні (БД, файл), проганяємо через це приведення.
+ */
+function toSectionRows(value: unknown): PrintTemplateTableRow[] {
+  const rows = Array.isArray(value) ? value : (value as { rows?: unknown })?.rows;
+  if (!Array.isArray(rows)) return [];
+
+  return rows.flatMap((row) => {
+    const cells = (row as { cells?: unknown })?.cells;
+    if (!Array.isArray(cells)) return [];
+
+    return [{
+      key: (row as { key?: string }).key || crypto.randomUUID(),
+      cells: cells.map((cell) => ({
+        ...createCell(),
+        ...(cell as Partial<PrintTemplateTableCell>),
+        key: (cell as { key?: string }).key || crypto.randomUUID(),
+      })),
+    }];
+  });
+}
+
+/** Блоки з БД/файлу → форма, з якою працює редактор. */
+function normalizeLoadedBlocks(blocks: PrintTemplateBlock[]): PrintTemplateBlock[] {
+  return (Array.isArray(blocks) ? blocks : []).map((block) => (
+    block?.type === "table"
+      ? {
+        ...block,
+        columns: Array.isArray(block.columns) ? block.columns : [],
+        sections: {
+          header: toSectionRows(block.sections?.header),
+          row: toSectionRows(block.sections?.row),
+          footer: toSectionRows(block.sections?.footer),
+        },
+      }
+      : block
+  ));
 }
 
 /** Короткий підпис блока у списку. */
@@ -242,6 +301,23 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       font-weight: 700;
       pointer-events: none;
     }
+    /* Сітка секції в панелі властивостей: тут редагують структуру таблиці. */
+    .grid-editor { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .grid-editor td {
+      border: 1px solid var(--color-base-300, #d9d9d9);
+      padding: 2px 4px;
+      font-size: 11px;
+      line-height: 1.3;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .grid-editor td.selected {
+      background: rgba(22, 119, 255, 0.16);
+      outline: 1px solid rgba(22, 119, 255, 0.8);
+      outline-offset: -1px;
+    }
+    .grid-editor-text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
     .guide { position: absolute; pointer-events: none; z-index: 30; }
     .guide.vertical { top: 0; bottom: 0; border-left: 1px dashed rgba(250, 140, 22, 0.9); }
     .guide.horizontal { left: 0; right: 0; border-top: 1px dashed rgba(250, 140, 22, 0.9); }
@@ -262,7 +338,12 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
   /** Поки даних немає — панель відкрита: без них нема з чого будувати шляхи. */
   @state() private showDataTools = true;
   @state() private selectedBlockKey: string | null = null;
-  @state() private selectedColumnKey: string | null = null;
+  /** Виділення в сітці секції: якір і фокус (Shift розтягує від якоря). */
+  @state() private cellSelection: {
+    section: PrintTemplateTableSectionName;
+    anchor: { row: number; column: number };
+    focus: { row: number; column: number };
+  } | null = null;
   /** Що показуємо в правій колонці: полотно розкладки чи готовий PDF. */
   @state() private viewMode: "layout" | "pdf" = "layout";
   /** Геометрія блока під час перетягування — у $root потрапить лише на pointerup. */
@@ -385,7 +466,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     event.preventDefault();
     event.stopPropagation();
     this.selectedBlockKey = block.key;
-    this.selectedColumnKey = null;
+    this.cellSelection = null;
 
     const bounds = sheet.getBoundingClientRect();
     const origin = this.boxOf(block);
@@ -498,7 +579,9 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
   private async load() {
     if (!await this.loadInto("get", { id: this.modelId })) return;
-    this.schedulePreview();
+    // З БД шаблон приходить «сирим» jsonb — приводимо секції таблиць до форми,
+    // з якою працює редактор, інакше рендер спіткнеться на чужому записі.
+    this.setBlocks(normalizeLoadedBlocks(this.$root.item.schema?.blocks ?? []));
   }
 
   private async save() {
@@ -547,19 +630,11 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     this.updateBlock(blockKey, (block) => ({ ...block, text: { ...block.text, ...patch } }));
   }
 
-  private updateColumn(blockKey: string, columnKey: string, patch: Partial<PrintTemplateTableColumnItem>) {
-    this.updateBlock(blockKey, (block) => (
-      block.type === "table"
-        ? { ...block, columns: block.columns.map((c) => (c.key === columnKey ? { ...c, ...patch } : c)) }
-        : block
-    ));
-  }
-
   private addBlock(type: PrintTemplateBlockType) {
     const block = createBlock(type);
     this.setBlocks([...this.blocks, block]);
     this.selectedBlockKey = block.key;
-    this.selectedColumnKey = null;
+    this.cellSelection = null;
   }
 
   private duplicateSelected() {
@@ -578,7 +653,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     if (!this.selectedBlockKey) return;
     this.setBlocks(this.blocks.filter((block) => block.key !== this.selectedBlockKey));
     this.selectedBlockKey = null;
-    this.selectedColumnKey = null;
+    this.cellSelection = null;
   }
 
   private moveBlock(from: number, to: number) {
@@ -744,7 +819,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     try {
       const raw = JSON.parse(await file.text()) as Record<string, unknown>;
       const schema = (raw.schema ?? {}) as { blocks?: unknown };
-      const blocks = Array.isArray(schema.blocks) ? schema.blocks as PrintTemplateBlock[] : [];
+      const blocks = normalizeLoadedBlocks(schema.blocks as PrintTemplateBlock[]);
 
       this.$root.item = {
         ...this.$root.item,
@@ -997,15 +1072,150 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     });
   }
 
+  /** Рядки секції у поточному блоці. */
+  private sectionRows(block: Extract<PrintTemplateBlock, { type: "table" }>, section: PrintTemplateTableSectionName) {
+    return block.sections[section];
+  }
+
+  private setSectionRows(
+    blockKey: string,
+    section: PrintTemplateTableSectionName,
+    rows: PrintTemplateTableRow[],
+  ) {
+    this.updateBlock(blockKey, (block) => (
+      block.type === "table" ? { ...block, sections: { ...block.sections, [section]: rows } } : block
+    ));
+  }
+
+  /** Комірка під виділенням — та, властивості якої показує панель. */
+  private get selectedCell(): PrintTemplateTableCell | null {
+    const block = this.selectedBlock;
+    const selection = this.cellSelection;
+    if (!block || block.type !== "table" || !selection) return null;
+
+    const grid = buildGrid(block.sections[selection.section], block.columns.length);
+    return grid[selection.anchor.row]?.[selection.anchor.column] ?? null;
+  }
+
+  private updateSelectedCell(patch: Partial<PrintTemplateTableCell>) {
+    const block = this.selectedBlock;
+    const selection = this.cellSelection;
+    const cell = this.selectedCell;
+    if (!block || block.type !== "table" || !selection || !cell) return;
+
+    this.setSectionRows(
+      block.key,
+      selection.section,
+      block.sections[selection.section].map((row) => ({
+        ...row,
+        cells: row.cells.map((entry) => (entry.key === cell.key ? { ...entry, ...patch } : entry)),
+      })),
+    );
+  }
+
+  /** Клік по клітинці: без Shift — нове виділення, з Shift — розтягнути. */
+  private selectCell(section: PrintTemplateTableSectionName, row: number, column: number, extend: boolean) {
+    const current = this.cellSelection;
+    this.cellSelection = extend && current && current.section === section
+      ? { ...current, focus: { row, column } }
+      : { section, anchor: { row, column }, focus: { row, column } };
+  }
+
+  private get selectionRange(): GridRange | null {
+    const selection = this.cellSelection;
+    return selection ? normalizeRange(selection.anchor, selection.focus) : null;
+  }
+
+  private mergeSelection() {
+    const block = this.selectedBlock;
+    const selection = this.cellSelection;
+    const range = this.selectionRange;
+    if (!block || block.type !== "table" || !selection || !range) return;
+
+    this.setSectionRows(
+      block.key,
+      selection.section,
+      mergeRange(block.sections[selection.section], block.columns.length, range),
+    );
+    this.cellSelection = { ...selection, focus: selection.anchor };
+  }
+
+  private splitSelection() {
+    const block = this.selectedBlock;
+    const selection = this.cellSelection;
+    if (!block || block.type !== "table" || !selection) return;
+
+    this.setSectionRows(
+      block.key,
+      selection.section,
+      splitCell(block.sections[selection.section], block.columns.length, selection.anchor),
+    );
+  }
+
+  /** Сітка секції: клітинки з colspan/rowspan, підсвіткою виділення. */
+  private renderSectionGrid(
+    block: Extract<PrintTemplateBlock, { type: "table" }>,
+    section: PrintTemplateTableSectionName,
+  ) {
+    const rows = block.sections[section];
+    const grid = buildGrid(rows, block.columns.length);
+    const bounds = describeGrid(grid);
+    const range = this.cellSelection?.section === section ? this.selectionRange : null;
+
+    const inRange = (row: number, column: number) =>
+      Boolean(range) && row >= range!.fromRow && row <= range!.toRow
+        && column >= range!.fromColumn && column <= range!.toColumn;
+
+    return html`
+      <table class="grid-editor">
+        ${grid.map((gridRow, rowIndex) => html`
+          <tr>
+            ${gridRow.map((cell, columnIndex) => {
+              if (!cell) return nothing;
+
+              const box = bounds.get(cell)!;
+              // Клітинку малює лише лівий верхній кут комірки.
+              if (box.fromRow !== rowIndex || box.fromColumn !== columnIndex) return nothing;
+
+              const span = { colSpan: box.toColumn - box.fromColumn + 1, rowSpan: box.toRow - box.fromRow + 1 };
+
+              return html`
+                <td
+                  class="${inRange(rowIndex, columnIndex) ? "selected" : ""}"
+                  colspan=${span.colSpan > 1 ? span.colSpan : nothing}
+                  rowspan=${span.rowSpan > 1 ? span.rowSpan : nothing}
+                  title=${cell.path ? `→ ${cell.path}` : ""}
+                  @click=${(e: MouseEvent) => this.selectCell(section, rowIndex, columnIndex, e.shiftKey)}
+                >
+                  <span class="grid-editor-text">${cell.text || (cell.path ? `→ ${cell.path}` : "·")}</span>
+                </td>
+              `;
+            })}
+          </tr>
+        `)}
+        ${rows.length === 0
+          ? html`<tr><td class="text-center text-base-content/40">${t("printTemplate.sectionEmpty")}</td></tr>`
+          : nothing}
+      </table>
+    `;
+  }
+
   private renderTableProperties(
     block: Extract<PrintTemplateBlock, { type: "table" }>,
     arrayPaths: PathOption[],
   ) {
-    // Шляхи колонок відносні до ОДНОГО рядка масиву-джерела, а не до кореня.
+    // Шляхи комірок секції `row` відносні до ОДНОГО запису, а не до кореня;
+    // у шапці й підвалі — навпаки, від кореня даних.
     const sample = resolvePath(this.previewData, block.source);
-    const rowSample = Array.isArray(sample) ? sample[0] ?? null : null;
-    const columnPaths = sortPaths(collectScalarPaths(rowSample));
-    const column = block.columns.find((c) => c.key === this.selectedColumnKey) ?? null;
+    const recordSample = Array.isArray(sample) ? sample[0] ?? null : null;
+    const recordPaths = sortPaths(collectScalarPaths(recordSample));
+    const rootPaths = sortPaths(collectScalarPaths(this.previewData));
+
+    const selection = this.cellSelection;
+    const range = this.selectionRange;
+    const cell = this.selectedCell;
+    const canMerge = Boolean(range) && (range!.toRow > range!.fromRow || range!.toColumn > range!.fromColumn);
+    const canSplit = Boolean(cell) && (cell!.colSpan > 1 || cell!.rowSpan > 1);
 
     return html`
       <div class="flex flex-col gap-2">
@@ -1016,52 +1226,135 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           b.type === "table" ? { ...b, source: v } : b
         ))))}
 
+        <!-- Сітка колонок: лише ширини, заголовки живуть у комірках -->
         <div class="flex items-center justify-between">
           <span class="text-sm font-semibold">${t("printTemplate.columns")}</span>
-          <button class="btn btn-xs" @click=${() => this.addColumn(block.key, block.columns.length + 1)}>
-            + ${t("printTemplate.addColumn")}
-          </button>
+          <button class="btn btn-xs" @click=${() => this.addGridColumn(block)}>+ ${t("printTemplate.addColumn")}</button>
         </div>
-
         <div class="flex flex-wrap gap-1">
-          ${block.columns.map((entry) => html`
-            <button class="btn btn-xs ${entry.key === this.selectedColumnKey ? "btn-primary" : "btn-outline"}"
-              @click=${() => { this.selectedColumnKey = entry.key; }}>${entry.title || "—"}</button>
+          ${block.columns.map((column, index) => html`
+            <span class="flex items-center gap-1 rounded border border-base-300 px-1">
+              <span class="text-xs text-base-content/50">${index + 1}</span>
+              <input class="input input-xs w-12" .value=${column.widthPercent}
+                @input=${(e: Event) => this.updateGridColumn(block, column.key, (e.target as HTMLInputElement).value)} />
+              <button class="btn btn-ghost btn-xs text-error" ?disabled=${block.columns.length <= 1}
+                @click=${() => this.removeGridColumn(block, index)}>✕</button>
+            </span>
           `)}
         </div>
 
-        ${column ? html`
-          <div class="flex flex-col gap-2 rounded border border-base-300 p-2">
-            ${this.field(t("printTemplate.columnTitle"), this.textInput(column.title, (v) => this.updateColumn(block.key, column.key, { title: v })))}
-            ${this.field(t("printTemplate.columnPath"), this.pathSelect(column.path, columnPaths, (v) => this.updateColumn(block.key, column.key, { path: v })))}
-            ${this.field(t("printTemplate.columnWidth"), this.textInput(column.widthPercent, (v) => this.updateColumn(block.key, column.key, { widthPercent: v })))}
-
-            <div class="grid grid-cols-2 gap-2">
-              ${this.field(t("printTemplate.columnHeaderAlign"), this.alignButtons(column.headerAlign, (align) => this.updateColumn(block.key, column.key, { headerAlign: align })))}
-              ${this.field(t("printTemplate.columnValueAlign"), this.alignButtons(column.valueAlign, (align) => this.updateColumn(block.key, column.key, { valueAlign: align })))}
-              ${this.field(t("printTemplate.columnHeaderFontSize"), this.textInput(column.headerFontSize, (v) => this.updateColumn(block.key, column.key, { headerFontSize: v })))}
-              ${this.field(t("printTemplate.columnValueFontSize"), this.textInput(column.valueFontSize, (v) => this.updateColumn(block.key, column.key, { valueFontSize: v })))}
+        <!-- Секції -->
+        ${PRINT_TEMPLATE_TABLE_SECTIONS.map((section) => html`
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold">${t(`printTemplate.section.${section}`)}</span>
+              <button class="btn btn-xs" @click=${() => this.addSectionRow(block, section)}>
+                + ${t("printTemplate.addSectionRow")}
+              </button>
             </div>
-
-            <button class="btn btn-xs btn-error btn-outline" ?disabled=${block.columns.length <= 1}
-              @click=${() => this.deleteColumn(block.key, column.key)}>${t("printTemplate.deleteColumn")}</button>
+            <span class="text-xs text-base-content/50">${t(`printTemplate.sectionHint.${section}`)}</span>
+            ${this.renderSectionGrid(block, section)}
+            ${block.sections[section].length
+              ? html`
+                <div class="flex flex-wrap gap-1">
+                  ${block.sections[section].map((_, rowIndex) => html`
+                    <button class="btn btn-ghost btn-xs text-error"
+                      @click=${() => this.setSectionRows(block.key, section, removeRow(block.sections[section], block.columns.length, rowIndex))}>
+                      ✕ ${t("printTemplate.row")} ${rowIndex + 1}
+                    </button>
+                  `)}
+                </div>
+              `
+              : nothing}
           </div>
-        ` : html`<div class="text-xs text-base-content/50">${t("printTemplate.columnSelectHint")}</div>`}
+        `)}
+
+        <!-- Виділення -->
+        <div class="flex flex-wrap gap-1">
+          <button class="btn btn-xs" ?disabled=${!canMerge} @click=${this.mergeSelection}>
+            ${t("printTemplate.mergeCells")}
+          </button>
+          <button class="btn btn-xs" ?disabled=${!canSplit} @click=${this.splitSelection}>
+            ${t("printTemplate.splitCell")}
+          </button>
+        </div>
+
+        ${cell && selection ? html`
+          <div class="flex flex-col gap-2 rounded border border-base-300 p-2">
+            <span class="text-xs text-base-content/50">
+              ${t(`printTemplate.section.${selection.section}`)} · ${cell.colSpan}×${cell.rowSpan}
+            </span>
+            ${this.field(t("printTemplate.cellText"), this.textInput(cell.text, (v) => this.updateSelectedCell({ text: v })))}
+            ${this.field(
+              t("printTemplate.cellPath"),
+              this.pathSelect(
+                cell.path,
+                selection.section === "row" ? recordPaths : rootPaths,
+                (v) => this.updateSelectedCell({ path: v }),
+              ),
+            )}
+            <span class="text-xs text-base-content/50">${t("printTemplate.cellTextWins")}</span>
+            <div class="grid grid-cols-2 gap-2">
+              ${this.field(t("printTemplate.fontAlign"), this.alignButtons(cell.align, (align) => this.updateSelectedCell({ align })))}
+              ${this.field(t("printTemplate.fontWeight"), html`
+                <button class="btn btn-xs ${cell.fontWeight === "bold" ? "btn-primary" : ""}"
+                  @click=${() => this.updateSelectedCell({ fontWeight: cell.fontWeight === "bold" ? "normal" : "bold" })}>B</button>
+              `)}
+              ${this.field(t("printTemplate.fontSize"), this.textInput(cell.fontSize, (v) => this.updateSelectedCell({ fontSize: v })))}
+              ${this.field(t("printTemplate.fontColor"), this.colorInput(cell.color, (v) => this.updateSelectedCell({ color: v })))}
+            </div>
+          </div>
+        ` : html`<div class="text-xs text-base-content/50">${t("printTemplate.cellSelectHint")}</div>`}
       </div>
     `;
   }
 
-  private addColumn(blockKey: string, index: number) {
-    const column = createTableColumn(index);
-    this.updateBlock(blockKey, (block) => (block.type === "table" ? { ...block, columns: [...block.columns, column] } : block));
-    this.selectedColumnKey = column.key;
+  /** Колонка додається одразу в усі секції — сітка спільна. */
+  private addGridColumn(block: Extract<PrintTemplateBlock, { type: "table" }>) {
+    const columnCount = block.columns.length;
+    this.updateBlock(block.key, (entry) => (
+      entry.type === "table"
+        ? {
+          ...entry,
+          columns: [...entry.columns, createTableColumn()],
+          sections: {
+            header: addColumn(entry.sections.header, columnCount),
+            row: addColumn(entry.sections.row, columnCount),
+            footer: addColumn(entry.sections.footer, columnCount),
+          },
+        }
+        : entry
+    ));
   }
 
-  private deleteColumn(blockKey: string, columnKey: string) {
-    this.updateBlock(blockKey, (block) => (
-      block.type === "table" ? { ...block, columns: block.columns.filter((c) => c.key !== columnKey) } : block
+  private updateGridColumn(block: Extract<PrintTemplateBlock, { type: "table" }>, columnKey: string, widthPercent: string) {
+    this.updateBlock(block.key, (entry) => (
+      entry.type === "table"
+        ? { ...entry, columns: entry.columns.map((column) => (column.key === columnKey ? { ...column, widthPercent } : column)) }
+        : entry
     ));
-    this.selectedColumnKey = null;
+  }
+
+  private removeGridColumn(block: Extract<PrintTemplateBlock, { type: "table" }>, columnIndex: number) {
+    const columnCount = block.columns.length;
+    this.cellSelection = null;
+    this.updateBlock(block.key, (entry) => (
+      entry.type === "table"
+        ? {
+          ...entry,
+          columns: entry.columns.filter((_, index) => index !== columnIndex),
+          sections: {
+            header: removeColumn(entry.sections.header, columnCount, columnIndex),
+            row: removeColumn(entry.sections.row, columnCount, columnIndex),
+            footer: removeColumn(entry.sections.footer, columnCount, columnIndex),
+          },
+        }
+        : entry
+    ));
+  }
+
+  private addSectionRow(block: Extract<PrintTemplateBlock, { type: "table" }>, section: PrintTemplateTableSectionName) {
+    this.setSectionRows(block.key, section, [...block.sections[section], createRow(block.columns.length)]);
   }
 
   // ── Рендер ──────────────────────────────────────────────────────────────────
@@ -1073,7 +1366,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           <div class="flex items-center gap-1">
             <button
               class="btn btn-xs flex-1 justify-start ${block.key === this.selectedBlockKey ? "btn-primary" : "btn-ghost"}"
-              @click=${() => { this.selectedBlockKey = block.key; this.selectedColumnKey = null; }}
+              @click=${() => { this.selectedBlockKey = block.key; this.cellSelection = null; }}
             >
               <span class="opacity-60">${t(`printTemplate.blockType.${block.type}`)}</span>
               <span class="truncate">${blockLabel(block)}</span>
@@ -1129,9 +1422,30 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
     if (block.type === "table") {
       const source = resolvePath(this.previewData, block.source);
-      const rows = Array.isArray(source) ? source.slice(0, SCHEMATIC_TABLE_ROWS) : [];
-      const columns = block.columns.filter((column) => column.key && column.title);
-      const totalWeight = columns.reduce((sum, column) => sum + (toNumber(column.widthPercent, 0) || 1), 0) || 1;
+      const records = Array.isArray(source) ? source.slice(0, SCHEMATIC_TABLE_ROWS) : [];
+      const columnCount = block.columns.length;
+      const totalWeight = block.columns.reduce((sum, column) => sum + (toNumber(column.widthPercent, 0) || 1), 0) || 1;
+
+      // Секція → рядки HTML-таблиці. `scope` — корінь для шляхів комірок:
+      // для шапки й підвалу це всі дані, для рядка тіла — один запис.
+      const sectionRows = (rows: PrintTemplateTableRow[], scope: unknown, isHeader: boolean) =>
+        rows.map((row) => html`
+          <tr>
+            ${row.cells.map((cell) => html`
+              <td
+                colspan=${cell.colSpan > 1 ? cell.colSpan : nothing}
+                rowspan=${cell.rowSpan > 1 ? cell.rowSpan : nothing}
+                style="
+                  ${isHeader ? "background:#f7f7f7;" : ""}
+                  text-align:${cell.align};
+                  font-weight:${cell.fontWeight === "bold" ? 700 : 400};
+                  font-size:${pt(cell.fontSize || block.text.fontSize)};
+                  color:${cell.color || block.text.color};
+                "
+              >${cell.text || (cell.path ? stringifyValue(resolvePath(scope, cell.path)) : "")}</td>
+            `)}
+          </tr>
+        `);
 
       return html`
         <div class="frame-body" style=${common(block.text)}>
@@ -1139,34 +1453,22 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
             ? html`<div style="font-weight:600;font-size:${pt(toNumber(block.text.fontSize, 10) + 2)}">${block.title}</div>`
             : nothing}
           <table class="frame-table">
-            <thead>
-              <tr>
-                ${columns.map((column) => html`
-                  <th style="
-                    width:${((toNumber(column.widthPercent, 0) || 1) / totalWeight) * 100}%;
-                    text-align:${column.headerAlign};
-                    font-weight:${column.headerFontWeight === "bold" ? 700 : 400};
-                    font-size:${pt(column.headerFontSize || block.text.fontSize)};
-                    color:${column.headerColor || block.text.color};
-                  ">${column.title}</th>
-                `)}
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map((row) => html`
-                <tr>
-                  ${columns.map((column) => html`
-                    <td style="
-                      text-align:${column.valueAlign};
-                      font-weight:${column.valueFontWeight === "bold" ? 700 : 400};
-                      font-size:${pt(column.valueFontSize || block.text.fontSize)};
-                      color:${column.valueColor || block.text.color};
-                    ">${stringifyValue(resolvePath(row, column.path))}</td>
-                  `)}
-                </tr>
+            <colgroup>
+              ${block.columns.map((column) => html`
+                <col style="width:${((toNumber(column.widthPercent, 0) || 1) / totalWeight) * 100}%" />
               `)}
+            </colgroup>
+            <tbody>
+              ${sectionRows(block.sections.header, this.previewData, true)}
+              ${records.length
+                ? records.flatMap((record) => sectionRows(block.sections.row, record, false))
+                : sectionRows(block.sections.row, {}, false)}
+              ${sectionRows(block.sections.footer, this.previewData, false)}
             </tbody>
           </table>
+          ${columnCount === 0
+            ? html`<div class="frame-empty">${t("printTemplate.tableNoColumns")}</div>`
+            : nothing}
         </div>
       `;
     }
@@ -1210,7 +1512,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           // Клік по вільному місцю аркуша знімає виділення.
           if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.sheetArea === "content") {
             this.selectedBlockKey = null;
-            this.selectedColumnKey = null;
+            this.cellSelection = null;
           }
         }}
         @pointermove=${this.onSheetPointerMove}

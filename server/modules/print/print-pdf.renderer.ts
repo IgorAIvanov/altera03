@@ -11,6 +11,7 @@ import type {
   PrintTemplateRenderBlock,
   PrintTemplateRenderTableBlock,
   PrintTemplateRenderTableColumn,
+  PrintTemplateRenderTableRow,
 } from "./print-render-plan.ts";
 
 const PAGE_SIZE_A4 = { width: 595.28, height: 841.89 } as const;
@@ -183,95 +184,169 @@ export async function renderPrintPdf(
     return lines.length * (options.fontSize + 3) + 3;
   };
 
-  type TableColumn = PrintTemplateRenderTableColumn & { width: number };
+  type TableColumn = PrintTemplateRenderTableColumn & { width: number; x: number };
 
   const CELL_PADDING = 4;
+  const GRID_COLOR = rgb(0.82, 0.82, 0.82);
+  const HEADER_FILL = rgb(0.98, 0.98, 0.98);
 
-  const columnFontSize = (column: TableColumn, isHeader: boolean, fallback: number) => {
-    const parsed = Number.parseFloat(isHeader ? column.headerFontSize : column.valueFontSize);
-    return Number.isFinite(parsed) ? Math.min(72, Math.max(6, parsed)) : fallback;
-  };
+  /** Комірка, розставлена по сітці: відомі колонка, рядок і розкладений текст. */
+  interface PlacedCell {
+    columnIndex: number;
+    rowIndex: number;
+    colSpan: number;
+    rowSpan: number;
+    width: number;
+    lines: string[];
+    fontSize: number;
+    bold: boolean;
+    align: PrintTemplateColumnAlign;
+    color: string;
+  }
 
-  const columnBold = (column: TableColumn, isHeader: boolean) =>
-    (isHeader ? column.headerFontWeight : column.valueFontWeight) === "bold";
+  interface SectionLayout {
+    placed: PlacedCell[];
+    heights: number[];
+    total: number;
+  }
 
-  /** Текст комірок, розкладений по рядках у межах ширини колонки. */
-  const layoutRow = (columns: TableColumn[], values: Record<string, string>, isHeader: boolean, fallbackFontSize: number) =>
-    columns.map((column) => wrapText(
-      String(values[column.key] ?? ""),
-      Math.max(column.width - CELL_PADDING * 2, 12),
-      (value) => measure(value, columnFontSize(column, isHeader, fallbackFontSize), columnBold(column, isHeader)),
-    ));
-
-  const rowHeightOf = (columns: TableColumn[], cellLines: string[][], isHeader: boolean, fallbackFontSize: number) =>
-    columns.reduce((maxHeight, column, index) => {
-      const lineHeight = columnFontSize(column, isHeader, fallbackFontSize) + 2;
-      return Math.max(maxHeight, Math.max(cellLines[index]?.length ?? 1, 1) * lineHeight + CELL_PADDING * 2);
-    }, 0);
+  const cellContentHeight = (cell: PlacedCell) =>
+    Math.max(cell.lines.length, 1) * (cell.fontSize + 2) + CELL_PADDING * 2;
 
   /**
-   * Висота рядка БЕЗ малювання — потрібна, щоб вирішити про перенос сторінки
-   * ще до того, як рядок ліг на аркуш.
+   * Розкладка секції по сітці колонок.
+   *
+   * Комірки лягають зліва направо, пропускаючи клітинки, зайняті `rowSpan` з
+   * попередніх рядків, — так само, як це робить HTML-таблиця. Висота рядка =
+   * найвища з комірок, що в ньому закінчуються; якщо об'єднана по вертикалі
+   * комірка вища за суму своїх рядків, різницю добираємо останньому з них.
    */
-  const measureTableRow = (columns: TableColumn[], values: Record<string, string>, fallbackFontSize: number) =>
-    rowHeightOf(columns, layoutRow(columns, values, false, fallbackFontSize), false, fallbackFontSize);
-
-  /** Малює рядок таблиці (заголовок або дані) і повертає його висоту. */
-  const drawTableRow = (
+  const layoutSection = (
+    rows: PrintTemplateRenderTableRow[],
     columns: TableColumn[],
-    values: Record<string, string>,
-    isHeader: boolean,
-    x: number,
-    y: number,
     fallbackFontSize: number,
+  ): SectionLayout => {
+    const occupied = new Set<string>();
+    const placed: PlacedCell[] = [];
+
+    rows.forEach((row, rowIndex) => {
+      let columnIndex = 0;
+
+      for (const cell of row.cells) {
+        while (occupied.has(`${rowIndex}:${columnIndex}`)) columnIndex += 1;
+        // Комірки, для яких не лишилось колонок, просто не друкуються:
+        // краще втратити зайву комірку, ніж поламати сітку.
+        if (columnIndex >= columns.length) break;
+
+        const colSpan = Math.min(cell.colSpan, columns.length - columnIndex);
+        const rowSpan = Math.min(cell.rowSpan, rows.length - rowIndex);
+
+        for (let r = 0; r < rowSpan; r += 1) {
+          for (let c = 0; c < colSpan; c += 1) {
+            occupied.add(`${rowIndex + r}:${columnIndex + c}`);
+          }
+        }
+
+        const width = columns
+          .slice(columnIndex, columnIndex + colSpan)
+          .reduce((sum, column) => sum + column.width, 0);
+        const fontSize = cell.fontSize ?? fallbackFontSize;
+        const bold = cell.fontWeight === "bold";
+
+        placed.push({
+          columnIndex,
+          rowIndex,
+          colSpan,
+          rowSpan,
+          width,
+          fontSize,
+          bold,
+          align: cell.align,
+          color: cell.color,
+          lines: wrapText(
+            cell.value,
+            Math.max(width - CELL_PADDING * 2, 12),
+            (value) => measure(value, fontSize, bold),
+          ),
+        });
+
+        columnIndex += colSpan;
+      }
+    });
+
+    const heights = rows.map(() => 0);
+
+    for (const cell of placed) {
+      if (cell.rowSpan === 1) {
+        heights[cell.rowIndex] = Math.max(heights[cell.rowIndex]!, cellContentHeight(cell));
+      }
+    }
+
+    // Рядок лише з вертикально об'єднаних комірок теж має власну висоту.
+    const emptyRowHeight = fallbackFontSize + 2 + CELL_PADDING * 2;
+    for (let index = 0; index < heights.length; index += 1) {
+      if (heights[index] === 0) heights[index] = emptyRowHeight;
+    }
+
+    for (const cell of placed) {
+      if (cell.rowSpan <= 1) continue;
+
+      const spanned = heights.slice(cell.rowIndex, cell.rowIndex + cell.rowSpan).reduce((sum, value) => sum + value, 0);
+      const needed = cellContentHeight(cell);
+      if (needed > spanned) {
+        const last = cell.rowIndex + cell.rowSpan - 1;
+        heights[last] = heights[last]! + (needed - spanned);
+      }
+    }
+
+    return { placed, heights, total: heights.reduce((sum, value) => sum + value, 0) };
+  };
+
+  /** Малює розкладену секцію від верхньої межі `topY`. */
+  const drawSection = (
+    layout: SectionLayout,
+    columns: TableColumn[],
+    topY: number,
+    fill: boolean,
     fallbackColor: ReturnType<typeof rgb>,
   ) => {
-    const padding = CELL_PADDING;
-    const cellLines = layoutRow(columns, values, isHeader, fallbackFontSize);
-    const rowHeight = rowHeightOf(columns, cellLines, isHeader, fallbackFontSize);
+    for (const cell of layout.placed) {
+      const cellTop = topY - layout.heights.slice(0, cell.rowIndex).reduce((sum, value) => sum + value, 0);
+      const cellHeight = layout.heights
+        .slice(cell.rowIndex, cell.rowIndex + cell.rowSpan)
+        .reduce((sum, value) => sum + value, 0);
+      const cellX = columns[cell.columnIndex]!.x;
 
-    page.drawRectangle({
-      x,
-      y: y - rowHeight + padding,
-      width: columns.reduce((sum, column) => sum + column.width, 0),
-      height: rowHeight,
-      borderColor: rgb(0.82, 0.82, 0.82),
-      borderWidth: 0.7,
-      color: isHeader ? rgb(0.98, 0.98, 0.98) : undefined,
-    });
-
-    let cellX = x;
-    columns.forEach((column, columnIndex) => {
-      if (columnIndex > 0) {
-        page.drawLine({
-          start: { x: cellX, y: y - rowHeight + padding },
-          end: { x: cellX, y: y + padding },
-          thickness: 0.5,
-          color: rgb(0.82, 0.82, 0.82),
-        });
-      }
-
-      const fontSize = columnFontSize(column, isHeader, fallbackFontSize);
-      const bold = columnBold(column, isHeader);
-      const align: PrintTemplateColumnAlign = isHeader ? column.headerAlign : column.valueAlign;
-      const rawColor = isHeader ? column.headerColor : column.valueColor;
-      const color = rawColor ? hexToRgb(rawColor) : fallbackColor;
-
-      cellLines[columnIndex]!.forEach((line, lineIndex) => {
-        const lineWidth = measure(line, fontSize, bold);
-        const textX = align === "right"
-          ? cellX + column.width - padding - lineWidth
-          : align === "center"
-          ? cellX + (column.width - lineWidth) / 2
-          : cellX + padding;
-
-        drawTextLine(line, textX, y - padding - fontSize - lineIndex * (fontSize + 2) + 2, fontSize, bold, color);
+      page.drawRectangle({
+        x: cellX,
+        y: cellTop - cellHeight,
+        width: cell.width,
+        height: cellHeight,
+        borderColor: GRID_COLOR,
+        borderWidth: 0.7,
+        color: fill ? HEADER_FILL : undefined,
       });
 
-      cellX += column.width;
-    });
+      const color = cell.color ? hexToRgb(cell.color) : fallbackColor;
 
-    return rowHeight;
+      cell.lines.forEach((line, lineIndex) => {
+        const lineWidth = measure(line, cell.fontSize, cell.bold);
+        const textX = cell.align === "right"
+          ? cellX + cell.width - CELL_PADDING - lineWidth
+          : cell.align === "center"
+          ? cellX + (cell.width - lineWidth) / 2
+          : cellX + CELL_PADDING;
+
+        drawTextLine(
+          line,
+          textX,
+          cellTop - CELL_PADDING - cell.fontSize - lineIndex * (cell.fontSize + 2) + 2,
+          cell.fontSize,
+          cell.bold,
+          color,
+        );
+      });
+    }
   };
 
   /**
@@ -372,10 +447,10 @@ export async function renderPrintPdf(
   };
 
   /**
-   * Малює таблицю з перенесенням на наступні сторінки.
+   * Малює таблицю з секціями та перенесенням на наступні сторінки.
    *
-   * Рядок, що не влазить до нижнього поля, починає нову сторінку, і шапка
-   * колонок повторюється — інакше «хвіст» документа лишався б без заголовків.
+   * Шапка повторюється на кожній сторінці; запис (група рядків секції `row`)
+   * не розривається між сторінками; підвал друкується один раз наприкінці.
    * Повертає y, на якому таблиця закінчилась (уже на останній сторінці).
    */
   const drawTable = (block: PrintTemplateRenderTableBlock, startY: number) => {
@@ -397,37 +472,52 @@ export async function renderPrintPdf(
       });
     }
 
-    // widthPercent колонок нормалізуємо до ширини блока: сума ваг може не
-    // дорівнювати 100, але таблиця однаково має заповнити відведене місце.
-    const rawColumns = block.columns.map((column) => ({
-      ...column,
-      width: blockWidth * (column.widthWeight / 100),
-    }));
-    const totalWidth = rawColumns.reduce((sum, column) => sum + column.width, 0) || blockWidth;
-    const columns: TableColumn[] = rawColumns.map((column) => ({
-      ...column,
-      width: column.width * (blockWidth / totalWidth),
-    }));
-    const headerValues = Object.fromEntries(columns.map((column) => [column.key, column.title]));
+    // Ваги колонок нормалізуємо до ширини блока: сума може не дорівнювати 100,
+    // але таблиця однаково має заповнити відведене місце.
+    const totalWeight = block.columns.reduce((sum, column) => sum + column.widthWeight, 0) || 1;
+    let columnX = blockX;
+    const columns: TableColumn[] = block.columns.map((column) => {
+      const width = blockWidth * (column.widthWeight / totalWeight);
+      const placed = { ...column, width, x: columnX };
+      columnX += width;
+      return placed;
+    });
+
+    if (!columns.length) return tableY;
+
+    const header = layoutSection(block.header, columns, headerFontSize);
+    const groups = block.body.map((rows) => layoutSection(rows, columns, block.textOptions.fontSize));
+    const footer = layoutSection(block.footer, columns, block.textOptions.fontSize);
 
     const drawHeader = () => {
-      tableY -= drawTableRow(columns, headerValues, true, blockX, tableY, headerFontSize, color);
+      if (!header.total) return;
+      drawSection(header, columns, tableY, true, color);
+      tableY -= header.total;
     };
 
     drawHeader();
 
-    for (const row of block.rows) {
-      // Висота рядка залежить від перенесення тексту в комірках, тож рахуємо її
-      // окремо ДО малювання — інакше рядок наполовину виїхав би за поле.
-      const rowHeight = measureTableRow(columns, row, block.textOptions.fontSize);
-
-      if (tableY - rowHeight < MARGIN) {
+    for (const group of groups) {
+      // Група — це один запис. Якщо він не влазить, переносимо його цілком;
+      // запис, вищий за цілу сторінку, малюємо як є — інакше зациклимось.
+      if (tableY - group.total < MARGIN && tableY < page.getHeight() - MARGIN) {
         page = pdf.addPage(pageSize);
         tableY = page.getHeight() - MARGIN;
         drawHeader();
       }
 
-      tableY -= drawTableRow(columns, row, false, blockX, tableY, block.textOptions.fontSize, color);
+      drawSection(group, columns, tableY, false, color);
+      tableY -= group.total;
+    }
+
+    if (footer.total) {
+      if (tableY - footer.total < MARGIN) {
+        page = pdf.addPage(pageSize);
+        tableY = page.getHeight() - MARGIN;
+      }
+
+      drawSection(footer, columns, tableY, false, color);
+      tableY -= footer.total;
     }
 
     return tableY;

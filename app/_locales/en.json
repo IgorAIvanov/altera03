@@ -2,10 +2,8 @@
   "bank.titleMany": "Banks",
   "bank.titleOne": "Bank",
   "bank.mfo": "MFO",
-
   "counterparty.titleMany": "Counterparties",
   "counterparty.titleOne": "Counterparty",
-
   "invoice.titleMany": "Invoices",
   "invoice.titleOne": "Invoice",
   "menu.invoice": "Invoices",
@@ -20,7 +18,6 @@
   "invoice.addLine": "Add line",
   "invoice.total": "Total",
   "invoice.saveBeforePrint": "Save the document first",
-
   "printTemplate.titleMany": "Print templates",
   "printTemplate.titleOne": "Print template",
   "menu.printTemplates": "Print templates",
@@ -30,7 +27,6 @@
   "printTemplate.orientationOption.portrait": "Portrait",
   "printTemplate.orientationOption.landscape": "Landscape",
   "printTemplate.isDefault": "Default",
-
   "printTemplate.addBlock": "Add block",
   "printTemplate.duplicateBlock": "Duplicate",
   "printTemplate.blockType.text": "Text",
@@ -39,7 +35,6 @@
   "printTemplate.blockType.image": "Image",
   "printTemplate.blockType.horizontal-line": "Horizontal line",
   "printTemplate.blockType.vertical-line": "Vertical line",
-
   "printTemplate.propertiesEmpty": "Select a block from the list",
   "printTemplate.placementX": "X, %",
   "printTemplate.placementY": "Y, %",
@@ -65,23 +60,12 @@
   "printTemplate.imageSelect": "Choose file",
   "printTemplate.imageAlt": "Image description",
   "printTemplate.imageEmpty": "No image selected",
-
   "printTemplate.fields": "Fields",
   "printTemplate.addField": "Field",
   "printTemplate.tableTitle": "Table title",
   "printTemplate.tableSource": "Rows source",
   "printTemplate.columns": "Columns",
   "printTemplate.addColumn": "Column",
-  "printTemplate.deleteColumn": "Delete column",
-  "printTemplate.columnSelectHint": "Select a column to configure",
-  "printTemplate.columnTitle": "Title",
-  "printTemplate.columnPath": "Path within row",
-  "printTemplate.columnWidth": "Width, %",
-  "printTemplate.columnHeaderAlign": "Header",
-  "printTemplate.columnValueAlign": "Value",
-  "printTemplate.columnHeaderFontSize": "Header font size",
-  "printTemplate.columnValueFontSize": "Value font size",
-
   "printTemplate.viewLayout": "Layout",
   "printTemplate.viewPdf": "PDF",
   "printTemplate.layoutHint": "Drag blocks; arrows nudge, Alt+arrows resize",
@@ -102,8 +86,23 @@
   "printTemplate.previewDataInvalid": "Preview data is not valid JSON",
   "printTemplate.previewDataEmpty": "Command returned no data.item",
   "printTemplate.previewLoadError": "Failed to load preview data",
-
   "printTemplate.importFromFile": "Load from file",
   "printTemplate.exportToFile": "Save to file",
-  "printTemplate.importError": "Could not read the template file"
+  "printTemplate.importError": "Could not read the template file",
+  "printTemplate.section.header": "Header",
+  "printTemplate.section.row": "Row",
+  "printTemplate.section.footer": "Footer",
+  "printTemplate.sectionHint.header": "Printed on every page",
+  "printTemplate.sectionHint.row": "Repeated for every source record",
+  "printTemplate.sectionHint.footer": "Printed once, after the last record",
+  "printTemplate.sectionEmpty": "Section is empty",
+  "printTemplate.addSectionRow": "Row",
+  "printTemplate.row": "Row",
+  "printTemplate.mergeCells": "Merge",
+  "printTemplate.splitCell": "Split",
+  "printTemplate.cellText": "Cell text",
+  "printTemplate.cellPath": "Binding",
+  "printTemplate.cellTextWins": "Text, when set, overrides the binding",
+  "printTemplate.cellSelectHint": "Click selects a cell, Shift+click a range",
+  "printTemplate.tableNoColumns": "Add a column"
 }

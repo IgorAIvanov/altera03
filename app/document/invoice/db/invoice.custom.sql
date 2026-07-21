@@ -28,6 +28,7 @@ as $$
         left join lateral (
           select jsonb_agg(jsonb_build_object(
             'index',    l.line_no,
+            'id',       coalesce(b.code, ''),
             'name',     coalesce(b.name, ''),
             'quantity', to_char(l.qty, 'FM9999999990.000'),
             'price',    to_char(l.price, 'FM9999999990.00'),

@@ -2,10 +2,8 @@
   "bank.titleMany": "Банки",
   "bank.titleOne": "Банк",
   "bank.mfo": "МФО",
-
   "counterparty.titleMany": "Контрагенти",
   "counterparty.titleOne": "Контрагент",
-
   "invoice.titleMany": "Накладні",
   "invoice.titleOne": "Накладна",
   "menu.invoice": "Накладні",
@@ -20,7 +18,6 @@
   "invoice.addLine": "Додати рядок",
   "invoice.total": "Разом",
   "invoice.saveBeforePrint": "Спочатку збережіть документ",
-
   "printTemplate.titleMany": "Шаблони друку",
   "printTemplate.titleOne": "Шаблон друку",
   "menu.printTemplates": "Шаблони друку",
@@ -30,7 +27,6 @@
   "printTemplate.orientationOption.portrait": "Книжкова",
   "printTemplate.orientationOption.landscape": "Альбомна",
   "printTemplate.isDefault": "За замовчуванням",
-
   "printTemplate.addBlock": "Додати блок",
   "printTemplate.duplicateBlock": "Дублювати",
   "printTemplate.blockType.text": "Текст",
@@ -39,7 +35,6 @@
   "printTemplate.blockType.image": "Зображення",
   "printTemplate.blockType.horizontal-line": "Горизонтальна лінія",
   "printTemplate.blockType.vertical-line": "Вертикальна лінія",
-
   "printTemplate.propertiesEmpty": "Виберіть блок у списку",
   "printTemplate.placementX": "X, %",
   "printTemplate.placementY": "Y, %",
@@ -65,23 +60,12 @@
   "printTemplate.imageSelect": "Вибрати файл",
   "printTemplate.imageAlt": "Опис зображення",
   "printTemplate.imageEmpty": "Зображення не вибрано",
-
   "printTemplate.fields": "Поля",
   "printTemplate.addField": "Поле",
   "printTemplate.tableTitle": "Заголовок таблиці",
   "printTemplate.tableSource": "Джерело рядків",
   "printTemplate.columns": "Колонки",
   "printTemplate.addColumn": "Колонка",
-  "printTemplate.deleteColumn": "Видалити колонку",
-  "printTemplate.columnSelectHint": "Виберіть колонку для налаштування",
-  "printTemplate.columnTitle": "Заголовок",
-  "printTemplate.columnPath": "Шлях у рядку",
-  "printTemplate.columnWidth": "Ширина, %",
-  "printTemplate.columnHeaderAlign": "Заголовок",
-  "printTemplate.columnValueAlign": "Значення",
-  "printTemplate.columnHeaderFontSize": "Розмір заголовка",
-  "printTemplate.columnValueFontSize": "Розмір значення",
-
   "printTemplate.viewLayout": "Розкладка",
   "printTemplate.viewPdf": "PDF",
   "printTemplate.layoutHint": "Тягніть блоки мишею; стрілки — точний зсув, Alt+стрілки — розмір",
@@ -102,8 +86,23 @@
   "printTemplate.previewDataInvalid": "Дані прев'ю не є коректним JSON",
   "printTemplate.previewDataEmpty": "Команда не повернула data.item",
   "printTemplate.previewLoadError": "Не вдалося завантажити дані прев'ю",
-
   "printTemplate.importFromFile": "Завантажити з файлу",
   "printTemplate.exportToFile": "Зберегти у файл",
-  "printTemplate.importError": "Не вдалося прочитати файл шаблону"
+  "printTemplate.importError": "Не вдалося прочитати файл шаблону",
+  "printTemplate.section.header": "Шапка",
+  "printTemplate.section.row": "Рядок",
+  "printTemplate.section.footer": "Підвал",
+  "printTemplate.sectionHint.header": "Друкується на кожній сторінці",
+  "printTemplate.sectionHint.row": "Повторюється на кожен запис джерела",
+  "printTemplate.sectionHint.footer": "Друкується один раз, після останнього запису",
+  "printTemplate.sectionEmpty": "Секція порожня",
+  "printTemplate.addSectionRow": "Рядок",
+  "printTemplate.row": "Рядок",
+  "printTemplate.mergeCells": "Об'єднати",
+  "printTemplate.splitCell": "Розбити",
+  "printTemplate.cellText": "Текст комірки",
+  "printTemplate.cellPath": "Прив'язка",
+  "printTemplate.cellTextWins": "Заповнений текст перекриває прив'язку",
+  "printTemplate.cellSelectHint": "Клік — вибір комірки, Shift+клік — діапазон",
+  "printTemplate.tableNoColumns": "Додайте колонку"
 }
