@@ -1,0 +1,1 @@
+-- Міграцій ще немає: app.print_template створюється struc.sql із нуля.

@@ -15,6 +15,11 @@ export const agentModelRoutes = {
     editPath: "/document/invoice/edit",
     listPath: "/document/invoice/list",
     type: "document"
+  },
+  "print_template": {
+    editPath: "/admin/print_template/edit",
+    listPath: "/admin/print_template/list",
+    type: "admin"
   }
 };
 

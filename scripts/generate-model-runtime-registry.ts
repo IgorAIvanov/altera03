@@ -10,9 +10,15 @@ type ManifestSqlCommand = string | {
 
 type ManifestTsCommand = {
   /** Шлях до TS-файлу команди відносно каталогу моделі (поряд із SQL). */
-  module: string;
+  module?: string;
   /** Імʼя експорту в module-файлі. За замовчуванням "default". */
   export?: string;
+  /**
+   * Альтернатива `module` — ключ готового рантайм-хендлера ядра,
+   * напр. `"runtime.printPdf"`. Застосунок не знає шляхів усередині server/:
+   * ключ резолвиться реєстром (`server/modules/model-runtime/model-registry.ts`).
+   */
+  handlerKey?: string;
 };
 
 type ManifestRecord = {
@@ -190,8 +196,16 @@ function renderTsBindings(
       .sort(([left], [right]) => left.localeCompare(right));
 
     for (const [command, definition] of tsCommands) {
+      if (definition.handlerKey) {
+        // Хендлер ядра: імпорту немає, реєстр резолвить ключ у рантаймі.
+        bindings.push(
+          `  { model: ${JSON.stringify(manifest.model)}, command: ${JSON.stringify(command)}, handlerKey: ${JSON.stringify(definition.handlerKey)} }`,
+        );
+        continue;
+      }
+
       if (!definition.module) {
-        throw new Error(`TS command '${manifest.model}.${command}' must declare 'module'`);
+        throw new Error(`TS command '${manifest.model}.${command}' must declare 'module' or 'handlerKey'`);
       }
 
       const ident = `ts_${sanitizeIdentifier(manifest.model ?? "")}_${sanitizeIdentifier(command)}`;

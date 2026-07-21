@@ -1,6 +1,7 @@
 import { html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+import { dateFormat } from "@client/shared/datetime.ts";
 import type { InvoiceRow } from "./invoice.schema.ts";
 
 export const tagName = "invoice-list";
@@ -13,7 +14,10 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
 
   protected columns: ListColumn<InvoiceRow>[] = [
     { key: "number", title: "invoice.number", width: "10rem", sortable: true },
-    { key: "invoiceDate", title: "invoice.date", width: "9rem", muted: true, sortable: true },
+    {
+      key: "invoiceDate", title: "invoice.date", width: "7rem", muted: true, sortable: true,
+      format: dateFormat.date,
+    },
     {
       key: "counterparty", title: "invoice.counterparty", sortable: true,
       overflow: "ellipsis",

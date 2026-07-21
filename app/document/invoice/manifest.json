@@ -2,6 +2,20 @@
   "model": "invoice",
   "type": "document",
   "schema": "app",
+  "prints": {
+    "invoice_default": {
+      "templateFile": "./prints/invoice_default.template.json",
+      "dataCommand": "printData"
+    }
+  },
+  "commands": {
+    "sql": {
+      "printData": "invoice_print_data"
+    },
+    "ts": {
+      "printPdf": { "handlerKey": "runtime.printPdf" }
+    }
+  },
   "views": {
     "list": { "module": "./invoiceList.ts", "titleKey": "invoice.titleMany" },
     "edit": { "module": "./invoiceEdit.ts", "titleKey": "invoice.titleOne" }

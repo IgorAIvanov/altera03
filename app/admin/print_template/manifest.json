@@ -2,5 +2,19 @@
   "model": "print_template",
   "type": "admin",
   "schema": "app",
-  "views": {}
+  "commands": {
+    "ts": {
+      "preview": { "handlerKey": "runtime.printPreview" }
+    }
+  },
+  "views": {
+    "list": {
+      "module": "./printTemplateList.ts",
+      "titleKey": "printTemplate.titleMany"
+    },
+    "edit": {
+      "module": "./printTemplateEdit.ts",
+      "titleKey": "printTemplate.titleOne"
+    }
+  }
 }

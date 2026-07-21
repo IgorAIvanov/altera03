@@ -1,0 +1,94 @@
+{
+  "name": "Накладна — типова форма",
+  "paperSize": "A4",
+  "orientation": "portrait",
+  "isDefault": true,
+  "isActive": true,
+  "schema": {
+    "schemaVersion": 2,
+    "blocks": [
+      {
+        "key": "title",
+        "type": "text",
+        "style": "title",
+        "value": "Накладна",
+        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "0", "widthPercent": "100", "heightPercent": "7" },
+        "text": { "fontSize": "16", "align": "center", "fontWeight": "bold", "color": "#262626" }
+      },
+      {
+        "key": "header_fields",
+        "type": "field-list",
+        "items": [
+          { "key": "number", "label": "Номер", "path": "document.number" },
+          { "key": "date", "label": "Дата", "path": "document.date" },
+          { "key": "counterparty", "label": "Контрагент", "path": "document.counterpartyName" }
+        ],
+        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "9", "widthPercent": "100", "heightPercent": "12" },
+        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" }
+      },
+      {
+        "key": "divider",
+        "type": "horizontal-line",
+        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "22", "widthPercent": "100", "heightPercent": "1" },
+        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" },
+        "color": "#595959",
+        "lineStyle": "solid",
+        "lineWidth": "1"
+      },
+      {
+        "key": "lines",
+        "type": "table",
+        "title": "Склад накладної",
+        "source": "document.lines",
+        "columns": [
+          {
+            "key": "index", "title": "№", "path": "index", "widthPercent": "8",
+            "headerAlign": "center", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
+            "valueAlign": "center", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
+          },
+          {
+            "key": "name", "title": "Найменування", "path": "name", "widthPercent": "44",
+            "headerAlign": "left", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
+            "valueAlign": "left", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
+          },
+          {
+            "key": "quantity", "title": "Кількість", "path": "quantity", "widthPercent": "14",
+            "headerAlign": "right", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
+            "valueAlign": "right", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
+          },
+          {
+            "key": "price", "title": "Ціна", "path": "price", "widthPercent": "16",
+            "headerAlign": "right", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
+            "valueAlign": "right", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
+          },
+          {
+            "key": "amount", "title": "Сума", "path": "amount", "widthPercent": "18",
+            "headerAlign": "right", "headerFontWeight": "bold", "headerFontSize": "9", "headerColor": "",
+            "valueAlign": "right", "valueFontWeight": "normal", "valueFontSize": "10", "valueColor": ""
+          }
+        ],
+        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "26", "widthPercent": "100", "heightPercent": "45" },
+        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" }
+      },
+      {
+        "key": "total",
+        "type": "field-list",
+        "items": [
+          { "key": "total", "label": "Разом", "path": "document.total" }
+        ],
+        "placement": { "mode": "absolute", "xPercent": "55", "yPercent": "74", "widthPercent": "45", "heightPercent": "6" },
+        "text": { "fontSize": "12", "align": "right", "fontWeight": "bold", "color": "#262626" }
+      },
+      {
+        "key": "signatures",
+        "type": "field-list",
+        "items": [
+          { "key": "released", "label": "Відпустив", "path": "" },
+          { "key": "received", "label": "Отримав", "path": "" }
+        ],
+        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "86", "widthPercent": "100", "heightPercent": "10" },
+        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" }
+      }
+    ]
+  }
+}

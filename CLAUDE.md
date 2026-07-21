@@ -118,6 +118,10 @@ Lit Web Components, Shadow DOM увімкнений (стандартна інк
 Дані отримують через `bus.request("data.load", { model, command, payload })`.  
 Picker-поля використовують компонент `<ui-picker url="catalog/bank" fetch="lookup">` — `url` це
 **маршрут в'ю** (`family/model`), а не API-шлях; деталі й контр-приклад — [`ui-picker.md`](client/ui-kit/components/ui-picker.md).  
+Дати — тільки через `<ui-date>` (нативний `<input type="date">` не форматується): вигляд задає
+шаблон `format` (`DD.MM.YY`, `MM.YYYY`, `DD.MM.YY HH:mm`), у моделі значення завжди ISO. Константи
+й функції — [`client/shared/datetime.ts`](client/shared/datetime.ts), опис —
+[`ui-date.md`](client/ui-kit/components/ui-date.md); у списках той самий шаблон через `ListColumn.format`.  
 Локалізація: `t("bank.titleOne")` через сигнальний store + JSON-файли у `app/_locales/`.
 
 **Контракт даних форм (`$root`)** — усі екрани (список, пікер, форма) наслідують `BaseUI`
@@ -135,6 +139,18 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 > **Стилі:** у `client/styles/tailwind.css` є власний шар теми (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці.
 
 **Діалог вибору (picker)** — наслідуй `ModelPickerBase` (`client/ui-kit/base/model-picker-base.ts`): підклас задає лише `model` та `columns`. Пошук, вибір, підтвердження/скасування — у базі. Документація — [`docs/ui-picker-form.md`](docs/ui-picker-form.md); skill — [`model-picker-form`](.github/skills/model-picker-form/SKILL.md); еталон — `app/catalog/bank/bankPicker.ts`.
+
+## Друковані форми
+
+Друк — у ядрі (`server/modules/print/`): формат шаблону, план рендеру і PDF-рендерер
+на pdf-lib. Клієнт не рендерить нічого — викликає команду, сервер повертає готовий PDF;
+прев'ю редактора малює той самий рендерер (`runtime.printPreview`), тому розійтися з
+друком не може. У застосунку лишається тільки опис форми в `manifest.json`
+(`prints`: файл шаблону + `dataCommand`, `commands.ts.printPdf` з
+`"handlerKey": "runtime.printPdf"`) і сам файл шаблону в `prints/`. Таблиця шаблонів і
+`print_template_resolve` — у `app/_sqlinit/print_template/`; редагування шаблонів —
+звичайна admin-модель `app/admin/print_template/`. Деталі —
+[`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
 
 ## TypeBox-схема
 

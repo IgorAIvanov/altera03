@@ -8,8 +8,10 @@ import {
   type InvoiceEditRoot,
   type InvoiceForm,
 } from "./invoice.schema.ts";
+import { dateFormat } from "@client/shared/datetime.ts";
 import "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-decimal.ts";
+import "@client/ui-kit/components/ui-date.ts";
 
 export const tagName = "invoice-edit";
 
@@ -17,8 +19,16 @@ export const tagName = "invoice-edit";
 const QTY_PRECISION = 3;
 const MONEY_PRECISION = 2;
 
+/** `data.extra` відповіді TS-команди printPdf. */
+interface PrintPdfExtra {
+  fileName?: string;
+  mimeType?: string;
+  pdfBase64?: string;
+}
+
 type PickEvent = CustomEvent<{ id: string; label: string }>;
 type DecimalEvent = CustomEvent<{ value: string }>;
+type DateEvent = CustomEvent<{ value: string }>;
 
 /** Безпечний парсинг рядка з форми у Decimal (порожнє / сміття → 0). */
 function dec(raw: unknown): Decimal {
@@ -101,6 +111,40 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     this.$root.item = { ...this.$root.item, lines };
   }
 
+  /**
+   * Друк: бекенд повертає PDF у base64 (`data.extra`), відкриваємо його в
+   * новій вкладці. Вікно відкриваємо ДО await — інакше браузер вважає це
+   * не-користувацькою дією і блокує попап.
+   */
+  private async printPdf() {
+    const id = this.$root.item.id;
+    if (!id) {
+      this.messages = [{ type: "error", text: t("invoice.saveBeforePrint") }];
+      return;
+    }
+
+    const preview = globalThis.open("", "_blank");
+
+    const env = await this.run<{ extra?: PrintPdfExtra }>("printPdf", { id });
+    const pdfBase64 = env.data?.extra?.pdfBase64;
+    if (!env.ok || !pdfBase64) {
+      preview?.close();
+      return;
+    }
+
+    const binary = atob(pdfBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: env.data?.extra?.mimeType ?? "application/pdf" }));
+
+    if (preview) {
+      preview.location.href = url;
+    } else {
+      globalThis.open(url, "_blank");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
   /** Сума рядка = кількість × ціна (точна десяткова арифметика). */
   private lineAmount(line: InvoiceForm["lines"][number]): string {
     return dec(line.qty).mul(dec(line.price)).toFixed(MONEY_PRECISION);
@@ -123,17 +167,25 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
       <div class="p-4 max-w-3xl">
         ${this.renderNotice()}
         <!-- Шапка -->
-        <div class="grid grid-cols-3 gap-4 mb-4">
-          <div class="form-control">
-            <label class="label"><span class="label-text">${t("invoice.number")}</span></label>
-            <input class="input input-bordered" .value=${item.number}
-              @input=${(e: Event) => this.setField("number", (e.target as HTMLInputElement).value)} />
-          </div>
-          <div class="form-control">
-            <label class="label"><span class="label-text">${t("invoice.date")}</span></label>
-            <input type="date" class="input input-bordered" .value=${item.invoiceDate ?? ""}
-              @input=${(e: Event) => this.setField("invoiceDate", (e.target as HTMLInputElement).value)} />
-          </div>
+        <div class="mb-4">
+          <!-- номер + дата — в одній рамці -->
+          <fieldset class="border border-base-700 rounded-lg px-4 pb-3 mb-4 bg-base-100">
+            <legend class="px-2 text-sm text-base-content/60">${t("invoice.titleOne")}</legend>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="form-control">
+                <label class="label"><span class="label-text">${t("invoice.number")}</span></label>
+                <input class="input input-bordered" .value=${item.number}
+                  @input=${(e: Event) => this.setField("number", (e.target as HTMLInputElement).value)} />
+              </div>
+              <ui-date
+                .label=${t("invoice.date")}
+                .value=${item.invoiceDate ?? ""}
+                format=${dateFormat.date}
+                @value-changed=${(e: DateEvent) => this.setField("invoiceDate", e.detail.value)}
+              ></ui-date>
+            </div>
+          </fieldset>
+
           <ui-picker
             .label=${t("invoice.counterparty")}
             url="catalog/counterparty"
@@ -233,6 +285,10 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
           <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
             ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             ${t("common.save")}
+          </button>
+          <button class="btn btn-outline" ?disabled=${this.busy || !item.id} @click=${this.printPdf}>
+            ${this.running === "printPdf" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+            ${t("common.print")}
           </button>
         </div>
       </div>

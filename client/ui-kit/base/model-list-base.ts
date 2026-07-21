@@ -4,6 +4,7 @@ import { Type } from "@sinclair/typebox";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
+import { formatDate } from "@client/shared/datetime.ts";
 import { BaseUI } from "./base-ui.ts";
 import { QuerySchema, TotalsSchema, type Query, type Totals } from "@shared/schema.ts";
 
@@ -42,6 +43,13 @@ export interface ListColumn<Row> {
   overflow?: "wrap" | "nowrap" | "ellipsis";
   /** Приглушений текст (вторинні дані: коди, дати). */
   muted?: boolean;
+  /**
+   * Шаблон дати/часу для комірки — значення з БД приходить в ISO, а показати
+   * треба по-людськи. Приклади: `dateFormat.date` ("DD.MM.YY"),
+   * `dateFormat.dateTime`, `"MM.YYYY"`. Див. `client/shared/datetime.ts`.
+   * Ігнорується, якщо задано `render`.
+   */
+  format?: string;
   sortable?: boolean;
   /** Нативний tooltip комірки (атрибут title). */
   tooltip?: (row: Row) => string;
@@ -263,7 +271,10 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   #cell(row: Row, col: ListColumn<Row>) {
     if (col.render) return col.render(row);
     const v = (row as Record<string, unknown>)[col.key];
-    return v == null ? "" : String(v);
+    if (v == null) return "";
+    // ISO з БД → шаблон колонки; нерозбірливе значення лишаємо як є
+    if (col.format) return formatDate(v as string, col.format) || String(v);
+    return String(v);
   }
 
   // ── Рендер ──────────────────────────────────────────────────────────────────

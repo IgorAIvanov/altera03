@@ -10,6 +10,8 @@
     "_sqlinit/base",
     "_sqlinit/help_content",
     "_sqlinit/help_scenario",
+    "_sqlinit/print_template",
+    "admin/print_template",
     "catalog/bank",
     "catalog/counterparty",
     "document/invoice"

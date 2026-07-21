@@ -1,85 +1,75 @@
-drop function if exists app.print_template_index(jsonb);
-create or replace function app.print_template_index(user_id bigint, payload jsonb)
+-- CRUD моделі print_template — потрібен лише формам редагування шаблонів.
+--
+-- Ядру для друку цих функцій не треба: воно бере шаблон через
+-- app.print_template_resolve (див. _sqlinit/print_template).
+--
+-- Стандартна п'ятірка написана вручну (а не генератором), бо `template_schema`
+-- — довільний jsonb-документ, який codegen не описує.
+
+drop function if exists app.print_template_list(bigint, jsonb);
+create function app.print_template_list(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-  v_page integer := greatest(coalesce((payload->>'page')::integer, 1), 1);
-  v_page_size integer := least(greatest(coalesce((payload->>'pageSize')::integer, 20), 1), 200);
-  v_offset integer := (v_page - 1) * v_page_size;
-  v_sort_by text := coalesce(payload->>'sortBy', 'code');
-  v_sort_direction text := lower(coalesce(payload->>'sortDirection', 'asc'));
-  v_search text := nullif(trim(coalesce(payload->>'search', '')), '');
+  v_page         int  := greatest(coalesce((payload->>'page')::int, 1), 1);
+  v_page_size    int  := least(greatest(coalesce((payload->>'pageSize')::int, 20), 1), 200);
+  v_sort_by      text := coalesce(payload->>'sortBy', 'code');
+  v_sort_dir     text := case when lower(coalesce(payload->>'sortDir', 'asc')) = 'desc' then 'desc' else 'asc' end;
+  v_search       text := nullif(trim(coalesce(payload->>'search', '')), '');
   v_target_model text := nullif(trim(coalesce(payload->>'targetModel', '')), '');
-  v_is_active boolean := case
-    when payload ? 'isActive' and payload->>'isActive' <> '' then (payload->>'isActive')::boolean
-    else null
-  end;
+  v_rows         jsonb;
+  v_total        int;
 begin
+  if v_sort_by not in ('code', 'name', 'targetModel', 'isDefault', 'isActive') then
+    v_sort_by := 'code';
+  end if;
+
+  select count(*)::int into v_total
+  from app.print_template t
+  where (v_search is null or t.code ilike '%' || v_search || '%' or t.name ilike '%' || v_search || '%')
+    and (v_target_model is null or t.target_model = v_target_model);
+
+  select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
+  from (
+    select jsonb_build_object(
+      'id',          t.id::text,
+      'code',        t.code,
+      'name',        t.name,
+      'targetModel', t.target_model,
+      'dataCommand', t.data_command,
+      'paperSize',   t.paper_size,
+      'orientation', t.orientation,
+      'isDefault',   t.is_default,
+      'isActive',    t.is_active
+    ) as r
+    from app.print_template t
+    where (v_search is null or t.code ilike '%' || v_search || '%' or t.name ilike '%' || v_search || '%')
+      and (v_target_model is null or t.target_model = v_target_model)
+    order by
+      case when v_sort_by = 'code'        and v_sort_dir = 'asc'  then t.code end asc,
+      case when v_sort_by = 'code'        and v_sort_dir = 'desc' then t.code end desc,
+      case when v_sort_by = 'name'        and v_sort_dir = 'asc'  then t.name end asc,
+      case when v_sort_by = 'name'        and v_sort_dir = 'desc' then t.name end desc,
+      case when v_sort_by = 'targetModel' and v_sort_dir = 'asc'  then t.target_model end asc,
+      case when v_sort_by = 'targetModel' and v_sort_dir = 'desc' then t.target_model end desc,
+      case when v_sort_by = 'isDefault'   and v_sort_dir = 'asc'  then t.is_default end asc,
+      case when v_sort_by = 'isDefault'   and v_sort_dir = 'desc' then t.is_default end desc,
+      case when v_sort_by = 'isActive'    and v_sort_dir = 'asc'  then t.is_active end asc,
+      case when v_sort_by = 'isActive'    and v_sort_dir = 'desc' then t.is_active end desc,
+      t.code asc
+    limit v_page_size
+    offset (v_page - 1) * v_page_size
+  ) sub;
+
   return jsonb_build_object(
     'ok', true,
     'data', jsonb_build_object(
-      'item', null,
-      'rows', (
-        select coalesce(jsonb_agg(row_to_json(row_data)), '[]'::jsonb)
-        from (
-          select
-            pt.id::text as id,
-            pt.code,
-            pt.name,
-            pt.target_model as "targetModel",
-            pt.data_command as "dataCommand",
-            pt.paper_size as "paperSize",
-            pt.orientation,
-            pt.is_default as "isDefault",
-            pt.is_active as "isActive"
-          from app.print_template pt
-          where (v_search is null or pt.code ilike '%' || v_search || '%' or pt.name ilike '%' || v_search || '%')
-            and (v_target_model is null or pt.target_model = v_target_model)
-            and (v_is_active is null or pt.is_active = v_is_active)
-          order by
-            case when v_sort_by = 'name' and v_sort_direction = 'asc' then pt.name end asc,
-            case when v_sort_by = 'name' and v_sort_direction = 'desc' then pt.name end desc,
-            case when v_sort_by = 'targetModel' and v_sort_direction = 'asc' then pt.target_model end asc,
-            case when v_sort_by = 'targetModel' and v_sort_direction = 'desc' then pt.target_model end desc,
-            case when v_sort_by = 'isDefault' and v_sort_direction = 'asc' then pt.is_default end asc,
-            case when v_sort_by = 'isDefault' and v_sort_direction = 'desc' then pt.is_default end desc,
-            case when v_sort_by = 'isActive' and v_sort_direction = 'asc' then pt.is_active end asc,
-            case when v_sort_by = 'isActive' and v_sort_direction = 'desc' then pt.is_active end desc,
-            case when v_sort_by = 'code' and v_sort_direction = 'desc' then pt.code end desc,
-            case when v_sort_by = 'code' and v_sort_direction = 'asc' then pt.code end asc,
-            pt.code asc
-          offset v_offset
-          limit v_page_size
-        ) row_data
-      ),
-      'lookups', jsonb_build_object(
-        'targetModels', (
-          select coalesce(jsonb_agg(jsonb_build_object('value', target_model, 'label', target_model) order by target_model), '[]'::jsonb)
-          from (
-            select distinct pt.target_model
-            from app.print_template pt
-            where pt.target_model is not null
-              and pt.target_model <> ''
-          ) target_models
-        ),
-        'orientations', jsonb_build_array(
-          jsonb_build_object('value', 'portrait', 'label', 'Книжкова'),
-          jsonb_build_object('value', 'landscape', 'label', 'Альбомна')
-        )
-      ),
-      'totals', jsonb_build_object(
-        'count', (
-          select count(*)
-          from app.print_template pt
-          where (v_search is null or pt.code ilike '%' || v_search || '%' or pt.name ilike '%' || v_search || '%')
-            and (v_target_model is null or pt.target_model = v_target_model)
-            and (v_is_active is null or pt.is_active = v_is_active)
-        ),
-        'page', v_page,
-        'pageSize', v_page_size
-      ),
-      'extra', '{}'::jsonb
+      'rows',    v_rows,
+      'item',    null,
+      'options', '{}'::jsonb,
+      'totals',  jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size),
+      'extra',   '{}'::jsonb
     ),
     'messages', '[]'::jsonb,
     'meta', '{}'::jsonb
@@ -87,172 +77,147 @@ begin
 end;
 $$;
 
-drop function if exists app.print_template_load(jsonb);
-create or replace function app.print_template_load(user_id bigint, payload jsonb)
+drop function if exists app.print_template_get(bigint, jsonb);
+create function app.print_template_get(user_id bigint, payload jsonb)
 returns jsonb
-language plpgsql
+language sql
 as $$
-declare
-  v_id uuid := nullif(trim(coalesce(payload->>'id', '')), '')::uuid;
-begin
-  return jsonb_build_object(
+  select jsonb_build_object(
     'ok', true,
     'data', jsonb_build_object(
       'item', (
         select jsonb_build_object(
-          'id', pt.id::text,
-          'code', pt.code,
-          'name', pt.name,
-          'targetModel', pt.target_model,
-          'dataCommand', pt.data_command,
-          'paperSize', pt.paper_size,
-          'orientation', pt.orientation,
-          'isDefault', pt.is_default,
-          'isActive', pt.is_active,
-          'schema', pt.template_schema
+          'id',          t.id::text,
+          'code',        t.code,
+          'name',        t.name,
+          'targetModel', t.target_model,
+          'dataCommand', t.data_command,
+          'paperSize',   t.paper_size,
+          'orientation', t.orientation,
+          'isDefault',   t.is_default,
+          'isActive',    t.is_active,
+          'schema',      t.template_schema
         )
-        from app.print_template pt
-        where pt.id = v_id
+        from app.print_template t
+        where t.id = nullif(payload->>'id', '')::bigint
       ),
-      'lookups', jsonb_build_object(
+      'rows',    '[]'::jsonb,
+      'options', jsonb_build_object(
         'targetModels', (
           select coalesce(jsonb_agg(jsonb_build_object('value', target_model, 'label', target_model) order by target_model), '[]'::jsonb)
           from (
-            select distinct pt.target_model
-            from app.print_template pt
-            where pt.target_model is not null
-              and pt.target_model <> ''
-          ) target_models
-        ),
-        'orientations', jsonb_build_array(
-          jsonb_build_object('value', 'portrait', 'label', 'Книжкова'),
-          jsonb_build_object('value', 'landscape', 'label', 'Альбомна')
-        ),
-        'columnFields', jsonb_build_array(
-          jsonb_build_object('value', 'index', 'label', '№'),
-          jsonb_build_object('value', 'name', 'label', 'Найменування'),
-          jsonb_build_object('value', 'unit', 'label', 'Од.'),
-          jsonb_build_object('value', 'quantity', 'label', 'Кількість'),
-          jsonb_build_object('value', 'price', 'label', 'Ціна'),
-          jsonb_build_object('value', 'amount', 'label', 'Сума')
-        ),
-        'columnAlignments', jsonb_build_array(
-          jsonb_build_object('value', 'left', 'label', 'Ліворуч'),
-          jsonb_build_object('value', 'center', 'label', 'По центру'),
-          jsonb_build_object('value', 'right', 'label', 'Праворуч')
+            select distinct t.target_model
+            from app.print_template t
+            where coalesce(t.target_model, '') <> ''
+          ) models
         )
       ),
-      'totals', '{}'::jsonb,
-      'extra', '{}'::jsonb
+      'totals',  '{}'::jsonb,
+      'extra',   '{}'::jsonb
     ),
     'messages', '[]'::jsonb,
     'meta', '{}'::jsonb
   );
-end;
 $$;
 
-drop function if exists app.print_template_update(jsonb);
-create or replace function app.print_template_update(user_id bigint, payload jsonb)
+drop function if exists app.print_template_save(bigint, jsonb);
+create function app.print_template_save(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-  v_item jsonb := coalesce(payload->'item', '{}'::jsonb);
-  v_id uuid := nullif(trim(coalesce(v_item->>'id', '')), '')::uuid;
-  v_code text := nullif(trim(coalesce(v_item->>'code', '')), '');
-  v_name text := nullif(trim(coalesce(v_item->>'name', '')), '');
-  v_target_model text := nullif(trim(coalesce(v_item->>'targetModel', '')), '');
-  v_data_command text := nullif(trim(coalesce(v_item->>'dataCommand', '')), '');
-  v_paper_size text := coalesce(v_item->>'paperSize', 'A4');
-  v_orientation text := coalesce(v_item->>'orientation', 'portrait');
-  v_is_default boolean := coalesce((v_item->>'isDefault')::boolean, false);
-  v_is_active boolean := coalesce((v_item->>'isActive')::boolean, true);
-  v_schema jsonb := coalesce(v_item->'schema', '{}'::jsonb);
-  v_saved_id uuid;
+  v_item         jsonb   := coalesce(payload->'item', '{}'::jsonb);
+  v_id           bigint  := nullif(v_item->>'id', '')::bigint;
+  v_code         text    := nullif(trim(coalesce(v_item->>'code', '')), '');
+  v_name         text    := nullif(trim(coalesce(v_item->>'name', '')), '');
+  v_target_model text    := nullif(trim(coalesce(v_item->>'targetModel', '')), '');
+  v_data_command text    := coalesce(nullif(trim(coalesce(v_item->>'dataCommand', '')), ''), 'get');
+  v_paper_size   text    := coalesce(nullif(v_item->>'paperSize', ''), 'A4');
+  v_orientation  text    := coalesce(nullif(v_item->>'orientation', ''), 'portrait');
+  v_is_default   boolean := coalesce((v_item->>'isDefault')::boolean, false);
+  v_is_active    boolean := coalesce((v_item->>'isActive')::boolean, true);
+  v_schema       jsonb   := coalesce(v_item->'schema', '{}'::jsonb);
 begin
   if v_code is null then
-    raise exception 'code is required';
+    raise exception 'code обов''язковий';
   end if;
-
   if v_name is null then
-    raise exception 'name is required';
+    raise exception 'name обов''язковий';
   end if;
-
   if v_target_model is null then
-    raise exception 'targetModel is required';
+    raise exception 'targetModel обов''язковий';
   end if;
 
+  -- Шаблон за замовчуванням єдиний на модель: знімаємо прапорець з решти ДО
+  -- запису, інакше частковий унікальний індекс відхилить insert/update.
   if v_is_default then
     update app.print_template
-      set is_default = false,
-          updated_at = now()
-    where target_model = v_target_model
-      and (v_id is null or id <> v_id);
+       set is_default = false,
+           updated_at = now()
+     where target_model = v_target_model
+       and (v_id is null or id <> v_id)
+       and is_default;
   end if;
 
-  if v_id is null then
-    insert into app.print_template (
-      code,
-      name,
-      target_model,
-      data_command,
-      paper_size,
-      orientation,
-      is_default,
-      is_active,
-      template_schema,
-      updated_at
-    ) values (
-      v_code,
-      v_name,
-      v_target_model,
-      coalesce(v_data_command, 'load'),
-      v_paper_size,
-      v_orientation,
-      v_is_default,
-      v_is_active,
-      v_schema,
-      now()
-    )
-    returning id into v_saved_id;
-  else
-    update app.print_template
-      set code = v_code,
-          name = v_name,
-          target_model = v_target_model,
-          data_command = coalesce(v_data_command, data_command),
-          paper_size = v_paper_size,
-          orientation = v_orientation,
-          is_default = v_is_default,
-          is_active = v_is_active,
-          template_schema = v_schema,
-          updated_at = now()
-    where id = v_id
-    returning id into v_saved_id;
-  end if;
+  merge into app.print_template t
+  using (
+    select
+      v_id           as id,
+      v_code         as code,
+      v_name         as name,
+      v_target_model as target_model,
+      v_data_command as data_command,
+      v_paper_size   as paper_size,
+      v_orientation  as orientation,
+      v_is_default   as is_default,
+      v_is_active    as is_active,
+      v_schema       as template_schema
+  ) s
+    on t.id = s.id
+  when matched then update set
+    code            = s.code,
+    name            = s.name,
+    target_model    = s.target_model,
+    data_command    = s.data_command,
+    paper_size      = s.paper_size,
+    orientation     = s.orientation,
+    is_default      = s.is_default,
+    is_active       = s.is_active,
+    template_schema = s.template_schema,
+    updated_at      = now()
+  when not matched then insert (
+    code, name, target_model, data_command, paper_size, orientation, is_default, is_active, template_schema
+  ) values (
+    s.code, s.name, s.target_model, s.data_command, s.paper_size, s.orientation, s.is_default, s.is_active, s.template_schema
+  )
+  returning t.id into v_id;
 
-  return app.print_template_load(user_id, jsonb_build_object('id', v_saved_id::text));
+  return app.print_template_get(user_id, jsonb_build_object('id', v_id::text));
 end;
 $$;
 
-drop function if exists app.print_template_delete(jsonb);
-create or replace function app.print_template_delete(user_id bigint, payload jsonb)
+drop function if exists app.print_template_delete(bigint, jsonb);
+create function app.print_template_delete(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-  v_id uuid := nullif(trim(coalesce(payload->>'id', '')), '')::uuid;
+  v_id bigint := nullif(payload->>'id', '')::bigint;
 begin
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
   delete from app.print_template where id = v_id;
 
   return jsonb_build_object(
     'ok', true,
     'data', jsonb_build_object(
-      'item', null,
-      'rows', '[]'::jsonb,
-      'lookups', '{}'::jsonb,
-      'totals', '{}'::jsonb,
-      'extra', jsonb_build_object('deletedId', v_id::text)
+      'item',    null,
+      'rows',    '[]'::jsonb,
+      'options', '{}'::jsonb,
+      'totals',  '{}'::jsonb,
+      'extra',   jsonb_build_object('deletedId', v_id::text)
     ),
     'messages', '[]'::jsonb,
     'meta', '{}'::jsonb
@@ -260,76 +225,40 @@ begin
 end;
 $$;
 
-drop function if exists app.print_template_fetch(jsonb);
-create or replace function app.print_template_fetch(user_id bigint, payload jsonb)
+drop function if exists app.print_template_lookup(bigint, jsonb);
+create function app.print_template_lookup(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-  v_search text := nullif(trim(coalesce(payload->>'search', '')), '');
+  v_search       text := nullif(trim(coalesce(payload->>'search', '')), '');
   v_target_model text := nullif(trim(coalesce(payload->>'targetModel', '')), '');
-  v_limit integer := least(greatest(coalesce((payload->>'limit')::integer, 50), 1), 100);
+  v_limit        int  := least(greatest(coalesce((payload->>'limit')::int, 20), 1), 100);
+  v_rows         jsonb;
 begin
-  return jsonb_build_object(
-    'ok', true,
-    'data', jsonb_build_object(
-      'item', null,
-      'rows', (
-        select coalesce(jsonb_agg(jsonb_build_object('value', pt.id::text, 'label', pt.name)), '[]'::jsonb)
-        from (
-          select id, name
-          from app.print_template
-          where is_active
-            and (v_target_model is null or target_model = v_target_model)
-            and (v_search is null or code ilike '%' || v_search || '%' or name ilike '%' || v_search || '%')
-          order by is_default desc, code asc
-          limit v_limit
-        ) pt
-      ),
-      'lookups', '{}'::jsonb,
-      'totals', '{}'::jsonb,
-      'extra', '{}'::jsonb
-    ),
-    'messages', '[]'::jsonb,
-    'meta', '{}'::jsonb
-  );
-end;
-$$;
+  select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
+  from (
+    select jsonb_build_object(
+      'id',   t.id::text,
+      'name', t.name,
+      'code', t.code
+    ) as r
+    from app.print_template t
+    where t.is_active
+      and (v_target_model is null or t.target_model = v_target_model)
+      and (v_search is null or t.code ilike '%' || v_search || '%' or t.name ilike '%' || v_search || '%')
+    order by t.is_default desc, t.code asc
+    limit v_limit
+  ) sub;
 
-drop function if exists app.print_template_resolve(jsonb);
-create or replace function app.print_template_resolve(user_id bigint, payload jsonb)
-returns jsonb
-language plpgsql
-as $$
-declare
-  v_target_model text := nullif(trim(coalesce(payload->>'targetModel', '')), '');
-begin
   return jsonb_build_object(
     'ok', true,
     'data', jsonb_build_object(
-      'item', (
-        select jsonb_build_object(
-          'id', pt.id::text,
-          'code', pt.code,
-          'name', pt.name,
-          'targetModel', pt.target_model,
-          'dataCommand', pt.data_command,
-          'paperSize', pt.paper_size,
-          'orientation', pt.orientation,
-          'isDefault', pt.is_default,
-          'isActive', pt.is_active,
-          'schema', pt.template_schema
-        )
-        from app.print_template pt
-        where pt.target_model = v_target_model
-          and pt.is_active
-        order by pt.is_default desc, pt.updated_at desc, pt.code asc
-        limit 1
-      ),
-      'rows', '[]'::jsonb,
-      'lookups', '{}'::jsonb,
-      'totals', '{}'::jsonb,
-      'extra', '{}'::jsonb
+      'rows',    v_rows,
+      'item',    null,
+      'options', '{}'::jsonb,
+      'totals',  '{}'::jsonb,
+      'extra',   '{}'::jsonb
     ),
     'messages', '[]'::jsonb,
     'meta', '{}'::jsonb
