@@ -6,6 +6,8 @@ import { bus } from "../../bus/bus.ts";
 @customElement("ui-picker")
 export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String }) label = "";
+  /** Позначка обов'язковості біля підпису — зірочка, як у renderField() форм. */
+  @property({ type: Boolean }) required = false;
   @property({ type: String, attribute: "label-position" }) labelPosition: "top" | "left" = "top";
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
@@ -14,6 +16,12 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String }) picker = "picker";
   @property({ type: String, attribute: "display-field" }) displayField = "name";
   @property({ type: String, attribute: "id-field" }) idField = "id";
+  /**
+   * Додаткове поле рядка, що показується у випадному списку сірим після
+   * основного. Потрібне, коли основне поле саме по собі нечитабельне —
+   * наприклад код рахунку: «361» без найменування нічого не каже.
+   */
+  @property({ type: String, attribute: "hint-field" }) hintField = "";
   @property({ type: Number, attribute: "list-size" }) listSize = 10;
   @property({ type: Boolean, attribute: "show-clear" }) showClear = false;
   @property({ type: Object, attribute: "picker-params" }) pickerParams: Record<string, unknown> = {};
@@ -172,7 +180,11 @@ export class UiPicker extends GlobalStyledLitElement {
           <li>
             <button @mousedown=${(e: Event) => { e.preventDefault(); this._onSelect(item); }}>
               ${item[this.displayField] ?? item.name}
-              ${item[this.idField] ? html`<span class="text-xs opacity-40">#${item[this.idField]}</span>` : ""}
+              ${this.hintField
+                ? html`<span class="text-xs opacity-50 truncate">${item[this.hintField] ?? ""}</span>`
+                : item[this.idField]
+                ? html`<span class="text-xs opacity-40">#${item[this.idField]}</span>`
+                : ""}
             </button>
           </li>
         `)}
@@ -185,12 +197,12 @@ export class UiPicker extends GlobalStyledLitElement {
     return html`
       ${this.labelPosition === "left" ? html`
         <div class="flex items-center gap-2${this.width ? ` w-[${this.width}]` : ""}">
-          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}</span>` : ""}
+          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
           ${inputGroup}
         </div>
       ` : html`
         <div class="flex flex-col gap-1${this.width ? ` w-[${this.width}]` : ""}">
-          ${this.label ? html`<span class="label text-sm">${this.label}</span>` : ""}
+          ${this.label ? html`<span class="label text-sm leading-none">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
           ${inputGroup}
         </div>
       `}

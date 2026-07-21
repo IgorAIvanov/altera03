@@ -30,6 +30,44 @@ export const QuerySchema = Type.Object({
 });
 export type Query = Static<typeof QuerySchema>;
 
+/**
+ * Спільна шапка документа — дзеркало app.document.
+ *
+ * Модель-документ НЕ описує ці поля у власній `<model>.schema.ts`: генератор
+ * підмішує їх сам (див. scripts/generate-model-sql.ts), а `<Model>ItemSchema`
+ * містить лише реквізити конкретного документа та його табличні частини.
+ * На фронті шапка підключається через `Type.Composite`/`Type.Intersect` або
+ * просто через `DocumentHeaderSchema` у Root-схемі форми.
+ *
+ * `number` порожній для нового документа — його підставить app.doc_next_number.
+ */
+export const DocumentHeaderSchema = Type.Object({
+  id: Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
+  organizationId: Type.String({
+    title: "Організація",
+    "x-db-type": "bigint",
+    "x-ref": { model: "organization", display: "name", as: "organization", sortable: true, searchable: true },
+  }),
+  number: Type.Optional(Type.String({
+    title: "Номер", maxLength: 20,
+    "x-list": { sortable: true },
+    "x-search": true,
+  })),
+  docDate: Type.String({
+    title: "Дата",
+    "x-db-type": "timestamp",
+    "x-list": { sortable: true },
+  }),
+  total: Type.Optional(Type.Number({ title: "Сума", "x-db-type": "numeric", default: 0 })),
+  // Рядок для журналу й списків посилань. Заповнює документ при записі;
+  // порожній рядок замість null — колонка not null.
+  presentation: Type.Optional(Type.String({ title: "Представлення", default: "", "x-search": true })),
+  description: Type.Optional(Type.String({ title: "Коментар" })),
+  isPosted: Type.Optional(Type.Boolean({ title: "Проведено", default: false })),
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
+});
+export type DocumentHeader = Static<typeof DocumentHeaderSchema>;
+
 /** Підсумки списку (лічильник + ехо пагінації від БД). */
 export const TotalsSchema = Type.Object({
   count:    Type.Number({ default: 0 }),

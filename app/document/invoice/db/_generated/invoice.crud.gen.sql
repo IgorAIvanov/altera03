@@ -15,40 +15,52 @@ declare
   v_rows      jsonb;
   v_total     int;
 begin
-  if v_sort_by not in ('number', 'invoiceDate', 'counterparty') then
+  if v_sort_by not in ('number', 'docDate', 'counterparty') then
     v_sort_by := 'number';
   end if;
 
   select count(*)::int into v_total
-  from app.invoice t
+  from app.document h
+    join app.invoice t on t.document_id = h.id
+  left join app.organization r_organization on r_organization.id = h.organization_id
   left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
-  where (
+  where not h.is_deleted
+    and (
     coalesce(payload->>'search', '') = ''
-    or t.number ilike '%' || (payload->>'search') || '%'
+    or r_organization.name ilike '%' || (payload->>'search') || '%'
+    or h.number ilike '%' || (payload->>'search') || '%'
+    or h.presentation ilike '%' || (payload->>'search') || '%'
     or r_counterparty.name ilike '%' || (payload->>'search') || '%'
   );
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
     select jsonb_build_object(
-      'id', t.id::text,
-      'number', t.number,
-      'invoiceDate', t.invoice_date,
+      'id', h.id::text,
+      'number', h.number,
+      'docDate', h.doc_date,
+      'total', h.total,
+      'isPosted', h.is_posted,
       'counterpartyId', t.counterparty_id::text,
       'counterparty', case when r_counterparty.id is null then null else jsonb_build_object('id', r_counterparty.id::text, 'name', r_counterparty.name) end
     ) as r
-    from app.invoice t
+    from app.document h
+    join app.invoice t on t.document_id = h.id
+    left join app.organization r_organization on r_organization.id = h.organization_id
     left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
-    where (
+    where not h.is_deleted
+    and (
       coalesce(payload->>'search', '') = ''
-      or t.number ilike '%' || (payload->>'search') || '%'
+      or r_organization.name ilike '%' || (payload->>'search') || '%'
+      or h.number ilike '%' || (payload->>'search') || '%'
+      or h.presentation ilike '%' || (payload->>'search') || '%'
       or r_counterparty.name ilike '%' || (payload->>'search') || '%'
     )
     order by
-      case when v_sort_by = 'number' and v_sort_dir = 'asc'  then t.number end asc,
-      case when v_sort_by = 'number' and v_sort_dir = 'desc' then t.number end desc,
-      case when v_sort_by = 'invoiceDate' and v_sort_dir = 'asc'  then t.invoice_date end asc,
-      case when v_sort_by = 'invoiceDate' and v_sort_dir = 'desc' then t.invoice_date end desc,
+      case when v_sort_by = 'number' and v_sort_dir = 'asc'  then h.number end asc,
+      case when v_sort_by = 'number' and v_sort_dir = 'desc' then h.number end desc,
+      case when v_sort_by = 'docDate' and v_sort_dir = 'asc'  then h.doc_date end asc,
+      case when v_sort_by = 'docDate' and v_sort_dir = 'desc' then h.doc_date end desc,
       case when v_sort_by = 'counterparty' and v_sort_dir = 'asc'  then r_counterparty.name end asc,
       case when v_sort_by = 'counterparty' and v_sort_dir = 'desc' then r_counterparty.name end desc
     limit v_page_size
@@ -80,9 +92,16 @@ as $$
       'data', jsonb_build_object(
         'item', (
           select jsonb_build_object(
-        'id', t.id::text,
-        'number', t.number,
-        'invoiceDate', t.invoice_date,
+        'id', h.id::text,
+        'organizationId', h.organization_id::text,
+        'organization', case when r_organization.id is null then null else jsonb_build_object('id', r_organization.id::text, 'name', r_organization.name) end,
+        'number', h.number,
+        'docDate', h.doc_date,
+        'total', h.total,
+        'presentation', h.presentation,
+        'description', h.description,
+        'isPosted', h.is_posted,
+        'isDeleted', h.is_deleted,
         'counterpartyId', t.counterparty_id::text,
         'counterparty', case when r_counterparty.id is null then null else jsonb_build_object('id', r_counterparty.id::text, 'name', r_counterparty.name) end,
         'lines', coalesce((
@@ -96,12 +115,14 @@ as $$
         ) order by l.line_no)
         from app.invoice_line l
         left join app.bank r_bank on r_bank.id = l.bank_id
-        where l.invoice_id = t.id
+        where l.document_id = h.id
       ), '[]'::jsonb)
       )
-          from app.invoice t
+          from app.document h
+    join app.invoice t on t.document_id = h.id
+          left join app.organization r_organization on r_organization.id = h.organization_id
           left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
-          where t.id = (payload->>'id')::bigint
+          where h.id = (payload->>'id')::bigint
         ),
         'rows',    '[]'::jsonb,
         'options', '{}'::jsonb,
@@ -119,37 +140,75 @@ returns jsonb
 language plpgsql
 as $$
 declare
-  v_item   jsonb := payload->'item';
-  v_id     bigint;
-  v_result jsonb;
+  v_item    jsonb  := payload->'item';
+  v_id      bigint := nullif(v_item->>'id', '')::bigint;
+  v_org     bigint := nullif(v_item->>'organizationId', '')::bigint;
+  v_number  varchar(20);
+  v_type_id bigint;
+  v_result  jsonb;
 begin
-  if nullif(trim(coalesce(v_item->>'number', '')), '') is null then
-    raise exception 'number обов''язковий';
+  if v_org is null then
+    raise exception 'organizationId обов''язковий';
   end if;
+
+  select id into v_type_id from app.document_type where code = 'invoice';
+  if v_type_id is null then
+    raise exception 'Тип документа «invoice» не зареєстровано в app.document_type';
+  end if;
+
+  -- Номер підставляємо лише новому документу. Для збереженого відсутній у
+  -- payload номер означає «не чіпати», а не «перенумерувати».
+  v_number := nullif(trim(coalesce(v_item->>'number', '')), '');
+  if v_number is null then
+    if v_id is null then
+      v_number := app.doc_next_number('invoice', v_org);
+    else
+      select h.number into v_number from app.document h where h.id = v_id;
+    end if;
+  end if;
+
+  merge into app.document h
+  using (
+    select
+      v_id as id,
+      v_number as number,
+      nullif(v_item->>'organizationId', '')::bigint as organization_id,
+      nullif(v_item->>'docDate', '')::timestamp as doc_date,
+      nullif(v_item->>'total', '')::numeric as total,
+      nullif(trim(coalesce(v_item->>'presentation', '')), '') as presentation,
+      nullif(trim(coalesce(v_item->>'description', '')), '') as description
+  ) s
+    on h.id = s.id
+  when matched then update set
+    number = s.number,
+    organization_id = s.organization_id,
+    doc_date = s.doc_date,
+    total = coalesce(s.total, h.total),
+    presentation = coalesce(s.presentation, h.presentation),
+    description = s.description,
+    updated_at = now(),
+    updated_by = user_id
+  when not matched then insert (document_type_id, number, organization_id, doc_date, total, presentation, description, created_by, updated_by)
+    values (v_type_id, s.number, s.organization_id, s.doc_date, coalesce(s.total, 0), coalesce(s.presentation, ''), s.description, user_id, user_id)
+  returning h.id into v_id;
 
   merge into app.invoice t
   using (
     select
-      nullif(v_item->>'id', '')::bigint as id,
-      nullif(trim(coalesce(v_item->>'number', '')), '') as number,
-      nullif(v_item->>'invoiceDate', '')::date as invoice_date,
+      v_id as document_id,
       nullif(v_item->>'counterpartyId', '')::bigint as counterparty_id
   ) s
-    on t.id = s.id
+    on t.document_id = s.document_id
   when matched then update set
-    number = s.number,
-    invoice_date = s.invoice_date,
-    counterparty_id = s.counterparty_id,
-    updated_at = now()
-  when not matched then insert (number, invoice_date, counterparty_id)
-    values (s.number, s.invoice_date, s.counterparty_id)
-  returning t.id into v_id;
+    counterparty_id = s.counterparty_id
+  when not matched then insert (document_id, counterparty_id)
+    values (v_id, s.counterparty_id);
 
   merge into app.invoice_line lt
   using (
     select
       nullif(e->>'id', '')::bigint as id,
-      v_id as invoice_id,
+      v_id as document_id,
       nullif(e->>'lineNo', '')::int as line_no,
       nullif(e->>'bankId', '')::bigint as bank_id,
       nullif(e->>'qty', '')::numeric as qty,
@@ -162,14 +221,28 @@ begin
     bank_id = s.bank_id,
     qty = s.qty,
     price = s.price
-  when not matched then insert (invoice_id, line_no, bank_id, qty, price)
+  when not matched then insert (document_id, line_no, bank_id, qty, price)
     values (v_id, s.line_no, s.bank_id, s.qty, s.price)
-  when not matched by source and lt.invoice_id = v_id then delete;
+  when not matched by source and lt.document_id = v_id then delete;
+
+  -- Денормалізація шапки (total, presentation) — необов'язковий хук документа
+  -- у db/invoice.custom.sql. Рахувати підсумок у генераторі не можна:
+  -- у кожного документа він свій.
+  if to_regprocedure('app.invoice_denormalize(bigint, bigint)') is not null then
+    perform app.invoice_denormalize(user_id, v_id);
+  end if;
 
   select jsonb_build_object(
-        'id', t.id::text,
-        'number', t.number,
-        'invoiceDate', t.invoice_date,
+        'id', h.id::text,
+        'organizationId', h.organization_id::text,
+        'organization', case when r_organization.id is null then null else jsonb_build_object('id', r_organization.id::text, 'name', r_organization.name) end,
+        'number', h.number,
+        'docDate', h.doc_date,
+        'total', h.total,
+        'presentation', h.presentation,
+        'description', h.description,
+        'isPosted', h.is_posted,
+        'isDeleted', h.is_deleted,
         'counterpartyId', t.counterparty_id::text,
         'counterparty', case when r_counterparty.id is null then null else jsonb_build_object('id', r_counterparty.id::text, 'name', r_counterparty.name) end,
         'lines', coalesce((
@@ -183,12 +256,14 @@ begin
         ) order by l.line_no)
         from app.invoice_line l
         left join app.bank r_bank on r_bank.id = l.bank_id
-        where l.invoice_id = v_id
+        where l.document_id = v_id
       ), '[]'::jsonb)
       ) into v_result
-  from app.invoice t
+  from app.document h
+    join app.invoice t on t.document_id = h.id
+  left join app.organization r_organization on r_organization.id = h.organization_id
   left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
-  where t.id = v_id;
+  where h.id = v_id;
 
   return jsonb_build_object(
       'ok', true,
@@ -218,7 +293,7 @@ begin
     raise exception 'id обов''язковий';
   end if;
 
-  delete from app.invoice where id = v_id;
+  delete from app.document where id = v_id;
 
   return jsonb_build_object(
       'ok', true,
@@ -248,31 +323,40 @@ declare
   v_rows      jsonb;
   v_total     int;
 begin
-  if v_sort_by not in ('number') then
+  if v_sort_by not in ('number', 'docDate') then
     v_sort_by := 'number';
   end if;
 
   select count(*)::int into v_total
-  from app.invoice t
-  where (
+  from app.document h
+    join app.invoice t on t.document_id = h.id
+  where not h.is_deleted
+    and (
     coalesce(payload->>'search', '') = ''
-    or t.number ilike '%' || (payload->>'search') || '%'
+    or h.number ilike '%' || (payload->>'search') || '%'
+    or h.presentation ilike '%' || (payload->>'search') || '%'
   );
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
     select jsonb_build_object(
-      'id', t.id::text,
-      'number', t.number
+      'id', h.id::text,
+      'number', h.number,
+      'docDate', h.doc_date
     ) as r
-    from app.invoice t
-    where (
+    from app.document h
+    join app.invoice t on t.document_id = h.id
+    where not h.is_deleted
+      and (
       coalesce(payload->>'search', '') = ''
-      or t.number ilike '%' || (payload->>'search') || '%'
+      or h.number ilike '%' || (payload->>'search') || '%'
+      or h.presentation ilike '%' || (payload->>'search') || '%'
     )
     order by
-      case when v_sort_by = 'number' and v_sort_dir = 'asc'  then t.number end asc,
-      case when v_sort_by = 'number' and v_sort_dir = 'desc' then t.number end desc
+      case when v_sort_by = 'number' and v_sort_dir = 'asc'  then h.number end asc,
+      case when v_sort_by = 'number' and v_sort_dir = 'desc' then h.number end desc,
+      case when v_sort_by = 'docDate' and v_sort_dir = 'asc'  then h.doc_date end asc,
+      case when v_sort_by = 'docDate' and v_sort_dir = 'desc' then h.doc_date end desc
     limit v_page_size
     offset (v_page - 1) * v_page_size
   ) sub;
@@ -284,6 +368,66 @@ begin
         'item',    null,
         'options', '{}'::jsonb,
         'totals',  jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size),
+        'extra',   '{}'::jsonb
+      ),
+      'messages', '[]'::jsonb,
+      'meta', '{}'::jsonb
+    );
+end;
+$$;
+
+drop function if exists app.invoice_post(bigint, jsonb);
+create function app.invoice_post(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint := nullif(payload->>'id', '')::bigint;
+begin
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  perform app.doc_post_begin(user_id, v_id);
+  perform app.invoice_post_entries(user_id, v_id);
+  perform app.doc_post_finish(user_id, v_id);
+
+  return jsonb_build_object(
+      'ok', true,
+      'data', jsonb_build_object(
+        'item',    (select app.invoice_get(user_id, jsonb_build_object('id', v_id::text)) -> 'data' -> 'item'),
+        'rows',    '[]'::jsonb,
+        'options', '{}'::jsonb,
+        'totals',  '{}'::jsonb,
+        'extra',   '{}'::jsonb
+      ),
+      'messages', '[]'::jsonb,
+      'meta', '{}'::jsonb
+    );
+end;
+$$;
+
+drop function if exists app.invoice_unpost(bigint, jsonb);
+create function app.invoice_unpost(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint := nullif(payload->>'id', '')::bigint;
+begin
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  perform app.doc_unpost(user_id, v_id);
+
+  return jsonb_build_object(
+      'ok', true,
+      'data', jsonb_build_object(
+        'item',    (select app.invoice_get(user_id, jsonb_build_object('id', v_id::text)) -> 'data' -> 'item'),
+        'rows',    '[]'::jsonb,
+        'options', '{}'::jsonb,
+        'totals',  '{}'::jsonb,
         'extra',   '{}'::jsonb
       ),
       'messages', '[]'::jsonb,

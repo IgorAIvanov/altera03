@@ -1,0 +1,24 @@
+{
+  "model": "chart_of_account",
+  "type": "catalog",
+  "schema": "app",
+  "commands": {
+    "sql": {
+      "analytics": "chart_of_account_analytics"
+    }
+  },
+  "views": {
+    "list": {
+      "module": "./chartOfAccountList.ts",
+      "titleKey": "chartOfAccount.titleMany"
+    },
+    "edit": {
+      "module": "./chartOfAccountEdit.ts",
+      "titleKey": "chartOfAccount.titleOne"
+    },
+    "picker": {
+      "module": "./chartOfAccountPicker.ts",
+      "titleKey": "chartOfAccount.titleMany"
+    }
+  }
+}

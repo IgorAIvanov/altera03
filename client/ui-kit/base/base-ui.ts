@@ -14,11 +14,27 @@ export interface Message {
   text?: string;
 }
 
-/** Стандартний конверт відповіді: `{ ok, data, messages }`. */
+/**
+ * Стандартний конверт відповіді: `{ ok, data, messages }`.
+ *
+ * `messages` приходить у двох виглядах: SQL-функції віддають об'єкти
+ * `{ type, text }`, а обробник помилок бекенду — просто рядок з тексту
+ * винятку. Нормалізує `normalizeMessages()`, тому UI бачить один формат.
+ */
 export interface Envelope<D = Record<string, unknown>> {
   ok: boolean;
   data?: D;
-  messages?: Message[];
+  messages?: (Message | string)[];
+}
+
+/**
+ * Рядок → повідомлення. Голий рядок з'являється лише коли команда впала
+ * (див. modelError у model-runtime.controller.ts), тому це помилка.
+ */
+function normalizeMessages(raw: (Message | string)[] | undefined, ok: boolean): Message[] {
+  return (raw ?? []).map((m) =>
+    typeof m === "string" ? { type: ok ? "info" as const : "error" as const, text: m } : m
+  );
 }
 
 /**
@@ -57,6 +73,12 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   /** Реактивний контейнер даних форми (побудований зі схеми). */
   protected $root: T;
 
+  /**
+   * Id власної вкладки — проставляє tab-controller при створенні елемента.
+   * Потрібен, щоб форма могла закрити саму себе (`closeSelf`).
+   */
+  tabId: string | null = null;
+
   /** Запит пройшов, але основної сутності немає — запис видалено/невалідний id. */
   @state() protected notFound = false;
 
@@ -71,10 +93,14 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     return this.running !== null;
   }
 
+  /** Схема `$root` — потрібна вже після конструктора, щоб знати обов'язкові поля. */
+  private rootSchema?: TSchema & { properties?: Record<string, unknown> };
+
   constructor(schema: TSchema) {
     super();
     // Value.Create будує валідне значення зі схеми; deep робить його реактивним.
     this.$root = deep(Value.Create(schema) as T);
+    this.rootSchema = schema as TSchema & { properties?: Record<string, unknown> };
   }
 
   /**
@@ -93,8 +119,16 @@ export abstract class BaseUI<T extends Record<string, unknown>>
         kind === "save" ? "data.save" : "data.load",
         { model: this.model, command, payload },
       )) as Envelope<D> | undefined;
-      this.messages = env?.messages ?? [];
+      this.messages = normalizeMessages(env?.messages, env?.ok ?? false);
       return env ?? { ok: false };
+    } catch (error) {
+      // Мережа лягла або бекенд віддав не-200: без цього гілка падала німо —
+      // форма просто «нічого не робила» у відповідь на натискання.
+      this.messages = [{
+        type: "error",
+        text: error instanceof Error ? error.message : String(error),
+      }];
+      return { ok: false };
     } finally {
       this.running = null;
     }
@@ -178,6 +212,113 @@ export abstract class BaseUI<T extends Record<string, unknown>>
           ? html`<div class="alert alert-error py-2 text-sm">${t("common.recordNotFound")}</div>`
           : ""}
         ${errors.map((m) => html`<div class="alert alert-error py-2 text-sm">${m.text}</div>`)}
+      </div>
+    `;
+  }
+
+  // ── Спільна розкладка форми ────────────────────────────────────────────────
+
+  /**
+   * Поле форми: підпис над контролом. Розмітка навмисно та сама, що в
+   * `ui-picker` і `ui-date` (`<span class="label text-sm">` + контрол), інакше
+   * підписи звичайних інпутів і компонентів ui-kit виглядають по-різному в
+   * одній формі.
+   *
+   * Класу `form-control` тут немає свідомо: у daisyUI 5 його не існує (це
+   * клас четвертої версії), і саме він ламав вирівнювання підписів.
+   */
+  protected renderField(
+    label: string,
+    control: TemplateResult,
+    opts: { class?: string; field?: string; required?: boolean } = {},
+  ): TemplateResult {
+    // Обов'язковість беремо зі схеми (`field`), а не з окремого прапорця в
+    // розмітці: інакше зірочка й реальна перевірка в БД розходяться при першій
+    // же зміні схеми.
+    const required = opts.required ?? (opts.field ? this.isRequired(opts.field) : false);
+    return html`
+      <div class="flex flex-col gap-px ${opts.class ?? ""}">
+        <span class="label text-sm leading-none">
+          ${label}${required ? html`<span class="text-error ml-0.5">*</span>` : ""}
+        </span>
+        ${control}
+      </div>
+    `;
+  }
+
+  /**
+   * Чи є поле основної сутності обов'язковим за схемою. У TypeBox обов'язкове
+   * все, що не загорнуте в `Type.Optional`, тож окремих анотацій не треба.
+   */
+  protected isRequired(field: string): boolean {
+    const entity = this.rootSchema?.properties?.[this.primaryKey ?? "item"] as
+      | { required?: string[] }
+      | undefined;
+    return entity?.required?.includes(field) ?? false;
+  }
+
+  /**
+   * Запис форми. На відміну від «просто run(save)» вливає відповідь у `$root`:
+   * новий запис одразу отримує свій `id`, тому повторне збереження оновлює
+   * той самий рядок, а не створює дубль.
+   *
+   * Підклас перевизначає, якщо перед записом треба підготувати дані
+   * (нормалізація десяткових у табличній частині тощо).
+   */
+  protected async saveItem(): Promise<boolean> {
+    const key = this.primaryKey ?? "item";
+    const env = await this.run<Partial<T>>(
+      "save",
+      { [key]: (this.$root as Record<string, unknown>)[key] },
+      "save",
+    );
+    if (!env.ok || !env.data) return false;
+    this.assign(env.data);
+    return true;
+  }
+
+  /**
+   * Параметри відкриття вкладки (`bus.emit({ type: "tab.open", params })`).
+   * Викликається ДО вставки в DOM, а для вже відкритої вкладки — повторно.
+   *
+   * За замовчуванням вливаються в службовий `$query`: цього достатньо звітам
+   * і спискам з фільтром. Екран із іншою логікою (наприклад «сформувати
+   * одразу після переходу») перевизначає метод.
+   */
+  applyParams(params: Record<string, unknown>) {
+    const query = (this.$root as Record<string, unknown>).$query;
+    if (!query || typeof query !== "object") return;
+    Object.assign(query as Record<string, unknown>, params);
+  }
+
+  /** Закрити власну вкладку. `tabId` проставляє tab-controller при створенні. */
+  protected closeSelf() {
+    if (this.tabId) bus.emit({ type: "tab.close", tabId: this.tabId });
+  }
+
+  private async saveAndClose() {
+    if (await this.saveItem()) this.closeSelf();
+  }
+
+  /**
+   * Стандартний підвал форми редагування: «Зберегти й закрити» (основна дія),
+   * «Зберегти», «Закрити». `extra` — місце для дій конкретного документа
+   * (провести, друк).
+   */
+  protected renderFormActions(extra?: TemplateResult | string): TemplateResult {
+    return html`
+      <div class="flex gap-2 mt-6">
+        <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.saveAndClose}>
+          ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+          ${t("common.saveAndClose")}
+        </button>
+        <button class="btn btn-outline" ?disabled=${!this.canSave} @click=${this.saveItem}>
+          ${t("common.save")}
+        </button>
+        <button class="btn btn-ghost" ?disabled=${this.busy} @click=${this.closeSelf}>
+          ${t("common.close")}
+        </button>
+        ${extra ?? ""}
       </div>
     `;
   }

@@ -1,0 +1,15 @@
+{
+  "model": "manual_entry",
+  "type": "document",
+  "schema": "app",
+  "document": {
+    "name": "Операція (бухгалтерська)",
+    "shortName": "Операція",
+    "prefix": "ОП",
+    "sortOrder": 5
+  },
+  "views": {
+    "list": { "module": "./manualEntryList.ts", "titleKey": "manualEntry.titleMany" },
+    "edit": { "module": "./manualEntryEdit.ts", "titleKey": "manualEntry.titleOne" }
+  }
+}

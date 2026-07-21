@@ -42,6 +42,8 @@ export class UiDate extends GlobalStyledLitElement {
   /** Шаблон відображення/розбору: `DD.MM.YY`, `MM.YYYY`, `HH:mm` ... */
   @property({ type: String }) format: string = dateFormat.date;
   @property({ type: String }) label = "";
+  /** Позначка обов'язковості біля підпису — зірочка, як у renderField() форм. */
+  @property({ type: Boolean }) required = false;
   @property({ type: String, attribute: "label-position" }) labelPosition: "top" | "left" = "top";
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
@@ -382,13 +384,13 @@ export class UiDate extends GlobalStyledLitElement {
       ${this.labelPosition === "left"
         ? html`
           <div class="flex items-center gap-2" style=${style}>
-            ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}</span>` : ""}
+            ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
             ${inputGroup}
           </div>
         `
         : html`
           <div class="flex flex-col gap-1" style=${style}>
-            ${this.label ? html`<span class="label text-sm">${this.label}</span>` : ""}
+            ${this.label ? html`<span class="label text-sm leading-none">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
             ${inputGroup}
           </div>
         `}

@@ -3,9 +3,23 @@ import ts_bank_ping from "../catalog/bank/db/bank.commands.ts";
 // Generated from model manifests. Do not edit manually.
 
 export const generatedModelRegistry = {
+  "account_card": {
+    type: "report",
+    schema: "app",
+    sqlCommands: {
+    "index": "account_card_index"
+    }
+  },
   "bank": {
     type: "catalog",
     schema: "app"
+  },
+  "chart_of_account": {
+    type: "catalog",
+    schema: "app",
+    sqlCommands: {
+    "analytics": "chart_of_account_analytics"
+    }
   },
   "counterparty": {
     type: "catalog",
@@ -22,9 +36,24 @@ export const generatedModelRegistry = {
     "printData": "invoice_print_data"
     }
   },
+  "manual_entry": {
+    type: "document",
+    schema: "app"
+  },
+  "organization": {
+    type: "catalog",
+    schema: "app"
+  },
   "print_template": {
     type: "admin",
     schema: "app"
+  },
+  "turnover_balance": {
+    type: "report",
+    schema: "app",
+    sqlCommands: {
+    "index": "turnover_balance_index"
+    }
   },
   "user": {
     type: "admin",

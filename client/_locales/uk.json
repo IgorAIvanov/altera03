@@ -1,5 +1,7 @@
 {
   "common.save": "Зберегти",
+  "common.saveAndClose": "Зберегти й закрити",
+  "common.close": "Закрити",
   "common.cancel": "Скасувати",
   "common.delete": "Видалити",
   "common.confirmDelete": "Видалити запис",

@@ -81,7 +81,12 @@ async function resolveChunk(route: string): Promise<{ chunkUrl: string; titleKey
   }
 }
 
-async function createTabElement(chunkUrl: string, modelId: string | null): Promise<HTMLElement | null> {
+async function createTabElement(
+  chunkUrl: string,
+  modelId: string | null,
+  tabId: string,
+  params?: Record<string, unknown>,
+): Promise<HTMLElement | null> {
   try {
     const mod = await import(/* @vite-ignore */ chunkUrl);
     const tagName: string | undefined = mod.tagName ?? mod.default?.tagName;
@@ -91,6 +96,12 @@ async function createTabElement(chunkUrl: string, modelId: string | null): Promi
     }
     const el = document.createElement(tagName);
     if (modelId) (el as any).modelId = modelId;
+    // Форма має вміти закрити саму себе — інакше кнопка «Закрити» не має
+    // за що вхопитися: елемент нічого не знає про вкладку, в якій живе.
+    (el as any).tabId = tabId;
+    // Параметри відкриття (напр. рахунок і період для картки рахунку).
+    // Передаємо ДО вставки в DOM, щоб connectedCallback побачив уже готовий стан.
+    if (params) (el as any).applyParams?.(params);
     return el;
   } catch (e) {
     console.error(`[tabs] помилка завантаження чанку ${chunkUrl}`, e);
@@ -240,18 +251,23 @@ export class TabController extends LitElement {
     if (lru) this.handleClose(lru.id);
   }
 
-  private async createTab(route: string, modelId: string | null): Promise<Tab | null> {
+  private async createTab(
+    route: string,
+    modelId: string | null,
+    params?: Record<string, unknown>,
+  ): Promise<Tab | null> {
     const resolved = await resolveChunk(route);
     if (!resolved) {
       console.error(`[tabs] view не знайдено: ${route}`);
       return null;
     }
 
-    const element = await createTabElement(resolved.chunkUrl, modelId);
+    const id = crypto.randomUUID();
+    const element = await createTabElement(resolved.chunkUrl, modelId, id, params);
     if (!element) return null;
 
     return {
-      id: crypto.randomUUID(),
+      id,
       route,
       modelId,
       titleKey: resolved.titleKey,
@@ -260,11 +276,18 @@ export class TabController extends LitElement {
     };
   }
 
-  private async handleOpen(route: string, modelId: string | null, _params?: Record<string, unknown>) {
+  private async handleOpen(route: string, modelId: string | null, params?: Record<string, unknown>) {
     const existing = this.tabs.find(t => t.route === route && t.modelId === modelId);
-    if (existing) { this.activateTab(existing.id); return; }
+    if (existing) {
+      // Вкладка вже відкрита: не створюємо другу, але параметри застосовуємо —
+      // інакше перехід зі звіту в звіт із іншим рахунком показав би старі дані.
+      if (params) (existing.element as unknown as { applyParams?: (p: Record<string, unknown>) => void })
+        .applyParams?.(params);
+      this.activateTab(existing.id);
+      return;
+    }
 
-    const tab = await this.createTab(route, modelId);
+    const tab = await this.createTab(route, modelId, params);
     if (!tab) {
       alert(`Не вдалося відкрити view: ${route}`);
       return;

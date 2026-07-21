@@ -57,9 +57,18 @@ type FeaturePrintManifest = {
   dataCommand: string;
 };
 
+type FeatureDocumentManifest = {
+  name?: string;
+  shortName?: string;
+  prefix?: string;
+  sortOrder?: number;
+};
+
 type FeatureManifest = {
   model: string;
+  type?: string;
   schema?: string;
+  document?: FeatureDocumentManifest;
   prints?: Record<string, FeaturePrintManifest>;
 };
 
@@ -328,18 +337,77 @@ function renderPrintTemplateRepublishSql(template: CollectedPrintTemplate) {
   return statements.join("\n");
 }
 
-async function buildGeneratedDataSections(appDir: string, models: string[]) {
-  const templates = await collectManifestPrintTemplates(appDir, models);
-  if (!templates.length) {
-    return [] as string[];
+/**
+ * Типи документів — з манифестів моделей `type: "document"`, а не з рукописного
+ * data.sql: код типу дорівнює ключу моделі, і розійтися вони не можуть.
+ */
+async function collectDocumentTypes(appDir: string, models: string[]) {
+  const rows: { code: string; name: string; shortName: string; prefix: string; sortOrder: number }[] = [];
+
+  for (const model of models) {
+    const manifestPath = join(appDir, model, "manifest.json");
+    if (!await fileExists(manifestPath)) continue;
+
+    const manifest = await readFeatureManifest(manifestPath);
+    if (manifest.type !== "document") continue;
+
+    const doc = manifest.document ?? {};
+    if (!doc.name?.trim()) {
+      throw new Error(
+        `${manifestPath}: модель типу "document" повинна мати document.name — з нього формується app.document_type.`,
+      );
+    }
+
+    rows.push({
+      code: manifest.model,
+      name: doc.name.trim(),
+      shortName: (doc.shortName ?? doc.name).trim(),
+      prefix: (doc.prefix ?? "").trim(),
+      sortOrder: doc.sortOrder ?? 0,
+    });
   }
 
-  const generatedSql = templates
-    .sort((left, right) => `${left.targetModel}:${left.code}`.localeCompare(`${right.targetModel}:${right.code}`))
-    .map(renderPrintTemplateSeedSql)
-    .join("\n");
+  return rows.sort((left, right) => left.code.localeCompare(right.code));
+}
 
-  return buildSection("_generated/print-templates.data.sql", generatedSql);
+function renderDocumentTypesSql(rows: Awaited<ReturnType<typeof collectDocumentTypes>>) {
+  const values = rows.map((row) =>
+    `  (${sqlStringLiteral(row.code)}, ${sqlStringLiteral(row.name)}, ` +
+    `${sqlStringLiteral(row.shortName)}, ${row.prefix ? sqlStringLiteral(row.prefix) : "null"}, ${row.sortOrder})`
+  ).join(",\n");
+
+  return [
+    "-- Generated from model manifests (type: \"document\").",
+    "insert into app.document_type (code, name, short_name, prefix, sort_order)",
+    "values",
+    values,
+    "on conflict (code) do update",
+    "set name = excluded.name,",
+    "    short_name = excluded.short_name,",
+    "    prefix = excluded.prefix,",
+    "    sort_order = excluded.sort_order;",
+    "",
+  ].join("\n");
+}
+
+async function buildGeneratedDataSections(appDir: string, models: string[]) {
+  const sections: string[] = [];
+
+  const documentTypes = await collectDocumentTypes(appDir, models);
+  if (documentTypes.length) {
+    sections.push(...buildSection("_generated/document-types.data.sql", renderDocumentTypesSql(documentTypes)));
+  }
+
+  const templates = await collectManifestPrintTemplates(appDir, models);
+  if (templates.length) {
+    const generatedSql = templates
+      .sort((left, right) => `${left.targetModel}:${left.code}`.localeCompare(`${right.targetModel}:${right.code}`))
+      .map(renderPrintTemplateSeedSql)
+      .join("\n");
+    sections.push(...buildSection("_generated/print-templates.data.sql", generatedSql));
+  }
+
+  return sections;
 }
 
 export async function buildRepoPrintTemplateRepublishSql(appDirArg = "./src/app") {

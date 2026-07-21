@@ -38,10 +38,6 @@ export class BankEdit extends BaseUI<BankEditRoot> {
     await this.loadInto("get", { id: this.modelId });
   }
 
-  private async save() {
-    await this.run("save", { item: this.$root.item }, "save");
-  }
-
   private async ping() {
     const env = await this.run<BankPingData>("ping", { id: this.modelId });
     const text = this.messages[0]?.text ?? "";
@@ -59,36 +55,35 @@ export class BankEdit extends BaseUI<BankEditRoot> {
     const item = this.$root.item;
 
     return html`
-      <div class="p-4 max-w-md">
+      <div class="p-4 max-w-md flex flex-col gap-2">
         ${this.renderNotice()}
-        <div class="form-control mb-4">
-          <label class="label"><span class="label-text">${this.t("common.code")}</span></label>
-          <input class="input input-bordered" .value=${item.code ?? ""}
-            @input=${this.bindTo(item, "code")} />
-        </div>
+        ${this.renderField(
+          this.t("common.code"),
+          html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
+            @input=${this.bindTo(item, "code")} />`,
+          { field: "code" },
+        )}
 
-        <div class="form-control mb-4">
-          <label class="label"><span class="label-text">${this.t("common.name")}</span></label>
-          <input class="input input-bordered" .value=${item.name ?? ""}
-            @input=${this.bindTo(item, "name")} />
-        </div>
+        ${this.renderField(
+          this.t("common.name"),
+          html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
+            @input=${this.bindTo(item, "name")} />`,
+          { field: "name" },
+        )}
 
-        <div class="form-control mb-4">
-          <label class="label"><span class="label-text">${this.t("bank.mfo")}</span></label>
-          <input class="input input-bordered" .value=${item.mfo ?? ""}
-            @input=${this.bindTo(item, "mfo")} />
-        </div>
+        ${this.renderField(
+          this.t("bank.mfo"),
+          html`<input class="input input-bordered w-full" .value=${item.mfo ?? ""}
+            @input=${this.bindTo(item, "mfo")} />`,
+          { field: "mfo" },
+        )}
 
-        <div class="flex gap-2 mt-6">
-          <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
-            ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-            ${this.t("common.save")}
-          </button>
+        ${this.renderFormActions(html`
           <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.ping}>
             ${this.running === "ping" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             TS-команда (ping)
           </button>
-        </div>
+        `)}
 
         ${this.pingResult
           ? html`<pre class="mt-4 p-3 rounded bg-base-200 text-xs whitespace-pre-wrap">${this.pingResult}</pre>`

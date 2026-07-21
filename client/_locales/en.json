@@ -1,5 +1,7 @@
 {
   "common.save": "Save",
+  "common.saveAndClose": "Save and close",
+  "common.close": "Close",
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "common.confirmDelete": "Delete record",

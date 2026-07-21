@@ -1,0 +1,13 @@
+{
+  "model": "account_card",
+  "type": "report",
+  "schema": "app",
+  "commands": {
+    "sql": {
+      "index": "account_card_index"
+    }
+  },
+  "views": {
+    "list": { "module": "./accountCardReport.ts", "titleKey": "accountCard.title" }
+  }
+}

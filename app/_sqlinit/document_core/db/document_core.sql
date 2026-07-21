@@ -1,1 +1,266 @@
--- Document core SQL init does not publish model-local SQL functions.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Процедури ядра документообігу.
+--
+-- Ними користуються команди post/unpost конкретних документів. Сама логіка
+-- проводок лишається у видимому SQL документа (app.<model>_post_entries) —
+-- декларативних правил проведення тут свідомо немає: у бухгалтерії дорожче
+-- «магія», ніж кілька рядків явного коду.
+--
+-- Типовий post документа:
+--   perform app.doc_post_begin(user_id, doc_id);
+--   perform app.doc_entry_add(doc_id, 1, '361', '701', 1200.00, null, 'Реалізація',
+--                             jsonb_build_object('counterparty', cp_id), '{}'::jsonb);
+--   perform app.doc_post_finish(user_id, doc_id);
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── Автонумерація ───────────────────────────────────────────────────────────
+-- Номер = префікс організації + префікс типу + порядковий номер у межах пари
+-- (тип, організація). Унікальність гарантує uq_document_number.
+
+drop function if exists app.doc_next_number(varchar, bigint);
+create function app.doc_next_number(
+  p_type_code       varchar,
+  p_organization_id bigint
+) returns varchar
+language plpgsql
+as $$
+declare
+  v_prefix text;
+  v_next   bigint;
+begin
+  select coalesce(o.prefix, '') || coalesce(dt.prefix, '')
+    into v_prefix
+  from app.document_type dt
+  cross join app.organization o
+  where dt.code = p_type_code
+    and o.id = p_organization_id;
+
+  if v_prefix is null then
+    raise exception 'Невідомий тип документа «%» або організація %', p_type_code, p_organization_id;
+  end if;
+
+  select coalesce(max(nullif(substring(d.number from '[0-9]+$'), '')::bigint), 0) + 1
+    into v_next
+  from app.document d
+  join app.document_type dt on dt.id = d.document_type_id
+  where dt.code = p_type_code
+    and d.organization_id = p_organization_id;
+
+  return v_prefix || lpad(v_next::text, 6, '0');
+end;
+$$;
+
+-- ── Аналітика проводки ──────────────────────────────────────────────────────
+-- Розкладає значення субконто по слотах, які веде рахунок, і знімає з
+-- довідника знімок коду та назви. Зайві ключі ігноруються, відсутнє
+-- обов'язкове субконто — помилка.
+--
+-- p_values приймає обидві форми запису значення:
+--   {"counterparty": "42"}                       — лише id;
+--   {"counterparty": {"id": "42", "name": "…"}}  — id разом із представленням.
+-- Друга зручна документам: форма показує назву субконто після перезавантаження,
+-- не роблячи окремого запиту. Знімок для регістру ядро все одно бере з
+-- довідника, а не з документа, — щоб рух не залежав від того, що там лежало.
+
+drop function if exists app.doc_analytic_set(bigint, varchar, varchar, jsonb);
+create function app.doc_analytic_set(
+  p_entry_id bigint,
+  p_side     varchar,
+  p_account  varchar,
+  p_values   jsonb
+) returns void
+language plpgsql
+as $$
+declare
+  cfg    record;
+  v_raw  jsonb;
+  v_id   bigint;
+  v_code varchar(100);
+  v_name varchar(500);
+begin
+  for cfg in
+    select
+      a.slot_no,
+      a.dimension_code,
+      a.is_required,
+      d.name as dimension_name,
+      d.target_table,
+      d.id_column,
+      d.code_column,
+      d.name_column
+    from app.chart_of_account_analytic a
+    join app.analytic_dimension d on d.code = a.dimension_code
+    where a.account_code = p_account
+    order by a.slot_no
+  loop
+    v_raw := coalesce(p_values, '{}'::jsonb) -> cfg.dimension_code;
+    v_id := case
+      when v_raw is null or jsonb_typeof(v_raw) = 'null' then null
+      when jsonb_typeof(v_raw) = 'object' then nullif(v_raw ->> 'id', '')::bigint
+      else nullif(v_raw #>> '{}', '')::bigint
+    end;
+
+    if v_id is null then
+      if cfg.is_required then
+        raise exception 'Не заповнено субконто «%» рахунку % (%)',
+          cfg.dimension_name, p_account, p_side;
+      end if;
+      continue;
+    end if;
+
+    begin
+      execute format(
+        'select %s::varchar, %s::varchar from %s where %I = $1',
+        coalesce(quote_ident(cfg.code_column), 'null'),
+        coalesce(quote_ident(cfg.name_column), 'null'),
+        cfg.target_table,
+        cfg.id_column
+      )
+      into strict v_code, v_name
+      using v_id;
+    exception when no_data_found then
+      raise exception 'Субконто «%»: запис % не знайдено в %',
+        cfg.dimension_name, v_id, cfg.target_table;
+    end;
+
+    insert into app.journal_entry_analytic (
+      journal_entry_id, side, slot_no, dimension_code,
+      value_id, value_code, value_name, value_presentation
+    )
+    values (
+      p_entry_id, p_side, cfg.slot_no, cfg.dimension_code,
+      v_id, v_code, v_name, coalesce(v_name, v_code, v_id::text)
+    )
+    on conflict (journal_entry_id, side, slot_no) do update
+    set
+      dimension_code     = excluded.dimension_code,
+      value_id           = excluded.value_id,
+      value_code         = excluded.value_code,
+      value_name         = excluded.value_name,
+      value_presentation = excluded.value_presentation;
+  end loop;
+end;
+$$;
+
+-- ── Початок проведення ──────────────────────────────────────────────────────
+-- Перевіряє документ і зносить попередні рухи: перепроведення завжди
+-- переписує регістр начисто, часткового оновлення проводок не буває.
+
+drop function if exists app.doc_post_begin(bigint, bigint);
+create function app.doc_post_begin(
+  p_user_id     bigint,
+  p_document_id bigint
+) returns void
+language plpgsql
+as $$
+declare
+  v_doc record;
+begin
+  select id, is_deleted into v_doc
+  from app.document
+  where id = p_document_id;
+
+  if not found then
+    raise exception 'Документ % не знайдено', p_document_id;
+  end if;
+
+  if v_doc.is_deleted then
+    raise exception 'Документ % позначено на видалення — проведення неможливе', p_document_id;
+  end if;
+
+  delete from app.journal_entry where document_id = p_document_id;
+end;
+$$;
+
+-- ── Додати проводку ─────────────────────────────────────────────────────────
+
+drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb);
+create function app.doc_entry_add(
+  p_document_id      bigint,
+  p_line_no          int,
+  p_debit_account    varchar,
+  p_credit_account   varchar,
+  p_amount           numeric,
+  p_quantity         numeric default null,
+  p_description      text    default null,
+  p_debit_analytics  jsonb   default '{}'::jsonb,
+  p_credit_analytics jsonb   default '{}'::jsonb
+) returns bigint
+language plpgsql
+as $$
+declare
+  v_entry_id bigint;
+  v_is_group boolean;
+begin
+  if p_amount is null or p_amount = 0 then
+    raise exception 'Проводка % документа %: нульова сума', p_line_no, p_document_id;
+  end if;
+
+  -- На групи плану рахунків проводки не робляться.
+  select is_group into v_is_group from app.chart_of_account where code = p_debit_account;
+  if v_is_group is null then
+    raise exception 'Рахунок дебету «%» не знайдено', p_debit_account;
+  elsif v_is_group then
+    raise exception 'Рахунок дебету «%» — група, проводка неможлива', p_debit_account;
+  end if;
+
+  select is_group into v_is_group from app.chart_of_account where code = p_credit_account;
+  if v_is_group is null then
+    raise exception 'Рахунок кредиту «%» не знайдено', p_credit_account;
+  elsif v_is_group then
+    raise exception 'Рахунок кредиту «%» — група, проводка неможлива', p_credit_account;
+  end if;
+
+  insert into app.journal_entry (
+    document_id, line_no, debit_account, credit_account, amount, quantity, description
+  )
+  values (
+    p_document_id, p_line_no, p_debit_account, p_credit_account, p_amount, p_quantity, p_description
+  )
+  returning id into v_entry_id;
+
+  perform app.doc_analytic_set(v_entry_id, 'debit',  p_debit_account,  p_debit_analytics);
+  perform app.doc_analytic_set(v_entry_id, 'credit', p_credit_account, p_credit_analytics);
+
+  return v_entry_id;
+end;
+$$;
+
+-- ── Завершення проведення ───────────────────────────────────────────────────
+
+drop function if exists app.doc_post_finish(bigint, bigint);
+create function app.doc_post_finish(
+  p_user_id     bigint,
+  p_document_id bigint
+) returns void
+language sql
+as $$
+  update app.document
+  set is_posted = true,
+      posted_at = now(),
+      posted_by = p_user_id,
+      updated_at = now(),
+      updated_by = p_user_id
+  where id = p_document_id;
+$$;
+
+-- ── Скасування проведення ───────────────────────────────────────────────────
+
+drop function if exists app.doc_unpost(bigint, bigint);
+create function app.doc_unpost(
+  p_user_id     bigint,
+  p_document_id bigint
+) returns void
+language sql
+as $$
+  with cleared as (
+    delete from app.journal_entry where document_id = p_document_id returning 1
+  )
+  update app.document
+  set is_posted = false,
+      posted_at = null,
+      posted_by = null,
+      updated_at = now(),
+      updated_by = p_user_id
+  where id = p_document_id;
+$$;

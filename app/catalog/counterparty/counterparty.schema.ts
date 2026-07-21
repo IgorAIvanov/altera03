@@ -20,6 +20,13 @@ export const CounterpartyItemSchema = Type.Object({
 });
 export type CounterpartyItem = Static<typeof CounterpartyItemSchema>;
 
+/** `$root` форми редагування: `item` (дані) + `options`. */
+export const CounterpartyEditRootSchema = Type.Object({
+  item:    CounterpartyItemSchema,
+  options: Type.Object({}),
+});
+export type CounterpartyEditRoot = Static<typeof CounterpartyEditRootSchema>;
+
 // ── Row ───────────────────────────────────────────────────────────────────────
 
 export const CounterpartyRowSchema = Type.Object({

@@ -1,15 +1,25 @@
 // Generated from model manifests. Do not edit manually.
 
 export const viewManifest = [
+  { route: "report/account_card/list", moduleFile: "app/report/account_card/accountCardReport.ts", titleKey: "accountCard.title" },
   { route: "catalog/bank/list", moduleFile: "app/catalog/bank/bankList.ts", titleKey: "bank.titleMany" },
   { route: "catalog/bank/edit", moduleFile: "app/catalog/bank/bankEdit.ts", titleKey: "bank.titleOne" },
   { route: "catalog/bank/picker", moduleFile: "app/catalog/bank/bankPicker.ts", titleKey: "bank.titleMany" },
+  { route: "catalog/chart_of_account/list", moduleFile: "app/catalog/chart_of_account/chartOfAccountList.ts", titleKey: "chartOfAccount.titleMany" },
+  { route: "catalog/chart_of_account/edit", moduleFile: "app/catalog/chart_of_account/chartOfAccountEdit.ts", titleKey: "chartOfAccount.titleOne" },
+  { route: "catalog/chart_of_account/picker", moduleFile: "app/catalog/chart_of_account/chartOfAccountPicker.ts", titleKey: "chartOfAccount.titleMany" },
   { route: "catalog/counterparty/list", moduleFile: "app/catalog/counterparty/counterpartyList.ts", titleKey: "counterparty.titleMany" },
   { route: "catalog/counterparty/edit", moduleFile: "app/catalog/counterparty/counterpartyEdit.ts", titleKey: "counterparty.titleOne" },
   { route: "catalog/counterparty/picker", moduleFile: "app/catalog/counterparty/counterpartyPicker.ts", titleKey: "counterparty.titleMany" },
   { route: "document/invoice/list", moduleFile: "app/document/invoice/invoiceList.ts", titleKey: "invoice.titleMany" },
   { route: "document/invoice/edit", moduleFile: "app/document/invoice/invoiceEdit.ts", titleKey: "invoice.titleOne" },
+  { route: "operation/manual_entry/list", moduleFile: "app/operation/manual_entry/manualEntryList.ts", titleKey: "manualEntry.titleMany" },
+  { route: "operation/manual_entry/edit", moduleFile: "app/operation/manual_entry/manualEntryEdit.ts", titleKey: "manualEntry.titleOne" },
+  { route: "catalog/organization/list", moduleFile: "app/catalog/organization/organizationList.ts", titleKey: "organization.titleMany" },
+  { route: "catalog/organization/edit", moduleFile: "app/catalog/organization/organizationEdit.ts", titleKey: "organization.titleOne" },
+  { route: "catalog/organization/picker", moduleFile: "app/catalog/organization/organizationPicker.ts", titleKey: "organization.titleMany" },
   { route: "admin/print_template/list", moduleFile: "app/admin/print_template/printTemplateList.ts", titleKey: "printTemplate.titleMany" },
-  { route: "admin/print_template/edit", moduleFile: "app/admin/print_template/printTemplateEdit.ts", titleKey: "printTemplate.titleOne" }
+  { route: "admin/print_template/edit", moduleFile: "app/admin/print_template/printTemplateEdit.ts", titleKey: "printTemplate.titleOne" },
+  { route: "report/turnover_balance/list", moduleFile: "app/report/turnover_balance/turnoverBalanceReport.ts", titleKey: "turnoverBalance.title" }
 ];
 

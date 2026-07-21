@@ -6,6 +6,8 @@ const icons = {
   bank:          "M11.5 1L2 6v2h19V6l-9.5-5zm-7 8v8H2v2h20v-2h-2.5v-8h-2v8h-3v-8h-2v8h-3v-8h-2z",
   counterparty:  "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
   nomenclature:  "M20 4H4v2l8 5 8-5V4zM4 13h16v5H4v-5z",
+  organization:  "M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10z",
+  account:       "M3 5h18v2H3V5zm0 6h18v2H3v-2zm0 6h12v2H3v-2z",
   document:      "M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z",
   invoice:       "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z",
   report:        "M9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4zm2.5 2.1h-15V5h15v14.1zm0-16.1h-15c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z",
@@ -20,6 +22,8 @@ export const menuMock: MenuItem[] = [
     label: "Довідники",
     icon: icons.catalog,
     children: [
+      { id: "organization",     label: "Організації",   icon: icons.organization, route: "catalog/organization/list" },
+      { id: "chart_of_account", label: "План рахунків", icon: icons.account,      route: "catalog/chart_of_account/list" },
       { id: "bank",         label: "Банки",          icon: icons.bank,         route: "catalog/bank/list" },
       { id: "counterparty", label: "Контрагенти",    icon: icons.counterparty, route: "catalog/counterparty/list" },
       { id: "nomenclature", label: "Номенклатура",   icon: icons.nomenclature, route: "catalog/nomenclature/list" },
@@ -30,7 +34,7 @@ export const menuMock: MenuItem[] = [
     label: "Документи",
     icon: icons.document,
     children: [
-      { id: "supplier_invoice", label: "Надходження товарів", icon: icons.invoice, route: "operation/supplier_invoice/list" },
+      { id: "manual_entry", label: "Операції (бухгалтерські)", icon: icons.document, route: "operation/manual_entry/list" },
       { id: "invoice_in", label: "Invoice", icon: icons.invoice, route: "document/invoice/list" },
     ],
   },
@@ -39,7 +43,8 @@ export const menuMock: MenuItem[] = [
     label: "Звіти",
     icon: icons.report,
     children: [
-      { id: "balance", label: "Баланс", icon: icons.balance, route: "report/balance/view" },
+      { id: "turnover_balance", label: "Оборотно-сальдова", icon: icons.balance, route: "report/turnover_balance/list" },
+      { id: "account_card", label: "Картка рахунку", icon: icons.report, route: "report/account_card/list" },
     ],
   },
   {

@@ -113,8 +113,11 @@ html, body {
 }
 
 /* Label */
-.label { padding: 2px 0; }
+.label { padding: 1px 0; }
 .label-text { font-size: var(--default-font-size); color: var(--app-text-muted); }
+/* Legacy: .form-control — клас daisyUI 4, у 5-й версії його немає. Лишився
+   тільки для редактора шаблонів друку; у формах моделей використовуй
+   BaseUI.renderField() — він дає ту саму розкладку, що ui-picker/ui-date. */
 .form-control { margin-bottom: 6px; }
 
 /* Таблицы — сетка как в 1С */

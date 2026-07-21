@@ -136,6 +136,11 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 
 **Таблична частина документа** — контракт `.table-tabular` / `.cell-text` / `.cell-control` у `client/styles/tailwind.css`; контроли підключаються атрибутом `cell` (`<ui-decimal cell>`, `<ui-picker cell>`). Skill — [`document-tabular-section`](.github/skills/document-tabular-section/SKILL.md); еталон — `app/document/invoice/invoiceEdit.ts`.
 
+**Розкладка форми редагування** — підпис поля тільки через `BaseUI.renderField(label, control, { field })`,
+підвал тільки через `renderFormActions()` (Зберегти й закрити / Зберегти / Закрити). `field` вмикає
+зірочку обов'язковості зі схеми, тому вона не розходиться з перевіркою в БД. Класів `form-control` і
+`label-text` не існує в daisyUI 5 — це розмітка четвертої версії, і саме вона ламає вирівнювання підписів.
+
 > **Стилі:** у `client/styles/tailwind.css` є власний шар теми (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці.
 
 **Діалог вибору (picker)** — наслідуй `ModelPickerBase` (`client/ui-kit/base/model-picker-base.ts`): підклас задає лише `model` та `columns`. Пошук, вибір, підтвердження/скасування — у базі. Документація — [`docs/ui-picker-form.md`](docs/ui-picker-form.md); skill — [`model-picker-form`](.github/skills/model-picker-form/SKILL.md); еталон — `app/catalog/bank/bankPicker.ts`.

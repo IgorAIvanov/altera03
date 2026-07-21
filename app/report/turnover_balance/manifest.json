@@ -1,0 +1,13 @@
+{
+  "model": "turnover_balance",
+  "type": "report",
+  "schema": "app",
+  "commands": {
+    "sql": {
+      "index": "turnover_balance_index"
+    }
+  },
+  "views": {
+    "list": { "module": "./turnoverBalanceReport.ts", "titleKey": "turnoverBalance.title" }
+  }
+}

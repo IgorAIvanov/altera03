@@ -41,7 +41,13 @@ type TSchema = {
 };
 
 type SqlManifest = { models?: string[] };
-type FeatureManifest = { model?: string; type?: string; schema?: string };
+type DocumentMeta = { name?: string; shortName?: string; prefix?: string; sortOrder?: number };
+type FeatureManifest = {
+  model?: string;
+  type?: string;
+  schema?: string;
+  document?: DocumentMeta;
+};
 
 type Ref = {
   fkCol: string; // колонка-FK на цій таблиці (counterparty_id)
@@ -58,17 +64,26 @@ type Ref = {
 type Field = {
   key: string; // camelCase JSON-ключ
   col: string; // snake_case колонка БД
+  // Аліас таблиці, якій належить поле: t — таблиця моделі, h — спільна шапка
+  // app.document (лише для type: "document"), l — рядок табличної частини.
+  alias: string;
   isString: boolean;
   isBool: boolean;
   isBigint: boolean;
   isInt: boolean;
   isNumeric: boolean;
   isDate: boolean;
+  isJson: boolean;
   isTimestamp: boolean;
+  isTimestampTz: boolean;
   required: boolean; // для save (у required[] і не id)
   search: boolean;
   sortable: boolean;
   boolDefaultSql: string;
+  // SQL-літерал дефолту зі схеми для числових полів. Потрібен, бо форма може
+  // не прислати поле зовсім, а колонка в БД — not null default: без coalesce
+  // туди пішов би null і save впав би на constraint.
+  defaultSql?: string;
   ref?: Ref;
 };
 
@@ -88,6 +103,13 @@ type ModelSpec = {
   schema: string;
   table: string;
   pk: string;
+  // Документ: дані живуть у двох таблицях — спільна шапка app.document (h)
+  // і таблиця реквізитів app.<model> (t) з первинним ключем document_id.
+  isDocument: boolean;
+  fromClause: string; // "app.invoice t" або "app.document h join app.invoice t on ..."
+  pkExpr: string; // "t.id" або "h.id"
+  baseFilter: string; // "" або "not h.is_deleted"
+  headerFields: Field[]; // поля app.document (лише для документа)
   itemFields: Field[]; // скалярні поля шапки
   tables: TableSpec[];
   listFields: Field[]; // поля шапки у списку (за Row)
@@ -130,17 +152,20 @@ function toField(
   requiredKeys: Set<string>,
   map: ModelMetaMap,
   owner: string,
+  alias: string,
 ): Field {
   const col = prop["x-db-col"] ?? camelToSnake(key);
   const dbType = prop["x-db-type"];
   const isBigint = dbType === "bigint";
   const isInt = dbType === "int" || dbType === "integer";
   const isNumeric = dbType === "numeric";
+  const isJson = dbType === "jsonb" || dbType === "json";
   const isDate = dbType === "date";
-  const isTimestamp = dbType === "timestamptz";
+  const isTimestampTz = dbType === "timestamptz";
+  const isTimestamp = isTimestampTz || dbType === "timestamp";
   const isBool = prop.type === "boolean";
   const isString = !isBigint && !isInt && !isNumeric && !isDate && !isTimestamp && !isBool &&
-    isStringType(prop);
+    !isJson && isStringType(prop);
 
   let ref: Ref | undefined;
   const xref = prop["x-ref"];
@@ -166,17 +191,27 @@ function toField(
   return {
     key,
     col,
+    alias,
     isString,
     isBool,
     isBigint,
     isInt,
     isNumeric,
     isDate,
+    isJson,
     isTimestamp,
+    isTimestampTz,
     required: requiredKeys.has(key) && key !== "id",
     search: prop["x-search"] === true,
     sortable: prop["x-list"]?.sortable === true,
     boolDefaultSql: prop.default === false ? "false" : "true",
+    defaultSql: isJson
+      ? "'{}'::jsonb"
+      : (isNumeric || isInt) && typeof prop.default === "number"
+      ? String(prop.default)
+      : isString && typeof prop.default === "string"
+      ? `'${prop.default.replaceAll("'", "''")}'`
+      : undefined,
     ref,
   };
 }
@@ -187,6 +222,7 @@ function parseObject(
   parentSchema: string,
   map: ModelMetaMap,
   owner: string,
+  alias = "t",
 ): { fields: Field[]; tables: TableSpec[] } {
   const props = schema.properties ?? {};
   const requiredKeys = new Set(schema.required ?? []);
@@ -196,7 +232,7 @@ function parseObject(
   for (const [key, prop] of Object.entries(props)) {
     if (prop.type === "array" && prop["x-table"]) {
       const xt = prop["x-table"];
-      const line = parseObject(prop.items ?? {}, parentSchema, map, `${owner}.${key}`);
+      const line = parseObject(prop.items ?? {}, parentSchema, map, `${owner}.${key}`, "l");
       tables.push({
         key,
         schema: parentSchema,
@@ -206,7 +242,7 @@ function parseObject(
         fields: line.fields,
       });
     } else {
-      fields.push(toField(key, prop, requiredKeys, map, owner));
+      fields.push(toField(key, prop, requiredKeys, map, owner, alias));
     }
   }
   return { fields, tables };
@@ -215,8 +251,8 @@ function parseObject(
 // ── SQL-вирази ────────────────────────────────────────────────────────────────
 
 // вивід скалярної колонки: 'jsonKey', alias.col[::text]
-function outExpr(alias: string, f: Field): string {
-  const ref = `${alias}.${f.col}`;
+function outExpr(f: Field): string {
+  const ref = `${f.alias}.${f.col}`;
   return `'${f.key}', ${f.isBigint ? `${ref}::text` : ref}`;
 }
 
@@ -228,11 +264,11 @@ function refEntry(f: Field): string {
 }
 
 // колонки об'єкта для набору полів: скаляр + (за наявності) вкладена ссылка
-function fieldEntries(fields: Field[], alias: string): string[] {
-  return fields.flatMap((f) => (f.ref ? [outExpr(alias, f), refEntry(f)] : [outExpr(alias, f)]));
+function fieldEntries(fields: Field[]): string[] {
+  return fields.flatMap((f) => (f.ref ? [outExpr(f), refEntry(f)] : [outExpr(f)]));
 }
 
-function refJoins(fields: Field[], baseAlias: string): string[] {
+function refJoins(fields: Field[]): string[] {
   const seen = new Set<string>();
   const joins: string[] = [];
   for (const f of fields) {
@@ -240,7 +276,7 @@ function refJoins(fields: Field[], baseAlias: string): string[] {
     seen.add(f.ref.alias);
     const r = f.ref;
     joins.push(
-      `left join ${r.targetSchema}.${r.targetTable} ${r.alias} on ${r.alias}.${r.targetPk} = ${baseAlias}.${r.fkCol}`,
+      `left join ${r.targetSchema}.${r.targetTable} ${r.alias} on ${r.alias}.${r.targetPk} = ${f.alias}.${r.fkCol}`,
     );
   }
   return joins;
@@ -248,12 +284,15 @@ function refJoins(fields: Field[], baseAlias: string): string[] {
 
 // extract+cast значення поля з jsonb-виразу jsonVar
 function srcExpr(f: Field, jsonVar: string): string {
+  // jsonb-колонка: беремо піддерево (->), а не текст (->>), інакше значення
+  // поїде в БД як рядок і впаде на типі.
+  if (f.isJson) return `${jsonVar}->'${f.key}'`;
   const g = `${jsonVar}->>'${f.key}'`;
   if (f.isBigint) return `nullif(${g}, '')::bigint`;
   if (f.isInt) return `nullif(${g}, '')::int`;
   if (f.isNumeric) return `nullif(${g}, '')::numeric`;
   if (f.isDate) return `nullif(${g}, '')::date`;
-  if (f.isTimestamp) return `nullif(${g}, '')::timestamptz`;
+  if (f.isTimestamp) return `nullif(${g}, '')::${f.isTimestampTz ? "timestamptz" : "timestamp"}`;
   if (f.isBool) return `(${g})::boolean`;
   return `nullif(trim(coalesce(${g}, '')), '')`;
 }
@@ -293,8 +332,8 @@ function envelope(dataLines: string[]): string {
 
 // агрегат табличної частини (для get та save)
 function tableAgg(tbl: TableSpec, parentExpr: string): string {
-  const cols = fieldEntries(tbl.fields, "l").map((e) => `          ${e}`).join(",\n");
-  const joins = refJoins(tbl.fields, "l").map((j) => `        ${j}`).join("\n");
+  const cols = fieldEntries(tbl.fields).map((e) => `          ${e}`).join(",\n");
+  const joins = refJoins(tbl.fields).map((j) => `        ${j}`).join("\n");
   const joinSql = joins ? `\n${joins}` : "";
   return `coalesce((
         select jsonb_agg(jsonb_build_object(
@@ -308,20 +347,41 @@ ${cols}
 // повний об'єкт item (скаляри + ссылки + табличні частини) та його joins
 function itemObject(spec: ModelSpec, parentExpr: string): { object: string; joins: string[] } {
   const entries = [
-    ...fieldEntries(spec.itemFields, "t"),
+    ...fieldEntries(spec.itemFields),
     ...spec.tables.map((tbl) => `'${tbl.key}', ${tableAgg(tbl, parentExpr)}`),
   ];
   return {
     object: `jsonb_build_object(\n${entries.map((e) => `        ${e}`).join(",\n")}\n      )`,
-    joins: refJoins(spec.itemFields, "t"),
+    joins: refJoins(spec.itemFields),
   };
+}
+
+/**
+ * Значення поля при insert: поле з дефолтом підставляє його, якщо форма
+ * прислала null. При update натомість зберігається попереднє значення —
+ * відсутнє в payload поле не має обнуляти колонку.
+ */
+function insertVal(f: Field, src = "s"): string {
+  if (f.isBool) return `coalesce(${src}.${f.col}, ${f.boolDefaultSql})`;
+  if (f.defaultSql) return `coalesce(${src}.${f.col}, ${f.defaultSql})`;
+  return `${src}.${f.col}`;
+}
+
+function updateSet(f: Field, target: string, src = "s"): string {
+  if (f.isBool || f.defaultSql) return `${f.col} = coalesce(${src}.${f.col}, ${target}.${f.col})`;
+  return `${f.col} = ${src}.${f.col}`;
+}
+
+/** where-умова: базовий фільтр моделі (для документа — не позначені на видалення). */
+function baseAnd(spec: ModelSpec): string {
+  return spec.baseFilter ? `${spec.baseFilter}\n    and ` : "";
 }
 
 // ── рендер функцій ─────────────────────────────────────────────────────────────
 
 function renderList(spec: ModelSpec): string {
   const defaultSort = spec.listSort[0]?.token ?? spec.pk;
-  const rowCols = fieldEntries(spec.listFields, "t").map((e) => `      ${e}`).join(",\n");
+  const rowCols = fieldEntries(spec.listFields).map((e) => `      ${e}`).join(",\n");
   const joins = spec.listJoins.length ? "\n    " + spec.listJoins.join("\n    ") : "";
   const joinsCount = spec.listJoins.length ? "\n  " + spec.listJoins.join("\n  ") : "";
   const sortGuard = spec.listSort.length
@@ -341,8 +401,8 @@ declare
   v_total     int;
 begin
 ${sortGuard}  select count(*)::int into v_total
-  from ${spec.table} t${joinsCount}
-  where (
+  from ${spec.fromClause}${joinsCount}
+  where ${baseAnd(spec)}(
 ${searchClause(spec.searchExprsList, "    ")}
   );
 
@@ -351,12 +411,12 @@ ${searchClause(spec.searchExprsList, "    ")}
     select jsonb_build_object(
 ${rowCols}
     ) as r
-    from ${spec.table} t${joins}
-    where (
+    from ${spec.fromClause}${joins}
+    where ${baseAnd(spec)}(
 ${searchClause(spec.searchExprsList, "      ")}
     )
     order by
-${orderLadder(spec.listSort, "      ", `t.${spec.pk}`)}
+${orderLadder(spec.listSort, "      ", spec.pkExpr)}
     limit v_page_size
     offset (v_page - 1) * v_page_size
   ) sub;
@@ -375,7 +435,7 @@ $$;`;
 }
 
 function renderGet(spec: ModelSpec): string {
-  const { object, joins } = itemObject(spec, "t.id");
+  const { object, joins } = itemObject(spec, spec.pkExpr);
   const joinSql = joins.length ? "\n          " + joins.join("\n          ") : "";
   return `drop function if exists ${spec.table}_get(bigint, jsonb);
 create function ${spec.table}_get(user_id bigint, payload jsonb)
@@ -386,8 +446,8 @@ as $$
     envelope([
       `'item', (
           select ${object}
-          from ${spec.table} t${joinSql}
-          where t.${spec.pk} = (payload->>'id')::bigint
+          from ${spec.fromClause}${joinSql}
+          where ${spec.pkExpr} = (payload->>'id')::bigint
         )`,
       `'rows',    '[]'::jsonb`,
       `'options', '{}'::jsonb`,
@@ -405,14 +465,9 @@ function renderLineMerge(tbl: TableSpec): string {
     `      v_id as ${tbl.parentFk}`,
     ...writable.map((f) => `      ${srcExpr(f, "e")} as ${f.col}`),
   ].join(",\n");
-  const updateSet = writable
-    .map((f) => (f.isBool ? `${f.col} = coalesce(s.${f.col}, lt.${f.col})` : `${f.col} = s.${f.col}`))
-    .join(",\n    ");
+  const lineUpdate = writable.map((f) => updateSet(f, "lt")).join(",\n    ");
   const insCols = [tbl.parentFk, ...writable.map((f) => f.col)].join(", ");
-  const insVals = [
-    "v_id",
-    ...writable.map((f) => (f.isBool ? `coalesce(s.${f.col}, ${f.boolDefaultSql})` : `s.${f.col}`)),
-  ].join(", ");
+  const insVals = ["v_id", ...writable.map((f) => insertVal(f))].join(", ");
   return `  merge into ${tbl.schema}.${tbl.table} lt
   using (
     select
@@ -421,13 +476,208 @@ ${src}
   ) s
     on lt.id = s.id
   when matched then update set
-    ${updateSet}
+    ${lineUpdate}
   when not matched then insert (${insCols})
     values (${insVals})
   when not matched by source and lt.${tbl.parentFk} = v_id then delete;`;
 }
 
+// ── save для документа ────────────────────────────────────────────────────────
+// Двокрокова робота з шапкою: спершу app.document (він володіє id), потім
+// таблиця реквізитів. Номер підставляє app.doc_next_number, якщо форма його не
+// прислала. Прапорці проведення й позначки на видалення форма не пише — для них
+// є окремі команди post/unpost.
+const HEADER_READONLY = new Set(["id", "number", "isPosted", "isDeleted"]);
+
+function renderSaveDocument(spec: ModelSpec): string {
+  const headerWritable = spec.headerFields.filter((f) => !HEADER_READONLY.has(f.key));
+  const modelWritable = spec.itemFields.filter((f) => f.alias === "t" && f.key !== "id");
+
+  const headerSrc = [
+    `      v_id as id`,
+    `      v_number as number`,
+    ...headerWritable.map((f) => `      ${srcExpr(f, "v_item")} as ${f.col}`),
+  ].join(",\n");
+  const headerUpdate = [
+    `number = s.number`,
+    ...headerWritable.map((f) => updateSet(f, "h")),
+    `updated_at = now()`,
+    `updated_by = user_id`,
+  ].join(",\n    ");
+  const headerInsCols = ["document_type_id", "number", ...headerWritable.map((f) => f.col), "created_by", "updated_by"]
+    .join(", ");
+  const headerInsVals = [
+    "v_type_id",
+    "s.number",
+    ...headerWritable.map((f) => insertVal(f)),
+    "user_id",
+    "user_id",
+  ].join(", ");
+
+  const modelSrc = [
+    `      v_id as document_id`,
+    ...modelWritable.map((f) => `      ${srcExpr(f, "v_item")} as ${f.col}`),
+  ].join(",\n");
+  const modelUpdate = modelWritable.map((f) => updateSet(f, "t")).join(",\n    ");
+  // Таблиця документа без власних скалярних реквізитів (уся суть — у
+  // табличній частині) усе одно потребує рядка: інакше join шапки з нею
+  // нічого не поверне і документ стане невидимим для get/list.
+  const modelMerge = modelWritable.length === 0
+    ? `
+  insert into ${spec.table} (document_id) values (v_id)
+  on conflict (document_id) do nothing;
+`
+    : `
+  merge into ${spec.table} t
+  using (
+    select
+${modelSrc}
+  ) s
+    on t.document_id = s.document_id
+  when matched then update set
+    ${modelUpdate}
+  when not matched then insert (document_id, ${modelWritable.map((f) => f.col).join(", ")})
+    values (v_id, ${modelWritable.map((f) => insertVal(f)).join(", ")});
+`;
+
+  const lineMerges = spec.tables.map((tbl) => `\n${renderLineMerge(tbl)}\n`).join("");
+  const { object, joins } = itemObject(spec, "v_id");
+  const joinSql = joins.length ? "\n  " + joins.join("\n  ") : "";
+
+  return `drop function if exists ${spec.table}_save(bigint, jsonb);
+create function ${spec.table}_save(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_item    jsonb  := payload->'item';
+  v_id      bigint := nullif(v_item->>'id', '')::bigint;
+  v_org     bigint := nullif(v_item->>'organizationId', '')::bigint;
+  v_number  varchar(20);
+  v_type_id bigint;
+  v_result  jsonb;
+begin
+  if v_org is null then
+    raise exception 'organizationId обов''язковий';
+  end if;
+
+  select id into v_type_id from app.document_type where code = '${spec.model}';
+  if v_type_id is null then
+    raise exception 'Тип документа «${spec.model}» не зареєстровано в app.document_type';
+  end if;
+
+  -- Номер підставляємо лише новому документу. Для збереженого відсутній у
+  -- payload номер означає «не чіпати», а не «перенумерувати».
+  v_number := nullif(trim(coalesce(v_item->>'number', '')), '');
+  if v_number is null then
+    if v_id is null then
+      v_number := app.doc_next_number('${spec.model}', v_org);
+    else
+      select h.number into v_number from app.document h where h.id = v_id;
+    end if;
+  end if;
+
+  merge into app.document h
+  using (
+    select
+${headerSrc}
+  ) s
+    on h.id = s.id
+  when matched then update set
+    ${headerUpdate}
+  when not matched then insert (${headerInsCols})
+    values (${headerInsVals})
+  returning h.id into v_id;
+${modelMerge}${lineMerges}
+  -- Денормалізація шапки (total, presentation) — необов'язковий хук документа
+  -- у db/${spec.model}.custom.sql. Рахувати підсумок у генераторі не можна:
+  -- у кожного документа він свій.
+  if to_regprocedure('${spec.table}_denormalize(bigint, bigint)') is not null then
+    perform ${spec.table}_denormalize(user_id, v_id);
+  end if;
+
+  select ${object} into v_result
+  from ${spec.fromClause}${joinSql}
+  where ${spec.pkExpr} = v_id;
+
+  return ${
+    envelope([
+      `'item',    v_result`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   '{}'::jsonb`,
+    ])
+  };
+end;
+$$;`;
+}
+
+// ── post / unpost ─────────────────────────────────────────────────────────────
+// Обгортки навколо ядра. Самі проводки формує рукописна
+// app.<model>_post_entries(user_id, document_id) у db/<model>.custom.sql —
+// логіка проведення лишається видимим SQL, а не декларацією в маніфесті.
+
+function renderPost(spec: ModelSpec): string {
+  return `drop function if exists ${spec.table}_post(bigint, jsonb);
+create function ${spec.table}_post(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint := nullif(payload->>'id', '')::bigint;
+begin
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  perform app.doc_post_begin(user_id, v_id);
+  perform ${spec.table}_post_entries(user_id, v_id);
+  perform app.doc_post_finish(user_id, v_id);
+
+  return ${
+    envelope([
+      `'item',    (select ${spec.table}_get(user_id, jsonb_build_object('id', v_id::text)) -> 'data' -> 'item')`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   '{}'::jsonb`,
+    ])
+  };
+end;
+$$;`;
+}
+
+function renderUnpost(spec: ModelSpec): string {
+  return `drop function if exists ${spec.table}_unpost(bigint, jsonb);
+create function ${spec.table}_unpost(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint := nullif(payload->>'id', '')::bigint;
+begin
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  perform app.doc_unpost(user_id, v_id);
+
+  return ${
+    envelope([
+      `'item',    (select ${spec.table}_get(user_id, jsonb_build_object('id', v_id::text)) -> 'data' -> 'item')`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   '{}'::jsonb`,
+    ])
+  };
+end;
+$$;`;
+}
+
 function renderSave(spec: ModelSpec): string {
+  if (spec.isDocument) return renderSaveDocument(spec);
   const writable = spec.itemFields.filter((f) => f.key !== "id");
   const requiredFields = writable.filter((f) => f.required && f.isString);
 
@@ -438,16 +688,12 @@ function renderSave(spec: ModelSpec): string {
     ).join("\n");
 
   const headerSrc = spec.itemFields.map((f) => `      ${srcExpr(f, "v_item")} as ${f.col}`).join(",\n");
-  const updateSet = [
-    ...writable.map((f) =>
-      f.isBool ? `${f.col} = coalesce(s.${f.col}, t.${f.col})` : `${f.col} = s.${f.col}`
-    ),
+  const updateSetSql = [
+    ...writable.map((f) => updateSet(f, "t")),
     `updated_at = now()`,
   ].join(",\n    ");
   const insertCols = writable.map((f) => f.col).join(", ");
-  const insertVals = writable
-    .map((f) => (f.isBool ? `coalesce(s.${f.col}, ${f.boolDefaultSql})` : `s.${f.col}`))
-    .join(", ");
+  const insertVals = writable.map((f) => insertVal(f)).join(", ");
 
   const lineMerges = spec.tables.map((tbl) => `\n${renderLineMerge(tbl)}\n`).join("");
 
@@ -473,7 +719,7 @@ ${headerSrc}
   ) s
     on t.${spec.pk} = s.${spec.pk}
   when matched then update set
-    ${updateSet}
+    ${updateSetSql}
   when not matched then insert (${insertCols})
     values (${insertVals})
   returning t.${spec.pk} into v_id;
@@ -509,7 +755,12 @@ begin
     raise exception 'id обов''язковий';
   end if;
 
-  delete from ${spec.table} where ${spec.pk} = v_id;
+  ${
+    spec.isDocument
+      // Шапка володіє записом: рядки документа й проводки підуть каскадом.
+      ? `delete from app.document where id = v_id;`
+      : `delete from ${spec.table} where ${spec.pk} = v_id;`
+  }
 
   return ${
     envelope([
@@ -526,9 +777,10 @@ $$;`;
 
 function renderLookup(spec: ModelSpec): string {
   const defaultSort = spec.lookupSort[0]?.token ?? spec.lookupFields[0]?.col ?? spec.pk;
-  const cols = fieldEntries(spec.lookupFields, "t").map((e) => `      ${e}`).join(",\n");
-  const activeFilter = spec.hasIsActive ? `t.is_active = true\n      and ` : "";
-  const activeFilterCount = spec.hasIsActive ? `t.is_active = true\n    and ` : "";
+  const cols = fieldEntries(spec.lookupFields).map((e) => `      ${e}`).join(",\n");
+  const filter = spec.hasIsActive ? "t.is_active = true" : spec.baseFilter;
+  const activeFilter = filter ? `${filter}\n      and ` : "";
+  const activeFilterCount = filter ? `${filter}\n    and ` : "";
   const sortGuard = spec.lookupSort.length
     ? `  if v_sort_by not in (${whitelist(spec.lookupSort)}) then\n    v_sort_by := '${defaultSort}';\n  end if;\n\n`
     : "";
@@ -546,7 +798,7 @@ declare
   v_total     int;
 begin
 ${sortGuard}  select count(*)::int into v_total
-  from ${spec.table} t
+  from ${spec.fromClause}
   where ${activeFilterCount}(
 ${searchClause(spec.searchExprsLookup, "    ")}
   );
@@ -556,12 +808,12 @@ ${searchClause(spec.searchExprsLookup, "    ")}
     select jsonb_build_object(
 ${cols}
     ) as r
-    from ${spec.table} t
+    from ${spec.fromClause}
     where ${activeFilter}(
 ${searchClause(spec.searchExprsLookup, "      ")}
     )
     order by
-${orderLadder(spec.lookupSort, "      ", `t.${spec.pk}`)}
+${orderLadder(spec.lookupSort, "      ", spec.pkExpr)}
     limit v_page_size
     offset (v_page - 1) * v_page_size
   ) sub;
@@ -589,6 +841,7 @@ function renderFile(spec: ModelSpec): string {
     renderSave(spec),
     renderDelete(spec),
     renderLookup(spec),
+    ...(spec.isDocument ? [renderPost(spec), renderUnpost(spec)] : []),
     "",
   ].join("\n\n");
 }
@@ -602,6 +855,26 @@ function schemaModuleFor(appRoot: string, modelPath: string) {
 
 async function importSchema(path: string): Promise<Record<string, TSchema>> {
   return await import(toFileUrl(resolve(path)).href);
+}
+
+/** Тип моделі з manifest.json (catalog | document | report | register). */
+async function modelType(appRoot: string, modelPath: string): Promise<string | undefined> {
+  try {
+    const manifest = JSON.parse(
+      await Deno.readTextFile(join(appRoot, modelPath, "manifest.json")),
+    ) as FeatureManifest;
+    return manifest.type;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Спільна шапка документа — app/shared/schema.ts, єдина для всіх документів. */
+async function loadDocumentHeaderSchema(appRoot: string): Promise<TSchema> {
+  const mod = await importSchema(join(appRoot, "shared", "schema.ts"));
+  const schema = mod["DocumentHeaderSchema"];
+  if (!schema) throw new Error("app/shared/schema.ts: немає DocumentHeaderSchema");
+  return schema;
 }
 
 // перший прохід: карта моделей для резолву x-ref
@@ -658,55 +931,77 @@ async function buildSpec(
     );
   }
 
-  const { fields: itemFields, tables } = parseObject(itemSchema, schemaName, map, model);
-  const lookupFields = parseObject(lookupSchema, schemaName, map, `${model}.lookup`).fields;
+  const isDocument = manifest.type === "document";
+
+  // Документ не описує спільні реквізити у власній схемі — генератор підмішує
+  // DocumentHeaderSchema сам. Поля шапки живуть у app.document (аліас h),
+  // реквізити документа — у app.<model> (аліас t) з ключем document_id.
+  const headerFields = isDocument
+    ? parseObject(await loadDocumentHeaderSchema(appRoot), schemaName, map, `${model}.header`, "h").fields
+    : [];
+  const headerKeys = new Set(headerFields.map((f) => f.key));
+
+  const parsed = parseObject(itemSchema, schemaName, map, model);
+  for (const f of parsed.fields) {
+    if (isDocument && headerKeys.has(f.key)) {
+      throw new Error(
+        `${model}.${f.key}: поле спільної шапки документа не описують у схемі моделі`,
+      );
+    }
+  }
+  const tables = parsed.tables;
+  const itemFields = isDocument ? [...headerFields, ...parsed.fields.filter((f) => f.key !== "id")] : parsed.fields;
+
+  // Аліас lookup-полів визначає походження ключа: шапка чи таблиця моделі.
+  const lookupFields = parseObject(lookupSchema, schemaName, map, `${model}.lookup`).fields
+    .map((f) => (isDocument && headerKeys.has(f.key) ? { ...f, alias: "h" } : f));
 
   const rowKeys = new Set(Object.keys(rowSchema.properties ?? {}));
   const listFields = itemFields.filter((f) =>
     rowKeys.has(f.key) || (f.ref && rowKeys.has(f.ref.as))
   );
 
-  // search (list): ref.searchable → display; скаляр з x-search → t.col; фоллбек — усі строкові
+  // search (list): ref.searchable → display; скаляр з x-search → alias.col; фоллбек — усі строкові
   const searchExprsList: string[] = [];
   for (const f of itemFields) {
     if (f.ref?.searchable) searchExprsList.push(`${f.ref.alias}.${f.ref.display}`);
-    else if (!f.ref && f.search) searchExprsList.push(`t.${f.col}`);
+    else if (!f.ref && f.search) searchExprsList.push(`${f.alias}.${f.col}`);
   }
   if (searchExprsList.length === 0) {
     for (const f of itemFields) {
-      if (f.isString && f.key !== "id") searchExprsList.push(`t.${f.col}`);
+      if (f.isString && f.key !== "id") searchExprsList.push(`${f.alias}.${f.col}`);
     }
   }
 
   // search (lookup): лише скалярні поля шапки (без ref-joins)
   const searchExprsLookup: string[] = [];
   for (const f of itemFields) {
-    if (!f.ref && f.search) searchExprsLookup.push(`t.${f.col}`);
+    if (!f.ref && f.search) searchExprsLookup.push(`${f.alias}.${f.col}`);
   }
   if (searchExprsLookup.length === 0) {
     for (const f of itemFields) {
-      if (f.isString && f.key !== "id") searchExprsLookup.push(`t.${f.col}`);
+      if (f.isString && f.key !== "id") searchExprsLookup.push(`${f.alias}.${f.col}`);
     }
   }
 
-  // sort (list): токен = JSON-ключ (= ListColumn.key на фронті), вираз = t.col
+  // sort (list): токен = JSON-ключ (= ListColumn.key на фронті), вираз = alias.col
   const listSort: SortEntry[] = [];
   for (const f of listFields) {
     if (f.ref?.sortable) listSort.push({ token: f.ref.as, expr: `${f.ref.alias}.${f.ref.display}` });
-    else if (!f.ref && f.sortable) listSort.push({ token: f.key, expr: `t.${f.col}` });
+    else if (!f.ref && f.sortable) listSort.push({ token: f.key, expr: `${f.alias}.${f.col}` });
   }
 
   // sort (lookup): скалярні sortable у складі lookup-полів
   const lookupKeys = new Set(lookupFields.map((f) => f.key));
   const lookupSort: SortEntry[] = itemFields
     .filter((f) => !f.ref && f.sortable && lookupKeys.has(f.key))
-    .map((f) => ({ token: f.key, expr: `t.${f.col}` }));
+    .map((f) => ({ token: f.key, expr: `${f.alias}.${f.col}` }));
 
   // joins для list: ref-поля, які потрібні у виводі/пошуку/сортуванні
   const listRefFields = itemFields.filter((f) =>
     f.ref && (f.ref.searchable || f.ref.sortable || rowKeys.has(f.ref.as))
   );
-  const listJoins = refJoins(listRefFields, "t");
+  const listJoins = refJoins(listRefFields);
 
   const hasIsActive = itemFields.some((f) => f.col === "is_active");
 
@@ -722,7 +1017,14 @@ async function buildSpec(
     model,
     schema: schemaName,
     table: `${schemaName}.${model}`,
-    pk: "id",
+    pk: isDocument ? "document_id" : "id",
+    isDocument,
+    fromClause: isDocument
+      ? `app.document h\n    join ${schemaName}.${model} t on t.document_id = h.id`
+      : `${schemaName}.${model} t`,
+    pkExpr: isDocument ? "h.id" : "t.id",
+    baseFilter: isDocument ? "not h.is_deleted" : "",
+    headerFields,
     itemFields,
     tables,
     listFields,
@@ -762,6 +1064,13 @@ async function main() {
       await Deno.stat(path);
     } catch {
       if (verbose) console.log(`· ${modelPath}: немає schema.ts — пропуск`);
+      continue;
+    }
+    const manifestType = await modelType(appRoot, modelPath);
+    if (manifestType && manifestType !== "catalog" && manifestType !== "document") {
+      // Звіт не має CRUD: у нього одна команда вибірки, написана руками в
+      // db/<model>.sql. Схема лишається — з неї живе форма параметрів.
+      if (verbose) console.log(`· ${modelPath}: type=${manifestType} — генерація CRUD не потрібна`);
       continue;
     }
     const spec = await buildSpec(appRoot, modelPath, map, verbose);

@@ -2,6 +2,12 @@
   "model": "invoice",
   "type": "document",
   "schema": "app",
+  "document": {
+    "name": "Накладна",
+    "shortName": "Накл.",
+    "prefix": "НК",
+    "sortOrder": 10
+  },
   "prints": {
     "invoice_default": {
       "templateFile": "./prints/invoice_default.template.json",

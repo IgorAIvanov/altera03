@@ -15,14 +15,19 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
   protected columns: ListColumn<InvoiceRow>[] = [
     { key: "number", title: "invoice.number", width: "10rem", sortable: true },
     {
-      key: "invoiceDate", title: "invoice.date", width: "7rem", muted: true, sortable: true,
-      format: dateFormat.date,
+      key: "docDate", title: "invoice.date", width: "9rem", muted: true, sortable: true,
+      format: dateFormat.dateTime,
     },
     {
       key: "counterparty", title: "invoice.counterparty", sortable: true,
       overflow: "ellipsis",
       render: (r) => r.counterparty?.name ?? "",
       tooltip: (r) => r.counterparty?.name ?? "",
+    },
+    { key: "total", title: "invoice.total", width: "8rem", align: "right" },
+    {
+      key: "isPosted", title: "document.posted", width: "5rem", align: "center",
+      render: (r) => r.isPosted ? html`<span class="badge badge-success badge-xs"></span>` : "",
     },
     {
       key: "_actions", title: "", width: "3rem", align: "center",

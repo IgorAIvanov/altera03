@@ -1,0 +1,19 @@
+{
+  "model": "organization",
+  "type": "catalog",
+  "schema": "app",
+  "views": {
+    "list": {
+      "module": "./organizationList.ts",
+      "titleKey": "organization.titleMany"
+    },
+    "edit": {
+      "module": "./organizationEdit.ts",
+      "titleKey": "organization.titleOne"
+    },
+    "picker": {
+      "module": "./organizationPicker.ts",
+      "titleKey": "organization.titleMany"
+    }
+  }
+}

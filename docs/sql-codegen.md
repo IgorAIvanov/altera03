@@ -245,12 +245,58 @@ Master-detail. `InvoiceLineSchema` — звичайна TypeBox-об'єктна 
 
 ---
 
+## `type: "document"` — дві таблиці, один ідентифікатор
+
+Документ живе у двох таблицях: спільна шапка `app.document` (аліас `h`, вона ж
+володіє `id`) і таблиця реквізитів `app.<model>` (аліас `t`) з первинним ключем
+`document_id`. Тому:
+
+- **`<Model>ItemSchema` описує лише власні реквізити документа.** Спільні поля
+  (`organizationId`, `number`, `docDate`, `total`, `presentation`, `isPosted`…)
+  генератор підмішує сам із `DocumentHeaderSchema` (`app/shared/schema.ts`).
+  Описати їх у схемі моделі — помилка збірки, а не тихе дублювання.
+- `list`/`get`/`lookup` читають `app.document h join app.<model> t` і завжди
+  відсікають `is_deleted`.
+- `save` робить два MERGE: спершу шапка (вона повертає `id`), потім реквізити,
+  потім табличні частини. Номер підставляє `app.doc_next_number`, **лише якщо
+  документ новий**; для збереженого відсутній у payload номер означає «не
+  чіпати». `isPosted`/`isDeleted` форма не пише — для них є окремі команди.
+- `delete` видаляє рядок `app.document`; реквізити, рядки й проводки йдуть
+  каскадом.
+
+У `manifest.json` документа обов'язковий блок `document`:
+
+```json
+"document": { "name": "Накладна", "shortName": "Накл.", "prefix": "НК", "sortOrder": 10 }
+```
+
+З нього `sql:assemble` генерує рядки `app.document_type`
+(`_generated/document-types.data.sql`) — код типу дорівнює ключу моделі, тому
+розійтися вони не можуть.
+
+### Хук денормалізації
+
+Після запису генерований `save` викликає `app.<model>_denormalize(user_id,
+document_id)`, **якщо така функція існує** (перевірка через `to_regprocedure`).
+У ній документ заповнює службові поля шапки — `total` і `presentation`, потрібні
+журналу документів і спискам посилань. Рахувати підсумок у генераторі не можна:
+у кожного документа він свій. Еталон — `app/document/invoice/db/invoice.custom.sql`.
+
 ## `post` / `unpost`
 
-Для `type:"document"` генеруються **заглушки** — валідний конверт
-`{ok:true, messages:[…]}` без логіки (поки немає регістрів обліку). З'явиться
-проведення — заміниш на `invoice_post` у `db/invoice.custom.sql`. Для
-`catalog`/`register` не генеруються.
+Для `type:"document"` генеруються обгортки навколо ядра:
+
+```
+post   → doc_post_begin (зносить попередні рухи)
+       → app.<model>_post_entries(user_id, document_id)   ← рукописна
+       → doc_post_finish
+unpost → doc_unpost
+```
+
+`app.<model>_post_entries` пише розробник у `db/<model>.custom.sql` — логіка
+проводок лишається видимим SQL, а не декларацією в маніфесті. Перепроведення
+завжди переписує регістр начисто, тому проводки не дублюються. Для
+`catalog`/`register` ці функції не генеруються.
 
 ---
 
