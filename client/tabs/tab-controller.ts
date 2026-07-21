@@ -20,7 +20,8 @@ interface Tab {
   route: string;
   modelId: string | null;
   titleKey?: string;
-  element: HTMLElement;
+  /** null — вкладка-заглушка після перезавантаження: чанк ще вантажиться. */
+  element: HTMLElement | null;
   lastUsedAt: number;
   permanent?: boolean;
 }
@@ -201,20 +202,44 @@ export class TabController extends LitElement {
   // тож фреймворк не залежить від конкретних app-компонентів.
   private headerEl!: HTMLElement;
   private menuEl!: HTMLElement;
+  private homeTag = "";
 
   override connectedCallback() {
     super.connectedCallback();
     const shell = shellTags();
     this.headerEl = document.createElement(shell.header);
     this.menuEl = document.createElement(shell.menu);
+    this.homeTag = shell.home;
+
+    // Збережені вкладки створюємо заглушками ще до першого рендера й одразу
+    // ставимо активну — інакше на час асинхронного завантаження чанків
+    // блимала б домашня сторінка.
+    const { tabs: stored, active } = this.restored
+      ? { tabs: [], active: null }
+      : loadStoredTabs();
+    this.restored = true;
+    const placeholders: Tab[] = stored.slice(0, MAX_TABS).map(item => ({
+      id: crypto.randomUUID(),
+      route: item.route,
+      modelId: item.modelId,
+      element: null,
+      lastUsedAt: Date.now(),
+    }));
+    const activeTab = active
+      ? placeholders.find(t => t.route === active.route && t.modelId === active.modelId)
+      : undefined;
+
     this.tabs = [{
       id: HOME_TAB_ID,
       route: "",
       modelId: null,
-      element: document.createElement(shell.home),
+      // Домашню сторінку монтуємо лише коли вона справді активна.
+      element: activeTab ? null : document.createElement(shell.home),
       lastUsedAt: Date.now(),
       permanent: true,
-    }];
+    }, ...placeholders];
+    this.activeTabId = activeTab?.id ?? HOME_TAB_ID;
+
     this.unsubs.push(
       bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params)),
       bus.on("tab.close", (msg) => this.handleClose(msg.tabId)),
@@ -224,7 +249,7 @@ export class TabController extends LitElement {
       bus.on("loading.start", () => { queueMicrotask(() => { this._loadingCount++; }); }),
       bus.on("loading.end",   () => { queueMicrotask(() => { this._loadingCount = Math.max(0, this._loadingCount - 1); }); }),
     );
-    void this.restoreTabs();
+    void this.hydrateTabs(placeholders.map(t => t.id), activeTab?.id);
   }
 
   override updated(changed: PropertyValues) {
@@ -238,9 +263,12 @@ export class TabController extends LitElement {
   }
 
   private activateTab(tabId: string) {
-    this.tabs = this.tabs.map(t =>
-      t.id === tabId ? { ...t, lastUsedAt: Date.now() } : t
-    );
+    this.tabs = this.tabs.map(t => {
+      if (t.id !== tabId) return t;
+      // Домашня сторінка могла лишитися незмонтованою (див. connectedCallback).
+      const element = t.element ?? (t.permanent ? document.createElement(this.homeTag) : null);
+      return { ...t, element, lastUsedAt: Date.now() };
+    });
     this.activeTabId = tabId;
   }
 
@@ -255,6 +283,7 @@ export class TabController extends LitElement {
     route: string,
     modelId: string | null,
     params?: Record<string, unknown>,
+    id: string = crypto.randomUUID(),
   ): Promise<Tab | null> {
     const resolved = await resolveChunk(route);
     if (!resolved) {
@@ -262,7 +291,6 @@ export class TabController extends LitElement {
       return null;
     }
 
-    const id = crypto.randomUUID();
     const element = await createTabElement(resolved.chunkUrl, modelId, id, params);
     if (!element) return null;
 
@@ -281,8 +309,10 @@ export class TabController extends LitElement {
     if (existing) {
       // Вкладка вже відкрита: не створюємо другу, але параметри застосовуємо —
       // інакше перехід зі звіту в звіт із іншим рахунком показав би старі дані.
-      if (params) (existing.element as unknown as { applyParams?: (p: Record<string, unknown>) => void })
-        .applyParams?.(params);
+      if (params && existing.element) {
+        (existing.element as unknown as { applyParams?: (p: Record<string, unknown>) => void })
+          .applyParams?.(params);
+      }
       this.activateTab(existing.id);
       return;
     }
@@ -299,28 +329,29 @@ export class TabController extends LitElement {
     this.activeTabId = tab.id;
   }
 
-  /** Відновлення вкладок після перезавантаження сторінки. */
-  private async restoreTabs() {
-    if (this.restored) return;
-    this.restored = true;
-
-    const { tabs: stored, active } = loadStoredTabs();
-    if (!stored.length) return;
+  /**
+   * Дозавантаження вкладок-заглушок після перезавантаження сторінки.
+   * Активну беремо першою, щоб користувач побачив саме її без затримки.
+   */
+  private async hydrateTabs(ids: string[], activeId?: string) {
+    if (!ids.length) return;
+    const ordered = activeId ? [activeId, ...ids.filter(id => id !== activeId)] : ids;
 
     this.restoring = true;
     try {
-      const restored: Tab[] = [];
-      for (const item of stored.slice(0, MAX_TABS)) {
-        const tab = await this.createTab(item.route, item.modelId);
-        if (tab) restored.push(tab);
-      }
-      if (!restored.length) return;
+      for (const id of ordered) {
+        const pending = this.tabs.find(t => t.id === id);
+        if (!pending || pending.element) continue;
 
-      this.tabs = [...this.tabs, ...restored];
-      const target = active
-        ? restored.find(t => t.route === active.route && t.modelId === active.modelId)
-        : undefined;
-      if (target) this.activeTabId = target.id;
+        const hydrated = await this.createTab(pending.route, pending.modelId, undefined, id);
+        if (hydrated) {
+          this.tabs = this.tabs.map(t => t.id === id ? hydrated : t);
+        } else {
+          // View більше не існує — прибираємо вкладку, як і при звичайному закритті.
+          this.tabs = this.tabs.filter(t => t.id !== id);
+          if (this.activeTabId === id) this.activateTab(HOME_TAB_ID);
+        }
+      }
     } finally {
       this.restoring = false;
       this.persistTabs();
@@ -344,7 +375,7 @@ export class TabController extends LitElement {
     this.tabs = this.tabs.filter(t => t.id !== tabId);
     if (this.activeTabId === tabId) {
       const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? this.tabs[0];
-      this.activeTabId = next?.id ?? HOME_TAB_ID;
+      this.activateTab(next?.id ?? HOME_TAB_ID);
     }
     bus.emit({ type: "tab.closed", tabId, route: tab.route, id: tab.modelId });
   }
