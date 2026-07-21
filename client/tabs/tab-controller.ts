@@ -1,4 +1,4 @@
-import { LitElement, html, css, svg } from "lit";
+import { LitElement, html, css, svg, type PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
@@ -7,6 +7,7 @@ import "@client/ui-kit/picker-host.ts";
 
 const MAX_TABS = 10;
 const HOME_TAB_ID = "home";
+const TAB_STORAGE_KEY = "altera.open-tabs";
 
 const iconHome = svg`
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -22,6 +23,46 @@ interface Tab {
   element: HTMLElement;
   lastUsedAt: number;
   permanent?: boolean;
+}
+
+/** Знімок вкладки для localStorage: тільки те, з чого її можна відтворити. */
+interface StoredTab {
+  route: string;
+  modelId: string | null;
+}
+
+interface StoredTabs {
+  tabs: StoredTab[];
+  /** route+modelId активної вкладки; null — активна домашня. */
+  active: StoredTab | null;
+}
+
+function loadStoredTabs(): StoredTabs {
+  const empty: StoredTabs = { tabs: [], active: null };
+  try {
+    const raw = globalThis.localStorage?.getItem(TAB_STORAGE_KEY);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.tabs)) return empty;
+    const tabs = parsed.tabs.filter((v: unknown): v is StoredTab =>
+      !!v && typeof (v as StoredTab).route === "string"
+    ).map((v: StoredTab) => ({ route: v.route, modelId: v.modelId ?? null }));
+    const rawActive = parsed.active;
+    const active = rawActive && typeof rawActive.route === "string"
+      ? { route: rawActive.route, modelId: rawActive.modelId ?? null }
+      : null;
+    return { tabs, active };
+  } catch {
+    return empty;
+  }
+}
+
+function storeTabs(state: StoredTabs) {
+  try {
+    globalThis.localStorage?.setItem(TAB_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // приватний режим / переповнене сховище — не критично для роботи
+  }
 }
 
 async function resolveChunk(route: string): Promise<{ chunkUrl: string; titleKey?: string } | null> {
@@ -141,6 +182,9 @@ export class TabController extends LitElement {
   @state() private _loadingCount = 0;
 
   private unsubs: Array<() => void> = [];
+  /** Під час відновлення не пишемо у сховище — інакше частковий стан перетре збережений. */
+  private restoring = false;
+  private restored = false;
 
   // Елементи оболонки беремо з реєстру (заповнюється composition root застосунку),
   // тож фреймворк не залежить від конкретних app-компонентів.
@@ -169,6 +213,11 @@ export class TabController extends LitElement {
       bus.on("loading.start", () => { queueMicrotask(() => { this._loadingCount++; }); }),
       bus.on("loading.end",   () => { queueMicrotask(() => { this._loadingCount = Math.max(0, this._loadingCount - 1); }); }),
     );
+    void this.restoreTabs();
+  }
+
+  override updated(changed: PropertyValues) {
+    if (changed.has("tabs") || changed.has("activeTabId")) this.persistTabs();
   }
 
   override disconnectedCallback() {
@@ -191,26 +240,17 @@ export class TabController extends LitElement {
     if (lru) this.handleClose(lru.id);
   }
 
-  private async handleOpen(route: string, modelId: string | null, _params?: Record<string, unknown>) {
-    const existing = this.tabs.find(t => t.route === route && t.modelId === modelId);
-    if (existing) { this.activateTab(existing.id); return; }
-
+  private async createTab(route: string, modelId: string | null): Promise<Tab | null> {
     const resolved = await resolveChunk(route);
     if (!resolved) {
       console.error(`[tabs] view не знайдено: ${route}`);
-      alert(`View не знайдено: ${route}`);
-      return;
+      return null;
     }
 
     const element = await createTabElement(resolved.chunkUrl, modelId);
-    if (!element) {
-      alert(`Не вдалося завантажити чанк для: ${route}`);
-      return;
-    }
+    if (!element) return null;
 
-    if (this.tabs.filter(t => !t.permanent).length >= MAX_TABS) this.evictLru();
-
-    const tab: Tab = {
+    return {
       id: crypto.randomUUID(),
       route,
       modelId,
@@ -218,8 +258,60 @@ export class TabController extends LitElement {
       element,
       lastUsedAt: Date.now(),
     };
+  }
+
+  private async handleOpen(route: string, modelId: string | null, _params?: Record<string, unknown>) {
+    const existing = this.tabs.find(t => t.route === route && t.modelId === modelId);
+    if (existing) { this.activateTab(existing.id); return; }
+
+    const tab = await this.createTab(route, modelId);
+    if (!tab) {
+      alert(`Не вдалося відкрити view: ${route}`);
+      return;
+    }
+
+    if (this.tabs.filter(t => !t.permanent).length >= MAX_TABS) this.evictLru();
+
     this.tabs = [...this.tabs, tab];
     this.activeTabId = tab.id;
+  }
+
+  /** Відновлення вкладок після перезавантаження сторінки. */
+  private async restoreTabs() {
+    if (this.restored) return;
+    this.restored = true;
+
+    const { tabs: stored, active } = loadStoredTabs();
+    if (!stored.length) return;
+
+    this.restoring = true;
+    try {
+      const restored: Tab[] = [];
+      for (const item of stored.slice(0, MAX_TABS)) {
+        const tab = await this.createTab(item.route, item.modelId);
+        if (tab) restored.push(tab);
+      }
+      if (!restored.length) return;
+
+      this.tabs = [...this.tabs, ...restored];
+      const target = active
+        ? restored.find(t => t.route === active.route && t.modelId === active.modelId)
+        : undefined;
+      if (target) this.activeTabId = target.id;
+    } finally {
+      this.restoring = false;
+      this.persistTabs();
+    }
+  }
+
+  private persistTabs() {
+    if (this.restoring) return;
+    const open = this.tabs.filter(t => !t.permanent);
+    const activeTab = open.find(t => t.id === this.activeTabId);
+    storeTabs({
+      tabs: open.map(t => ({ route: t.route, modelId: t.modelId })),
+      active: activeTab ? { route: activeTab.route, modelId: activeTab.modelId } : null,
+    });
   }
 
   private handleClose(tabId: string) {
