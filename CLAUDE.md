@@ -176,6 +176,10 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 еталони — `app/catalog/organization` (логотип), `app/document/invoice`
 (вкладення документа).
 
+На вкладеннях будується документообіг (обмін підписаними документами з
+контрагентами, AI-розпізнавання вхідних). Гіпотези, прийняті рішення й план —
+[`docs/doc-exchange-plan.md`](docs/doc-exchange-plan.md); коду ще немає.
+
 ## TypeBox-схема
 
 > Деталі та шаблон — у skill [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md).
