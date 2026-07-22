@@ -1,5 +1,6 @@
 import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
+import { signEnvelopeTokens } from "../blob/blob-token.ts";
 import { getModelConfig, supportsPosting } from "./model-registry.ts";
 import type {
   ModelBackendConfig,
@@ -134,7 +135,12 @@ function getSqlCommandConfig(
 export class ModelRuntimeService {
   constructor(private db: DatabaseService) {}
 
-  async execute(model: string, command: string, payload: unknown, userId: string) {
+  /**
+   * @param sessionId — сесія виклику. Потрібна тільки для токенів вкладень:
+   * ними підписуються ключі доступу у відповіді, тому токен живе рівно
+   * стільки, скільки сесія. Порожній рядок — сесії немає (агент, dev-bypass).
+   */
+  async execute(model: string, command: string, payload: unknown, userId: string, sessionId = "") {
     assertIdentifier(model, "model");
     assertCommandIdentifier(command);
 
@@ -142,16 +148,28 @@ export class ModelRuntimeService {
     const config = getModelConfig(model);
     const tsCommand = config?.tsCommands?.[command];
 
-    if (tsCommand) {
-      return await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand);
-    }
+    const result = tsCommand
+      ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand)
+      : await this.executeSqlCommandFor(model, command, normalizedPayload, userId, config);
 
+    // Ключі доступу до вкладень (`token`, `<field>Token`) назовні не виходять —
+    // рантайм міняє їх на підписані токени. Див. blob-token.ts.
+    return await signEnvelopeTokens(result, { userId, sessionId });
+  }
+
+  private async executeSqlCommandFor(
+    model: string,
+    command: string,
+    payload: Record<string, unknown>,
+    userId: string,
+    config: ModelBackendConfig | undefined,
+  ) {
     const sqlCommand = getSqlCommandConfig(model, command, config);
     if (!sqlCommand) {
       throw new Error(`Команда ${command} не налаштована для моделі ${model}`);
     }
 
-    return await this.executeSqlCommand(model, command, normalizedPayload, userId, config, sqlCommand);
+    return await this.executeSqlCommand(model, command, payload, userId, config, sqlCommand);
   }
 
   private async executeTsCommand(

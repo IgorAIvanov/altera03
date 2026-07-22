@@ -20,5 +20,14 @@
   "common.pick": "Підбір",
   "common.print": "Друк",
   "common.loading": "Завантаження...",
-  "common.noOpenTabs": "Немає відкритих вкладок"
+  "common.noOpenTabs": "Немає відкритих вкладок",
+  "blob.attachments": "Вкладення",
+  "blob.add": "Додати файл",
+  "blob.choose": "Обрати файл",
+  "blob.replace": "Замінити",
+  "blob.clear": "Очистити",
+  "blob.download": "Завантажити",
+  "blob.noImage": "Немає зображення",
+  "blob.saveFirst": "Збережіть запис, щоб додати вкладення",
+  "blob.tooLarge": "Файл більший за {size}"
 }

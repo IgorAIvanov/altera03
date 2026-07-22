@@ -87,6 +87,8 @@ as $$
         'edrpou', t.edrpou,
         'prefix', t.prefix,
         'legalPersonKind', t.legal_person_kind,
+        'logoId', t.logo_id::text,
+        'logoToken', (select b.access_key from app.attachment b where b.id = t.logo_id),
         'isActive', t.is_active
       )
           from app.organization t
@@ -129,6 +131,7 @@ begin
       nullif(trim(coalesce(v_item->>'edrpou', '')), '') as edrpou,
       nullif(trim(coalesce(v_item->>'prefix', '')), '') as prefix,
       nullif(trim(coalesce(v_item->>'legalPersonKind', '')), '') as legal_person_kind,
+      nullif(v_item->>'logoId', '')::bigint as logo_id,
       (v_item->>'isActive')::boolean as is_active
   ) s
     on t.id = s.id
@@ -139,10 +142,11 @@ begin
     edrpou = s.edrpou,
     prefix = s.prefix,
     legal_person_kind = coalesce(s.legal_person_kind, t.legal_person_kind),
+    logo_id = s.logo_id,
     is_active = coalesce(s.is_active, t.is_active),
     updated_at = now()
-  when not matched then insert (code, name, full_name, edrpou, prefix, legal_person_kind, is_active)
-    values (s.code, s.name, s.full_name, s.edrpou, s.prefix, coalesce(s.legal_person_kind, 'legal_entity'), coalesce(s.is_active, true))
+  when not matched then insert (code, name, full_name, edrpou, prefix, legal_person_kind, logo_id, is_active)
+    values (s.code, s.name, s.full_name, s.edrpou, s.prefix, coalesce(s.legal_person_kind, 'legal_entity'), s.logo_id, coalesce(s.is_active, true))
   returning t.id into v_id;
 
   select jsonb_build_object(
@@ -153,6 +157,8 @@ begin
         'edrpou', t.edrpou,
         'prefix', t.prefix,
         'legalPersonKind', t.legal_person_kind,
+        'logoId', t.logo_id::text,
+        'logoToken', (select b.access_key from app.attachment b where b.id = t.logo_id),
         'isActive', t.is_active
       ) into v_result
   from app.organization t

@@ -38,8 +38,8 @@ export class ModelRuntimeController {
         body = {};
       }
 
-      const userId = await this.requestUserService.resolveUserId(req, body);
-      return await this.service.execute(model, command, body ?? {}, userId);
+      const auth = await this.requestUserService.resolveAuthContext(req, body);
+      return await this.service.execute(model, command, body ?? {}, auth.userId, auth.sessionId);
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
         return jsonResponse(modelError(error.message), 401);

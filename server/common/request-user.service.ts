@@ -6,6 +6,17 @@ const BIGINT_ID_PATTERN = /^\d+$/;
 
 interface SessionUserRow {
   user_id: string;
+  session_id: string;
+}
+
+/**
+ * Хто виконує запит. `sessionId` порожній, коли сесії немає (dev-bypass або
+ * агент) — токени вкладень тоді не прив'язані до сесії й живуть до
+ * протермінування.
+ */
+export interface RequestAuthContext {
+  userId: string;
+  sessionId: string;
 }
 
 interface ActiveUserRow {
@@ -96,14 +107,22 @@ export class RequestUserService {
   constructor(private db: DatabaseService) {}
 
   async resolveUserId(request: Request, payload?: unknown): Promise<string> {
-    const sessionUserId = await this.resolveSessionUserId(request);
-    if (sessionUserId) {
-      return sessionUserId;
+    return (await this.resolveAuthContext(request, payload)).userId;
+  }
+
+  /**
+   * Користувач + сесія. Сесія потрібна там, де право доступу переїжджає в
+   * URL (токени вкладень): такий токен має вмирати разом із сесією.
+   */
+  async resolveAuthContext(request: Request, _payload?: unknown): Promise<RequestAuthContext> {
+    const session = await this.resolveSession(request);
+    if (session) {
+      return session;
     }
 
     const devBypassUserId = await this.resolveDevBypassUserId(request);
     if (devBypassUserId) {
-      return devBypassUserId;
+      return { userId: devBypassUserId, sessionId: "" };
     }
 
     throw new AuthenticationRequiredError();
@@ -150,7 +169,7 @@ export class RequestUserService {
     return rows[0].id;
   }
 
-  private async resolveSessionUserId(request: Request): Promise<string | null> {
+  private async resolveSession(request: Request): Promise<RequestAuthContext | null> {
     const token = getBearerToken(request);
     if (!token) {
       return null;
@@ -158,7 +177,7 @@ export class RequestUserService {
 
     const tokenHash = await hashToken(token);
     const rows = await this.db.sql<SessionUserRow[]>`
-      SELECT s.user_id
+      SELECT s.user_id, s.id::text as session_id
       FROM app.auth_session s
       JOIN app.users u ON u.id = s.user_id
       WHERE s.token_hash = ${tokenHash}
@@ -168,6 +187,7 @@ export class RequestUserService {
       LIMIT 1
     `;
 
-    return rows[0]?.user_id ?? null;
+    const row = rows[0];
+    return row ? { userId: row.user_id, sessionId: row.session_id } : null;
   }
 }

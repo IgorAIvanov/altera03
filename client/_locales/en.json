@@ -20,5 +20,14 @@
   "common.open": "Open",
   "common.search": "Search",
   "common.records": "records",
-  "common.noOpenTabs": "No open tabs"
+  "common.noOpenTabs": "No open tabs",
+  "blob.attachments": "Attachments",
+  "blob.add": "Add file",
+  "blob.choose": "Choose file",
+  "blob.replace": "Replace",
+  "blob.clear": "Clear",
+  "blob.download": "Download",
+  "blob.noImage": "No image",
+  "blob.saveFirst": "Save the record to add attachments",
+  "blob.tooLarge": "File is larger than {size}"
 }

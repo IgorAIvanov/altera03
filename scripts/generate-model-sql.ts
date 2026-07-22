@@ -23,6 +23,8 @@ type XRef = {
   searchable?: boolean;
 };
 type XTable = { table: string; parentFk: string; orderBy?: string };
+/** Поле-вкладення: у колонці лежить id з app.attachment. */
+type XBlob = { as?: string };
 
 type TSchema = {
   type?: string;
@@ -38,6 +40,9 @@ type TSchema = {
   "x-list"?: { sortable?: boolean };
   "x-ref"?: XRef;
   "x-table"?: XTable;
+  "x-blob"?: boolean | XBlob;
+  /** Поле є в типі форми, але не в таблиці — генератор його не чіпає. */
+  "x-transient"?: boolean;
 };
 
 type SqlManifest = { models?: string[] };
@@ -85,6 +90,12 @@ type Field = {
   // туди пішов би null і save впав би на constraint.
   defaultSql?: string;
   ref?: Ref;
+  /**
+   * Поле-вкладення (`x-blob`): у колонці лежить id з app.attachment. Тут — ім'я
+   * ключа, у який поруч віддається ключ доступу (logoId → logoToken). Підписаний
+   * токен підставляє рантайм, див. server/modules/blob/blob-token.ts.
+   */
+  blobTokenKey?: string;
 };
 
 type TableSpec = {
@@ -188,6 +199,13 @@ function toField(
     };
   }
 
+  const xblob = prop["x-blob"];
+  const blobTokenKey = xblob
+    ? (typeof xblob === "object" && xblob.as
+      ? xblob.as
+      : `${key.endsWith("Id") ? key.slice(0, -2) : key}Token`)
+    : undefined;
+
   return {
     key,
     col,
@@ -213,6 +231,7 @@ function toField(
       ? `'${prop.default.replaceAll("'", "''")}'`
       : undefined,
     ref,
+    blobTokenKey,
   };
 }
 
@@ -230,6 +249,10 @@ function parseObject(
   const tables: TableSpec[] = [];
 
   for (const [key, prop] of Object.entries(props)) {
+    // Транзієнтне поле живе тільки в типі форми (напр. токен вкладення, який
+    // підставляє рантайм) — колонки під нього немає, у SQL воно не потрапляє.
+    if (prop["x-transient"]) continue;
+
     if (prop.type === "array" && prop["x-table"]) {
       const xt = prop["x-table"];
       const line = parseObject(prop.items ?? {}, parentSchema, map, `${owner}.${key}`, "l");
@@ -263,9 +286,23 @@ function refEntry(f: Field): string {
     `else jsonb_build_object('id', ${r.alias}.${r.targetPk}::text, '${r.display}', ${r.alias}.${r.display}) end`;
 }
 
-// колонки об'єкта для набору полів: скаляр + (за наявності) вкладена ссылка
+/**
+ * Ключ доступу до вкладення поруч із його id: `'logoToken', (select …)`.
+ * Віддаємо сирий access_key — підписаний токен із нього робить рантайм
+ * (server/modules/blob), бо токен залежить від сесії, а не від даних.
+ */
+function blobEntry(f: Field): string {
+  return `'${f.blobTokenKey}', (select b.access_key from app.attachment b where b.id = ${f.alias}.${f.col})`;
+}
+
+// колонки об'єкта для набору полів: скаляр + (за наявності) вкладена ссылка / токен вкладення
 function fieldEntries(fields: Field[]): string[] {
-  return fields.flatMap((f) => (f.ref ? [outExpr(f), refEntry(f)] : [outExpr(f)]));
+  return fields.flatMap((f) => {
+    const entries = [outExpr(f)];
+    if (f.ref) entries.push(refEntry(f));
+    if (f.blobTokenKey) entries.push(blobEntry(f));
+    return entries;
+  });
 }
 
 function refJoins(fields: Field[]): string[] {

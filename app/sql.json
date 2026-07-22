@@ -8,6 +8,7 @@
   },
   "models": [
     "_sqlinit/base",
+    "_sqlinit/attachment",
     "catalog/organization",
     "catalog/chart_of_account",
     "catalog/currency",

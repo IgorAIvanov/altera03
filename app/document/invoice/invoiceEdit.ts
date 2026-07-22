@@ -13,6 +13,7 @@ import { currentOrg } from "@shared/current-organization.ts";
 import "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-decimal.ts";
 import "@client/ui-kit/components/ui-date.ts";
+import "@client/ui-kit/components/ui-attachments.ts";
 
 export const tagName = "invoice-edit";
 
@@ -332,6 +333,17 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
             </tr>
           </tfoot>
         </table>
+
+        <!-- Вкладення документа: скани, рахунки, листування.
+             Прив'язуються до вже збереженого документа, тому до першого
+             save компонент показує підказку замість кнопки. -->
+        <div class="mt-4">
+          <ui-attachments
+            owner-model="invoice"
+            .ownerId=${item.id ?? ""}
+            .label=${t("invoice.attachments")}
+          ></ui-attachments>
+        </div>
 
         ${this.renderFormActions(html`
           ${item.isPosted

@@ -158,6 +158,24 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 [`model-print-form`](.github/skills/model-print-form/SKILL.md); деталі —
 [`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
 
+## Вкладення (бінарні об'єкти)
+
+Зображення й файли — у ядрі (`server/modules/blob/`): токен доступу, віддача
+байтів, приймання завантажень. Байти лежать у PostgreSQL (`app.attachment`,
+`bytea`) — зовнішнього сховища немає. Одна таблиця обслуговує і поле-посилання
+(логотип: колонка `logo_id`), і список вкладень запису (`owner_model` +
+`owner_id`) — для документів і довідників однаково.
+
+Байти ходять окремим каналом (`GET/POST /api/blob`), а не командою моделі:
+`<img src>` не вміє слати `Authorization`, тому право доступу несе підписаний
+токен в URL. У відповідях моделей SQL віддає сирий `access_key` у полі `token`
+/ `<field>Token`, а рантайм міняє його на токен поточної сесії — аналог типу
+`!Token` в A2v10. Поле-вкладення в схемі позначається `x-blob` (плюс
+`x-transient` для самого токена). Компоненти — `<ui-image>` і
+`<ui-attachments>`; деталі — [`docs/blob-subsystem.md`](docs/blob-subsystem.md);
+еталони — `app/catalog/organization` (логотип), `app/document/invoice`
+(вкладення документа).
+
 ## TypeBox-схема
 
 > Деталі та шаблон — у skill [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md).

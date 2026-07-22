@@ -38,6 +38,16 @@ export const OrganizationItemSchema = Type.Object({
     Type.Literal("legal_entity"),
     Type.Literal("individual_entrepreneur"),
   ], { title: "Вид особи", default: "legal_entity", "x-form": { order: 6, width: "md" } })),
+  // Логотип — вкладення (app.attachment). У колонці лежить id; `x-blob`
+  // велить генератору віддавати поруч ключ доступу під ім'ям logoToken.
+  logoId: Type.Optional(Type.Union([Type.String(), Type.Null()], {
+    title: "Логотип", "x-db-type": "bigint", "x-blob": true, default: null,
+  })),
+  // Токен доступу до логотипа. Колонки під нього немає: значення підставляє
+  // рантайм на кожен запит (воно різне в різних сесіях), тому — x-transient.
+  logoToken: Type.Optional(Type.Union([Type.String(), Type.Null()], {
+    "x-transient": true, default: null,
+  })),
   isActive: Type.Optional(Type.Boolean({ title: "Активна", default: true })),
 });
 export type OrganizationItem = Static<typeof OrganizationItemSchema>;

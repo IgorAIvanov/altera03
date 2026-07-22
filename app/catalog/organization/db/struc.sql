@@ -11,6 +11,9 @@ create table if not exists app.organization (
   -- Префікс автонумерації документів цієї організації.
   prefix            varchar(3),
   legal_person_kind varchar(40)  not null default 'legal_entity',
+  -- Логотип: посилання на вкладення (app.attachment). Видалення вкладення
+  -- лишає поле порожнім, а не видаляє організацію.
+  logo_id           bigint references app.attachment(id) on delete set null,
   is_active         boolean      not null default true,
   created_at        timestamptz  not null default now(),
   updated_at        timestamptz  not null default now(),

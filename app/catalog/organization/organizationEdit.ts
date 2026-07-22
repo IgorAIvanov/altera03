@@ -5,6 +5,10 @@ import {
   OrganizationEditRootSchema,
   type OrganizationEditRoot,
 } from "./organization.schema.ts";
+import "@client/ui-kit/components/ui-image.ts";
+
+/** Подія ui-image: нове вкладення або очищення поля. */
+type ImageEvent = CustomEvent<{ id: string | null; token: string | null }>;
 
 export const tagName = "organization-edit";
 
@@ -88,6 +92,18 @@ export class OrganizationEdit extends BaseUI<OrganizationEditRoot> {
             { class: "flex-1", field: "legalPersonKind" },
           )}
         </div>
+
+        <ui-image
+          .label=${this.t("organization.logo")}
+          .valueId=${item.logoId ?? ""}
+          .valueToken=${item.logoToken ?? ""}
+          owner-model="organization"
+          .ownerId=${item.id ?? ""}
+          @value-changed=${(e: ImageEvent) => {
+            item.logoId = e.detail.id;
+            item.logoToken = e.detail.token;
+          }}
+        ></ui-image>
 
         <label class="label cursor-pointer justify-start gap-2 mt-1">
           <input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
