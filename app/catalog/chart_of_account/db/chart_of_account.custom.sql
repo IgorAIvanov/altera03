@@ -70,9 +70,9 @@ end;
 $$;
 
 -- ── Аналітика рахунку ─────────────────────────────────────────────────────────
--- Які субконто веде рахунок і з якого довідника їх вибирати. Потрібна формі
--- ручної операції: набір полів субконто в рядку проводки залежить від рахунку,
--- тому фронт запитує його після вибору рахунку.
+-- Конфігурація рахунку для рядка проводки: які субконто веде (rows) і чи веде
+-- валютний / кількісний облік (extra). Форма ручної операції запитує це після
+-- вибору рахунку — набір полів у рядку залежить від рахунку.
 --
 -- model_key віддаємо як є — маршрут форми клієнт збирає сам із view-manifest.
 drop function if exists app.chart_of_account_analytics(bigint, jsonb);
@@ -80,6 +80,10 @@ create function app.chart_of_account_analytics(user_id bigint, payload jsonb)
 returns jsonb
 language sql
 as $$
+  with acc as (
+    select * from app.chart_of_account
+    where code = nullif(trim(coalesce(payload->>'code', '')), '')
+  )
   select jsonb_build_object(
     'ok', true,
     'data', jsonb_build_object(
@@ -95,12 +99,15 @@ as $$
         ) order by a.slot_no)
         from app.chart_of_account_analytic a
         join app.analytic_dimension d on d.code = a.dimension_code
-        where a.account_code = nullif(trim(coalesce(payload->>'code', '')), '')
+        where a.account_code = (select code from acc)
           and d.is_active
       ), '[]'::jsonb),
       'options', '{}'::jsonb,
       'totals',  '{}'::jsonb,
-      'extra',   '{}'::jsonb
+      'extra', jsonb_build_object(
+        'isCurrency',     coalesce((select is_currency from acc), false),
+        'isQuantitative', coalesce((select is_quantitative from acc), false)
+      )
     ),
     'messages', '[]'::jsonb,
     'meta', '{}'::jsonb

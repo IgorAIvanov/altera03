@@ -174,7 +174,12 @@ $$;
 
 -- ── Додати проводку ─────────────────────────────────────────────────────────
 
+-- Валюта й кількість — необов'язкові виміри проводки, що вмикаються ознаками
+-- рахунку (is_currency / is_quantitative), як і субконто. Правило те саме, що
+-- для субконто: якщо бодай один бік кореспонденції веде вимір, він обов'язковий;
+-- де не веде — ядро обнуляє, щоб у регістр не потрапляв «валютний» мотлох.
 drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb);
+drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb, bigint, numeric);
 create function app.doc_entry_add(
   p_document_id      bigint,
   p_line_no          int,
@@ -184,38 +189,67 @@ create function app.doc_entry_add(
   p_quantity         numeric default null,
   p_description      text    default null,
   p_debit_analytics  jsonb   default '{}'::jsonb,
-  p_credit_analytics jsonb   default '{}'::jsonb
+  p_credit_analytics jsonb   default '{}'::jsonb,
+  p_currency_id      bigint  default null,
+  p_currency_amount  numeric default null
 ) returns bigint
 language plpgsql
 as $$
 declare
   v_entry_id bigint;
-  v_is_group boolean;
+  v_debit    record;
+  v_credit   record;
+  v_needs_currency  boolean;
+  v_needs_quantity  boolean;
+  v_currency_id     bigint;
+  v_currency_amount numeric;
+  v_quantity        numeric;
 begin
   if p_amount is null or p_amount = 0 then
     raise exception 'Проводка % документа %: нульова сума', p_line_no, p_document_id;
   end if;
 
-  -- На групи плану рахунків проводки не робляться.
-  select is_group into v_is_group from app.chart_of_account where code = p_debit_account;
-  if v_is_group is null then
+  select is_group, is_currency, is_quantitative into v_debit
+  from app.chart_of_account where code = p_debit_account;
+  if v_debit is null then
     raise exception 'Рахунок дебету «%» не знайдено', p_debit_account;
-  elsif v_is_group then
+  elsif v_debit.is_group then
     raise exception 'Рахунок дебету «%» — група, проводка неможлива', p_debit_account;
   end if;
 
-  select is_group into v_is_group from app.chart_of_account where code = p_credit_account;
-  if v_is_group is null then
+  select is_group, is_currency, is_quantitative into v_credit
+  from app.chart_of_account where code = p_credit_account;
+  if v_credit is null then
     raise exception 'Рахунок кредиту «%» не знайдено', p_credit_account;
-  elsif v_is_group then
+  elsif v_credit.is_group then
     raise exception 'Рахунок кредиту «%» — група, проводка неможлива', p_credit_account;
   end if;
 
+  v_needs_currency := v_debit.is_currency or v_credit.is_currency;
+  v_needs_quantity := v_debit.is_quantitative or v_credit.is_quantitative;
+
+  if v_needs_currency then
+    if p_currency_id is null or p_currency_amount is null then
+      raise exception 'Проводка %: валютний рахунок вимагає валюту й суму у валюті', p_line_no;
+    end if;
+    v_currency_id := p_currency_id;
+    v_currency_amount := p_currency_amount;
+  end if;  -- інакше лишаються null
+
+  if v_needs_quantity then
+    if p_quantity is null then
+      raise exception 'Проводка %: кількісний рахунок вимагає кількість', p_line_no;
+    end if;
+    v_quantity := p_quantity;
+  end if;
+
   insert into app.journal_entry (
-    document_id, line_no, debit_account, credit_account, amount, quantity, description
+    document_id, line_no, debit_account, credit_account, amount,
+    currency_id, currency_amount, quantity, description
   )
   values (
-    p_document_id, p_line_no, p_debit_account, p_credit_account, p_amount, p_quantity, p_description
+    p_document_id, p_line_no, p_debit_account, p_credit_account, p_amount,
+    v_currency_id, v_currency_amount, v_quantity, p_description
   )
   returning id into v_entry_id;
 

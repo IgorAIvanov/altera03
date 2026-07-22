@@ -101,6 +101,11 @@ set
   parent_code  = excluded.parent_code,
   is_currency  = excluded.is_currency;
 
+-- Кількісний облік — на товарно-матеріальних рахунках. У сідмісиві вище
+-- ознака не задавалась (перенесена з прототипу без неї), тому вмикаємо тут.
+update app.chart_of_account set is_quantitative = true
+where code in ('201', '203', '207', '209', '22', '221', '26', '261', '281', '282');
+
 -- Налаштування аналітики рахунків (chart_of_account_analytic) живе в
 -- _sqlinit/document_core/db/data.sql — поруч із самими вимірами, бо посилається
 -- на них зовнішнім ключем і має публікуватися після них.

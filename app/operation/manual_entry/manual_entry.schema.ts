@@ -28,6 +28,10 @@ export const ManualEntryLineSchema = Type.Object({
   creditAccount:   Type.String({ title: "Кредит", maxLength: 10 }),
   creditAnalytics: AnalyticsSchema,
   amount:      Type.Number({ title: "Сума", "x-db-type": "numeric" }),
+  // Валюта й кількість — заповнюються лише для валютних/кількісних рахунків.
+  currencyId:     Type.Optional(Type.String({ title: "Валюта", "x-db-type": "bigint" })),
+  currencyAmount: Type.Optional(Type.Number({ title: "Сума вал.", "x-db-type": "numeric" })),
+  quantity:       Type.Optional(Type.Number({ title: "Кількість", "x-db-type": "numeric" })),
   description: Type.Optional(Type.String({ title: "Зміст" })),
 });
 export type ManualEntryLine = Static<typeof ManualEntryLineSchema>;
@@ -58,6 +62,11 @@ export const ManualEntryFormLineSchema = Type.Object({
   creditAccount:   Type.String({ default: "" }),
   creditAnalytics: Type.Record(Type.String(), AnalyticValueSchema, { default: {} }),
   amount:      Type.String({ default: "0.00" }),
+  // Валютна пара: id для запису + назва для показу після перезавантаження.
+  currencyId:     Type.String({ default: "" }),
+  currency:       Type.Optional(RefSchema),
+  currencyAmount: Type.String({ default: "0.00" }),
+  quantity:       Type.String({ default: "0.000" }),
   description: Type.Optional(Type.String({ default: "" })),
 });
 export type ManualEntryFormLine = Static<typeof ManualEntryFormLineSchema>;

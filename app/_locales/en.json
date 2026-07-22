@@ -1,4 +1,6 @@
 {
+  "header.currentOrganization": "Current organization",
+  "header.chooseOrganization": "Select organization",
   "bank.titleMany": "Banks",
   "bank.titleOne": "Bank",
   "bank.mfo": "MFO",
@@ -158,5 +160,16 @@
   "accountCard.closing": "Closing balance",
   "turnoverBalance.title": "Turnover and balance sheet",
   "menu.turnoverBalance": "Turnover sheet",
-  "turnoverBalance.drillHint": "Click an account to open its card for the same period"
+  "turnoverBalance.drillHint": "Click an account to open its card for the same period",
+  "documentMovements.title": "Document movements",
+  "documentMovements.openDocument": "Open document",
+  "currency.titleMany": "Currencies",
+  "currency.titleOne": "Currency",
+  "menu.currencies": "Currencies",
+  "currency.numericCode": "Numeric code",
+  "currency.symbol": "Symbol",
+  "currency.isActive": "Active",
+  "manualEntry.currency": "Currency",
+  "manualEntry.currencyAmount": "Cur. amount",
+  "manualEntry.quantity": "Quantity"
 }

@@ -1,0 +1,13 @@
+{
+  "model": "document_movements",
+  "type": "report",
+  "schema": "app",
+  "commands": {
+    "sql": {
+      "index": "document_movements_index"
+    }
+  },
+  "views": {
+    "list": { "module": "./documentMovementsReport.ts", "titleKey": "documentMovements.title" }
+  }
+}

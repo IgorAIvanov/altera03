@@ -1,0 +1,55 @@
+import { Type, type Static } from "@sinclair/typebox";
+
+/** Рух документа: одна команда вибірки `index`, CRUD немає. */
+
+/** Значення субконто в проводці разом із ключем моделі для переходу. */
+export const MovementAnalyticSchema = Type.Object({
+  dimensionName: Type.String(),
+  modelKey:      Type.String(),
+  valueId:       Type.String(),
+  presentation:  Type.String(),
+});
+export type MovementAnalytic = Static<typeof MovementAnalyticSchema>;
+
+export const DocumentMovementRowSchema = Type.Object({
+  lineNo:            Type.Number(),
+  debitAccount:      Type.Optional(Type.String()),
+  debitAccountName:  Type.Optional(Type.String()),
+  debitAnalytics:    Type.Array(MovementAnalyticSchema, { default: [] }),
+  creditAccount:     Type.Optional(Type.String()),
+  creditAccountName: Type.Optional(Type.String()),
+  creditAnalytics:   Type.Array(MovementAnalyticSchema, { default: [] }),
+  amount:            Type.Number(),
+  currencyCode:      Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  currencyAmount:    Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  quantity:          Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  description:       Type.Optional(Type.String()),
+});
+export type DocumentMovementRow = Static<typeof DocumentMovementRowSchema>;
+
+/** Шапка документа (з `data.extra.document`), потрібна для заголовка й переходу. */
+export const MovementDocumentSchema = Type.Object({
+  documentId:       Type.String({ default: "" }),
+  documentTypeCode: Type.String({ default: "" }),
+  documentTypeName: Type.String({ default: "" }),
+  number:           Type.Optional(Type.String()),
+  docDate:          Type.String({ default: "" }),
+  total:            Type.Number({ default: 0 }),
+  presentation:     Type.String({ default: "" }),
+  isPosted:         Type.Boolean({ default: false }),
+  organizationName: Type.String({ default: "" }),
+});
+export type MovementDocument = Static<typeof MovementDocumentSchema>;
+
+/** `documentId` живе в `$query` — за ним звіт переформовується при applyParams. */
+export const DocumentMovementsQuerySchema = Type.Object({
+  documentId: Type.String({ default: "" }),
+});
+export type DocumentMovementsQuery = Static<typeof DocumentMovementsQuerySchema>;
+
+export const DocumentMovementsRootSchema = Type.Object({
+  $query:   DocumentMovementsQuerySchema,
+  rows:     Type.Array(DocumentMovementRowSchema, { default: [] }),
+  document: MovementDocumentSchema,
+});
+export type DocumentMovementsRoot = Static<typeof DocumentMovementsRootSchema>;

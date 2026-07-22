@@ -25,6 +25,17 @@ export const generatedModelRegistry = {
     type: "catalog",
     schema: "app"
   },
+  "currency": {
+    type: "catalog",
+    schema: "app"
+  },
+  "document_movements": {
+    type: "report",
+    schema: "app",
+    sqlCommands: {
+    "index": "document_movements_index"
+    }
+  },
   "interface": {
     type: "admin",
     schema: "app"

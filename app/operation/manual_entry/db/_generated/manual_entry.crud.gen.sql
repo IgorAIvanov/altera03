@@ -104,6 +104,9 @@ as $$
           'creditAccount', l.credit_account,
           'creditAnalytics', l.credit_analytics,
           'amount', l.amount,
+          'currencyId', l.currency_id::text,
+          'currencyAmount', l.currency_amount,
+          'quantity', l.quantity,
           'description', l.description
         ) order by l.line_no)
         from app.manual_entry_line l
@@ -197,6 +200,9 @@ begin
       nullif(trim(coalesce(e->>'creditAccount', '')), '') as credit_account,
       e->'creditAnalytics' as credit_analytics,
       nullif(e->>'amount', '')::numeric as amount,
+      nullif(e->>'currencyId', '')::bigint as currency_id,
+      nullif(e->>'currencyAmount', '')::numeric as currency_amount,
+      nullif(e->>'quantity', '')::numeric as quantity,
       nullif(trim(coalesce(e->>'description', '')), '') as description
     from jsonb_array_elements(coalesce(v_item->'entries', '[]'::jsonb)) e
   ) s
@@ -208,9 +214,12 @@ begin
     credit_account = s.credit_account,
     credit_analytics = coalesce(s.credit_analytics, lt.credit_analytics),
     amount = s.amount,
+    currency_id = s.currency_id,
+    currency_amount = s.currency_amount,
+    quantity = s.quantity,
     description = s.description
-  when not matched then insert (document_id, line_no, debit_account, debit_analytics, credit_account, credit_analytics, amount, description)
-    values (v_id, s.line_no, s.debit_account, coalesce(s.debit_analytics, '{}'::jsonb), s.credit_account, coalesce(s.credit_analytics, '{}'::jsonb), s.amount, s.description)
+  when not matched then insert (document_id, line_no, debit_account, debit_analytics, credit_account, credit_analytics, amount, currency_id, currency_amount, quantity, description)
+    values (v_id, s.line_no, s.debit_account, coalesce(s.debit_analytics, '{}'::jsonb), s.credit_account, coalesce(s.credit_analytics, '{}'::jsonb), s.amount, s.currency_id, s.currency_amount, s.quantity, s.description)
   when not matched by source and lt.document_id = v_id then delete;
 
   -- Денормалізація шапки (total, presentation) — необов'язковий хук документа
@@ -240,6 +249,9 @@ begin
           'creditAccount', l.credit_account,
           'creditAnalytics', l.credit_analytics,
           'amount', l.amount,
+          'currencyId', l.currency_id::text,
+          'currencyAmount', l.currency_amount,
+          'quantity', l.quantity,
           'description', l.description
         ) order by l.line_no)
         from app.manual_entry_line l

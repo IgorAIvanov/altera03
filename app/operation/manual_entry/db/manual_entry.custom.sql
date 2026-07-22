@@ -36,7 +36,8 @@ declare
   v_count int := 0;
 begin
   for v_line in
-    select l.line_no, l.debit_account, l.credit_account, l.amount, l.quantity,
+    select l.line_no, l.debit_account, l.credit_account, l.amount,
+           l.currency_id, l.currency_amount, l.quantity,
            l.debit_analytics, l.credit_analytics, l.description
     from app.manual_entry_line l
     where l.document_id = manual_entry_post_entries.document_id
@@ -46,6 +47,8 @@ begin
       raise exception 'Рядок %: не заповнено рахунок дебету або кредиту', v_line.line_no;
     end if;
 
+    -- Валюту/кількість/обов'язковість субконто перевіряє doc_entry_add за
+    -- ознаками рахунку — тут лише передаємо введене користувачем.
     perform app.doc_entry_add(
       manual_entry_post_entries.document_id,
       v_line.line_no,
@@ -55,7 +58,9 @@ begin
       v_line.quantity,
       v_line.description,
       coalesce(v_line.debit_analytics, '{}'::jsonb),
-      coalesce(v_line.credit_analytics, '{}'::jsonb)
+      coalesce(v_line.credit_analytics, '{}'::jsonb),
+      v_line.currency_id,
+      v_line.currency_amount
     );
     v_count := v_count + 1;
   end loop;

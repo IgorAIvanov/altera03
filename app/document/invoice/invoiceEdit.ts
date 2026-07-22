@@ -9,6 +9,7 @@ import {
   type InvoiceForm,
 } from "./invoice.schema.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
+import { currentOrg } from "@shared/current-organization.ts";
 import "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-decimal.ts";
 import "@client/ui-kit/components/ui-date.ts";
@@ -54,6 +55,18 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
   override connectedCallback() {
     super.connectedCallback();
     if (this.modelId) this.load();
+    else this.applyDefaultOrg();
+  }
+
+  /** Новий документ — підставляємо поточну організацію застосунку. */
+  private applyDefaultOrg() {
+    const org = currentOrg();
+    if (!org || this.$root.item.organizationId) return;
+    this.$root.item = {
+      ...this.$root.item,
+      organizationId: org.id,
+      organization: { id: org.id, name: org.name },
+    };
   }
 
   private async load() {

@@ -24,6 +24,7 @@ export const menuMock: MenuItem[] = [
     children: [
       { id: "organization",     label: "Організації",   icon: icons.organization, route: "catalog/organization/list" },
       { id: "chart_of_account", label: "План рахунків", icon: icons.account,      route: "catalog/chart_of_account/list" },
+      { id: "currency",     label: "Валюти",         icon: icons.catalog,      route: "catalog/currency/list" },
       { id: "bank",         label: "Банки",          icon: icons.bank,         route: "catalog/bank/list" },
       { id: "counterparty", label: "Контрагенти",    icon: icons.counterparty, route: "catalog/counterparty/list" },
       { id: "nomenclature", label: "Номенклатура",   icon: icons.nomenclature, route: "catalog/nomenclature/list" },

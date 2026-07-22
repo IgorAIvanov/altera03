@@ -1,8 +1,11 @@
 import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { SignalWatcher } from "@lit-labs/signals";
+import { t } from "@client/locale.ts";
+import { currentOrg, setCurrentOrg } from "@shared/current-organization.ts";
 
 @customElement("app-header")
-export class AppHeader extends LitElement {
+export class AppHeader extends SignalWatcher(LitElement) {
   static override styles = css`
     :host {
       display: flex;
@@ -17,11 +20,91 @@ export class AppHeader extends LitElement {
       flex-shrink: 0;
     }
 
+    .right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
     .app-name {
       font-weight: 500;
       letter-spacing: 0.02em;
       opacity: 0.95;
+      flex-shrink: 0;
     }
+
+    /* Поточна організація */
+    .org-wrap { position: relative; }
+
+    .org-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      padding: 3px 6px;
+      border-radius: 2px;
+      max-width: 280px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .org-btn:hover { background: rgba(255, 255, 255, 0.18); }
+
+    .org-icon { opacity: 0.7; flex-shrink: 0; }
+
+    .org-name {
+      font-size: inherit;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .org-name.placeholder { opacity: 0.6; font-style: italic; }
+
+    /* Выпадающий список организаций — в стиле верхней панели */
+    .org-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      background: var(--color-primary, #2f5f8f);
+      color: #e8f0fb;
+      border: 1px solid #244b71;
+      border-radius: 2px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 1000;
+      min-width: 220px;
+      max-height: 60vh;
+      overflow-y: auto;
+      padding: 2px 0;
+    }
+
+    .org-menu-empty {
+      padding: 8px 12px;
+      font-size: 12px;
+      opacity: 0.7;
+      white-space: nowrap;
+    }
+
+    .org-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px 6px 10px;
+      font-size: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .org-menu-item:hover { background: var(--color-secondary, #4a7ab5); }
+    .org-menu-item.active {
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .org-check {
+      width: 14px;
+      flex-shrink: 0;
+      color: #9be6b4;
+      opacity: 0;
+    }
+    .org-menu-item.active .org-check { opacity: 1; }
 
     /* Кнопка пользователя */
     .user-btn {
@@ -118,6 +201,8 @@ export class AppHeader extends LitElement {
   `;
 
   @state() private open = false;
+  @state() private orgOpen = false;
+  @state() private orgs: Array<{ id: string; name: string }> = [];
 
   // TODO: получать из шины / сервера
   private appName = "Altera ERP";
@@ -154,8 +239,49 @@ export class AppHeader extends LitElement {
     </svg>`;
   }
 
+  private iconBuilding() {
+    return svg`<svg class="org-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/>
+    </svg>`;
+  }
+
+  private iconCheck() {
+    return svg`<svg class="org-check" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+    </svg>`;
+  }
+
   private initials(): string {
     return this.userName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  }
+
+  /** Відкрити/закрити список організацій; при відкритті — перечитати перелік. */
+  private toggleOrgMenu() {
+    this.orgOpen = !this.orgOpen;
+    if (this.orgOpen) void this.loadOrgs();
+  }
+
+  /** Перелік організацій для меню — через lookup довідника. */
+  private async loadOrgs() {
+    try {
+      const res = await fetch("/api/model/organization/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 100 }),
+      });
+      const data = await res.json();
+      const rows = data?.data?.rows ?? data?.rows ?? [];
+      this.orgs = Array.isArray(rows)
+        ? rows.map((r: Record<string, unknown>) => ({ id: String(r.id), name: String(r.name) }))
+        : [];
+    } catch (e) {
+      console.error("[app-header] не вдалося завантажити організації:", e);
+    }
+  }
+
+  private selectOrg(o: { id: string; name: string }) {
+    setCurrentOrg(o);
+    this.orgOpen = false;
   }
 
   private handleLogout() {
@@ -165,13 +291,42 @@ export class AppHeader extends LitElement {
   }
 
   override render() {
+    const org = currentOrg();
+
     return html`
       <div class="app-name">${this.appName}</div>
 
-      <div class="user-btn" @click=${() => this.open = !this.open}>
-        <div class="avatar">${this.initials()}</div>
-        <span class="user-name">${this.userName}</span>
-        <span class="chevron ${this.open ? "open" : ""}">${this.iconChevron()}</span>
+      <div class="right">
+        <div class="org-wrap">
+          <div class="org-btn" title=${t("header.currentOrganization")} @click=${this.toggleOrgMenu}>
+            ${this.iconBuilding()}
+            ${org
+              ? html`<span class="org-name">${org.name}</span>`
+              : html`<span class="org-name placeholder">${t("header.chooseOrganization")}</span>`}
+            <span class="chevron ${this.orgOpen ? "open" : ""}">${this.iconChevron()}</span>
+          </div>
+
+          ${this.orgOpen ? html`
+            <div class="overlay" @click=${() => this.orgOpen = false}></div>
+            <div class="org-menu">
+              ${this.orgs.length === 0
+                ? html`<div class="org-menu-empty">${t("common.noData")}</div>`
+                : this.orgs.map(o => html`
+                  <div class="org-menu-item ${o.id === org?.id ? "active" : ""}"
+                    @click=${() => this.selectOrg(o)}>
+                    ${this.iconCheck()}
+                    <span class="org-name">${o.name}</span>
+                  </div>
+                `)}
+            </div>
+          ` : ""}
+        </div>
+
+        <div class="user-btn" @click=${() => this.open = !this.open}>
+          <div class="avatar">${this.initials()}</div>
+          <span class="user-name">${this.userName}</span>
+          <span class="chevron ${this.open ? "open" : ""}">${this.iconChevron()}</span>
+        </div>
       </div>
 
       ${this.open ? html`

@@ -10,6 +10,7 @@
     "_sqlinit/base",
     "catalog/organization",
     "catalog/chart_of_account",
+    "catalog/currency",
     "_sqlinit/document_core",
     "_sqlinit/help_content",
     "_sqlinit/help_scenario",
@@ -20,6 +21,7 @@
     "document/invoice",
     "operation/manual_entry",
     "report/account_card",
-    "report/turnover_balance"
+    "report/turnover_balance",
+    "report/document_movements"
   ]
 }

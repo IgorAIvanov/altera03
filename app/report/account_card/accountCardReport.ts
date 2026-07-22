@@ -5,6 +5,7 @@ import { bus } from "@client/bus/bus.ts";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import { dateFormat, formatDate } from "@client/shared/datetime.ts";
 import { viewRoute } from "@shared/view-route.ts";
+import { currentOrg } from "@shared/current-organization.ts";
 import {
   AccountCardRootSchema,
   type AccountCardRoot,
@@ -47,6 +48,14 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     this.$root.$query.dateFrom ||= iso(first);
     this.$root.$query.dateTo ||= iso(last);
+
+    // Поточна організація за замовчуванням — але не перетираємо ту, що вже
+    // прийшла параметром переходу (drill-down з ОСВ несе свою організацію).
+    const org = currentOrg();
+    if (org && !this.$root.$query.organizationId) {
+      this.$root.$query.organizationId = org.id;
+      this.$root.$query.organization = { id: org.id, name: org.name };
+    }
   }
 
   /**
@@ -75,12 +84,24 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
   }
 
   /**
-   * Drill-down. Маршрут форми беремо з view-manifest за ключем моделі —
-   * той самий ключ, що лежить у app.document_type / app.analytic_dimension.
-   * Немає в'ю — немає й переходу: мовчки нічого не робимо, бо це не помилка
-   * даних, а просто не реалізований екран.
+   * Клік на документі веде не прямо у форму, а в «Рух документа» — проміжну
+   * ланку drill-down (ОСВ → картка → рух → документ), звідки видно всі
+   * проводки документа й уже звідти відкривається сама форма.
    */
-  private open(modelKey: string, id: string) {
+  private openMovements(row: AccountCardRow) {
+    bus.emit({
+      type: "tab.open",
+      route: "report/document_movements/list",
+      params: { documentId: row.documentId },
+    });
+  }
+
+  /**
+   * Перехід до довідника субконто. Маршрут беремо з view-manifest за ключем
+   * моделі — тим самим, що лежить у app.analytic_dimension. Немає в'ю —
+   * немає переходу: це не помилка даних, а не реалізований екран.
+   */
+  private openAnalytic(modelKey: string, id: string) {
     const route = viewRoute(modelKey, "edit");
     if (!route) return;
     bus.emit({ type: "tab.open", route, id });
@@ -92,11 +113,46 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
       <div class="flex flex-col">
         ${items.map((a) => html`
           <button class="link link-hover text-xs text-left truncate" title=${a.dimensionName}
-            @click=${() => this.open(a.modelKey, a.valueId)}>
+            @click=${() => this.openAnalytic(a.modelKey, a.valueId)}>
             ${a.presentation}
           </button>
         `)}
       </div>
+    `;
+  }
+
+  // Валюту й кількість показуємо окремими колонками — і лише коли вони в даних
+  // є. Окремі числові колонки, а не «сума + код» в одній клітинці: так звіт,
+  // вивантажений в Excel, лишається придатним до обчислень.
+  private get showCurrency(): boolean {
+    return this.$root.rows.some((r) => r.currencyAmount);
+  }
+  private get showQuantity(): boolean {
+    return this.$root.rows.some((r) => r.quantity);
+  }
+
+  private renderExtraCells(row: AccountCardRow): TemplateResult | string {
+    return html`
+      ${this.showCurrency ? html`
+        <td class="cell-text text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
+        <td class="cell-text text-base-content/60">${row.currencyCode ?? ""}</td>` : ""}
+      ${this.showQuantity
+        ? html`<td class="cell-text text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
+    `;
+  }
+
+  /**
+   * Порожні клітинки під валюту/кількість для рядків підсумків. Тег важливий:
+   * підвал складається з `th`, і саме на `th` поширюється фон підвала — якщо
+   * дати сюди `td`, колонки валюти в підвалі лишаться недофарбованими.
+   */
+  private extraFillerCells(tag: "td" | "th" = "td"): TemplateResult | string {
+    const cell = tag === "th"
+      ? html`<th></th>`
+      : html`<td></td>`;
+    return html`
+      ${this.showCurrency ? html`${cell}${cell}` : ""}
+      ${this.showQuantity ? cell : ""}
     `;
   }
 
@@ -106,7 +162,7 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
         <td class="cell-text whitespace-nowrap">${formatDate(row.docDate, dateFormat.date)}</td>
         <td class="cell-text">
           <button class="link link-hover" title=${row.documentTypeName}
-            @click=${() => this.open(row.documentTypeCode, row.documentId)}>
+            @click=${() => this.openMovements(row)}>
             ${row.documentTypeName} ${row.docNumber ?? ""}
           </button>
         </td>
@@ -119,6 +175,7 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
           ${row.balanceDebit ? amount(row.balanceDebit) : ""}
           ${row.balanceCredit ? html`<span class="text-error">${amount(row.balanceCredit)}</span>` : ""}
         </td>
+        ${this.renderExtraCells(row)}
       </tr>
     `;
   }
@@ -194,6 +251,10 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
               <th class="w-28 text-right">${t("manualEntry.debit")}</th>
               <th class="w-28 text-right">${t("manualEntry.credit")}</th>
               <th class="w-28 text-right">${t("accountCard.balance")}</th>
+              ${this.showCurrency ? html`
+                <th class="w-28 text-right">${t("manualEntry.currencyAmount")}</th>
+                <th class="w-16">${t("manualEntry.currency")}</th>` : ""}
+              ${this.showQuantity ? html`<th class="w-24 text-right">${t("manualEntry.quantity")}</th>` : ""}
             </tr>
           </thead>
           <tbody>
@@ -202,6 +263,7 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
               <td class="cell-text text-right tabular-nums">${amount(totals.openingDebit)}</td>
               <td class="cell-text text-right tabular-nums">${amount(totals.openingCredit)}</td>
               <td></td>
+              ${this.extraFillerCells("td")}
             </tr>
             ${this.$root.rows.map((row) => this.renderRow(row))}
             ${this.$root.rows.length === 0
@@ -214,12 +276,14 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
               <th class="text-right tabular-nums">${amount(totals.turnoverDebit)}</th>
               <th class="text-right tabular-nums">${amount(totals.turnoverCredit)}</th>
               <th></th>
+              ${this.extraFillerCells("th")}
             </tr>
             <tr>
               <th colspan="5" class="text-right">${t("accountCard.closing")}</th>
               <th class="text-right tabular-nums">${amount(totals.closingDebit)}</th>
               <th class="text-right tabular-nums">${amount(totals.closingCredit)}</th>
               <th></th>
+              ${this.extraFillerCells("th")}
             </tr>
           </tfoot>
         </table>

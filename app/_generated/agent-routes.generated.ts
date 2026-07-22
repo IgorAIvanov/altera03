@@ -20,6 +20,15 @@ export const agentModelRoutes = {
     listPath: "/catalog/counterparty/list",
     type: "catalog"
   },
+  "currency": {
+    editPath: "/catalog/currency/edit",
+    listPath: "/catalog/currency/list",
+    type: "catalog"
+  },
+  "document_movements": {
+    listPath: "/report/document_movements/list",
+    type: "report"
+  },
   "invoice": {
     editPath: "/document/invoice/edit",
     listPath: "/document/invoice/list",

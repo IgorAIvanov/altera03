@@ -1,0 +1,10 @@
+{
+  "model": "currency",
+  "type": "catalog",
+  "schema": "app",
+  "views": {
+    "list":   { "module": "./currencyList.ts",   "titleKey": "currency.titleMany" },
+    "edit":   { "module": "./currencyEdit.ts",   "titleKey": "currency.titleOne" },
+    "picker": { "module": "./currencyPicker.ts", "titleKey": "currency.titleMany" }
+  }
+}

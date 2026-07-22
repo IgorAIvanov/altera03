@@ -52,6 +52,9 @@ as $$
       case when je.debit_account  = p.account then je.amount else 0::numeric end as debit,
       case when je.credit_account = p.account then je.amount else 0::numeric end as credit,
       case when je.debit_account  = p.account then je.credit_account else je.debit_account end as corr_account,
+      cur.code          as currency_code,
+      je.currency_amount,
+      je.quantity,
       je.description,
       -- Сторона, з якої дивиться картка: її аналітика цікавить у першу чергу.
       case when je.debit_account = p.account then 'debit' else 'credit' end as own_side
@@ -64,6 +67,7 @@ as $$
       on je.document_id = d.id
      and (je.debit_account = p.account or je.credit_account = p.account)
     join app.document_type dt on dt.id = d.document_type_id
+    left join app.currency cur on cur.id = je.currency_id
     where p.org_id is not null and p.account is not null
   ),
   opening as (
@@ -98,6 +102,9 @@ as $$
       n.debit, n.credit,
       greatest(n.running, 0::numeric)  as "balanceDebit",
       greatest(-n.running, 0::numeric) as "balanceCredit",
+      n.currency_code   as "currencyCode",
+      n.currency_amount as "currencyAmount",
+      n.quantity        as "quantity",
       n.description,
       coalesce(own.items, '[]'::jsonb)  as "analytics",
       coalesce(corr.items, '[]'::jsonb) as "corrAnalytics"

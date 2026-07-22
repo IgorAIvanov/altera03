@@ -4,6 +4,7 @@ import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
+import { currentOrg } from "@shared/current-organization.ts";
 import {
   TurnoverBalanceRootSchema,
   type TurnoverBalanceRoot,
@@ -40,6 +41,13 @@ export class TurnoverBalanceReport extends BaseUI<TurnoverBalanceRoot> {
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     this.$root.$query.dateFrom ||= iso(new Date(now.getFullYear(), now.getMonth(), 1));
     this.$root.$query.dateTo ||= iso(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+
+    // Поточна організація за замовчуванням, якщо перехід не приніс своєї.
+    const org = currentOrg();
+    if (org && !this.$root.$query.organizationId) {
+      this.$root.$query.organizationId = org.id;
+      this.$root.$query.organization = { id: org.id, name: org.name };
+    }
   }
 
   override applyParams(params: Record<string, unknown>) {

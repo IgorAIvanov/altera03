@@ -1,4 +1,6 @@
 {
+  "header.currentOrganization": "Поточна організація",
+  "header.chooseOrganization": "Оберіть організацію",
   "bank.titleMany": "Банки",
   "bank.titleOne": "Банк",
   "bank.mfo": "МФО",
@@ -158,5 +160,16 @@
   "accountCard.closing": "Сальдо на кінець",
   "turnoverBalance.title": "Оборотно-сальдова відомість",
   "menu.turnoverBalance": "Оборотно-сальдова",
-  "turnoverBalance.drillHint": "Клік на рахунку відкриває картку рахунку за той самий період"
+  "turnoverBalance.drillHint": "Клік на рахунку відкриває картку рахунку за той самий період",
+  "documentMovements.title": "Рух документа",
+  "documentMovements.openDocument": "Відкрити документ",
+  "currency.titleMany": "Валюти",
+  "currency.titleOne": "Валюта",
+  "menu.currencies": "Валюти",
+  "currency.numericCode": "Цифр. код",
+  "currency.symbol": "Символ",
+  "currency.isActive": "Активна",
+  "manualEntry.currency": "Валюта",
+  "manualEntry.currencyAmount": "Сума вал.",
+  "manualEntry.quantity": "Кількість"
 }

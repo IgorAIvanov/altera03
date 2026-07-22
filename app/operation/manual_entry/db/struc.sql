@@ -19,6 +19,8 @@ create table if not exists app.manual_entry_line (
   debit_account     varchar(10) references app.chart_of_account (code),
   credit_account    varchar(10) references app.chart_of_account (code),
   amount            numeric(18,2) not null default 0,
+  currency_id       bigint references app.currency (id),
+  currency_amount   numeric(18,2),
   quantity          numeric(18,3),
   debit_analytics   jsonb not null default '{}'::jsonb,
   credit_analytics  jsonb not null default '{}'::jsonb,
