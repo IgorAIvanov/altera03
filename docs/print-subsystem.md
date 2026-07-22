@@ -30,15 +30,22 @@
     }
   },
   "commands": {
-    "sql": { "printData": "invoice_print_data" },
-    "ts":  { "printPdf": { "handlerKey": "runtime.printPdf" } }
+    "sql": { "printData": "invoice_print_data" }
   }
 }
 ```
 
+Команду `printPdf` оголошувати не треба: непорожній блок `prints` уже сказав, що
+модель друкується, і генератор реєстру виводить із нього прив'язку до хендлера
+ядра `runtime.printPdf`. Явне оголошення в `commands.ts` лишається як
+перекриття — для моделі, якій потрібен власний обробник друку замість ядрового.
+
 `handlerKey` — ключ готового хендлера ядра. Застосунок не знає шляхів усередині
 `server/`: ключ резолвиться реєстром
 ([`model-registry.ts`](../server/modules/model-runtime/model-registry.ts)).
+
+А от `commands.sql.printData` потрібен: `printData` не входить до стандартної
+п'ятірки, тож рантайм не виводить ім'я функції за конвенцією і не вгадує його.
 
 Далі — SQL-команда даних (`app.<model>_print_data`), файл шаблону в `prints/`,
 `deno task sql:registry && deno task sql:assemble && deno task sql:publish`.

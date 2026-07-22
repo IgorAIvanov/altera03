@@ -151,10 +151,11 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 на pdf-lib. Клієнт не рендерить нічого — викликає команду, сервер повертає готовий PDF;
 прев'ю редактора малює той самий рендерер (`runtime.printPreview`), тому розійтися з
 друком не може. У застосунку лишається тільки опис форми в `manifest.json`
-(`prints`: файл шаблону + `dataCommand`, `commands.ts.printPdf` з
-`"handlerKey": "runtime.printPdf"`) і сам файл шаблону в `prints/`. Таблиця шаблонів і
-`print_template_resolve` — у `app/_sqlinit/print_template/`; редагування шаблонів —
-звичайна admin-модель `app/admin/print_template/`. Деталі —
+(`prints`: файл шаблону + `dataCommand`, і `commands.sql.printData` — саму команду
+`printPdf` генератор виводить із непорожнього `prints`) і сам файл шаблону в `prints/`.
+Таблиця шаблонів і `print_template_resolve` — у `app/_sqlinit/print_template/`;
+редагування шаблонів — звичайна admin-модель `app/admin/print_template/`. Skill —
+[`model-print-form`](.github/skills/model-print-form/SKILL.md); деталі —
 [`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
 
 ## TypeBox-схема

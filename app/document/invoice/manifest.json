@@ -17,9 +17,6 @@
   "commands": {
     "sql": {
       "printData": "invoice_print_data"
-    },
-    "ts": {
-      "printPdf": { "handlerKey": "runtime.printPdf" }
     }
   },
   "views": {

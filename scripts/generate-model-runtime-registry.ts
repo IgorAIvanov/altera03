@@ -25,6 +25,12 @@ type ManifestRecord = {
   model?: string;
   type?: string;
   schema?: string;
+  /**
+   * Друковані форми моделі. Сам блок читає `sql:assemble` (сеє шаблони в БД);
+   * тут його наявність — ознака «модель друкується», з якої виводиться
+   * TS-команда `printPdf`.
+   */
+  prints?: Record<string, unknown>;
   commands?: {
     sql?: Record<string, ManifestSqlCommand>;
     ts?: Record<string, ManifestTsCommand>;
@@ -194,6 +200,13 @@ function renderTsBindings(
   for (const { manifestPath, manifest } of manifests) {
     const tsCommands = Object.entries(manifest.commands?.ts ?? {})
       .sort(([left], [right]) => left.localeCompare(right));
+
+    // Модель із блоком `prints` друкується — команду друку виводимо з нього,
+    // щоб маніфест не повторював те, що вже сказав. Явне оголошення в
+    // commands.ts лишається можливим: воно перекриває хендлер ядра.
+    if (Object.keys(manifest.prints ?? {}).length > 0 && !manifest.commands?.ts?.printPdf) {
+      tsCommands.push(["printPdf", { handlerKey: "runtime.printPdf" }]);
+    }
 
     for (const [command, definition] of tsCommands) {
       if (definition.handlerKey) {
