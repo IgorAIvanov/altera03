@@ -10,6 +10,8 @@ deno task dev:server   # тільки backend (--watch)
 deno task dev:front    # тільки Vite dev server
 deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest) з manifest.json
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
+deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
+deno task api          # дьоргнути команду моделі з консолі: api <model> <command> [json]
 deno task sql:assemble # зібрати SQL-пакет з db/ файлів моделей
 deno task sql:publish  # опублікувати SQL у PostgreSQL
 deno task startdb      # docker compose up -d (PostgreSQL)
@@ -206,6 +208,45 @@ Primary key: `bigint` у БД, `string` у TypeScript/JSON (щоб уникну�
 7. Запустити `deno task sql:assemble && deno task sql:publish` → опублікувати SQL у БД
 
 Окремий backend-модуль/контролер потрібен лише для нестандартної логіки.
+
+## Інструменти розробника
+
+`app/server.ts` експортує `createServer()` — застосунок як обробник `(Request) => Response`,
+без прив'язки до порту (`Deno.serve` живе під `import.meta.main`). Завдяки цьому обидва
+інструменти піднімають застосунок **у своєму процесі**: не треба ні вільного порту, ні
+запущеного `dev:server`, ні очікування готовності, а у відповідь приходить справжній
+`Response` зі справжнім статусом — включно з 304, який HTTP-клієнти часто з'їдають.
+
+```bash
+deno task smoke                            # усі проби; проби, що пишуть, прибирають за собою
+deno task api bank list                    # конверт команди моделі
+deno task api bank get '{"id":"1"}'        # з payload
+deno task api bank list --user 5           # від імені користувача
+deno task api bank list --raw | jq .data   # чистий JSON під конвеєр
+```
+
+Обидва спираються на `scripts/dev-guard.ts` і відмовляються стартувати, якщо оточення
+позначене як `production`/`prod`/`staging` або `DB_HOST` не локальний — БД береться з `.env`,
+і промах у ньому не має коштувати чужих даних. Обхід не передбачено свідомо.
+
+Нову пробу додавай кроком у `scripts/smoke_test.ts`; запис у БД — тільки свій рядок і тільки
+з прибиранням у `finally`.
+
+### DENO_EMIT_CACHE_MODE=disable у задачах
+
+Три задачі, що піднімають граф Danet (`dev:server`, `smoke`, `api`), запускаються з
+`DENO_EMIT_CACHE_MODE=disable`. Причина не в продуктивності: Windows Defender хибно
+позначає кеш транспіляції як `Trojan:Script/ObfusScript.A!ml`. Спрацьовує ML-евристика на
+формі файлу — 68% його обсягу це base64 інлайн-sourcemap, і за силуетом це збігається з
+упакованим скриптом. Код при цьому звичайнісінький (`@danet/core/src/events/events.ts`,
+`EventEmitter` над `EventTarget`), і побайтово той самий, що був до оновлення — змінився
+лише номер версії у шляху, а з ним і хеш імені файлу в кеші.
+
+Без кеша файл на диск не лягає — нічого сканувати, і антивірус лишається на повну силу
+(на відміну від виключення теки). Ціна заміряна: різниці у швидкості немає. `deno check`
+і `deno lint` цей файл не створюють — вони не виконують код.
+
+Коли Defender оновить визначення, префікс можна буде прибрати.
 
 ## Змінні середовища (server/.env)
 

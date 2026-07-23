@@ -1,5 +1,5 @@
 import { Injectable } from "@danet/core";
-import { AuthenticationRequiredError } from "./http.ts";
+import { AuthenticationRequiredError, bearerToken, type HttpRequest } from "./http.ts";
 import { DatabaseService } from "../database/database.service.ts";
 
 const BIGINT_ID_PATTERN = /^\d+$/;
@@ -21,46 +21,6 @@ export interface RequestAuthContext {
 
 interface ActiveUserRow {
   id: string;
-}
-
-function getHeaders(request: unknown): Headers | null {
-  if (!request || typeof request !== "object") {
-    return null;
-  }
-
-  const requestRecord = request as Record<string, unknown>;
-  const directHeaders = requestRecord.headers;
-  if (directHeaders instanceof Headers) {
-    return directHeaders;
-  }
-
-  const nestedCandidates = [requestRecord.raw, requestRecord.req, requestRecord.request];
-  for (const candidate of nestedCandidates) {
-    if (!candidate || typeof candidate !== "object") {
-      continue;
-    }
-
-    const candidateHeaders = (candidate as Record<string, unknown>).headers;
-    if (candidateHeaders instanceof Headers) {
-      return candidateHeaders;
-    }
-  }
-
-  return null;
-}
-
-function getBearerToken(request: unknown): string | null {
-  const header = getHeaders(request)?.get("authorization");
-  if (!header) {
-    return null;
-  }
-
-  const [scheme, token] = header.split(/\s+/, 2);
-  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
-    return null;
-  }
-
-  return token.trim() || null;
 }
 
 function normalizeUserId(value: string | null | undefined): string | null {
@@ -86,10 +46,9 @@ function isDevAuthBypassEnabled() {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
-function getDevBypassUserIdCandidate(request: unknown) {
-  const headers = getHeaders(request);
+function getDevBypassUserIdCandidate(request: HttpRequest) {
   return normalizeUserId(
-    headers?.get("x-dev-user-id")
+    request.header("x-dev-user-id")
       ?? Deno.env.get("DEV_AUTH_USER_ID")
       ?? Deno.env.get("DEFAULT_USER_ID"),
   );
@@ -106,7 +65,7 @@ async function hashToken(token: string): Promise<string> {
 export class RequestUserService {
   constructor(private db: DatabaseService) {}
 
-  async resolveUserId(request: Request, payload?: unknown): Promise<string> {
+  async resolveUserId(request: HttpRequest, payload?: unknown): Promise<string> {
     return (await this.resolveAuthContext(request, payload)).userId;
   }
 
@@ -114,7 +73,7 @@ export class RequestUserService {
    * Користувач + сесія. Сесія потрібна там, де право доступу переїжджає в
    * URL (токени вкладень): такий токен має вмирати разом із сесією.
    */
-  async resolveAuthContext(request: Request, _payload?: unknown): Promise<RequestAuthContext> {
+  async resolveAuthContext(request: HttpRequest, _payload?: unknown): Promise<RequestAuthContext> {
     const session = await this.resolveSession(request);
     if (session) {
       return session;
@@ -128,7 +87,7 @@ export class RequestUserService {
     throw new AuthenticationRequiredError();
   }
 
-  private async resolveDevBypassUserId(request: Request): Promise<string | null> {
+  private async resolveDevBypassUserId(request: HttpRequest): Promise<string | null> {
     if (!isDevAuthBypassEnabled()) {
       return null;
     }
@@ -169,8 +128,8 @@ export class RequestUserService {
     return rows[0].id;
   }
 
-  private async resolveSession(request: Request): Promise<RequestAuthContext | null> {
-    const token = getBearerToken(request);
+  private async resolveSession(request: HttpRequest): Promise<RequestAuthContext | null> {
+    const token = bearerToken(request);
     if (!token) {
       return null;
     }

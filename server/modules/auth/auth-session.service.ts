@@ -1,5 +1,6 @@
 import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
+import type { HttpRequest } from "../../common/http.ts";
 import { AuthTokenService } from "./auth-token.service.ts";
 import type { AuthSessionInfo, AuthSessionRow, AuthUserDto, AuthUserRow } from "./auth.types.ts";
 import { toAuthUserDto } from "./auth.types.ts";
@@ -48,7 +49,7 @@ export class AuthSessionService {
     };
   }
 
-  async resolveSessionUser(request: Request): Promise<{ user: AuthUserDto; session: AuthSessionInfo } | null> {
+  async resolveSessionUser(request: HttpRequest): Promise<{ user: AuthUserDto; session: AuthSessionInfo } | null> {
     const token = this.tokenService.extractBearerToken(request);
     if (!token) {
       return null;
@@ -95,7 +96,7 @@ export class AuthSessionService {
     };
   }
 
-  async refreshSession(request: Request): Promise<AuthSessionInfo | null> {
+  async refreshSession(request: HttpRequest): Promise<AuthSessionInfo | null> {
     const token = this.tokenService.extractBearerToken(request);
     if (!token) {
       return null;
@@ -134,7 +135,7 @@ export class AuthSessionService {
     };
   }
 
-  async revokeSession(request: Request): Promise<boolean> {
+  async revokeSession(request: HttpRequest): Promise<boolean> {
     const token = this.tokenService.extractBearerToken(request);
     if (!token) {
       return false;

@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "exports": "./main.ts",
   "imports": {
-    "@danet/core": "jsr:@danet/core@^2.9.6",
+    "@danet/core": "jsr:@danet/core@^2.11.1",
     "@danet/validatte": "jsr:@danet/validatte@^0.7.9",
     "postgres": "npm:postgres@^3.4.5",
     "decimal.js": "npm:decimal.js@^10.6.0",

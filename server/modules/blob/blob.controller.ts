@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Post, Req } from "@danet/core";
-import { AuthenticationRequiredError, getRequestHeaders, jsonResponse } from "../../common/http.ts";
+import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { BlobService, getMaxUploadBytes, isInlineSafe } from "./blob.service.ts";
 
@@ -51,8 +51,7 @@ export class BlobController {
    */
   @Post("upload")
   async upload(
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     try {
       const auth = await this.requestUserService.resolveAuthContext(req);
@@ -118,8 +117,7 @@ export class BlobController {
   @Get(":id")
   async download(
     @Param("id") id: string,
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     try {
       const url = new URL(req.url);
@@ -138,7 +136,7 @@ export class BlobController {
       const disposition = wantsInline && isInlineSafe(attachment.mime) ? "inline" : "attachment";
 
       const etag = `"${attachment.id}-${attachment.sha256 ?? attachment.size}"`;
-      if (getRequestHeaders(req)?.get("if-none-match") === etag) {
+      if (req.header("if-none-match") === etag) {
         return new Response(null, { status: 304, headers: { etag } });
       }
 

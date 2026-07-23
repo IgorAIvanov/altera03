@@ -33,13 +33,31 @@ async function pathExists(path: string) {
   }
 }
 
-async function createHandler() {
+/** Обробник запиту — те саме, що бачить `Deno.serve`. */
+export type AppHandler = (request: Request) => Promise<Response>;
+
+/** Піднятий застосунок без прив'язки до порту: обробник + коректне згортання. */
+export interface AppServer {
+  handler: AppHandler;
+  /** Виконує APP_CLOSE-хуки (зокрема закриває пул БД). */
+  close(): Promise<void>;
+}
+
+/**
+ * Збирає застосунок і віддає його обробником, нікуди не слухаючи.
+ *
+ * Порт з'являється тільки в `import.meta.main` нижче — завдяки цьому той самий
+ * застосунок можна ганяти в процесі (`deno task smoke`, `deno task api`) без
+ * вільного порту, очікування готовності й HTTP-клієнта.
+ */
+export async function createServer(): Promise<AppServer> {
   const application = await bootstrap();
-  const danetInternalApp = (application as unknown as { app: { fetch: (request: Request) => Promise<Response> } }).app;
-  const apiHandler = danetInternalApp.fetch.bind(danetInternalApp);
+  // `router` — публічний геттер Danet на внутрішній Hono-застосунок.
+  const hono = application.router;
+  const apiHandler = hono.fetch.bind(hono);
   const hasFrontendDist = await pathExists(frontendDistDir);
 
-  return async (request: Request) => {
+  const handler: AppHandler = async (request: Request) => {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
@@ -64,9 +82,16 @@ async function createHandler() {
 
     return await apiHandler(request);
   };
+
+  return {
+    handler,
+    close: () => application.close(),
+  };
 }
 
-const port = Number(Deno.env.get("PORT") || 3000);
-const handler = await createHandler();
-Deno.serve({ port }, handler);
-console.log(`🚀 Altera server running on http://localhost:${port}`);
+if (import.meta.main) {
+  const port = Number(Deno.env.get("PORT") || 3000);
+  const { handler } = await createServer();
+  Deno.serve({ port }, handler);
+  console.log(`🚀 Altera server running on http://localhost:${port}`);
+}

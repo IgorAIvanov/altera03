@@ -1,6 +1,11 @@
 {
   "tasks": {
-    "dev:server": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./app/server.ts",
+    // DENO_EMIT_CACHE_MODE=disable — тільки для задач, що тягнуть граф Danet.
+    // Windows Defender (ML-евристика ObfusScript) хибно спрацьовує на кеші
+    // транспіляції: 68% такого файлу — base64 інлайн-sourcemap, і за формою це
+    // збігається з упакованим скриптом. Без кешу файл на диск не лягає, а
+    // антивірус лишається на повну. Заміряно: різниці у швидкості немає.
+    "dev:server": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./app/server.ts",
     "dev:front": "deno run -A npm:vite",
     "dev": "deno task dev:server & deno task dev:front",
     "build:front": "deno run -A npm:vite build",
@@ -10,6 +15,8 @@
     "sql:registry": "deno run -A ./scripts/generate-model-runtime-registry.ts ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
     "sql:gen": "deno run -A ./scripts/generate-model-sql.ts ./app --verbose",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
+    "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
+    "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "sql:assemble": "deno run -A ./scripts/assemble-sql-package.ts ./app --verbose",
     "sql:publish": "deno run -A --env-file ./scripts/publish-sql.ts --verbose",
     "model:build": "deno task sql:registry && deno task sql:gen && deno task sql:assemble && deno task sql:publish"
@@ -20,7 +27,7 @@
     "@app/": "./app/",
     "@client/": "./client/",
     "@shared/": "./app/shared/",
-    "@danet/core": "jsr:@danet/core@^2.9.6",
+    "@danet/core": "jsr:@danet/core@^2.11.1",
     "@danet/validatte": "jsr:@danet/validatte@^0.7.9",
     "@fontsource/roboto": "npm:@fontsource/roboto@^5.2.10",
     "pdf-lib": "npm:pdf-lib@^1.17.1",

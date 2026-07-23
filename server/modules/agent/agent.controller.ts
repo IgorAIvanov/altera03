@@ -1,5 +1,5 @@
 import { Controller, Post, Req } from "@danet/core";
-import { AuthenticationRequiredError, jsonResponse } from "../../common/http.ts";
+import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { AgentService } from "./agent.service.ts";
 import { AgentLlmService } from "./agent-llm.service.ts";
@@ -19,8 +19,7 @@ export class AgentController {
 
   @Post("chat")
   async chat(
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     try {
       let body: unknown = {};
@@ -58,8 +57,7 @@ export class AgentController {
 
   @Post("llm-chat")
   async llmChat(
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     try {
       let message: string | undefined;
@@ -67,12 +65,7 @@ export class AgentController {
       let fileUpload: { bytes: Uint8Array; filename: string; mimeType: string } | undefined;
       let bodyForAuth: unknown = {};
 
-      // Безопасно читаем content-type (в Danet req.headers может быть нестандартным)
-      let contentType = "";
-      try {
-        // deno-lint-ignore no-explicit-any
-        contentType = (req as any).headers?.get?.("content-type") ?? "";
-      } catch { /* ignore */ }
+      const contentType = req.header("content-type") ?? "";
 
       if (contentType.includes("multipart/form-data")) {
         const formData = await req.formData();

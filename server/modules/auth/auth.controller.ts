@@ -3,6 +3,7 @@ import { AuthBootstrapService } from "./auth-bootstrap.service.ts";
 import { AuthFlowService } from "./auth-flow.service.ts";
 import { AuthSessionService } from "./auth-session.service.ts";
 import { ok, err } from "../../common/response.ts";
+import type { HttpRequest } from "../../common/http.ts";
 import type { AuthLoginRequest } from "./auth.types.ts";
 
 @Controller("api/auth")
@@ -46,8 +47,7 @@ export class AuthController {
 
   @Get("me")
   async me(
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     const sessionUser = await this.authSessionService.resolveSessionUser(req);
     if (sessionUser) {
@@ -59,8 +59,7 @@ export class AuthController {
 
   @Post("logout")
   async logout(
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     await this.authSessionService.revokeSession(req);
     return ok({ loggedOut: true });
@@ -68,8 +67,7 @@ export class AuthController {
 
   @Post("refresh")
   async refresh(
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     const session = await this.authSessionService.refreshSession(req);
     if (!session) {

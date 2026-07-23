@@ -1,5 +1,5 @@
 import { Controller, Param, Post, Req } from "@danet/core";
-import { AuthenticationRequiredError, jsonResponse } from "../../common/http.ts";
+import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { ModelRuntimeService } from "./model-runtime.service.ts";
 
@@ -26,8 +26,7 @@ export class ModelRuntimeController {
   async execute(
     @Param("model") model: string,
     @Param("command") command: string,
-    // @ts-expect-error Danet exports Req as a decorator factory, but its published types are incorrect.
-    @Req() req: Request,
+    @Req() req: HttpRequest,
   ) {
     try {
       let body: unknown = {};

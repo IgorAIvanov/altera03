@@ -1,35 +1,5 @@
 import { Injectable } from "@danet/core";
-
-function getHeaders(request: unknown): Headers | null {
-  if (!request || typeof request !== "object") {
-    return null;
-  }
-
-  const requestRecord = request as Record<string, unknown>;
-  const directHeaders = requestRecord.headers;
-  if (directHeaders instanceof Headers) {
-    return directHeaders;
-  }
-
-  const nestedCandidates = [
-    requestRecord.raw,
-    requestRecord.req,
-    requestRecord.request,
-  ];
-
-  for (const candidate of nestedCandidates) {
-    if (!candidate || typeof candidate !== "object") {
-      continue;
-    }
-
-    const candidateHeaders = (candidate as Record<string, unknown>).headers;
-    if (candidateHeaders instanceof Headers) {
-      return candidateHeaders;
-    }
-  }
-
-  return null;
-}
+import { bearerToken, type HttpRequest } from "../../common/http.ts";
 
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = "";
@@ -60,18 +30,7 @@ export class AuthTokenService {
     return bytesToHex(new Uint8Array(digest));
   }
 
-  extractBearerToken(request: unknown): string | null {
-    const headers = getHeaders(request);
-    const header = headers?.get("authorization");
-    if (!header) {
-      return null;
-    }
-
-    const [scheme, token] = header.split(/\s+/, 2);
-    if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
-      return null;
-    }
-
-    return token.trim() || null;
+  extractBearerToken(request: HttpRequest): string | null {
+    return bearerToken(request);
   }
 }

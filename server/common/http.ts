@@ -8,28 +8,37 @@ export class AuthenticationRequiredError extends Error {
 }
 
 /**
- * Заголовки запиту. Danet передає в `@Req()` не завжди справжній `Request`:
- * буває обгортка, у якої сам запит лежить у `raw`/`req`/`request`, а `headers`
- * на верхньому рівні немає. Звертатися до `req.headers.get()` напряму тому не
- * можна — впаде на undefined.
+ * Запит у тому вигляді, в якому його віддає `@Req()`.
+ *
+ * Це **не** WHATWG `Request`: Danet резолвить параметр як `context.req`, тобто
+ * обгортку Hono. Заголовки читаються через `header()`, а справжній запит лежить
+ * у `raw` — саме тому пряме `req.headers.get()` падало на undefined.
+ *
+ * Оголошено структурно, щоб Hono не протікав у типи застосунку: якщо колись
+ * міняємо HTTP-шар, правити треба тільки цей інтерфейс.
  */
-export function getRequestHeaders(request: unknown): Headers | null {
-  if (!request || typeof request !== "object") {
+export interface HttpRequest {
+  readonly raw: Request;
+  readonly url: string;
+  readonly method: string;
+  header(name: string): string | undefined;
+  json(): Promise<unknown>;
+  formData(): Promise<FormData>;
+}
+
+/** Токен зі схеми `Authorization: Bearer …`, або null, якщо його немає. */
+export function bearerToken(request: HttpRequest): string | null {
+  const header = request.header("authorization");
+  if (!header) {
     return null;
   }
 
-  const record = request as Record<string, unknown>;
-  if (record.headers instanceof Headers) {
-    return record.headers;
+  const [scheme, token] = header.split(/\s+/, 2);
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
+    return null;
   }
 
-  for (const candidate of [record.raw, record.req, record.request]) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const headers = (candidate as Record<string, unknown>).headers;
-    if (headers instanceof Headers) return headers;
-  }
-
-  return null;
+  return token.trim() || null;
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {
