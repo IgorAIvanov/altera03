@@ -1,6 +1,0 @@
-{
-  "model": "user_group",
-  "type": "admin",
-  "schema": "app",
-  "views": {}
-}

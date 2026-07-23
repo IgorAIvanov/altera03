@@ -1,1 +1,0 @@
--- no seed data for user_group model.
