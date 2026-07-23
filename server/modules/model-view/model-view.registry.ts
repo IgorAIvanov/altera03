@@ -1,22 +1,11 @@
 import type { ViewEntry, ViteManifest } from "./model-view.types.ts";
+import { getServerConfig } from "../../config/server-config.ts";
 
 /** Запис view-маніфесту: маршрут → файл модуля (відносно кореня репо) → titleKey. */
 export interface ViewManifestEntry {
   route: string;
   moduleFile: string;
   titleKey?: string;
-}
-
-let _entries: ViewManifestEntry[] = [];
-let _projectRoot = "";
-
-/**
- * Реєструє view-маніфест (з app/_generated) та корінь проєкту. Викликається у
- * composition root застосунку (app/server.ts) ДО bootstrap(); runtime ФС не сканує.
- */
-export function registerViewManifest(entries: ViewManifestEntry[], projectRoot: string): void {
-  _entries = entries;
-  _projectRoot = projectRoot.replaceAll("\\", "/").replace(/\/$/, "");
 }
 
 async function readJson<T>(path: string): Promise<T | null> {
@@ -72,11 +61,11 @@ async function buildProdRegistry(
 }
 
 export async function buildViewRegistry(): Promise<Map<string, ViewEntry>> {
-  const isDev = !!Deno.env.get("VITE_DEV_URL");
-  const registry = isDev
-    ? buildDevRegistry(_entries, _projectRoot)
-    : await buildProdRegistry(_entries, _projectRoot);
+  const { manifest, projectRoot, dev } = getServerConfig().views;
+  const registry = dev
+    ? buildDevRegistry(manifest, projectRoot)
+    : await buildProdRegistry(manifest, projectRoot);
 
-  console.log(`[model-view] режим: ${isDev ? "dev" : "prod"}, маршрутів: ${registry.size}`);
+  console.log(`[model-view] режим: ${dev ? "dev" : "prod"}, маршрутів: ${registry.size}`);
   return registry;
 }

@@ -8,10 +8,12 @@
       *, *::before, *::after { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; height: 100%; }
       tab-controller { display: flex; height: 100%; }
+      #app { height: 100%; }
     </style>
   </head>
   <body>
-    <tab-controller></tab-controller>
+    <!-- Вміст монтує main.ts: оболонку або екран входу — залежно від сесії. -->
+    <div id="app"></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

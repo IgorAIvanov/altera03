@@ -4,6 +4,7 @@ import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
 import { shellTags } from "../shell/shell-registry.ts";
 import "@client/ui-kit/picker-host.ts";
+import { apiFetch } from "../data/api.ts";
 
 const MAX_TABS = 10;
 const HOME_TAB_ID = "home";
@@ -69,7 +70,7 @@ function storeTabs(state: StoredTabs) {
 async function resolveChunk(route: string): Promise<{ chunkUrl: string; titleKey?: string } | null> {
   const [module, model, view] = route.split("/");
   try {
-    const res = await fetch(`/api/view/${module}/${model}/${view}`);
+    const res = await apiFetch(`/api/view/${module}/${model}/${view}`);
     const data = await res.json();
     if (!data.ok) {
       console.error(`[tabs] сервер відповів ok:false для ${route}:`, data);

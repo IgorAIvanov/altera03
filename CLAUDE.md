@@ -12,6 +12,7 @@ deno task sql:registry # згенерувати app/_generated/* (model-registry
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
 deno task api          # дьоргнути команду моделі з консолі: api <model> <command> [json]
+deno task passwd       # встановити пароль користувача: passwd <логін> [пароль]
 deno task sql:assemble # зібрати SQL-пакет з db/ файлів моделей
 deno task sql:publish  # опублікувати SQL у PostgreSQL
 deno task startdb      # docker compose up -d (PostgreSQL)
@@ -21,7 +22,9 @@ deno task stopdb       # docker compose down
 ## Структура репозиторію
 
 ```
-app/                        # фронтенд-модулі та SQL-джерела (Deno workspace)
+app/                        # застосунок: фронтенд-модулі та SQL-джерела (Deno workspace)
+  index.html                # точка входу фронтенду
+  main.ts                   # composition root клієнта: реєструє оболонку → tab-controller
   <family>/<model>/         # один каталог на модель
     manifest.json           # декларація моделі (model, type, schema, views, agent)
     <Model>Edit.ts          # форма редагування (Lit)
@@ -35,35 +38,79 @@ app/                        # фронтенд-модулі та SQL-джере�
       data.sql              # seed-дані
   _locales/                 # локалізація: en.json, uk.json ...
   _sqlpackage/              # зібрані SQL-файли (генеруються, не редагувати)
+  # SQL ядра (доступ, attachment, document, journal_entry, print_template,
+  # help_*) лежить у server/sql/ і підключається записами "@core/<назва>" у sql.json.
   _generated/               # авто-генерація (deno task sql:registry): model-registry, agent-routes, view-manifest
   server.ts                 # composition root бекенду: реєструє дані з _generated → bootstrap (Danet)
   shared/schema.ts          # спільні TypeBox-типи: OptionRow, PagePayload, SortDir
   sql.json                  # список моделей для sql:assemble
 
-client/                     # ui-kit та клієнтський runtime (Deno workspace)
+client/                     # ui-kit та клієнтський runtime — БІБЛІОТЕКА (Deno workspace)
   ui-kit/components/        # web components: ui-picker, ...
   bus/bus.ts                # event bus: bus.request("data.load", { model, command, payload })
+  # index.html і main.ts тут немає навмисно: вони належать застосунку (app/).
 
 server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace), не залежить від app
-  main.ts                         # public API бібліотеки: bootstrap + register* (барель)
+  main.ts                         # public API бібліотеки: bootstrap + configFromEnv + типи (барель)
+  sql/                            # SQL ядра + core-sql.ts (окремий експорт "@scope/server/sql")
+    access/                       # користувачі, сесії, групи, права (див. нижче)
+  config/
+    server-config.ts              # ServerOptions/ServerConfig — увесь контракт налаштувань
+    config-from-env.ts            # configFromEnv(): збірка конфігурації з оточення (явний виклик)
   modules/model-runtime/
     model-runtime.controller.ts   # REST: POST /api/model/:model/:command
     model-runtime.service.ts      # викликає PostgreSQL-функцію або TS-handler
-    model-registry.ts             # холдер реєстру; наповнюється registerModelRegistry() з app/_generated
+    model-registry.ts             # реєстр моделей; будується з config.models на першу потребу
   modules/agent/
     agent.service.ts              # прямий диспетчер команд (без LLM)
     agent-llm.service.ts          # LLM-агент (OpenAI Responses API)
-    agent-routes.ts               # холдер маршрутів агента; registerAgentRoutes()
+    agent-routes.ts               # getAgentRoutes() — маршрути з config.agentRoutes
   modules/model-view/
-    model-view.registry.ts        # холдер view-маніфесту; registerViewManifest() (без ФС-скану)
-  modules/auth/                   # JWT-авторизація
-  database/
-    publish-app-sql.ts            # публікація SQL у БД
+    model-view.registry.ts        # view-реєстр з config.views (без ФС-скану)
+  modules/auth/                   # авторизація; методи входу — з config.auth.methods
+  database/                       # тільки рантайм: модуль і пул з'єднань
+
+scripts/                    # збіркові інструменти (НЕ частина бібліотек)
+  assemble-sql-package.ts         # збірка SQL-пакета з db/ файлів моделей
+  publish-app-sql.ts              # публікація зібраного SQL у БД
+  generate-model-*.ts             # генерація app/_generated
+  check-deps.ts                   # guardrail меж пакетів
+  smoke_test.ts, api.ts           # інструменти розробника (див. нижче)
 ```
 
 > **Напрямок залежностей:** `app → client/server`, ніколи навпаки. Бекенд-runtime отримує
-> дані про моделі/маршрути/в'ю ззовні (composition root `app/server.ts` реєструє їх із
-> `app/_generated`). Перевірка — `deno task check:deps`.
+> все ззовні — одним аргументом `bootstrap()`. Збіркові інструменти живуть у `scripts/`, а не
+> всередині бібліотек: те, що читає `app/sql.json` чи `_sqlpackage`, знає про застосунок і в
+> пакет потрапити не має. `deno task check:deps` перевіряє обидва правила — і залежність від
+> застосунку, і вихід відносним імпортом за межі `client/` чи `server/`.
+
+## Конфігурація сервера
+
+`server/` — бібліотека: вона не читає ні файлову систему в пошуках моделей, ні `Deno.env`.
+Усе приходить одним типізованим аргументом:
+
+```ts
+// app/server.ts — composition root
+const application = await bootstrap({
+  ...configFromEnv(),                       // database, auth, blob, agent — з оточення, явно
+  models: { registry: generatedModelRegistry, tsCommands: generatedTsCommandBindings },
+  agentRoutes: agentModelRoutes,
+  views: { manifest: viewManifest, projectRoot, dev: !!Deno.env.get("VITE_DEV_URL") },
+});
+```
+
+Обов'язкові поля — `database`, `models`, `views`; `auth`/`blob`/`agent`/`agentRoutes` мають
+дефолти. Пропущене обов'язкове поле — помилка типів, а не падіння на першому запиті.
+
+`configFromEnv()` — єдине місце, де читається оточення, і викликає його **застосунок**, а не
+бібліотека. Там же перевіряються суперечності: `DEV_AUTH_BYPASS` у продуктивному оточенні
+валить старт сервера, а не спрацьовує на першому запиті.
+
+Змінні оточення (усі — лише через `configFromEnv`): `DB_HOST/PORT/NAME/USERNAME/PASSWORD`,
+`DB_POOL_SIZE`, `AUTH_SESSION_TTL_HOURS`, `BOOTSTRAP_LOGIN/PASSWORD/FULL_NAME`,
+`DEV_AUTH_BYPASS`, `DEV_AUTH_USER_ID`, `DEFAULT_USER_ID`, `NODE_ENV`/`APP_ENV`/`DENO_ENV`,
+`BLOB_TOKEN_SECRET`, `JWT_SECRET`, `BLOB_TOKEN_TTL_HOURS`, `BLOB_MAX_SIZE_MB`,
+`OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_ROUTER_MODEL`.
 
 ## Модель — основна одиниця
 
@@ -105,6 +152,10 @@ server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace
 ```json
 { "ok": true, "data": { "item": {}, "rows": [], "options": {}, "totals": {} }, "messages": [] }
 ```
+
+**Цей конверт — один на весь API, включно з авторизацією.** Одиночний об'єкт іде в `item`,
+список — у `rows`, відмова — `ok: false` + `messages`. Хелпери для TS-відповідей:
+`ok()`, `rows()`, `err()` у `server/common/response.ts`.
 
 ## Backend runtime
 
@@ -159,6 +210,67 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 редагування шаблонів — звичайна admin-модель `app/admin/print_template/`. Skill —
 [`model-print-form`](.github/skills/model-print-form/SKILL.md); деталі —
 [`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
+
+## Доступ (користувачі, групи, права)
+
+У ядрі (`server/sql/access/`, пакет `@core/access`): `app.users`, `app.auth_session`,
+`app.user_group`, `app.user_group_member`, `app.user_group_permission`. Живе у фреймворку,
+бо на `app.users` посилаються `app.document` і `app.attachment`, а без сесій немає авторизації.
+
+Право — трійка **група → модель → дія**. Модель це ім'я з `manifest.json`, тобто те саме, що
+приходить у `ModelRuntimeService.execute(model, command, …)`; `model = '*'` означає всі моделі.
+Дії: `view` (list/get/lookup), `create`, `edit`, `delete` — для будь-якої моделі; `post` і
+`unpost` — додатково для документів.
+
+```sql
+app.access_can(user_id, model, action) returns boolean   -- перевірка права
+app.access_effective(user_id, payload)                   -- плоский список (model, action)
+app.user_list / user_get / user_save / user_delete / user_lookup
+app.user_group_list / user_group_get / user_group_save / user_group_delete / user_group_lookup
+```
+
+`user_save` пароля не приймає: хеш рахує TS (PBKDF2-SHA256, `password-hash.ts`), новий
+користувач створюється з порожнім хешем і увійти не може, доки пароль не встановлять.
+Зробити це можна з консолі — `deno task passwd <логін> [пароль]` — або з адмін-екрана
+застосунку через `hashPassword()` з `@scope/server`. Перевірка вимагає префікс
+`pbkdf2_sha256$`, тому «сирий» рядок у `password_hash` означає, що увійти неможливо
+взагалі — саме так виглядає користувач, заведений в обхід цієї схеми. `user_delete` не видаляє користувача, на якого посилаються документи чи
+вкладення, — деактивує.
+
+Дві групи «з коробки»: `admin` (усі дії над `*`) і `viewer` (лише `view`).
+
+**Сесія — httpOnly-cookie.** Токен назовні не віддається взагалі: ані в тілі відповіді, ані
+в JS. Браузер носить його сам, тому XSS до нього не дістанеться. `Authorization: Bearer`
+лишається для скриптів і сторонніх клієнтів — вони беруть токен із `set-cookie`.
+
+Захист від CSRF подвійний: `SameSite=Strict` плюс обов'язковий заголовок `X-Requested-With`
+для методів, що змінюють стан. Заголовок перевіряється **лише** коли токен прийшов із cookie:
+`Authorization` чужа сторінка підставити не може, бо для цього потрібен preflight, а CORS
+сервер не вмикає. Змінні: `AUTH_COOKIE_NAME`, `AUTH_COOKIE_SECURE` (у продуктиві — завжди).
+
+На клієнті всі запити до `/api` йдуть через `apiFetch` (`client/data/api.ts`) — єдине місце,
+де ставиться CSRF-заголовок і обробляється 401: одна спроба `refresh`, повтор запиту, і лише
+потім вихід у екран входу. Стан сесії й права — `client/auth/session.ts` (`can(model, action)`).
+
+**Екран входу** належить застосунку: `app/login/app-login.ts`, реєструється як `login`
+у `registerShell(...)`. `app/main.ts` піднімає оболонку **тільки** після успішної сесії —
+`tab-controller` імпортується динамічно, тож неавторизований користувач не тягне граф UI.
+Перший запуск — не окрема сторінка, а стан того самого екрана (див. `bootstrap-state`).
+
+**Методи входу.** Вбудований — пароль (`AUTH_PASSWORD_ENABLED=false` вимикає). Зовнішні
+провайдери застосунок підкладає сам, реалізувавши `AuthMethod` і поклавши екземпляр у конфіг:
+
+```ts
+const env = configFromEnv();
+bootstrap({ ...env, auth: { ...env.auth, methods: [new GoogleAuthMethod(...)] }, … })
+```
+
+Метод потрапляє в `GET /api/auth/methods` і в `auth_session.auth_method`. Redirect-потік
+(OAuth-код і callback) контрактом `authenticate(payload)` поки не описаний, як і зв'язка
+локального користувача із зовнішнім `sub` — це наступний крок.
+**Інтерфейсної частини у фреймворку немає навмисно** — структури й функції дає ядро, а екрани
+керування доступом застосунок робить як і де йому зручно. Перевірка права в рантаймі поки не
+ввімкнена: `access_can` є, виклику з `ModelRuntimeService` ще немає.
 
 ## Вкладення (бінарні об'єкти)
 

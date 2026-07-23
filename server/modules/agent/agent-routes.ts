@@ -1,6 +1,8 @@
+import { getServerConfig } from "../../config/server-config.ts";
+
 /**
  * Маршрути моделей для агента. Тип належить server-бібліотеці, а дані застосунок
- * завантажує з app/_generated і реєструє у composition root (app/server.ts).
+ * завантажує з app/_generated і передає в bootstrap() полем `agentRoutes`.
  */
 export interface AgentModelRoute {
   editPath?: string;
@@ -12,12 +14,7 @@ export interface AgentModelRoute {
   priority?: number;
 }
 
-/** Живий обʼєкт-холдер: заповнюється ДО обробки запитів, читається сервісами агента. */
-export const agentModelRoutes: Record<string, AgentModelRoute> = {};
-
-export function registerAgentRoutes(routes: Record<string, AgentModelRoute>): void {
-  for (const key of Object.keys(agentModelRoutes)) {
-    delete agentModelRoutes[key];
-  }
-  Object.assign(agentModelRoutes, routes);
+/** Маршрути з конфігурації. Окремого кроку реєстрації немає — читаємо на місці. */
+export function getAgentRoutes(): Record<string, AgentModelRoute> {
+  return getServerConfig().agentRoutes;
 }

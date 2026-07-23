@@ -9,6 +9,8 @@
 // живе стільки ж, скільки сесія. Зберігати його в localStorage безглуздо: у
 // наступній сесії він уже інший.
 
+import { apiFetch } from "../data/api.ts";
+
 export interface BlobRef {
   id: string;
   token: string;
@@ -61,7 +63,7 @@ export async function uploadBlob(
   if (owner?.model) form.append("ownerModel", owner.model);
   if (owner?.id) form.append("ownerId", owner.id);
 
-  const response = await fetch("/api/blob/upload", { method: "POST", body: form });
+  const response = await apiFetch("/api/blob/upload", { method: "POST", body: form });
   const envelope = await response.json().catch(() => null) as UploadEnvelope | null;
 
   if (!response.ok || !envelope?.ok || !envelope.data?.item) {
@@ -76,7 +78,7 @@ export async function bindBlobOwner(
   attachmentId: string,
   owner: { model: string; id: string },
 ): Promise<void> {
-  await fetch("/api/model/attachment/save", {
+  await apiFetch("/api/model/attachment/save", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ item: { id: attachmentId, ownerModel: owner.model, ownerId: owner.id } }),

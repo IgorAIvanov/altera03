@@ -3,12 +3,7 @@ import { AuthService } from "./auth.service.ts";
 import { hashPassword } from "./password-hash.ts";
 import type { AuthUserDto } from "./auth.types.ts";
 import { toAuthUserDto } from "./auth.types.ts";
-
-interface BootstrapConfig {
-  login: string;
-  password: string;
-  fullName: string;
-}
+import { getServerConfig, type BootstrapUserConfig } from "../../config/server-config.ts";
 
 @Injectable()
 export class AuthBootstrapService {
@@ -74,19 +69,7 @@ export class AuthBootstrapService {
     return toAuthUserDto(user);
   }
 
-  private getConfiguredBootstrapUser(): BootstrapConfig | null {
-    const login = Deno.env.get("BOOTSTRAP_LOGIN")?.trim() ?? "";
-    const password = Deno.env.get("BOOTSTRAP_PASSWORD") ?? "";
-    const fullName = Deno.env.get("BOOTSTRAP_FULL_NAME")?.trim() || "Bootstrap administrator";
-
-    if (!login || !password) {
-      return null;
-    }
-
-    return {
-      login,
-      password,
-      fullName,
-    };
+  private getConfiguredBootstrapUser(): BootstrapUserConfig | null {
+    return getServerConfig().auth.bootstrapUser;
   }
 }

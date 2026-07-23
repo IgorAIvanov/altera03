@@ -1,7 +1,8 @@
 import { Injectable } from "@danet/core";
 import { ModelRuntimeService } from "../model-runtime/model-runtime.service.ts";
 import { getModelConfig } from "../model-runtime/model-registry.ts";
-import { agentModelRoutes, type AgentModelRoute } from "./agent-routes.ts";
+import { getAgentRoutes, type AgentModelRoute } from "./agent-routes.ts";
+import { getServerConfig } from "../../config/server-config.ts";
 import type { AgentResponse, AgentUiAction } from "./agent.types.ts";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -17,7 +18,7 @@ const STANDARD_COMMANDS = new Set(["get", "lookup", "save", "list", "delete", "p
 // Build agent metadata from generated routes
 function getModelAliases(): Record<string, string[]> {
   const aliases: Record<string, string[]> = {};
-  for (const [model, route] of Object.entries(agentModelRoutes) as Array<[string, AgentModelRoute]>) {
+  for (const [model, route] of Object.entries(getAgentRoutes()) as Array<[string, AgentModelRoute]>) {
     if (route.aliases?.length) {
       aliases[model] = route.aliases;
     }
@@ -26,14 +27,14 @@ function getModelAliases(): Record<string, string[]> {
 }
 
 function getDocumentSupportModels(): string[] {
-  return Object.entries(agentModelRoutes)
+  return Object.entries(getAgentRoutes())
     .filter(([_, route]): boolean => (route as AgentModelRoute).type === "document")
     .map(([model]) => model);
 }
 
 function getDefaultModelPriority(): string[] {
   const priorityMap = new Map<number, string[]>();
-  for (const [model, route] of Object.entries(agentModelRoutes) as Array<[string, AgentModelRoute]>) {
+  for (const [model, route] of Object.entries(getAgentRoutes()) as Array<[string, AgentModelRoute]>) {
     const priority = route.priority ?? 999;
     if (!priorityMap.has(priority)) {
       priorityMap.set(priority, []);
@@ -154,7 +155,7 @@ interface ResponsesApiResponse {
 function buildTools(): ResponsesTool[] {
   const tools: ResponsesTool[] = [];
 
-  for (const [model, rawRoute] of Object.entries(agentModelRoutes)) {
+  for (const [model, rawRoute] of Object.entries(getAgentRoutes())) {
     const route = rawRoute as AgentRouteAccess;
     if (route.allow === false) {
       continue;
@@ -362,17 +363,15 @@ export class AgentLlmService {
     threadId?: string,
     fileUpload?: { bytes: Uint8Array; filename: string; mimeType: string },
   ): Promise<AgentResponse> {
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const { openAiApiKey: apiKey, model: executorModel, routerModel } = getServerConfig().agent;
     if (!apiKey) {
-      return this.errorResponse("OPENAI_API_KEY не налаштовано в backend/.env");
+      return this.errorResponse("LLM-агент вимкнено: не задано agent.openAiApiKey");
     }
 
     if (fileUpload && fileUpload.bytes.length > MAX_FILE_SIZE_BYTES) {
       return this.errorResponse(`Файл занадто великий (максимум ${MAX_FILE_SIZE_BYTES / 1024 / 1024} МБ)`);
     }
 
-    const routerModel = Deno.env.get("OPENAI_ROUTER_MODEL") ?? "gpt-4o-mini";
-    const executorModel = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
     const effectiveThreadId = threadId?.trim() || crypto.randomUUID();
     const sessionKey = `${userId}:${effectiveThreadId}`;
 
@@ -529,7 +528,7 @@ export class AgentLlmService {
   private buildModelCatalog(): ModelCatalogItem[] {
     const catalog: ModelCatalogItem[] = [];
     for (const model of this.availableModels) {
-      const route = agentModelRoutes[model];
+      const route = getAgentRoutes()[model];
       const routePath = (route?.editPath ?? route?.listPath ?? "")
         .replace(/\/(edit|list|view)$/, "")
         .replace(/^\//, "");
@@ -668,7 +667,7 @@ export class AgentLlmService {
     }
 
     const needsDocumentSupport = [...selected].some((model) => {
-      const route = agentModelRoutes[model];
+      const route = getAgentRoutes()[model];
       return route?.type === "document";
     });
     if (needsDocumentSupport) {
@@ -703,7 +702,7 @@ export class AgentLlmService {
         if (w.length >= 3 && text.includes(w)) score += 3;
       }
 
-      const route = agentModelRoutes[model];
+      const route = getAgentRoutes()[model];
       const routePath = (route?.editPath ?? route?.listPath ?? "").toLowerCase();
       const routeWords = routePath.split(/[\/_-]/).filter((w) => w.length >= 3);
       for (const w of routeWords) {
@@ -823,7 +822,7 @@ export class AgentLlmService {
       if (envelope?.ok) {
         const item = (envelope.data as Record<string, unknown>)?.item as Record<string, unknown> | undefined;
         const id = item?.id != null ? String(item.id) : undefined;
-        const routes = agentModelRoutes[model];
+        const routes = getAgentRoutes()[model];
         if (id && routes?.editPath) {
           uiActions.push({ type: "openRoute", route: `${routes.editPath}?id=${id}`, model, id });
         }

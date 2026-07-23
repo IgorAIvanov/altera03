@@ -2,6 +2,7 @@ import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { html } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
+import { apiFetch } from "../../data/api.ts";
 
 @customElement("ui-picker")
 export class UiPicker extends GlobalStyledLitElement {
@@ -72,7 +73,7 @@ export class UiPicker extends GlobalStyledLitElement {
   private async _fetch(fragment: string) {
     if (!this.url) return;
     try {
-      const res = await globalThis.fetch(`/api/model/${this._modelName}/${this.fetch}`, {
+      const res = await apiFetch(`/api/model/${this._modelName}/${this.fetch}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ search: fragment, ...this.fetchParams }),

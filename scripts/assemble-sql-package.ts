@@ -1,4 +1,7 @@
 import { basename, join, relative, resolve, SEPARATOR } from "jsr:@std/path";
+// Тільки SQL ядра, окремим експортом: тягнути сюди весь граф сервера (Danet,
+// postgres, pdf-lib) заради текстових констант ні до чого.
+import { type CoreSqlStep, getCoreSqlPackage } from "@scope/server/sql";
 
 type PackageStep = {
   key: string;
@@ -446,6 +449,21 @@ export async function assembleSqlPackage(appDirArg = "./src/app", options?: { ve
       const sectionChunks: string[] = [];
 
       for (const model of manifest.models) {
+        // Пакети ядра (`@core/<назва>`) їдуть із серверного пакета, а не з appDir.
+        // Стоять вони там само, де й раніше: `document_core` посилається на
+        // chart_of_account/currency/organization, тож порядок задає застосунок.
+        const corePackage = getCoreSqlPackage(model);
+        if (corePackage) {
+          for (const coreFile of corePackage.files[step.key as CoreSqlStep] ?? []) {
+            const fileContent = applyModelSqlPlaceholders(coreFile.sql, {
+              model: corePackage.name,
+              schema: "app",
+            });
+            sectionChunks.push(...buildSection(`@core/${coreFile.path}`, fileContent));
+          }
+          continue;
+        }
+
         const relativeFiles = await step.resolveFiles(appDir, model);
         const sqlContext = await resolveModelSqlContext(appDir, model);
         for (const relativeFile of relativeFiles) {

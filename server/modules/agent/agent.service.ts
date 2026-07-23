@@ -1,6 +1,6 @@
 import { Injectable } from "@danet/core";
 import { ModelRuntimeService } from "../model-runtime/model-runtime.service.ts";
-import { agentModelRoutes } from "./agent-routes.ts";
+import { getAgentRoutes } from "./agent-routes.ts";
 import type {
   AgentChatRequest,
   AgentCommandResult,
@@ -18,7 +18,7 @@ export class AgentService {
   async chat(request: AgentChatRequest, userId: string): Promise<AgentResponse> {
     const { model, command, payload } = request;
 
-    const routes = agentModelRoutes[model];
+    const routes = getAgentRoutes()[model];
     if (!routes) {
       return this.errorResponse(`Модель '${model}' не знайдена або не підтримується агентом`);
     }

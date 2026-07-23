@@ -1,5 +1,5 @@
 import { Injectable } from "@danet/core";
-import { bearerToken, type HttpRequest } from "../../common/http.ts";
+import { type HttpRequest, resolveSessionToken } from "../../common/http.ts";
 
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = "";
@@ -30,7 +30,8 @@ export class AuthTokenService {
     return bytesToHex(new Uint8Array(digest));
   }
 
-  extractBearerToken(request: HttpRequest): string | null {
-    return bearerToken(request);
+  /** Токен сесії запиту: httpOnly-cookie або `Authorization: Bearer`. */
+  extractSessionToken(request: HttpRequest): string | null {
+    return resolveSessionToken(request)?.token ?? null;
   }
 }

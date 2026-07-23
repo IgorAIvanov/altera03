@@ -5,10 +5,7 @@
 import { fromFileUrl } from "jsr:@std/path@^1.1.2";
 import { serveDir } from "jsr:@std/http@^1.0.18/file-server";
 
-import { bootstrap } from "../server/bootstrap.ts";
-import { registerModelRegistry } from "../server/modules/model-runtime/model-registry.ts";
-import { registerAgentRoutes } from "../server/modules/agent/agent-routes.ts";
-import { registerViewManifest } from "../server/modules/model-view/model-view.registry.ts";
+import { bootstrap, configFromEnv } from "@scope/server";
 
 import { generatedModelRegistry, generatedTsCommandBindings } from "./_generated/model-registry.generated.ts";
 import { agentModelRoutes } from "./_generated/agent-routes.generated.ts";
@@ -17,11 +14,8 @@ import { viewManifest } from "./_generated/view-manifest.generated.ts";
 // Корінь репо — батьківський каталог app/.
 const projectRoot = fromFileUrl(new URL("../", import.meta.url)).replace(/\/$/, "");
 
-registerModelRegistry(generatedModelRegistry, generatedTsCommandBindings);
-registerAgentRoutes(agentModelRoutes);
-registerViewManifest(viewManifest, projectRoot);
-
-const frontendDistDir = `${projectRoot}/frontend/dist/`;
+// Тут само збирає Vite (root: "app", outDir: "../dist").
+const frontendDistDir = `${projectRoot}/dist/`;
 const frontendIndexFile = `${frontendDistDir}index.html`;
 
 async function pathExists(path: string) {
@@ -51,7 +45,25 @@ export interface AppServer {
  * вільного порту, очікування готовності й HTTP-клієнта.
  */
 export async function createServer(): Promise<AppServer> {
-  const application = await bootstrap();
+  // Уся конфігурація сервера — один аргумент. Значення з оточення бібліотека
+  // сама не читає: беремо їх явно через configFromEnv() і за потреби перекриваємо.
+  // Зовнішній провайдер входу підключається сюди:
+  //   const env = configFromEnv();
+  //   auth: { ...env.auth, methods: [new GoogleAuthMethod(...)] }
+  const application = await bootstrap({
+    ...configFromEnv(),
+    models: {
+      registry: generatedModelRegistry,
+      tsCommands: generatedTsCommandBindings,
+    },
+    agentRoutes: agentModelRoutes,
+    views: {
+      manifest: viewManifest,
+      projectRoot,
+      // Vite віддає вихідні модулі — беремо їх через /@fs замість зібраних чанків.
+      dev: !!Deno.env.get("VITE_DEV_URL"),
+    },
+  });
   // `router` — публічний геттер Danet на внутрішній Hono-застосунок.
   const hono = application.router;
   const apiHandler = hono.fetch.bind(hono);

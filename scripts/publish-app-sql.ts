@@ -1,31 +1,27 @@
+// Публікація зібраного SQL-пакета у базу.
+//
+// Це збірковий інструмент, а не частина server-бібліотеки: він читає sql.json
+// застосунку й ходить у _sqlpackage, тобто знає про конкретний застосунок —
+// рівно те, чого рантайму знати не можна. Тому живе поряд із рештою збірки.
 import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.2";
 import postgres from "postgres";
-import { buildRepoPrintTemplateRepublishSql } from "../../scripts/assemble-sql-package.ts";
+import { buildRepoPrintTemplateRepublishSql } from "./assemble-sql-package.ts";
+import { configFromEnv } from "@scope/server";
 
 interface SqlManifest {
   output?: string;
   outputs?: Record<string, string>;
 }
 
-const DB_HOST = Deno.env.get("DB_HOST") || "localhost";
-const DB_PORT = Number(Deno.env.get("DB_PORT") || 5432);
-const DB_NAME = Deno.env.get("DB_NAME") || "altera";
-const DB_USERNAME = Deno.env.get("DB_USERNAME") || "altera";
-const DB_PASSWORD = Deno.env.get("DB_PASSWORD") || "";
-
-const backendDatabaseDir = dirname(fromFileUrl(import.meta.url));
-const repoRootDir = resolve(backendDatabaseDir, "../..");
+const scriptsDir = dirname(fromFileUrl(import.meta.url));
+const repoRootDir = resolve(scriptsDir, "..");
 const appDir = join(repoRootDir, "app");
 const manifestPath = join(appDir, "sql.json");
 
+/** Підключення бере з оточення напряму — рантаймової конфігурації тут немає. */
 function createSqlClient() {
-  return postgres({
-    host: DB_HOST,
-    port: DB_PORT,
-    database: DB_NAME,
-    username: DB_USERNAME,
-    password: DB_PASSWORD,
-  });
+  const { host, port, database, username, password } = configFromEnv().database;
+  return postgres({ host, port, database, username, password });
 }
 
 async function loadManifest(): Promise<SqlManifest> {

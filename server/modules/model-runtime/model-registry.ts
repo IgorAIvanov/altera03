@@ -1,5 +1,6 @@
 import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
 import { printPdfHandler, printPreviewHandler } from "../print/print.handlers.ts";
+import { getServerConfig, type ModelsConfig } from "../../config/server-config.ts";
 
 /**
  * Готові рантайм-хендлери ядра. Модель застосунку підключає їх у manifest.json
@@ -21,17 +22,20 @@ export interface GeneratedTsCommandBinding {
   handlerKey?: string;
 }
 
-let registry: Record<string, ModelBackendConfig> = {};
-
 /**
- * Реєструє модельний реєстр. Дані застосунок завантажує з app/_generated і
- * передає сюди у composition root (app/server.ts) ДО bootstrap().
+ * Реєстр збирається на першу потребу з конфігурації і кешується. Ключ кешу —
+ * тотожність самого об'єкта `models`: інший bootstrap з іншим конфігом
+ * перебудує реєстр, і жодного окремого кроку «зареєструвати» не існує.
  */
-export function registerModelRegistry(
-  generated: Record<string, ModelBackendConfig>,
-  bindings: GeneratedTsCommandBinding[],
-): void {
-  registry = buildRegistry(generated, bindings);
+let cache: { source: ModelsConfig; registry: Record<string, ModelBackendConfig> } | null = null;
+
+function getRegistry(): Record<string, ModelBackendConfig> {
+  const models = getServerConfig().models;
+  if (!cache || cache.source !== models) {
+    cache = { source: models, registry: buildRegistry(models.registry, models.tsCommands) };
+  }
+
+  return cache.registry;
 }
 
 function buildRegistry(
@@ -68,11 +72,11 @@ function buildRegistry(
 }
 
 export function getModelConfig(model: string): ModelBackendConfig | undefined {
-  return registry[model];
+  return getRegistry()[model];
 }
 
 export function getModelType(model: string): string | null {
-  return registry[model]?.type ?? null;
+  return getRegistry()[model]?.type ?? null;
 }
 
 export function isDocumentModel(model: string): boolean {

@@ -1,7 +1,20 @@
 {
   "name": "@scope/client",
   "version": "0.3.0",
-  "exports":  "./main.ts",
+  "//": "Точки входу бібліотеки. main.ts тут немає навмисно: composition root (реєстрація оболонки конкретного застосунку) переїхав у app/main.ts — бібліотека не може знати про app-header чи home-tab.",
+  "exports": {
+    "./locale.ts": "./locale.ts",
+    "./bus/bus.ts": "./bus/bus.ts",
+    "./data/data-service.ts": "./data/data-service.ts",
+    "./shell/shell-registry.ts": "./shell/shell-registry.ts",
+    "./tabs/tab-controller.ts": "./tabs/tab-controller.ts",
+    "./shared/styles.ts": "./shared/styles.ts",
+    "./shared/datetime.ts": "./shared/datetime.ts",
+    "./ui-kit/base/base-ui.ts": "./ui-kit/base/base-ui.ts",
+    "./ui-kit/base/model-list-base.ts": "./ui-kit/base/model-list-base.ts",
+    "./ui-kit/base/model-picker-base.ts": "./ui-kit/base/model-picker-base.ts"
+  },
+  "license": "MIT",
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,

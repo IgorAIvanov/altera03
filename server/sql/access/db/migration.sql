@@ -1,3 +1,32 @@
+-- Синхронізація лічильників identity.
+--
+-- Рядки могли потрапити в таблиці з явними id — перенесенням зі старої схеми
+-- або seed-даними. Тоді лічильник лишається на початку, і перший же insert без
+-- id падає з "duplicate key value violates unique constraint". Виявляється це
+-- не при публікації, а при створенні першого справжнього користувача.
+do $$
+declare
+  v_table text;
+begin
+  foreach v_table in array array['users', 'user_group', 'user_group_member', 'user_group_permission']
+  loop
+    execute format(
+      'select setval(pg_get_serial_sequence(%L, %L), coalesce((select max(id) from app.%I), 0) + 1, false)',
+      'app.' || v_table, 'id', v_table
+    );
+  end loop;
+end $$;
+
+-- Прибирання груп, що лишилися від доступу «через інтерфейси»: там група була
+-- лише контейнером для набору екранів і власних прав не мала. Тепер група без
+-- жодного права не значить нічого, крім того, що вона з тієї епохи —
+-- видаляємо, щоб її учасники дісталися групам із реальними правами.
+delete from app.user_group g
+where not exists (
+	select 1 from app.user_group_permission p where p.user_group_id = g.id
+)
+and g.code not in ('admin', 'viewer');
+
 do $$
 begin
 	if to_regclass('public.users') is not null then

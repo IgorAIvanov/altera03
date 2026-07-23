@@ -21,30 +21,43 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
   const client = await AppClient.start("smoke", { quiet: true });
 
   try {
+    // Авторизація відповідає тим самим конвертом, що й команди моделей:
+    // список — у data.rows, одиночний об'єкт — у data.item.
     await t.step("auth: список методів входу", async () => {
-      const { status, body } = await client.json<{ success: boolean; data: { methods: unknown[] } }>(
-        "/api/auth/methods",
-      );
+      const { status, body } = await client.json<Envelope>("/api/auth/methods");
 
       assertEquals(status, 200);
-      assertEquals(body.success, true);
-      assertEquals(Array.isArray(body.data.methods), true);
+      assertEquals(body.ok, true);
+      assertEquals(body.data.rows.length > 0, true);
     });
 
     await t.step("auth: без токена сесії немає", async () => {
-      const { status, body } = await client.json<{ success: boolean; data: unknown }>("/api/auth/me");
+      const { status, body } = await client.json<Envelope>("/api/auth/me");
 
       assertEquals(status, 200);
-      assertEquals(body.data, null);
+      assertEquals(body.ok, true);
+      assertEquals(body.data.item, null);
     });
 
     await t.step("auth: сміттєвий Bearer не створює сесію", async () => {
-      const { status, body } = await client.json<{ data: unknown }>("/api/auth/me", {
+      const { status, body } = await client.json<Envelope>("/api/auth/me", {
         headers: { authorization: "Bearer not-a-real-token" },
       });
 
       assertEquals(status, 200);
-      assertEquals(body.data, null);
+      assertEquals(body.data.item, null);
+    });
+
+    await t.step("auth: відмова має ту саму форму конверта", async () => {
+      const { body } = await client.json<Envelope>("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ login: "no-such-user", password: "nope" }),
+      });
+
+      assertEquals(body.ok, false);
+      assertEquals(body.data.item, null);
+      assertEquals(body.messages.length > 0, true);
     });
 
     // Регресія на HttpRequest: якщо `req.header()` перестане віддавати значення

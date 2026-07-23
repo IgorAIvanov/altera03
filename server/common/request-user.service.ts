@@ -1,5 +1,6 @@
 import { Injectable } from "@danet/core";
-import { AuthenticationRequiredError, bearerToken, type HttpRequest } from "./http.ts";
+import { AuthenticationRequiredError, type HttpRequest, resolveSessionToken } from "./http.ts";
+import { getServerConfig } from "../config/server-config.ts";
 import { DatabaseService } from "../database/database.service.ts";
 
 const BIGINT_ID_PATTERN = /^\d+$/;
@@ -26,32 +27,6 @@ interface ActiveUserRow {
 function normalizeUserId(value: string | null | undefined): string | null {
   const normalized = value?.trim();
   return normalized && BIGINT_ID_PATTERN.test(normalized) ? normalized : null;
-}
-
-function isProductionEnvironment() {
-  const values = [
-    Deno.env.get("NODE_ENV"),
-    Deno.env.get("APP_ENV"),
-    Deno.env.get("DENO_ENV"),
-  ];
-
-  return values.some((value) => {
-    const normalized = value?.trim().toLowerCase();
-    return normalized === "production" || normalized === "prod";
-  });
-}
-
-function isDevAuthBypassEnabled() {
-  const raw = Deno.env.get("DEV_AUTH_BYPASS")?.trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes";
-}
-
-function getDevBypassUserIdCandidate(request: HttpRequest) {
-  return normalizeUserId(
-    request.header("x-dev-user-id")
-      ?? Deno.env.get("DEV_AUTH_USER_ID")
-      ?? Deno.env.get("DEFAULT_USER_ID"),
-  );
 }
 
 async function hashToken(token: string): Promise<string> {
@@ -87,16 +62,18 @@ export class RequestUserService {
     throw new AuthenticationRequiredError();
   }
 
+  /**
+   * Обхід авторизації для розробки. Несумісність із продуктивом перевіряється
+   * при збиранні конфігурації (`configFromEnv`), тому сюди ми потрапляємо, лише
+   * якщо застосунок дозволив обхід свідомо.
+   */
   private async resolveDevBypassUserId(request: HttpRequest): Promise<string | null> {
-    if (!isDevAuthBypassEnabled()) {
+    const devBypass = getServerConfig().auth.devBypass;
+    if (!devBypass) {
       return null;
     }
 
-    if (isProductionEnvironment()) {
-      throw new Error("DEV_AUTH_BYPASS must not be enabled in production");
-    }
-
-    const candidateUserId = getDevBypassUserIdCandidate(request);
+    const candidateUserId = normalizeUserId(request.header("x-dev-user-id") ?? devBypass.userId);
     if (candidateUserId) {
       const rows = await this.db.sql<ActiveUserRow[]>`
         select u.id::text as id
@@ -107,7 +84,7 @@ export class RequestUserService {
       `;
 
       if (!rows[0]?.id) {
-        throw new AuthenticationRequiredError("DEV_AUTH_USER_ID points to a missing or inactive user");
+        throw new AuthenticationRequiredError("dev-bypass user id points to a missing or inactive user");
       }
 
       return rows[0].id;
@@ -122,14 +99,14 @@ export class RequestUserService {
     `;
 
     if (!rows[0]?.id) {
-      throw new AuthenticationRequiredError("DEV_AUTH_BYPASS is enabled but no active user exists");
+      throw new AuthenticationRequiredError("dev-bypass is enabled but no active user exists");
     }
 
     return rows[0].id;
   }
 
   private async resolveSession(request: HttpRequest): Promise<RequestAuthContext | null> {
-    const token = bearerToken(request);
+    const token = resolveSessionToken(request)?.token ?? null;
     if (!token) {
       return null;
     }

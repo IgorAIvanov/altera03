@@ -5,7 +5,8 @@ import tailwindcss from "npm:@tailwindcss/vite@^4.3.0";
 import { appModulesPlugin } from "./vite-plugin-app-modules.ts";
 
 export default defineConfig({
-  root: "client",
+  // Корінь — застосунок: index.html і main.ts належать йому, а не бібліотеці.
+  root: "app",
   publicDir: false,
   build: {
     outDir: "../dist",
@@ -16,7 +17,7 @@ export default defineConfig({
     target: "es2022",
     rollupOptions: {
       input: {
-        client: "client/index.html",
+        client: "app/index.html",
       },
     },
   },

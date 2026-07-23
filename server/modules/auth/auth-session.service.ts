@@ -1,6 +1,7 @@
 import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
 import type { HttpRequest } from "../../common/http.ts";
+import { getServerConfig } from "../../config/server-config.ts";
 import { AuthTokenService } from "./auth-token.service.ts";
 import type { AuthSessionInfo, AuthSessionRow, AuthUserDto, AuthUserRow } from "./auth.types.ts";
 import { toAuthUserDto } from "./auth.types.ts";
@@ -19,10 +20,7 @@ interface SessionStateRow {
 }
 
 function getSessionLifetimeMs(): number {
-  const defaultHours = 24 * 30;
-  const rawHours = Number.parseInt(Deno.env.get("AUTH_SESSION_TTL_HOURS") ?? String(defaultHours), 10);
-  const hours = Number.isFinite(rawHours) && rawHours > 0 ? rawHours : defaultHours;
-  return hours * 60 * 60 * 1000;
+  return getServerConfig().auth.sessionTtlHours * 60 * 60 * 1000;
 }
 
 @Injectable()
@@ -50,7 +48,7 @@ export class AuthSessionService {
   }
 
   async resolveSessionUser(request: HttpRequest): Promise<{ user: AuthUserDto; session: AuthSessionInfo } | null> {
-    const token = this.tokenService.extractBearerToken(request);
+    const token = this.tokenService.extractSessionToken(request);
     if (!token) {
       return null;
     }
@@ -97,7 +95,7 @@ export class AuthSessionService {
   }
 
   async refreshSession(request: HttpRequest): Promise<AuthSessionInfo | null> {
-    const token = this.tokenService.extractBearerToken(request);
+    const token = this.tokenService.extractSessionToken(request);
     if (!token) {
       return null;
     }
@@ -136,7 +134,7 @@ export class AuthSessionService {
   }
 
   async revokeSession(request: HttpRequest): Promise<boolean> {
-    const token = this.tokenService.extractBearerToken(request);
+    const token = this.tokenService.extractSessionToken(request);
     if (!token) {
       return false;
     }

@@ -6,7 +6,7 @@ import "@client/ui-kit/components/ui-picker.ts";
 
 @customElement("home-tab")
 export class HomeTab extends LitElement {
-  static styles = [css`:host { display: block; height: 100%; }`, tw];
+  static override styles = [css`:host { display: block; height: 100%; }`, tw];
 
   @state() private pickerResult = "";
 
@@ -14,7 +14,7 @@ export class HomeTab extends LitElement {
     bus.emit({ type: "tab.open", route, id: id ?? null });
   }
 
-  render() {
+  override render() {
     return html`
       <div class="flex flex-col items-center justify-center h-full gap-6">
         <h3 class="text-lg font-semibold text-base-content">Тестові форми</h3>

@@ -12,9 +12,15 @@ export interface ShellTags {
   menu: string;
   /** Тег елемента домашньої вкладки, напр. "home-tab". */
   home: string;
+  /**
+   * Тег екрана входу, напр. "app-login". Показується замість оболонки, доки
+   * сесії немає. Вигляд цього екрана — обличчя конкретного продукту, тому він
+   * належить застосунку, а не бібліотеці.
+   */
+  login: string;
 }
 
-let _tags: ShellTags = { header: "", menu: "", home: "" };
+let _tags: ShellTags = { header: "", menu: "", home: "", login: "" };
 
 export function registerShell(tags: ShellTags): void {
   _tags = tags;

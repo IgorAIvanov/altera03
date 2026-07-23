@@ -1,6 +1,6 @@
 import { dirname, fromFileUrl, resolve } from "jsr:@std/path";
 import { assembleSqlPackage } from "./assemble-sql-package.ts";
-import { publishAppSql } from "../server/database/publish-app-sql.ts";
+import { publishAppSql } from "./publish-app-sql.ts";
 
 async function main() {
   const verboseMode = Deno.args.includes("--verbose");

@@ -1,7 +1,11 @@
 {
   "name": "@scope/server",
   "version": "0.3.0",
-  "exports": "./main.ts",
+  "exports": {
+    ".": "./main.ts",
+    "./sql": "./sql/core-sql.ts"
+  },
+  "license": "MIT",
   "imports": {
     "@danet/core": "jsr:@danet/core@^2.11.1",
     "@danet/validatte": "jsr:@danet/validatte@^0.7.9",

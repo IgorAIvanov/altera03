@@ -14,6 +14,8 @@
 //  · термін життя обмежений (BLOB_TOKEN_TTL_HOURS), тому «вічне» посилання з
 //    чужого чату не працює.
 
+import { getServerConfig } from "../../config/server-config.ts";
+
 const encoder = new TextEncoder();
 
 /** Полезне навантаження токена. Ключі однолітерні — токен їде в URL. */
@@ -40,26 +42,24 @@ export interface AccessTokenPayload {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function getTtlSeconds(): number {
-  const raw = Number.parseInt(Deno.env.get("BLOB_TOKEN_TTL_HOURS") ?? "12", 10);
-  const hours = Number.isFinite(raw) && raw > 0 ? raw : 12;
-  return hours * 60 * 60;
+  return getServerConfig().blob.tokenTtlHours * 60 * 60;
 }
 
 let cachedKey: Promise<CryptoKey> | null = null;
 
 /**
- * Секрет підпису. Окремий BLOB_TOKEN_SECRET, інакше — JWT_SECRET (той самий
- * рівень довіри). Якщо не задано жодного, генеруємо разовий на процес: у dev
- * усе працює, а після рестарту старі посилання просто перестають діяти.
+ * Секрет підпису беремо з конфігурації. Якщо його не задано, генеруємо разовий
+ * на процес: у dev усе працює, а після рестарту старі посилання просто
+ * перестають діяти.
  */
 function getSigningKey(): Promise<CryptoKey> {
   if (cachedKey) return cachedKey;
 
-  let secret = Deno.env.get("BLOB_TOKEN_SECRET")?.trim() || Deno.env.get("JWT_SECRET")?.trim();
+  let secret = getServerConfig().blob.tokenSecret;
   if (!secret) {
     secret = crypto.randomUUID() + crypto.randomUUID();
     console.warn(
-      "⚠ BLOB_TOKEN_SECRET/JWT_SECRET не задано — токени вкладень підписані разовим ключем процесу",
+      "⚠ blob.tokenSecret не задано — токени вкладень підписані разовим ключем процесу",
     );
   }
 

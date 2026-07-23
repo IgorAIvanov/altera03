@@ -1,47 +1,40 @@
-/** Standard API response wrapper */
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  meta?: {
-    total?: number;
-    page?: number;
-    pageSize?: number;
-  };
+/**
+ * Конверт відповіді — один на весь API.
+ *
+ * Раніше авторизація відповідала своїм форматом (`{ success, data, error }`),
+ * а команди моделей — своїм (`{ ok, data: { item, rows, … }, messages }`), і
+ * клієнтові доводилося знати обидва. Тепер форма одна: авторизація кладе свій
+ * об'єкт в `item`, а списки — в `rows`.
+ */
+
+export interface EnvelopeData<TItem = unknown, TRow = unknown> {
+  item: TItem | null;
+  rows: TRow[];
+  options: Record<string, unknown>;
+  totals: Record<string, unknown>;
 }
 
-/** Pagination parameters */
-export interface PaginationParams {
-  page: number;
-  pageSize: number;
+export interface Envelope<TItem = unknown, TRow = unknown> {
+  ok: boolean;
+  data: EnvelopeData<TItem, TRow>;
+  messages: string[];
 }
 
-/** Standard list query params */
-export interface ListQuery extends PaginationParams {
-  search?: string;
-  sortBy?: string;
-  sortOrder?: "asc" | "desc";
+function emptyData<TItem, TRow>(): EnvelopeData<TItem, TRow> {
+  return { item: null, rows: [], options: {}, totals: {} };
 }
 
-/** Date range filter */
-export interface DateRange {
-  from: string; // YYYY-MM-DD
-  to: string;   // YYYY-MM-DD
+/** Успіх з одиночним об'єктом. `null` — «нічого немає», а не помилка. */
+export function ok<TItem>(item: TItem | null): Envelope<TItem, never> {
+  return { ok: true, data: { ...emptyData<TItem, never>(), item }, messages: [] };
 }
 
-export function ok<T>(data: T, meta?: ApiResponse<T>["meta"]): ApiResponse<T> {
-  return { success: true, data, meta };
+/** Успіх зі списком. */
+export function rows<TRow>(list: TRow[]): Envelope<never, TRow> {
+  return { ok: true, data: { ...emptyData<never, TRow>(), rows: list }, messages: [] };
 }
 
-export function err(error: string): ApiResponse<never> {
-  return { success: false, error };
-}
-
-export function paginated<T>(
-  data: T[],
-  total: number,
-  page: number,
-  pageSize: number,
-): ApiResponse<T[]> {
-  return { success: true, data, meta: { total, page, pageSize } };
+/** Відмова. Дані порожні, але форма та сама — клієнт розбирає відповідь однаково. */
+export function err(...messages: string[]): Envelope<never, never> {
+  return { ok: false, data: emptyData<never, never>(), messages };
 }

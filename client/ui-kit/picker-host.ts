@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
 import type { PickerOpenMessage } from "../bus/bus.types.ts";
+import { apiFetch } from "../data/api.ts";
 
 interface ActivePicker {
   callbackId: string;
@@ -14,7 +15,7 @@ interface ActivePicker {
 async function resolveChunk(route: string): Promise<string | null> {
   try {
     const [module, model, view] = route.split("/");
-    const res = await fetch(`/api/view/${module}/${model}/${view}`);
+    const res = await apiFetch(`/api/view/${module}/${model}/${view}`);
     const data = await res.json();
     return data.ok ? data.chunkUrl : null;
   } catch {

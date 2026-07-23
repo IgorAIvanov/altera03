@@ -1,6 +1,7 @@
 import { Injectable } from "@danet/core";
 import { AuthSessionService } from "./auth-session.service.ts";
 import { PasswordAuthMethod } from "./password-auth.method.ts";
+import { getServerConfig } from "../../config/server-config.ts";
 import {
   AuthLoginRequest,
   AuthLoginResult,
@@ -11,13 +12,19 @@ import {
 
 @Injectable()
 export class AuthFlowService {
-  private readonly methods: AuthMethod[];
-
   constructor(
     private passwordAuthMethod: PasswordAuthMethod,
     private authSessionService: AuthSessionService,
-  ) {
-    this.methods = [passwordAuthMethod];
+  ) {}
+
+  /**
+   * Доступні методи входу: вбудований пароль (якщо не вимкнений) плюс те, що
+   * підклав застосунок через `auth.methods`. Читаємо конфігурацію на місці —
+   * так немає ані окремого кроку реєстрації, ані питання про порядок.
+   */
+  private get methods(): AuthMethod[] {
+    const { passwordEnabled, methods } = getServerConfig().auth;
+    return passwordEnabled ? [this.passwordAuthMethod, ...methods] : [...methods];
   }
 
   getAvailableMethods(): AuthMethodDescriptor[] {

@@ -1,5 +1,6 @@
 import { Injectable } from "@danet/core";
 import postgres from "postgres";
+import { getServerConfig } from "../config/server-config.ts";
 
 @Injectable()
 export class DatabaseService {
@@ -10,14 +11,8 @@ export class DatabaseService {
   }
 
   onAppBootstrap() {
-    this._sql = postgres({
-      host: Deno.env.get("DB_HOST") || "localhost",
-      port: Number(Deno.env.get("DB_PORT") || 5432),
-      database: Deno.env.get("DB_NAME") || "altera",
-      username: Deno.env.get("DB_USERNAME") || "altera",
-      password: Deno.env.get("DB_PASSWORD") || "",
-      max: 10,
-    });
+    const { host, port, database, username, password, poolSize } = getServerConfig().database;
+    this._sql = postgres({ host, port, database, username, password, max: poolSize });
     console.log("✅ Database connection pool created");
   }
 

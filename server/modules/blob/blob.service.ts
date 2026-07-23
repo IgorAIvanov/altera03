@@ -1,6 +1,7 @@
 import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
 import { isUuid, mintAccessToken, verifyAccessToken } from "./blob-token.ts";
+import { getServerConfig } from "../../config/server-config.ts";
 
 /** Рядок app.attachment_load — метадані разом із потоком даних. */
 interface AttachmentRow {
@@ -32,9 +33,7 @@ export interface CreatedAttachment {
 
 /** Максимальний розмір завантаження, байт. */
 export function getMaxUploadBytes(): number {
-  const raw = Number.parseInt(Deno.env.get("BLOB_MAX_SIZE_MB") ?? "10", 10);
-  const megabytes = Number.isFinite(raw) && raw > 0 ? raw : 10;
-  return megabytes * 1024 * 1024;
+  return getServerConfig().blob.maxSizeMb * 1024 * 1024;
 }
 
 /**

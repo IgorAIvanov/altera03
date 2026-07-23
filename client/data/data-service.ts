@@ -1,10 +1,11 @@
 import { bus } from "../bus/bus.ts";
 import type { DataLoadMessage, DataSaveMessage } from "../bus/bus.types.ts";
+import { apiFetch } from "./api.ts";
 
 async function callApi(model: string, command: string, payload: unknown): Promise<unknown> {
   bus.emit({ type: "loading.start" });
   try {
-    const res = await fetch(`/api/model/${model}/${command}`, {
+    const res = await apiFetch(`/api/model/${model}/${command}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload ?? {}),

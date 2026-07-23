@@ -3,6 +3,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { t } from "../../locale.ts";
 import { blobUrl, formatFileSize, isImageMime, uploadBlob } from "../../shared/blob.ts";
+import { apiFetch } from "../../data/api.ts";
 
 interface AttachmentRow {
   id: string;
@@ -64,7 +65,7 @@ export class UiAttachments extends GlobalStyledLitElement {
     if (!this.ownerId || !this.ownerModel) return;
 
     try {
-      const response = await fetch("/api/model/attachment/list", {
+      const response = await apiFetch("/api/model/attachment/list", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ownerModel: this.ownerModel, ownerId: this.ownerId }),
@@ -111,7 +112,7 @@ export class UiAttachments extends GlobalStyledLitElement {
 
     this._busy = true;
     try {
-      await fetch("/api/model/attachment/delete", {
+      await apiFetch("/api/model/attachment/delete", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: row.id }),
