@@ -127,9 +127,13 @@ async function checkCssIsPlain(root: string) {
 // (app/server.ts і app/main.ts), тож бібліотеки про застосунок не знають узагалі.
 await checkNoAppDependency("client", () => false);
 await checkNoAppDependency("server", () => false);
+// tools/ читає застосунок лише в рантаймі (аргумент appDir), а не імпортом —
+// статичної залежності від app бути не має.
+await checkNoAppDependency("tools", () => false);
 
 await checkStaysInsidePackage("client");
 await checkStaysInsidePackage("server");
+await checkStaysInsidePackage("tools");
 
 await checkCssIsPlain("client");
 await checkCssIsPlain("server");

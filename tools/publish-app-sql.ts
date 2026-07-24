@@ -3,7 +3,7 @@
 // Це збірковий інструмент, а не частина server-бібліотеки: він читає sql.json
 // застосунку й ходить у _sqlpackage, тобто знає про конкретний застосунок —
 // рівно те, чого рантайму знати не можна. Тому живе поряд із рештою збірки.
-import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.2";
+import { join, resolve } from "jsr:@std/path@^1.1.2";
 import postgres from "postgres";
 import { buildRepoPrintTemplateRepublishSql } from "./assemble-sql-package.ts";
 import { configFromEnv } from "@scope/server";
@@ -13,19 +13,14 @@ interface SqlManifest {
   outputs?: Record<string, string>;
 }
 
-const scriptsDir = dirname(fromFileUrl(import.meta.url));
-const repoRootDir = resolve(scriptsDir, "..");
-const appDir = join(repoRootDir, "app");
-const manifestPath = join(appDir, "sql.json");
-
 /** Підключення бере з оточення напряму — рантаймової конфігурації тут немає. */
 function createSqlClient() {
   const { host, port, database, username, password } = configFromEnv().database;
   return postgres({ host, port, database, username, password });
 }
 
-async function loadManifest(): Promise<SqlManifest> {
-  const manifestRaw = await Deno.readTextFile(manifestPath);
+async function loadManifest(appDir: string): Promise<SqlManifest> {
+  const manifestRaw = await Deno.readTextFile(join(appDir, "sql.json"));
   return JSON.parse(manifestRaw) as SqlManifest;
 }
 
@@ -47,9 +42,10 @@ export async function publishSqlText(sqlText: string, options?: { verbose?: bool
   }
 }
 
-export async function publishAppSql(options?: { verbose?: boolean }) {
-  const verboseMode = options?.verbose ?? false;
-  const manifest = await loadManifest();
+export async function publishAppSql(options: { appDir: string; verbose?: boolean }) {
+  const { appDir } = options;
+  const verboseMode = options.verbose ?? false;
+  const manifest = await loadManifest(appDir);
   const sectionOutputs = manifest.outputs ?? {};
   const publishRepoPrintTemplates = async () => {
     const printTemplateRepublishSql = await buildRepoPrintTemplateRepublishSql(appDir);
@@ -108,7 +104,11 @@ export async function publishAppSql(options?: { verbose?: boolean }) {
 
 async function main() {
   const verboseMode = Deno.args.includes("--verbose");
-  await publishAppSql({ verbose: verboseMode });
+  const appArg = Deno.args.find((arg) => !arg.startsWith("--"));
+  if (!appArg) {
+    throw new Error("Вкажи каталог застосунку: publish-app-sql <appDir> [--verbose]");
+  }
+  await publishAppSql({ appDir: resolve(appArg), verbose: verboseMode });
 }
 
 if (import.meta.main) {

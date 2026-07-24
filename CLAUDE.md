@@ -80,19 +80,28 @@ server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace
   modules/auth/                   # авторизація; методи входу — з config.auth.methods
   database/                       # тільки рантайм: модуль і пул з'єднань
 
-scripts/                    # збіркові інструменти (НЕ частина бібліотек)
-  assemble-sql-package.ts         # збірка SQL-пакета з db/ файлів моделей
+tools/                      # пакет збіркових інструментів (@scope/tools) — codegen+publish
+  generate-model-sql.ts           # генерація SQL моделей
+  generate-model-runtime-registry.ts  # генерація app/_generated (registry/routes/views)
+  assemble-sql-package.ts         # збірка SQL-пакета з db/ файлів моделей + @core
   publish-app-sql.ts              # публікація зібраного SQL у БД
-  generate-model-*.ts             # генерація app/_generated
-  check-deps.ts                   # guardrail меж пакетів
-  smoke_test.ts, api.ts           # інструменти розробника (див. нижче)
+  publish-sql.ts                  # assemble + publish одним кроком
+  # кожен параметризований каталогом застосунку (аргумент), тож app не імпортує.
+
+scripts/                    # репо-локальні інструменти (НЕ пакет, НЕ частина бібліотек)
+  check-deps.ts                   # guardrail меж пакетів (client/server/tools vs app)
+  dev-guard.ts                    # захист дев-інструментів від продуктивної БД
+  smoke_test.ts, api.ts, app-client.ts, set-password.ts  # дев-інструменти (див. нижче)
+  # дев-інструменти поки тут: app-client інжектить createServer застосунку — переїзд
+  # у tools/ потребує інверсії залежності (борг 3.4b у framework-extraction-plan).
 ```
 
-> **Напрямок залежностей:** `app → client/server`, ніколи навпаки. Бекенд-runtime отримує
-> все ззовні — одним аргументом `bootstrap()`. Збіркові інструменти живуть у `scripts/`, а не
-> всередині бібліотек: те, що читає `app/sql.json` чи `_sqlpackage`, знає про застосунок і в
-> пакет потрапити не має. `deno task check:deps` перевіряє обидва правила — і залежність від
-> застосунку, і вихід відносним імпортом за межі `client/` чи `server/`.
+> **Напрямок залежностей:** `app → client/server/tools`, ніколи навпаки. Бекенд-runtime
+> отримує все ззовні — одним аргументом `bootstrap()`. Збіркові інструменти — окремий пакет
+> `tools/`, а не всередині бібліотек client/server: те, що читає `app/sql.json` чи
+> `_sqlpackage`, знає про застосунок, але отримує його **аргументом** (`appDir`), не імпортом,
+> тож у пакет це знання не зашите. `deno task check:deps` перевіряє це для `client`, `server`
+> і `tools`: ані залежності від застосунку імпортом, ані виходу відносним імпортом за межі пакета.
 
 ## Конфігурація сервера
 
