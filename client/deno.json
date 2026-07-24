@@ -9,6 +9,7 @@
     "./shell/shell-registry.ts": "./shell/shell-registry.ts",
     "./tabs/tab-controller.ts": "./tabs/tab-controller.ts",
     "./shared/styles.ts": "./shared/styles.ts",
+    "./shared/schema.ts": "./shared/schema.ts",
     "./shared/datetime.ts": "./shared/datetime.ts",
     "./ui-kit/base/base-ui.ts": "./ui-kit/base/base-ui.ts",
     "./ui-kit/base/model-list-base.ts": "./ui-kit/base/model-list-base.ts",

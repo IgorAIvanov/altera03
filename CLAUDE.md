@@ -45,7 +45,8 @@ app/                        # застосунок: фронтенд-модул�
   # help_*) лежить у server/sql/ і підключається записами "@core/<назва>" у sql.json.
   _generated/               # авто-генерація (deno task sql:registry): model-registry, agent-routes, view-manifest
   server.ts                 # composition root бекенду: реєструє дані з _generated → bootstrap (Danet)
-  shared/schema.ts          # спільні TypeBox-типи: OptionRow, PagePayload, SortDir
+  shared/                   # app-стан: current-organization, view-route
+                            #   (TypeBox-контракти фреймворку переїхали в client/shared/schema.ts)
   sql.json                  # список моделей для sql:assemble
 
 client/                     # ui-kit та клієнтський runtime — БІБЛІОТЕКА (Deno workspace)
@@ -53,6 +54,7 @@ client/                     # ui-kit та клієнтський runtime — Б�
   bus/bus.ts                # event bus: bus.request("data.load", { model, command, payload })
   styles/theme.css          # тема й контракти компонентів — ПЛОСКИЙ CSS, без директив Tailwind
   shared/styles.ts          # `tw`: порожній CSSStyleSheet, який заповнює застосунок
+  shared/schema.ts          # спільні TypeBox-контракти: SortDir, Query, Totals, DocumentHeader
   vite.ts                   # пресет defineAlteraConfig() — уся машинерія Vite (експорт "@scope/client/vite")
   # index.html і main.ts тут немає навмисно: вони належать застосунку (app/).
   # Вхід збірки Tailwind (app/styles/tailwind.css) — теж: він сканує каталоги

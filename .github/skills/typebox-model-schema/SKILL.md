@@ -64,32 +64,24 @@ create table if not exists app.bank (
 
 ## Shared base types
 
-Import common types from the project shared schema file — do not redefine them per model:
+Import common framework contracts from the client shared schema — do not redefine
+them per model:
 
 ```ts
-import { type SortDir, type PagePayload, type OptionRow } from "@shared/schema.ts";
+import { type SortDir } from "@client/shared/schema.ts";
 ```
 
-The actual `app/shared/schema.ts`:
+The actual `client/shared/schema.ts` (lives in the `client` package, not the app —
+the app depends on the framework, never the reverse):
 
 ```ts
-// app/shared/schema.ts
+// client/shared/schema.ts
 import { Type, type Static } from "@sinclair/typebox";
-
-export const OptionRowSchema = Type.Object({
-  id:   Type.String(),
-  name: Type.String(),
-});
-export type OptionRow = Static<typeof OptionRowSchema>;
-
-export const PagePayloadSchema = Type.Object({
-  page:     Type.Optional(Type.Number({ minimum: 1, default: 1 })),
-  pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 200, default: 50 })),
-});
-export type PagePayload = Static<typeof PagePayloadSchema>;
 
 export const SortDirSchema = Type.Union([Type.Literal("asc"), Type.Literal("desc")]);
 export type SortDir = Static<typeof SortDirSchema>;
+
+// плюс Query/Totals (контракт списку) і DocumentHeader (шапка документа)
 ```
 
 ## Field annotations

@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { SortDirSchema } from "@shared/schema.ts";
+import { SortDirSchema } from "@client/shared/schema.ts";
 
 export const CurrencyItemSchema = Type.Object({
   id:   Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),

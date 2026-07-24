@@ -906,11 +906,17 @@ async function modelType(appRoot: string, modelPath: string): Promise<string | u
   }
 }
 
-/** Спільна шапка документа — app/shared/schema.ts, єдина для всіх документів. */
+/**
+ * Спільна шапка документа — контракт фреймворку `client/shared/schema.ts`
+ * (переїхав з app/shared, щоб `client` не залежав від застосунку). У монорепо
+ * `client/` — сусід `app/`; коли scripts стануть пакетом (борг 3.4), шлях
+ * резолвитиметься через залежність.
+ */
 async function loadDocumentHeaderSchema(appRoot: string): Promise<TSchema> {
-  const mod = await importSchema(join(appRoot, "shared", "schema.ts"));
+  const schemaPath = join(appRoot, "..", "client", "shared", "schema.ts");
+  const mod = await importSchema(schemaPath);
   const schema = mod["DocumentHeaderSchema"];
-  if (!schema) throw new Error("app/shared/schema.ts: немає DocumentHeaderSchema");
+  if (!schema) throw new Error(`${schemaPath}: немає DocumentHeaderSchema`);
   return schema;
 }
 

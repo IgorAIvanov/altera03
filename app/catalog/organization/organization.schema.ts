@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { SortDirSchema } from "@shared/schema.ts";
+import { SortDirSchema } from "@client/shared/schema.ts";
 
 // ── 1. Item — форма редагування та payload для save ───────────────────────────
 

@@ -6,7 +6,7 @@ import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
 import { formatDate } from "@client/shared/datetime.ts";
 import { BaseUI } from "./base-ui.ts";
-import { QuerySchema, TotalsSchema, type Query, type Totals } from "@shared/schema.ts";
+import { QuerySchema, TotalsSchema, type Query, type Totals } from "@client/shared/schema.ts";
 
 export type SortDir = "asc" | "desc";
 

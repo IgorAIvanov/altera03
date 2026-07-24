@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { DocumentHeaderSchema, SortDirSchema } from "@shared/schema.ts";
+import { DocumentHeaderSchema, SortDirSchema } from "@client/shared/schema.ts";
 
 /**
  * Значення субконто рядка: {код виміру → {id, name}}.

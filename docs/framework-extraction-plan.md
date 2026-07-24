@@ -4,8 +4,8 @@
 підняти новий застосунок командою scaffold, а не копіюванням репозиторію.
 
 **Статус:** у роботі. Зроблено: SQL-ядро, клієнтський root, розділення стилів,
-пресет Vite (2.1–2.4). Лишилося: спільна схема, `scripts/`-пакет, scaffold (3.1, 3.4,
-3.5) + борги 4–5.
+пресет Vite (2.1–2.4), схема-контракти в client (3.1). Лишилося: `scripts/`-пакет,
+scaffold (3.4, 3.5) + борги 4–5.
 **Оновлено:** 2026-07-24.
 
 Як користуватися: закритий пункт лишається тут із позначкою — так видно, що
@@ -170,14 +170,36 @@ export default defineAlteraConfig({ appDir: "app", apiPort: 3000 });
 
 ## 3. Лишилося
 
-### 3.1 `app/shared/schema.ts` → спільний пакет
+### 3.1 `app/shared/schema.ts` → `client/shared/schema.ts` ✅
 
-Файл цілком складається з контрактів фреймворку: `OptionRow`, `PagePayload`,
-`QuerySchema`, `TotalsSchema`, `DocumentHeaderSchema` (останній — пряме дзеркало
-`app.document` із `@core/document_core`). Прикладних полів немає жодного.
+Питання було: третій пакет чи їде з клієнтським. Розбір споживачів вирішив його —
+**третій пакет фактами не виправданий**:
 
-Користуються обидві сторони, тож питання — чи це третій пакет, чи він їде
-разом із клієнтським.
+| Контракт | Хто вживає |
+|---|---|
+| `SortDir` | лише `app/*.schema.ts` |
+| `Query`/`Totals` (+`*Schema`) | `app/` звіти **+ `client/model-list-base.ts`** |
+| `DocumentHeaderSchema` | `app/` документи + генератор `scripts/generate-model-sql.ts` |
+| `OptionRow`, `PagePayload` | **ніхто** (мертві — видалені) |
+| **`server/`** | **нічого** |
+
+Сервер ці контракти не вживає взагалі, тож «спільне для client і server» не
+виконувалось. Реальна проблема була не в пакеті, а в **порушенні межі**: файл лежав
+у `app/shared/`, а `client/model-list-base.ts` імпортував його як `@shared/schema.ts`
+(`@shared` = `app/shared/`) — тобто **client залежав від app**. `check:deps` цього не
+бачив, бо ловив лише `@app`/`../app`, а `@shared` для нього був невидимий.
+
+Зроблено: файл переїхав у `client/shared/schema.ts` (напрям app → client дозволений);
+`OptionRow`/`PagePayload` видалені як мертві; імпорти застосунку й генератора — на
+`@client/shared/schema.ts`; `check:deps` навчено бачити `@shared/` як залежність від
+застосунку (перевірено від зворотного — на поверненому `@shared/schema.ts` у client
+падає); експорт `./shared/schema.ts` доданий у `client/deno.json`. Згенерований SQL
+документів — байт-в-байт той самий (DocumentHeader не змінився).
+
+> **Дрейф (не 3.1):** `sql:registry` показав, що `app/_generated/model-registry.generated.ts`
+> містить закомічені `user`/`user_group`, яких у застосунку вже немає (манифестів нема,
+> у `app/admin/` лишились `interface`, `menu`, `print_template`). Той самий клас, що
+> 5.1. Не чіпав — відкотив generated-файл, щоб не мішати з 3.1.
 
 ### 3.2 частково + 3.3 — зроблено ✅
 

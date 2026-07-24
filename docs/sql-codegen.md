@@ -259,7 +259,7 @@ Master-detail. `InvoiceLineSchema` — звичайна TypeBox-об'єктна 
 
 - **`<Model>ItemSchema` описує лише власні реквізити документа.** Спільні поля
   (`organizationId`, `number`, `docDate`, `total`, `presentation`, `isPosted`…)
-  генератор підмішує сам із `DocumentHeaderSchema` (`app/shared/schema.ts`).
+  генератор підмішує сам із `DocumentHeaderSchema` (`client/shared/schema.ts`).
   Описати їх у схемі моделі — помилка збірки, а не тихе дублювання.
 - `list`/`get`/`lookup` читають `app.document h join app.<model> t` і завжди
   відсікають `is_deleted`.

@@ -58,7 +58,11 @@ function report(file: string, lineNumber: number, line: string, reason: string) 
 async function checkNoAppDependency(root: string, allow: (file: string) => boolean) {
   for await (const { file, line, lineNumber } of importLines(root)) {
     if (allow(file)) continue;
-    if (/["']@app\//.test(line) || /["'][^"']*\.\.\/app\//.test(line)) {
+    // `@shared/` — це аліас на `app/shared/`, тож для бібліотеки він така сама
+    // залежність від застосунку, як `@app/`. Раніше це було сліпе пятно: client
+    // роками імпортував `@shared/schema.ts`, і перевірка цього не бачила, бо
+    // шукала лише `@app`/`../app` (schema.ts відтоді переїхав у `client/shared`).
+    if (/["']@app\//.test(line) || /["']@shared\//.test(line) || /["'][^"']*\.\.\/app\//.test(line)) {
       report(file, lineNumber, line, "залежність від застосунку");
     }
   }
