@@ -109,7 +109,9 @@ const icon = {
   open: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   delete: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
   refresh: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
-  search: html`<svg class="h-4 w-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
+  // Розмір і прозорість — атрибутами SVG, як у решти іконок вище: inline-SVG у
+  // shadow DOM не має залежати від того, чи Tailwind згенерував `h-4`/`opacity-50`.
+  search: html`<svg width="14" height="14" opacity="0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
 };
 
 /**
@@ -173,7 +175,10 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
 
   constructor() { super(listRootSchema); }
 
-  #searchTimer?: number;
+  // ReturnType<typeof setTimeout>, а не number: пакет типізується і з DOM-lib, і з
+  // @types/node (його тягне пресет `vite.ts` того ж пакета), а там setTimeout
+  // повертає Timeout, не number.
+  #searchTimer?: ReturnType<typeof setTimeout>;
   #unsub?: () => void;
 
   override connectedCallback() {

@@ -13,7 +13,9 @@ import {
   type SortDir,
 } from "./model-list-base.ts";
 
-const searchIcon = html`<svg class="h-4 w-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
+// Розмір і прозорість — атрибутами SVG, не Tailwind-класами: inline-SVG у shadow
+// DOM не має залежати від того, чи згенеровано `h-4`/`opacity-50`.
+const searchIcon = html`<svg width="14" height="14" opacity="0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
 
 /**
  * Базовий клас для діалогу вибору (picker) моделі.
@@ -79,7 +81,10 @@ export abstract class ModelPickerBase<Row extends { id: string }> extends BaseUI
   constructor() { super(listRootSchema); }
 
   @query("input") private _input?: HTMLInputElement;
-  #searchTimer?: number;
+  // ReturnType<typeof setTimeout>, а не number: пакет типізується і з DOM-lib, і з
+  // @types/node (його тягне пресет `vite.ts` того ж пакета), де setTimeout повертає
+  // Timeout, не number.
+  #searchTimer?: ReturnType<typeof setTimeout>;
 
   override connectedCallback() {
     super.connectedCallback();

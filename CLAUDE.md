@@ -53,8 +53,10 @@ client/                     # ui-kit та клієнтський runtime — Б�
   bus/bus.ts                # event bus: bus.request("data.load", { model, command, payload })
   styles/theme.css          # тема й контракти компонентів — ПЛОСКИЙ CSS, без директив Tailwind
   shared/styles.ts          # `tw`: порожній CSSStyleSheet, який заповнює застосунок
+  vite.ts                   # пресет defineAlteraConfig() — уся машинерія Vite (експорт "@scope/client/vite")
   # index.html і main.ts тут немає навмисно: вони належать застосунку (app/).
-  # Вхід збірки Tailwind — теж: він сканує каталоги застосунку, отже його це справа.
+  # Вхід збірки Tailwind (app/styles/tailwind.css) — теж: він сканує каталоги
+  # застосунку. Але сама машинерія Vite — пресет тут: вона однакова для всіх застосунків.
 
 server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace), не залежить від app
   main.ts                         # public API бібліотеки: bootstrap + configFromEnv + типи (барель)
@@ -200,7 +202,7 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 зірочку обов'язковості зі схеми, тому вона не розходиться з перевіркою в БД. Класів `form-control` і
 `label-text` не існує в daisyUI 5 — це розмітка четвертої версії, і саме вона ламає вирівнювання підписів.
 
-> **Стилі:** збірка Tailwind одна і належить застосунку — вхід `app/styles/tailwind.css` (він і сканує `@source` обидва каталоги, і підключає daisyUI). Фреймворк Tailwind не компілює: він віддає тему плоским активом `client/styles/theme.css`, а вхід застосунку імпортує її **останньою**. У темі є власний шар (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці. Зібраний CSS потрапляє у shadow root через спільний `CSSStyleSheet` `tw` (`client/shared/styles.ts`), який заповнює `app/styles/app-styles.ts`; сама бібліотека CSS не імпортує — інакше пакет не публікується.
+> **Стилі:** збірка Tailwind одна і належить застосунку — вхід `app/styles/tailwind.css`. Авто-детекція увімкнена (сканує `app/` і `client/` від кореня репо); фреймворк додатково вказаний явно `@source "../../client"` — бо в пакеті він у `node_modules`, який авто-детекція виключає. `@source` НЕ приймає аліас Vite чи сентинел: сканер Tailwind читає його з диска, повз бандлер — лише реальний шлях. Тема підключається `@import "@client/styles/theme.css"` **останньою** (на відміну від `@source`, `@import` резолвить enhanced-resolve Tailwind, і той аліаси Vite розуміє). Фреймворк Tailwind не компілює — віддає тему плоским активом `client/styles/theme.css`. Inline-SVG іконки задають розмір атрибутами (`width`/`height`), не Tailwind-класами: у shadow DOM вони не мають залежати від того, чи згенеровано `h-4`. У темі є власний шар (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці. Зібраний CSS потрапляє у shadow root через спільний `CSSStyleSheet` `tw` (`client/shared/styles.ts`), який заповнює `app/styles/app-styles.ts`; сама бібліотека CSS не імпортує — інакше пакет не публікується.
 
 **Діалог вибору (picker)** — наслідуй `ModelPickerBase` (`client/ui-kit/base/model-picker-base.ts`): підклас задає лише `model` та `columns`. Пошук, вибір, підтвердження/скасування — у базі. Документація — [`docs/ui-picker-form.md`](docs/ui-picker-form.md); skill — [`model-picker-form`](.github/skills/model-picker-form/SKILL.md); еталон — `app/catalog/bank/bankPicker.ts`.
 
