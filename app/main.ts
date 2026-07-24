@@ -1,6 +1,10 @@
 // Composition root застосунку на клієнті — дзеркало app/server.ts: тут (і тільки тут)
 // фреймворк зустрічається з конкретним застосунком. Живе в app/, а не в client/, саме
 // тому: клієнт — бібліотека, і знати про `app-header` чи `home-tab` він не може.
+// Стилі застосунку — у фреймворк їх кладе застосунок, а не навпаки. Порядок цього
+// імпорту значення не має (аркуш мутується), але першим він стоїть за змістом.
+import "./styles/app-styles.ts";
+
 import { registerShell } from "@client/shell/shell-registry.ts";
 import { initDataService } from "@client/data/data-service.ts";
 import { restoreSession } from "@client/auth/session.ts";
@@ -40,4 +44,13 @@ async function boot(): Promise<void> {
   root.replaceChildren(login);
 }
 
-await boot();
+// НЕ `await boot()`. Верхньорівневий await тут заморожував би цей модуль
+// (entry-чанк) на весь час boot(). А `tab-controller`, який boot() підвантажує
+// динамічно за живої сесії, залежить від цього ж чанка (Rollup складає сюди
+// `shellTags`). Вийшов би цикл: entry → boot → import(tab-controller) → entry,
+// і промис імпорту не резолвився б ніколи — біла сторінка рівно тоді, коли сесія
+// є. Без await entry завершується, залежність tab-controller'а стає доступною.
+// catch обов'язковий: раніше будь-який збій boot() давав німий білий екран.
+boot().catch((error) => {
+  console.error("[main] не вдалося підняти застосунок:", error);
+});

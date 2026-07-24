@@ -1,13 +1,19 @@
-@import "tailwindcss";
-@source "../../app";
-@source "../../client";
-@plugin "daisyui" {
-  themes: false;
-}
-
-@import "@fontsource/roboto/400.css";
-@import "@fontsource/roboto/500.css";
-@import "@fontsource/roboto/700.css";
+/* Тема фреймворку та контракти компонентів ui-kit.
+ *
+ * Це ЧИСТИЙ CSS — тут навмисно немає ні `@import "tailwindcss"`, ні `@source`,
+ * ні `@plugin "daisyui"`, ні імпортів з npm. Причина: файл їде у складі пакета
+ * `client`, а збірка Tailwind належить застосунку. Директиви тут означали б, що
+ * бібліотека компілює стилі за застосунок і сканує його каталоги — раніше саме
+ * так і було (`@source "../../app"` усередині `client/`), і це був вихід за межі
+ * пакета, якого `check:deps` не бачить: він обходить лише `.ts`.
+ *
+ * Підключає цей файл вхід збірки застосунку — `app/styles/tailwind.css`, останнім
+ * рядком, тобто ПІСЛЯ Tailwind і daisyUI. Порядок обов'язковий: правила нижче
+ * написані поза `@layer` і мусять перебивати шар utilities.
+ *
+ * Шрифт задається змінною `--default-font-family`, а самі файли шрифту підключає
+ * застосунок: `@fontsource/*` резолвиться через node_modules, яких у пакета немає.
+ */
 
 /* ── 1С тема (гамма перенесена з altera_danet) ─────────── */
 [data-theme="1c"],

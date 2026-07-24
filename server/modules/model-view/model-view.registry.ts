@@ -32,9 +32,22 @@ function buildDevRegistry(entries: ViewManifestEntry[], projectRoot: string): Ma
   return registry;
 }
 
+/**
+ * Ключ у `dist/.vite/manifest.json` — шлях відносно КОРЕНЯ VITE, а маніфест в'ю
+ * рахує шляхи від кореня репозиторію. Поки root Vite був самим репозиторієм, це
+ * збігалося; після переїзду `index.html` у `app/` — ні, і prod-режим тихо
+ * лишався з нулем маршрутів (dev не постраждав, бо він будує `/@fs/` від
+ * `projectRoot`, і саме тому нікого це не турбувало).
+ */
+function toViteKey(moduleFile: string, appDir: string): string {
+  const prefix = appDir ? `${appDir.replace(/^\/+|\/+$/g, "")}/` : "";
+  return prefix && moduleFile.startsWith(prefix) ? moduleFile.slice(prefix.length) : moduleFile;
+}
+
 async function buildProdRegistry(
   entries: ViewManifestEntry[],
   projectRoot: string,
+  appDir: string,
 ): Promise<Map<string, ViewEntry>> {
   const registry = new Map<string, ViewEntry>();
   const viteManifest = await readJson<ViteManifest>(`${projectRoot}/dist/.vite/manifest.json`);
@@ -45,7 +58,7 @@ async function buildProdRegistry(
   }
 
   for (const entry of entries) {
-    const viteEntry = viteManifest[entry.moduleFile];
+    const viteEntry = viteManifest[toViteKey(entry.moduleFile, appDir)];
     if (!viteEntry) {
       console.warn(`[model-view] чанк для ${entry.moduleFile} не знайдено в manifest.json`);
       continue;
@@ -61,11 +74,22 @@ async function buildProdRegistry(
 }
 
 export async function buildViewRegistry(): Promise<Map<string, ViewEntry>> {
-  const { manifest, projectRoot, dev } = getServerConfig().views;
+  const { manifest, projectRoot, appDir, dev } = getServerConfig().views;
   const registry = dev
     ? buildDevRegistry(manifest, projectRoot)
-    : await buildProdRegistry(manifest, projectRoot);
+    : await buildProdRegistry(manifest, projectRoot, appDir ?? "");
 
   console.log(`[model-view] режим: ${dev ? "dev" : "prod"}, маршрутів: ${registry.size}`);
+
+  // Порожній реєстр при непорожньому маніфесті — це не «нема в'ю», а розсинхрон
+  // шляхів. Мовчки він виглядає як біла сторінка: оболонка підніметься, а жодна
+  // вкладка не відкриється.
+  if (registry.size === 0 && manifest.length > 0) {
+    console.error(
+      `[model-view] жодного з ${manifest.length} в'ю не зіставлено з чанками. ` +
+        `Перевір appDir (зараз ${JSON.stringify(appDir ?? "")}) і свіжість dist/.`,
+    );
+  }
+
   return registry;
 }

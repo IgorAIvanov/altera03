@@ -117,7 +117,7 @@ export class ContractorPicker extends ModelPickerBase<ContractorLookupRow> {
   строки оказывается перекрыт. Красить нужно ячейки. Та же правка применена и в
   списке — см. [`docs/ui-list-form.md`](ui-list-form.md).
 - **CSS-переменные темы** резолвятся в Shadow DOM благодаря `:host` в
-  `client/styles/tailwind.css` (см. список).
+  `client/styles/theme.css` (см. список).
 
 ---
 

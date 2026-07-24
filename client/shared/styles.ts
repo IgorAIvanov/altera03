@@ -1,4 +1,29 @@
-import { unsafeCSS } from "lit";
-import raw from "../styles/tailwind.css?inline";
+/**
+ * Спільний аркуш стилів, який адоптується в кожен shadow root
+ * (`GlobalStyledLitElement`, `ModelListBase`, `ModelPickerBase`, форми).
+ *
+ * Порожній до того, як застосунок його заповнить. Бібліотека CSS не імпортує:
+ * `import raw from "…css?inline"` — фіча Vite, а не модульної системи, і саме
+ * вона не давала опублікувати пакет («Expected a JavaScript or TypeScript
+ * module, but identified a Css module»). Але річ не лише в реєстрі: вміст
+ * компілюється з розмітки конкретного застосунку, тож правильним він може бути
+ * тільки там. Заповнює його `app/styles/app-styles.ts`.
+ *
+ * Аркуш саме МУТУЄТЬСЯ, а не підмінюється значенням, і це принципово. Lit
+ * обчислює `static styles` на етапі визначення класу — тобто під час імпорту
+ * модуля, ще до першого рядка тіла `app/main.ts`, який ці модулі статично
+ * тягне (`./home-tab.ts`). Сеттер, що кладе НОВИЙ об'єкт, спрацював би запізно
+ * саме для компонентів оболонки, і зламалося б тихо. Тут ідентичність об'єкта
+ * не змінюється, тому всі shadow root, що вже його прийняли, оновлюються в
+ * момент заповнення — порядок імпортів перестає щось означати. Побічний ефект:
+ * гаряча заміна CSS теж доїжджає в готові компоненти.
+ *
+ * Ціна: у браузері без `adoptedStyleSheets` Lit конвертує аркуш у текст на
+ * етапі визначення класу — тобто зніме його порожнім. Це Safari до 16.4.
+ */
+export const tw: CSSStyleSheet = new CSSStyleSheet();
 
-export const tw = unsafeCSS(raw);
+/** Викликає композиційний корінь застосунку, передаючи зібраний Tailwind. */
+export function setAppStyles(cssText: string): void {
+  tw.replaceSync(cssText);
+}

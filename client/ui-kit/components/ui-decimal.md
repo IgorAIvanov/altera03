@@ -57,7 +57,7 @@
 має бути `p-0`, інакше залишиться падінг daisyUI-таблиці.
 
 Сам стиль живе не в компоненті, а в контракті `.table-tabular` / `.cell-control`
-у [`client/styles/tailwind.css`](../../styles/tailwind.css) (перенесено з
+у [`client/styles/theme.css`](../../styles/theme.css) (перенесено з
 `.app-table--tabular-section` в altera_danet). Розмітка:
 
 ```html
@@ -74,7 +74,7 @@
 тіні й фону, **рамки фокуса в комірці немає взагалі** — межу малює тільки
 таблиця (так само в altera_danet).
 
-> **Чому не утилітами Tailwind.** У `tailwind.css` є свій шар теми
+> **Чому не утилітами Tailwind.** У `theme.css` є свій шар теми
 > (`.input`, `.join .join-item`, `.table td`), написаний **поза `@layer`**.
 > Безшарові правила перебивають будь-який шар Tailwind незалежно від
 > специфічності, тому `p-0`, `border-0`, `rounded-none` у комірці **не

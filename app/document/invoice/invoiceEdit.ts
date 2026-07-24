@@ -263,7 +263,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
           <button class="btn btn-sm" @click=${this.addLine}>+ ${t("invoice.addLine")}</button>
         </div>
 
-        <!-- table-tabular: контракт табличної частини (client/styles/tailwind.css).
+        <!-- table-tabular: контракт табличної частини (client/styles/theme.css).
              Комірки з контролами — без класу (падінг 0), текстові — cell-text. -->
         <table class="table table-sm w-full table-tabular">
           <thead>

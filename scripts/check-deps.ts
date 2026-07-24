@@ -9,19 +9,23 @@
 //      root (app/main.ts, app/server.ts) живуть у самому застосунку;
 //   2. client/* і server/* не виходять відносними імпортами за власні межі:
 //      те, що тягне сусідні каталоги, — не бібліотека, а частина збірки.
+//   3. CSS у бібліотеках — плоский: без директив збірки Tailwind і без імпортів
+//      з npm. Третя перевірка теж має історію: `client/styles/tailwind.css` довго
+//      містив `@source "../../app"` — бібліотека сканувала застосунок, — і жодна
+//      з двох попередніх цього не бачила, бо обидві обходять лише `.ts`.
 //
 // Запуск: deno task check:deps
 import { dirname, normalize, resolve, SEPARATOR } from "jsr:@std/path@^1.1.2";
 
 const violations: string[] = [];
 
-async function* walk(dir: string): AsyncGenerator<string> {
+async function* walk(dir: string, extensions: string[]): AsyncGenerator<string> {
   for await (const entry of Deno.readDir(dir)) {
     const path = `${dir}/${entry.name}`;
     if (entry.isDirectory) {
       if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
-      yield* walk(path);
-    } else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) {
+      yield* walk(path, extensions);
+    } else if (extensions.some((extension) => entry.name.endsWith(extension))) {
       yield path;
     }
   }
@@ -35,7 +39,7 @@ function importSpecifier(line: string): string | null {
 }
 
 async function* importLines(root: string) {
-  for await (const file of walk(root)) {
+  for await (const file of walk(root, [".ts", ".tsx"])) {
     const text = await Deno.readTextFile(file);
     const lines = text.split("\n");
     for (let index = 0; index < lines.length; index++) {
@@ -74,6 +78,47 @@ async function checkStaysInsidePackage(root: string) {
   }
 }
 
+/**
+ * CSS бібліотеки — актив, а не вхід збірки.
+ *
+ * Директиви Tailwind (`@import "tailwindcss"`, `@source`, `@plugin`) означають, що
+ * пакет компілює стилі замість застосунку, а `@source` до того ж указує каталог —
+ * саме так `client/` і почав сканувати `app/`. Імпорт з npm (`@fontsource/...`)
+ * вимагає node_modules, яких у встановленого пакета немає.
+ *
+ * Генерація має бути одна, і належить вона застосунку: `app/styles/tailwind.css`.
+ */
+async function checkCssIsPlain(root: string) {
+  const rootAbs = normalize(resolve(root)) + SEPARATOR;
+
+  for await (const file of walk(root, [".css"])) {
+    const lines = (await Deno.readTextFile(file)).split("\n");
+
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      const lineNumber = index + 1;
+
+      if (/^\s*@(source|plugin|config|tailwind)\b/.test(line)) {
+        report(file, lineNumber, line, "директива збірки Tailwind у бібліотеці");
+        continue;
+      }
+
+      const imported = line.match(/^\s*@import\s+["']([^"']+)["']/)?.[1];
+      if (!imported) continue;
+
+      if (!imported.startsWith(".")) {
+        report(file, lineNumber, line, `імпорт поза пакетом: ${imported}`);
+        continue;
+      }
+
+      const target = normalize(resolve(dirname(resolve(file)), imported));
+      if (!target.startsWith(rootAbs)) {
+        report(file, lineNumber, line, `вихід за межі ${root}/ → ${target}`);
+      }
+    }
+  }
+}
+
 // Винятків більше немає: обидва composition root живуть у застосунку
 // (app/server.ts і app/main.ts), тож бібліотеки про застосунок не знають узагалі.
 await checkNoAppDependency("client", () => false);
@@ -81,6 +126,9 @@ await checkNoAppDependency("server", () => false);
 
 await checkStaysInsidePackage("client");
 await checkStaysInsidePackage("server");
+
+await checkCssIsPlain("client");
+await checkCssIsPlain("server");
 
 if (violations.length > 0) {
   console.error("❌ Порушення меж пакетів:");
@@ -93,4 +141,7 @@ if (violations.length > 0) {
   Deno.exit(1);
 }
 
-console.log("✅ Межі пакетів дотримані: client/server не залежать від app і не виходять за свої каталоги.");
+console.log(
+  "✅ Межі пакетів дотримані: client/server не залежать від app, не виходять за свої каталоги,\n" +
+    "   CSS у них — плоский актив без директив збірки.",
+);

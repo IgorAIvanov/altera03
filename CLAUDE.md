@@ -36,6 +36,9 @@ app/                        # застосунок: фронтенд-модул�
       <model>.sql           # PostgreSQL-функції моделі
       migration.sql         # міграції
       data.sql              # seed-дані
+  styles/
+    tailwind.css            # ЄДИНИЙ вхід збірки Tailwind: @source, daisyUI, шрифти, тема
+    app-styles.ts           # ?inline → setAppStyles(): віддає зібраний CSS у client
   _locales/                 # локалізація: en.json, uk.json ...
   _sqlpackage/              # зібрані SQL-файли (генеруються, не редагувати)
   # SQL ядра (доступ, attachment, document, journal_entry, print_template,
@@ -48,7 +51,10 @@ app/                        # застосунок: фронтенд-модул�
 client/                     # ui-kit та клієнтський runtime — БІБЛІОТЕКА (Deno workspace)
   ui-kit/components/        # web components: ui-picker, ...
   bus/bus.ts                # event bus: bus.request("data.load", { model, command, payload })
+  styles/theme.css          # тема й контракти компонентів — ПЛОСКИЙ CSS, без директив Tailwind
+  shared/styles.ts          # `tw`: порожній CSSStyleSheet, який заповнює застосунок
   # index.html і main.ts тут немає навмисно: вони належать застосунку (app/).
+  # Вхід збірки Tailwind — теж: він сканує каталоги застосунку, отже його це справа.
 
 server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace), не залежить від app
   main.ts                         # public API бібліотеки: bootstrap + configFromEnv + типи (барель)
@@ -187,14 +193,14 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 
 **Форма списку** — наслідуй `ModelListBase` (`client/ui-kit/base/model-list-base.ts`): підклас задає лише `model`, `editRoute` та `columns`. Тулбар, серверне сортування, пагінація, пошук, вибір рядка — у базі. Документація для розробника — [`docs/ui-list-form.md`](docs/ui-list-form.md); skill для агента — [`model-list-form`](.github/skills/model-list-form/SKILL.md); еталон — `app/catalog/bank/bankList.ts`.
 
-**Таблична частина документа** — контракт `.table-tabular` / `.cell-text` / `.cell-control` у `client/styles/tailwind.css`; контроли підключаються атрибутом `cell` (`<ui-decimal cell>`, `<ui-picker cell>`). Skill — [`document-tabular-section`](.github/skills/document-tabular-section/SKILL.md); еталон — `app/document/invoice/invoiceEdit.ts`.
+**Таблична частина документа** — контракт `.table-tabular` / `.cell-text` / `.cell-control` у `client/styles/theme.css`; контроли підключаються атрибутом `cell` (`<ui-decimal cell>`, `<ui-picker cell>`). Skill — [`document-tabular-section`](.github/skills/document-tabular-section/SKILL.md); еталон — `app/document/invoice/invoiceEdit.ts`.
 
 **Розкладка форми редагування** — підпис поля тільки через `BaseUI.renderField(label, control, { field })`,
 підвал тільки через `renderFormActions()` (Зберегти й закрити / Зберегти / Закрити). `field` вмикає
 зірочку обов'язковості зі схеми, тому вона не розходиться з перевіркою в БД. Класів `form-control` і
 `label-text` не існує в daisyUI 5 — це розмітка четвертої версії, і саме вона ламає вирівнювання підписів.
 
-> **Стилі:** у `client/styles/tailwind.css` є власний шар теми (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці.
+> **Стилі:** збірка Tailwind одна і належить застосунку — вхід `app/styles/tailwind.css` (він і сканує `@source` обидва каталоги, і підключає daisyUI). Фреймворк Tailwind не компілює: він віддає тему плоским активом `client/styles/theme.css`, а вхід застосунку імпортує її **останньою**. У темі є власний шар (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці. Зібраний CSS потрапляє у shadow root через спільний `CSSStyleSheet` `tw` (`client/shared/styles.ts`), який заповнює `app/styles/app-styles.ts`; сама бібліотека CSS не імпортує — інакше пакет не публікується.
 
 **Діалог вибору (picker)** — наслідуй `ModelPickerBase` (`client/ui-kit/base/model-picker-base.ts`): підклас задає лише `model` та `columns`. Пошук, вибір, підтвердження/скасування — у базі. Документація — [`docs/ui-picker-form.md`](docs/ui-picker-form.md); skill — [`model-picker-form`](.github/skills/model-picker-form/SKILL.md); еталон — `app/catalog/bank/bankPicker.ts`.
 
@@ -294,6 +300,14 @@ bootstrap({ ...env, auth: { ...env.auth, methods: [new GoogleAuthMethod(...)] },
 контрагентами, AI-розпізнавання вхідних). Гіпотези, прийняті рішення й план —
 [`docs/doc-exchange-plan.md`](docs/doc-exchange-plan.md); коду ще немає.
 
+## Винесення фреймворку в пакети
+
+`server/` і `client/` рухаються до того, щоб бути окремими пакетами, на яких
+новий застосунок піднімається scaffold-ом. План, зроблені кроки, відкриті борги
+(перевірка прав у рантаймі, redirect-потік для зовнішніх провайдерів, дрейф схеми
+меню/інтерфейсів) і вже прийняті рішення —
+[`docs/framework-extraction-plan.md`](docs/framework-extraction-plan.md).
+
 ## TypeBox-схема
 
 > Деталі та шаблон — у skill [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md).
@@ -360,12 +374,36 @@ deno task api bank list --raw | jq .data   # чистий JSON під конве
 
 Коли Defender оновить визначення, префікс можна буде прибрати.
 
-## Змінні середовища (server/.env)
+## Змінні середовища (`.env` у корені репозиторію)
+
+Файл один і лежить у корені — не в `server/`. `server/` і `client/` — бібліотеки, вони
+`Deno.env` не читають узагалі; читає застосунок через `configFromEnv()`. Але той самий файл
+потрібен і `scripts/` (`sql:publish`, `passwd`, `smoke`, `api`), які до `app/` не належать,
+тому спільне місце — корінь. Задачі в `deno.json` передають `--env-file` без аргументу,
+тобто беруть `./.env` відносно кореня.
+
+`.env` у `.gitignore`; шаблон із повним переліком — `.env.example`, його й тримати в актуальному
+стані. Той самий файл підхоплює `docker-compose.yml` для облікових даних PostgreSQL, тож
+пароль БД описаний один раз.
 
 ```
-DATABASE_URL=postgres://...
-JWT_SECRET=...
-OPENAI_API_KEY=...          # для LLM-агента
-OPENAI_MODEL=gpt-4o-mini    # модель-виконавець
-OPENAI_ROUTER_MODEL=gpt-4o-mini  # модель-роутер
+DB_HOST=localhost           # ці ж значення йдуть у docker compose
+DB_PORT=5432
+DB_NAME=altera
+DB_USERNAME=altera
+DB_PASSWORD=altera_secret
+PORT=3000                   # читає app/server.ts, не configFromEnv
+JWT_SECRET=change-me-in-production
+AUTH_SESSION_TTL_HOURS=720
+BOOTSTRAP_LOGIN=            # логін+пароль разом → створюється адміністратор на старті
+BOOTSTRAP_PASSWORD=
+DEV_AUTH_BYPASS=0           # у продуктивному оточенні валить старт сервера
+DEV_AUTH_USER_ID=
+VITE_DEV_URL=http://localhost:5173   # непорожній → сервер віддає в'ю через Vite
+OPENAI_API_KEY=             # LLM-агент; без ключа агент просто не працює
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_ROUTER_MODEL=gpt-4o-mini
 ```
+
+Решта змінних має дефолти й у `.env` не потрібна — повний список у розділі «Конфігурація
+сервера» вище, єдине джерело істини — `server/config/config-from-env.ts`.

@@ -159,7 +159,7 @@ export class UiDecimal extends GlobalStyledLitElement {
         type="text"
         inputmode="decimal"
         class="input w-full text-right tabular-nums ${this.size ? `input-${this.size}` : ""} ${
-          // cell-control — контракт табличної частини з client/styles/tailwind.css
+          // cell-control — контракт табличної частини з client/styles/theme.css
           this.cell ? "cell-control" : "input-bordered"
         }"
         .value=${this._draft ?? this.value}

@@ -14,12 +14,14 @@ Use this skill when:
 - a focus ring inside a cell does not line up with the cell borders
 
 Reference implementation: `app/document/invoice/invoiceEdit.ts`.
-Contract: `client/styles/tailwind.css`, section «Табличні частини документів».
+Contract: `client/styles/theme.css`, section «Табличні частини документів».
 
 ## The trap: read this before touching any CSS
 
-`client/styles/tailwind.css` contains a hand-written theme layer — `.input`,
+`client/styles/theme.css` contains a hand-written theme layer — `.input`,
 `.btn`, `.join .join-item`, `.table td` — declared **outside any `@layer`**.
+It is plain CSS shipped with the framework package; the application's build entry
+(`app/styles/tailwind.css`) imports it **last**, after Tailwind and daisyUI.
 
 Per the CSS cascade, unlayered rules beat **every** cascade layer, including
 Tailwind's `utilities`, regardless of specificity.
@@ -28,19 +30,19 @@ Tailwind's `utilities`, regardless of specificity.
 nothing inside a table cell.** They lose to `.table td { padding: 5px 8px }` and
 `.input { border: 1px solid }` no matter what you write.
 
-Anything that must override the theme goes **into `tailwind.css`, below the theme
+Anything that must override the theme goes **into `theme.css`, below the theme
 block, also unlayered**. Not into the markup, and not into a component's
 `static styles` (a component sheet can be overridden by the adopted global one,
 and `:host([attr])` additionally depends on the attribute surviving reflection).
 
 Corollary: because `tw` is adopted into every shadow root via
-`GlobalStyledLitElement`, a class defined in `tailwind.css` also reaches controls
+`GlobalStyledLitElement`, a class defined in `theme.css` also reaches controls
 **inside** component shadow roots. That is what makes a single global contract
 possible across `ui-decimal`, `ui-picker` and the table itself.
 
 ## The contract
 
-Three classes, defined once in `client/styles/tailwind.css`:
+Three classes, defined once in `client/styles/theme.css`:
 
 | Class | Where | Effect |
 |-------|-------|--------|
@@ -131,7 +133,7 @@ Follow `<ui-decimal>`; the rules that matter for the tabular section:
 ## Non-negotiable checks
 
 - do not style cells or in-cell controls with Tailwind utilities — they lose to
-  the unlayered theme; put the rule in `tailwind.css` below the theme
+  the unlayered theme; put the rule in `theme.css` below the theme
 - do not give in-cell controls `height: 100%` or `min-height` — the row only
   grows from it; the control's own height defines the row
 - do not add a focus outline inside a cell

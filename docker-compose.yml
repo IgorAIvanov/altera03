@@ -2,12 +2,15 @@ services:
   postgres:
     image: postgres:17-alpine
     container_name: altera-pg-03
+    # Значення беруться з кореневого .env — того самого, що читає застосунок.
+    # Дублювати їх тут літералами не можна: розійдуться, і сервер піде до бази
+    # з чужим паролем.
     environment:
-      POSTGRES_DB: altera
-      POSTGRES_USER: altera
-      POSTGRES_PASSWORD: altera_secret
+      POSTGRES_DB: ${DB_NAME:-altera}
+      POSTGRES_USER: ${DB_USERNAME:-altera}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-altera_secret}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped

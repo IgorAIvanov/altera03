@@ -136,7 +136,7 @@ export class UiPicker extends GlobalStyledLitElement {
 
     if (!this.visible) return html``;
 
-    // cell-control — контракт табличної частини з client/styles/tailwind.css:
+    // cell-control — контракт табличної частини з client/styles/theme.css:
     // рамки, заокруглення й фон знімає він, сітку малює сама таблиця.
     const flat = this.cell ? "cell-control" : "";
 

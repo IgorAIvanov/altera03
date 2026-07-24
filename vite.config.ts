@@ -19,6 +19,19 @@ export default defineConfig({
       input: {
         client: "app/index.html",
       },
+      output: {
+        // shell-registry — в окремий чанк примусово. Інакше Rollup складає його в
+        // entry-чанк (його статично тягне app/main.ts), а `tab-controller`, який
+        // main.ts підвантажує динамічно, імпортує звідти `shellTags` — і виникає
+        // цикл entry → import(tab-controller) → entry. Сам по собі цикл не
+        // фатальний, але разом із верхньорівневим await у main.ts він давав
+        // дедлок (біла сторінка за живої сесії). Прибравши await, ми зняли
+        // симптом; винісши модуль у лист — прибрали й саму можливість циклу, щоб
+        // майбутній top-level await не відродив баг.
+        manualChunks(id) {
+          if (id.includes("/client/shell/shell-registry")) return "shell-registry";
+        },
+      },
     },
   },
   server: {

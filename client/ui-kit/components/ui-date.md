@@ -89,7 +89,7 @@
 </td>
 ```
 
-`cell` вмикає контракт `.cell-control` із `client/styles/tailwind.css`:
+`cell` вмикає контракт `.cell-control` із `client/styles/theme.css`:
 контрол заповнює `<td>` цілком, рамку малює сама таблиця.
 
 ## У списках

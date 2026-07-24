@@ -65,13 +65,19 @@ html`<input required>`  // OK — завжди true
 
 ## Shadow DOM та Tailwind CSS
 
-Компоненти, що наслідують `GlobalStyledLitElement`, отримують весь `tailwind.css` через `unsafeCSS`.  
+Компоненти, що наслідують `GlobalStyledLitElement`, отримують зібраний Tailwind через
+спільний `CSSStyleSheet` (`tw` із `client/shared/styles.ts`), який адоптується в кожен
+shadow root. Аркуш порожній, доки застосунок його не заповнить — це робить
+`app/styles/app-styles.ts`.  
 Але Tailwind генерує тільки класи, що використовуються у файлах зі списку `@source`.
 
-Якщо додаєш Tailwind-класи в новий каталог — додай `@source` до `client/styles/tailwind.css`:
+Збірка одна, і вона в застосунку: `app/styles/tailwind.css`. Бібліотека Tailwind не
+компілює — вона віддає тему активом (`client/styles/theme.css`, плоский CSS).
+
+Якщо додаєш Tailwind-класи в новий каталог — додай `@source` до `app/styles/tailwind.css`:
 ```css
 @source "../../app";
-@source "../../client";   /* ← вже додано */
+@source "../../client";   /* ← вже додано: класи з шаблонів ui-kit */
 ```
 
 Якщо клас не генерується — перевір `@source` першим чином, до будь-яких інших рішень.
@@ -113,4 +119,4 @@ export class UiMyComponent extends GlobalStyledLitElement {
 - [ ] Назва camelCase? → додай `attribute: "kebab-case"`
 - [ ] Boolean? → у шаблонах використовуй `?attr-name=${value}`
 - [ ] Оновив документацію (`.md` файл компонента) з правильними іменами атрибутів?
-- [ ] Tailwind-класи з нового каталогу? → перевір `@source` у `tailwind.css`
+- [ ] Tailwind-класи з нового каталогу? → перевір `@source` у `app/styles/tailwind.css`

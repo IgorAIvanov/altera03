@@ -60,6 +60,9 @@ export async function createServer(): Promise<AppServer> {
     views: {
       manifest: viewManifest,
       projectRoot,
+      // Root Vite (vite.config.ts). Ключі в dist/.vite/manifest.json рахуються
+      // від нього, а шляхи в маніфесті в'ю — від кореня репозиторію.
+      appDir: "app",
       // Vite віддає вихідні модулі — беремо їх через /@fs замість зібраних чанків.
       dev: !!Deno.env.get("VITE_DEV_URL"),
     },
@@ -103,7 +106,16 @@ export async function createServer(): Promise<AppServer> {
 
 if (import.meta.main) {
   const port = Number(Deno.env.get("PORT") || 3000);
+  const viteDevUrl = Deno.env.get("VITE_DEV_URL");
   const { handler } = await createServer();
   Deno.serve({ port }, handler);
   console.log(`🚀 Altera server running on http://localhost:${port}`);
+
+  // З VITE_DEV_URL в'ю віддає Vite (`/@fs/`-посилання на вихідні модулі), а цей
+  // порт їх не обслуговує — сторінка підніметься, але жодна вкладка не
+  // відкриється. Інтерфейс у цьому режимі відкривають за адресою Vite; сюди
+  // ходить лише /api, куди Vite і проксює.
+  if (viteDevUrl) {
+    console.log(`   в'ю — з Vite: інтерфейс відкривай на ${viteDevUrl}, тут живе тільки /api`);
+  }
 }

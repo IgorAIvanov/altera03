@@ -224,7 +224,7 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
 При построении формы попутно зафиксированы общие правила (полезно знать):
 
 - **CSS-переменные темы в Shadow DOM.** Тема daisyUI объявлена в
-  `client/styles/tailwind.css` под `[data-theme="1c"], :root, :host` — добавленный
+  `client/styles/theme.css` под `[data-theme="1c"], :root, :host` — добавленный
   `:host` нужен, чтобы `var(--color-primary)` и др. резолвились внутри Shadow DOM.
   Без него `bg-primary`, выделение строки и пр. оказываются прозрачными.
 - **Подсветка выделенной строки** — правило `tr.selected td { … !important }`
