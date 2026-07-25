@@ -203,6 +203,9 @@ Register-oriented naming examples:
 - Do not create a dedicated backend module for a model that only uses list, get, save, delete, and lookup.
 - Declare a TS-backed command in the model's `manifest.json` when the model needs extra commands, special validation, or TS-side orchestration.
 - Keep extra command names stable because frontend callers and generic routing depend on them directly.
+- **Every command beyond `list`/`get`/`save`/`delete`/`lookup` (and `post`/`unpost` on
+  documents) must also declare the permission it requires** in `commands.access`, or the
+  runtime refuses to run it. See [`model-command-access`](../model-command-access/SKILL.md).
 
 ## TS-backed commands
 
@@ -233,5 +236,8 @@ non-SQL side effects). Otherwise stay on the SQL function contract above.
   (no client/Lit dependencies).
 - Standard `lookup`/`list`/`get`/`save`/`delete` stay on SQL functions by convention;
   do not turn them into TS commands without a real reason.
+- Declare the command's permission in `commands.access` — a TS command is non-standard by
+  definition, and an undeclared command returns 501 instead of running. Details and how to
+  pick the action: [`model-command-access`](../model-command-access/SKILL.md).
 
 See [docs/ts-model-command.md](../../../docs/ts-model-command.md) for the full developer guide.

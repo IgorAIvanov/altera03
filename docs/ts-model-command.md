@@ -134,6 +134,21 @@ deno task sql:registry
 
 ## Правила и подводные камни
 
+- **TS-команда обязана объявить нужное право** в `commands.access` манифеста — она
+  по определению нестандартная, а необъявленная команда не выполняется вообще
+  (501 с подсказкой). Значение — действие (`view` / `create` / `edit` / `delete` /
+  `post` / `unpost`) или `"authenticated"`, если команда отдаёт что-то «про себя»
+  вызывающему:
+
+  ```json
+  "commands": {
+    "ts":     { "setPassword": { "module": "./db/user.commands.ts" } },
+    "access": { "setPassword": "edit" }
+  }
+  ```
+
+  Подробности и выбор действия — [`access-control.md`](access-control.md), skill —
+  [`model-command-access`](../.github/skills/model-command-access/SKILL.md).
 - **Файл команды попадает в server-граф импорта.** Это задумано (логика модели
   живёт рядом с моделью), но из такого файла нельзя тянуть client/Lit-зависимости —
   только server-типы и то, что нужно самому хендлеру.

@@ -323,6 +323,9 @@ select case when app.access_can($uid, $model, $action)
 `user/setPassword` на адміністратора — відмова. Останнє й було діркою, через
 яку будь-хто авторизований міг перепризначити пароль адміністратора.
 
+Документація: [`access-control.md`](access-control.md) (для людини) і skill
+[`model-command-access`](../.github/skills/model-command-access/SKILL.md) (для агента).
+
 Лишилося дрібне: проба в `deno task smoke` на те, що viewer отримує відмову, —
 зараз це перевірено руками.
 

@@ -313,6 +313,9 @@ app.access_denied(...) end`. Один round-trip, кешу немає, при в
 ніколи. `dev-bypass` окремої гілки не має: він відключає автентифікацію, а не авторизацію,
 тож `DEV_AUTH_USER_ID` має вказувати на реального користувача в потрібній групі.
 
+Деталі, вибір дії та відлагодження — [`docs/access-control.md`](docs/access-control.md);
+skill для агента — [`model-command-access`](.github/skills/model-command-access/SKILL.md).
+
 ## Вкладення (бінарні об'єкти)
 
 Зображення й файли — у ядрі (`server/modules/blob/`): токен доступу, віддача
