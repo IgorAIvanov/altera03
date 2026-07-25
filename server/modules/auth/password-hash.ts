@@ -60,6 +60,13 @@ async function derivePbkdf2(password: string, salt: Uint8Array, iterations: numb
   return new Uint8Array(derivedBits);
 }
 
+/**
+ * Мінімальна довжина пароля. Живе поруч із хешуванням, бо це єдине місце, через
+ * яке пароль узагалі потрапляє в систему, — і будь-який шлях (перший запуск,
+ * адмін-екран, консоль) має міряти його однією лінійкою.
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
 export async function hashPassword(password: string): Promise<string> {
   const trimmedPassword = password.normalize("NFKC");
   const salt = crypto.getRandomValues(new Uint8Array(PBKDF2_SALT_LENGTH));

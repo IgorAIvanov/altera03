@@ -1,8 +1,7 @@
 import type { ModelCommandContext } from "../../../../server/modules/model-runtime/model-runtime.types.ts";
-import { hashPassword } from "../../../../server/modules/auth/password-hash.ts";
-
-/** Мінімальна довжина пароля. Тримається тут, а не в схемі: перевірку робить сервер. */
-const MIN_PASSWORD_LENGTH = 8;
+// Довжина береться з фреймворку, а не оголошується тут: інакше екран
+// адміністратора і перший запуск міряли б пароль різними лінійками.
+import { hashPassword, MIN_PASSWORD_LENGTH } from "../../../../server/modules/auth/password-hash.ts";
 
 function fail(message: string) {
   return {

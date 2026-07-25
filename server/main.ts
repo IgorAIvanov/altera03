@@ -24,7 +24,7 @@ export type {
 // Хешування паролів. Єдина схема на систему (PBKDF2-SHA256): SQL паролів не
 // торкається, тож усе, що їх встановлює — від адмін-екрана застосунку до
 // консольного скидання, — має користуватися саме цим.
-export { hashPassword, verifyPassword } from "./modules/auth/password-hash.ts";
+export { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "./modules/auth/password-hash.ts";
 
 // Контракт методу входу: застосунок реалізує його, щоб додати зовнішнього
 // провайдера, і кладе екземпляр у `auth.methods`.

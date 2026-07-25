@@ -43,11 +43,12 @@ export class AuthController {
 
   @Post("bootstrap")
   async bootstrap(@Body() body: { login: string; password: string; fullName: string }) {
-    const user = await this.authBootstrapService.createFirstUser(body);
-    if (!user) {
-      return jsonResponse(err("Початковий користувач уже створений або дані некоректні"), 400);
+    const result = await this.authBootstrapService.createFirstUser(body);
+    if (!result.ok) {
+      return jsonResponse(err(result.message), 400);
     }
 
+    const { user } = result;
     const session = await this.authSessionService.createSession(user, "password");
     return jsonResponse(
       ok({ user, method: "password", session: publicSession(session) }),

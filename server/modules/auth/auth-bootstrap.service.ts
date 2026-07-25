@@ -1,6 +1,6 @@
 import { Injectable } from "@danet/core";
 import { AuthService } from "./auth.service.ts";
-import { hashPassword } from "./password-hash.ts";
+import { hashPassword, MIN_PASSWORD_LENGTH } from "./password-hash.ts";
 import type { AuthUserDto } from "./auth.types.ts";
 import { toAuthUserDto } from "./auth.types.ts";
 import { getServerConfig, type BootstrapUserConfig } from "../../config/server-config.ts";
@@ -20,23 +20,45 @@ export class AuthBootstrapService {
     };
   }
 
-  async createFirstUser(input: { login: string; password: string; fullName: string }): Promise<AuthUserDto | null> {
+  /**
+   * Перший користувач: створюється лише поки їх немає жодного, і одразу
+   * потрапляє в групу повного доступу — інакше після першого запуску нема кому
+   * налаштувати решту.
+   *
+   * Пароль міряється тією ж лінійкою, що й скрізь (`MIN_PASSWORD_LENGTH`).
+   * Раніше тут перевірялося тільки «непорожній», і найпривілейованіший акаунт
+   * у системі виявлявся єдиним, який можна завести з паролем «1».
+   *
+   * Причина відмови повертається текстом: «дані некоректні» на екрані першого
+   * запуску не підказує нічого, а виправити його нема кому — адміністратора
+   * ще не існує.
+   */
+  async createFirstUser(
+    input: { login: string; password: string; fullName: string },
+  ): Promise<{ ok: true; user: AuthUserDto } | { ok: false; message: string }> {
     if (await this.authService.hasAnyUsers()) {
-      return null;
+      return { ok: false, message: "Початковий користувач уже створений" };
     }
 
-    const login = input.login.trim();
-    const password = input.password;
-    const fullName = input.fullName.trim();
+    const login = input.login?.trim() ?? "";
+    const password = input.password ?? "";
+    const fullName = input.fullName?.trim() ?? "";
 
-    if (!login || !password || !fullName) {
-      return null;
+    if (!login || !fullName) {
+      return { ok: false, message: "Логін і повне ім'я обов'язкові" };
+    }
+
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return {
+        ok: false,
+        message: `Пароль має містити щонайменше ${MIN_PASSWORD_LENGTH} символів`,
+      };
     }
 
     const passwordHash = await hashPassword(password);
     const user = await this.authService.createUser(login, passwordHash, fullName);
     await this.authService.ensureDefaultAccess(user.id);
-    return toAuthUserDto(user);
+    return { ok: true, user: toAuthUserDto(user) };
   }
 
   async tryBootstrapLogin(login: string, password: string): Promise<AuthUserDto | null> {
