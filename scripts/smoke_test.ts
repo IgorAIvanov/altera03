@@ -8,7 +8,8 @@
  * з прибиранням за собою у `finally`. Ніяка проба не чіпає чужі рядки.
  */
 import { assertEquals, assertExists } from "@std/assert";
-import { AppClient, type Envelope } from "./app-client.ts";
+import { AppClient, type Envelope } from "@scope/tools/app-client";
+import { createServer } from "../app/server.ts";
 
 /** Свідомо неіснуючий користувач: 401 від нього — доказ, що заголовок прочитано. */
 const MISSING_USER_ID = "999999999";
@@ -18,7 +19,7 @@ function bytes(text: string): Uint8Array {
 }
 
 Deno.test("smoke: HTTP-межа застосунку", async (t) => {
-  const client = await AppClient.start("smoke", { quiet: true });
+  const client = await AppClient.start("smoke", createServer, { quiet: true });
 
   try {
     // Авторизація відповідає тим самим конвертом, що й команди моделей:

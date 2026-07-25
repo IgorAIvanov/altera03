@@ -17,7 +17,7 @@
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
-    "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./scripts/set-password.ts",
+    "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
     "sql:assemble": "deno run -A ./tools/assemble-sql-package.ts ./app --verbose",
     "sql:publish": "deno run -A --env-file ./tools/publish-sql.ts ./app --verbose",
     "model:build": "deno task sql:registry && deno task sql:gen && deno task sql:assemble && deno task sql:publish"

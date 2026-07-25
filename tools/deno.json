@@ -1,13 +1,16 @@
 {
   "name": "@scope/tools",
   "version": "0.3.0",
-  "//": "Збіркові інструменти фреймворку: codegen SQL/реєстру та публікація. Кожен параметризований каталогом застосунку (аргумент), тож знання про конкретний застосунок у пакет не зашите — воно приходить ззовні. Дев-інструменти (api/smoke/app-client) поки лишились у scripts/: вони інжектять createServer застосунку (борг 3.4b).",
+  "//": "Збіркові й дев-інструменти фреймворку: codegen SQL/реєстру, публікація, in-process клієнт застосунку. Знання про конкретний застосунок у пакет не зашите: codegen/publish отримують каталог аргументом, а AppClient — фабрику `createServer` інжекцією. Тонкі обгортки (api/smoke) живуть у застосунку й передають сюди свій createServer.",
   "exports": {
     "./generate-model-sql": "./generate-model-sql.ts",
     "./generate-model-runtime-registry": "./generate-model-runtime-registry.ts",
     "./assemble-sql-package": "./assemble-sql-package.ts",
     "./publish-app-sql": "./publish-app-sql.ts",
-    "./publish-sql": "./publish-sql.ts"
+    "./publish-sql": "./publish-sql.ts",
+    "./app-client": "./app-client.ts",
+    "./dev-guard": "./dev-guard.ts",
+    "./set-password": "./set-password.ts"
   },
   "license": "MIT",
   "compilerOptions": {

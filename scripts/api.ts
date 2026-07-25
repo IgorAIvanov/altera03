@@ -13,8 +13,9 @@
  * Запис у БД тут можливий (save/delete — звичайні команди), тому інструмент
  * підпорядкований тому самому запобіжнику оточення, що й smoke.
  */
-import { AppClient } from "./app-client.ts";
-import { assertDevEnvironmentOrExit } from "./dev-guard.ts";
+import { AppClient } from "@scope/tools/app-client";
+import { assertDevEnvironmentOrExit } from "@scope/tools/dev-guard";
+import { createServer } from "../app/server.ts";
 
 const USAGE = `Використання:
   deno task api <model> <command> [payload-json] [--user <id>] [--raw] [--verbose]
@@ -91,7 +92,7 @@ function parseArgs(argv: string[]): Options {
 const options = parseArgs(Deno.args);
 assertDevEnvironmentOrExit("api");
 
-const client = await AppClient.start("api", {
+const client = await AppClient.start("api", createServer, {
   userId: options.userId,
   quiet: !options.verbose,
 });

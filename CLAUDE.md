@@ -80,20 +80,20 @@ server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace
   modules/auth/                   # авторизація; методи входу — з config.auth.methods
   database/                       # тільки рантайм: модуль і пул з'єднань
 
-tools/                      # пакет збіркових інструментів (@scope/tools) — codegen+publish
+tools/                      # пакет інструментів (@scope/tools): codegen, publish, дев-клієнт
   generate-model-sql.ts           # генерація SQL моделей
   generate-model-runtime-registry.ts  # генерація app/_generated (registry/routes/views)
   assemble-sql-package.ts         # збірка SQL-пакета з db/ файлів моделей + @core
-  publish-app-sql.ts              # публікація зібраного SQL у БД
-  publish-sql.ts                  # assemble + publish одним кроком
-  # кожен параметризований каталогом застосунку (аргумент), тож app не імпортує.
-
-scripts/                    # репо-локальні інструменти (НЕ пакет, НЕ частина бібліотек)
-  check-deps.ts                   # guardrail меж пакетів (client/server/tools vs app)
+  publish-app-sql.ts / publish-sql.ts  # публікація зібраного SQL у БД
+  app-client.ts                   # AppClient: застосунок у процесі; createServer — інжекцією
   dev-guard.ts                    # захист дев-інструментів від продуктивної БД
-  smoke_test.ts, api.ts, app-client.ts, set-password.ts  # дев-інструменти (див. нижче)
-  # дев-інструменти поки тут: app-client інжектить createServer застосунку — переїзд
-  # у tools/ потребує інверсії залежності (борг 3.4b у framework-extraction-plan).
+  set-password.ts                 # встановлення пароля користувача (пряма БД)
+  # знання про застосунок приходить ззовні: codegen/publish — аргументом appDir,
+  # AppClient — фабрикою createServer; статичного імпорту app у пакеті немає.
+
+scripts/                    # репо-локальні обгортки (НЕ пакет): імпортують app + @scope/tools
+  api.ts, smoke_test.ts           # дев-обгортки: інжектять createServer з ../app/server.ts
+  check-deps.ts                   # guardrail меж пакетів (client/server/tools vs app)
 ```
 
 > **Напрямок залежностей:** `app → client/server/tools`, ніколи навпаки. Бекенд-runtime
@@ -364,7 +364,7 @@ deno task api bank list --user 5           # від імені користув�
 deno task api bank list --raw | jq .data   # чистий JSON під конвеєр
 ```
 
-Обидва спираються на `scripts/dev-guard.ts` і відмовляються стартувати, якщо оточення
+Обидва спираються на `tools/dev-guard.ts` і відмовляються стартувати, якщо оточення
 позначене як `production`/`prod`/`staging` або `DB_HOST` не локальний — БД береться з `.env`,
 і промах у ньому не має коштувати чужих даних. Обхід не передбачено свідомо.
 

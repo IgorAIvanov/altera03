@@ -1,15 +1,29 @@
 /**
  * Клієнт до застосунку, піднятого в цьому ж процесі.
  *
- * Ходить не по мережі, а напряму в обробник із `app/server.ts`, тому:
- * порт не потрібен, чекати на готовність нема чого, а у відповідь приходить
- * справжній `Response` — зі справжнім статусом (включно з 304, який HTTP-клієнти
- * люблять з'їдати) і справжніми заголовками.
+ * Ходить не по мережі, а напряму в обробник застосунку, тому: порт не потрібен,
+ * чекати на готовність нема чого, а у відповідь приходить справжній `Response` —
+ * зі справжнім статусом (включно з 304, який HTTP-клієнти люблять з'їдати) і
+ * справжніми заголовками.
  *
- * Використовують `deno task smoke` і `deno task api`.
+ * Це пакетний інструмент, тож `createServer` він НЕ імпортує (це означало б
+ * залежність від конкретного застосунку) — застосунок **інжектить** його у
+ * `start()`. Тонкі обгортки `scripts/api.ts` і `scripts/smoke_test.ts` передають
+ * сюди `createServer` зі свого `app/server.ts`.
  */
-import { createServer, type AppServer } from "../app/server.ts";
 import { assertDevEnvironment } from "./dev-guard.ts";
+
+/** Обробник застосунку — те саме, що бачить `Deno.serve`. */
+export type AppHandler = (request: Request) => Promise<Response>;
+
+/** Піднятий застосунок: обробник + коректне згортання (закриття пулу БД). */
+export interface AppServer {
+  handler: AppHandler;
+  close(): Promise<void>;
+}
+
+/** Фабрика застосунку — те, що застосунок інжектить у {@link AppClient.start}. */
+export type CreateServer = () => Promise<AppServer>;
 
 /** Хост неважливий: обробник дивиться лише на шлях. */
 const BASE_URL = "http://in-process";
@@ -80,10 +94,14 @@ export class AppClient {
   ) {}
 
   /**
-   * Піднімає застосунок. Запобіжник оточення спрацьовує ДО bootstrap, щоб на
-   * чужій базі ми навіть не відкривали з'єднання.
+   * Піднімає застосунок через передану фабрику. Запобіжник оточення спрацьовує
+   * ДО bootstrap, щоб на чужій базі ми навіть не відкривали з'єднання.
    */
-  static async start(tool: string, options: StartOptions = {}): Promise<AppClient> {
+  static async start(
+    tool: string,
+    createServer: CreateServer,
+    options: StartOptions = {},
+  ): Promise<AppClient> {
     assertDevEnvironment(tool);
 
     const quiet = options.quiet ?? false;
