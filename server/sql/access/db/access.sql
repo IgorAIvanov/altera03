@@ -56,6 +56,30 @@ as $$
 $$;
 
 /**
+ * Відмова у праві — у тому самому конверті, що й будь-яка інша відповідь.
+ *
+ * Живе в SQL, бо саме звідси й повертається: рантайм не питає право окремим
+ * запитом, а вкладає перевірку в той самий `select`, що викликає команду
+ * (`case when access_can(...) then <команда>(...) else access_denied(...) end`).
+ * Один round-trip, і команда при відмові навіть не виконується — CASE не
+ * обчислює невибрану гілку.
+ */
+drop function if exists app.access_denied(text, text);
+create function app.access_denied(p_model text, p_action text)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object(
+    'ok', false,
+    'data', app.access_empty_data(),
+    'messages', jsonb_build_array(
+      format('Немає права «%s» на модель «%s»', p_action, p_model)
+    )
+  );
+$$;
+
+/**
  * Ефективні права користувача — плоский список (model, action).
  * Застосунку зручно отримати його один раз і вимикати кнопки локально,
  * не питаючи сервер на кожен елемент.

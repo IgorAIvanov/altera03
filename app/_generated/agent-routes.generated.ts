@@ -39,6 +39,11 @@ export const agentModelRoutes = {
     listPath: "/operation/manual_entry/list",
     type: "document"
   },
+  "menu": {
+    editPath: "/admin/menu/edit",
+    listPath: "/admin/menu/list",
+    type: "catalog"
+  },
   "organization": {
     editPath: "/catalog/organization/edit",
     listPath: "/catalog/organization/list",
@@ -52,6 +57,16 @@ export const agentModelRoutes = {
   "turnover_balance": {
     listPath: "/report/turnover_balance/list",
     type: "report"
+  },
+  "user": {
+    editPath: "/admin/user/edit",
+    listPath: "/admin/user/list",
+    type: "catalog"
+  },
+  "user_group": {
+    editPath: "/admin/user_group/edit",
+    listPath: "/admin/user_group/list",
+    type: "catalog"
   }
 };
 

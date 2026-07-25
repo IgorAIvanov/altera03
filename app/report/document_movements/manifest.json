@@ -5,9 +5,15 @@
   "commands": {
     "sql": {
       "index": "document_movements_index"
+    },
+    "access": {
+      "index": "view"
     }
   },
   "views": {
-    "list": { "module": "./documentMovementsReport.ts", "titleKey": "documentMovements.title" }
+    "list": {
+      "module": "./documentMovementsReport.ts",
+      "titleKey": "documentMovements.title"
+    }
   }
 }

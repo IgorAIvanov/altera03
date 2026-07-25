@@ -28,4 +28,15 @@ export interface ModelBackendConfig {
   schema?: string;
   sqlCommands?: Record<string, SqlModelCommandDefinition>;
   tsCommands?: Record<string, TsModelCommandConfig>;
+  /**
+   * Право нестандартної команди: назва дії (`view`, `create`, `edit`,
+   * `delete`, `post`, `unpost`) або `"authenticated"` — «досить бути
+   * авторизованим». Стандартні команди тут не оголошуються: їхня дія виводиться
+   * з імені (див. `resolveRequiredAction`).
+   *
+   * Неоголошена нестандартна команда НЕ виконується — fail-closed. Забути
+   * оголошення можна, і тоді помилка вилізе на першому виклику; мовчазний
+   * дозвіл же не вилазить ніколи.
+   */
+  access?: Record<string, string>;
 }

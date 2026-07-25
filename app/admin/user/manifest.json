@@ -1,0 +1,29 @@
+{
+  "model": "user",
+  "type": "catalog",
+  "schema": "app",
+  "commands": {
+    "ts": {
+      "setPassword": {
+        "module": "./db/user.commands.ts"
+      }
+    },
+    "access": {
+      "setPassword": "edit"
+    }
+  },
+  "views": {
+    "list": {
+      "module": "./userList.ts",
+      "titleKey": "user.titleMany"
+    },
+    "edit": {
+      "module": "./userEdit.ts",
+      "titleKey": "user.titleOne"
+    },
+    "picker": {
+      "module": "./userPicker.ts",
+      "titleKey": "user.titleMany"
+    }
+  }
+}

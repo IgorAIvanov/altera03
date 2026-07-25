@@ -1,781 +1,578 @@
-drop function if exists app.menu_index(jsonb);
-create or replace function app.menu_index(user_id bigint, payload jsonb)
+-- Функції меню.
+--
+-- Дві групи: menu_current — завантаження меню поточного користувача (злиття +
+-- фільтр правами), решта — модельний контракт для адмін-екранів
+-- (list / get / save / delete / lookup) плюс copy.
+
+-- Прототип: A2v10-іменування (index/load/update) і функції інтерфейсів, чиї
+-- таблиці знято в struc.sql. Знімаються тут, бо в живій базі вони могли
+-- лишитися від ручної публікації і посилалися б на неіснуючі таблиці.
+drop function if exists app.menu_index(bigint, jsonb);
+drop function if exists app.menu_load(bigint, jsonb);
+drop function if exists app.menu_update(bigint, jsonb);
+drop function if exists app.menu_fetch(bigint, jsonb);
+drop function if exists app.interface_index(bigint, jsonb);
+drop function if exists app.interface_load(bigint, jsonb);
+drop function if exists app.interface_update(bigint, jsonb);
+drop function if exists app.interface_fetch(bigint, jsonb);
+
+/**
+ * Меню поточного користувача: злиття меню всіх його активних груп, уже
+ * відфільтроване правами.
+ *
+ * Чому фільтр саме тут, а не на клієнті: клієнт і так не відкриє пункт, на
+ * який немає права, — але побачить його і сприйме відмову як поломку. Плюс
+ * склад чужих екранів назовні не їде.
+ *
+ * Ідентичність пункту при злитті — ланцюжок `code` від кореня, а не id
+ * (у різних меню вони різні) і не маршрут (у тек його немає). Цей самий шлях
+ * іде назовні як `id`, тож клієнтові нема чого доклеювати.
+ *
+ * Порядок і переможець при дублі — мінімальний кортеж
+ * (user_group_menu.sort_order, menu_item.sort_order). Той самий кортеж дає і
+ * позицію, і те, чиї name/icon показати: інакше результат залежав би від плану
+ * запиту.
+ *
+ * Повертає плоский список — дерево збирає клієнт за parentId.
+ */
+drop function if exists app.menu_current(bigint, jsonb);
+create function app.menu_current(user_id bigint, payload jsonb)
 returns jsonb
 language sql
+stable
 as $$
-	with params as (
-		select
-			greatest(coalesce((payload->>'page')::int, 1), 1) as page,
-			greatest(coalesce((payload->>'pageSize')::int, 20), 1) as page_size,
-			case coalesce(payload->>'sortBy', 'code')
-				when 'code' then 'code'
-				when 'name' then 'name'
-				when 'isActive' then 'is_active'
-				when 'itemCount' then 'item_count'
-				else 'code'
-			end as sort_by,
-			case lower(coalesce(payload->>'sortDirection', 'asc'))
-				when 'desc' then 'desc'
-				else 'asc'
-			end as sort_direction
-	),
-	filtered as (
-		select
-			m.id::text as id,
-			m.code,
-			m.name,
-			m.is_active as "isActive",
-			count(mi.id)::int as "itemCount"
-		from app.menu m
-		left join app.menu_item mi on mi.menu_id = m.id
-		where (
-			coalesce(payload->>'search', '') = ''
-			or m.code ilike '%' || (payload->>'search') || '%'
-			or m.name ilike '%' || (payload->>'search') || '%'
-		)
-		and (
-			not (payload ? 'isActive')
-			or (payload->>'isActive') is null
-			or m.is_active = (payload->>'isActive')::boolean
-		)
-		group by m.id, m.code, m.name, m.is_active
-	),
-	counted as (
-		select count(*)::int as total from filtered
-	),
-	paged as (
-		select filtered.*
-		from filtered
-		cross join params
-		order by
-			case when params.sort_by = 'code' and params.sort_direction = 'asc' then filtered.code end asc nulls last,
-			case when params.sort_by = 'code' and params.sort_direction = 'desc' then filtered.code end desc nulls last,
-			case when params.sort_by = 'name' and params.sort_direction = 'asc' then filtered.name end asc nulls last,
-			case when params.sort_by = 'name' and params.sort_direction = 'desc' then filtered.name end desc nulls last,
-			case when params.sort_by = 'is_active' and params.sort_direction = 'asc' then filtered."isActive" end asc nulls last,
-			case when params.sort_by = 'is_active' and params.sort_direction = 'desc' then filtered."isActive" end desc nulls last,
-			case when params.sort_by = 'item_count' and params.sort_direction = 'asc' then filtered."itemCount" end asc nulls last,
-			case when params.sort_by = 'item_count' and params.sort_direction = 'desc' then filtered."itemCount" end desc nulls last,
-			filtered.code asc,
-			filtered.id asc
-		limit (select page_size from params)
-		offset ((select page from params) - 1) * (select page_size from params)
-	)
-	select jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'rows', coalesce((select jsonb_agg(row_to_json(paged)) from paged), '[]'::jsonb),
-			'lookups', jsonb_build_object(
-				'activeStates', jsonb_build_array(
-					jsonb_build_object('value', 'true', 'label', 'Активні'),
-					jsonb_build_object('value', 'false', 'label', 'Неактивні')
-				)
-			),
-			'totals', jsonb_build_object(
-				'count', (select total from counted),
-				'page', (select page from params),
-				'pageSize', (select page_size from params)
-			),
-			'extra', '{}'::jsonb
-		),
-		'messages', '[]'::jsonb,
-		'meta', '{}'::jsonb
-	);
+  with recursive target as (
+    select user_id as uid
+  ),
+  assigned as (
+    select
+      mi.menu_id                                     as menu_id,
+      mi.id                                          as id,
+      mi.parent_id                                   as parent_id,
+      mi.code                                        as code,
+      mi.name                                        as name,
+      mi.icon_key                                    as icon_key,
+      nullif(btrim(coalesce(mi.route_path, '')), '') as route_path,
+      array[ugm.sort_order, mi.sort_order]           as sort_key
+    from app.user_group_member gm
+    join app.user_group g        on g.id = gm.user_group_id and g.is_active
+    join app.user_group_menu ugm on ugm.user_group_id = g.id and ugm.is_active
+    join app.menu mn             on mn.id = ugm.menu_id and mn.is_active
+    join app.menu_item mi        on mi.menu_id = mn.id and mi.is_active
+    cross join target t
+    where gm.user_id = t.uid and gm.is_active
+  ),
+  -- Жодна група користувача не має меню — беремо меню 'default'. Порожній
+  -- екран читається як поломка, а не як «вам нічого не призначили».
+  fallback as (
+    select
+      mi.menu_id, mi.id, mi.parent_id, mi.code, mi.name, mi.icon_key,
+      nullif(btrim(coalesce(mi.route_path, '')), ''),
+      array[0, mi.sort_order]
+    from app.menu mn
+    join app.menu_item mi on mi.menu_id = mn.id and mi.is_active
+    where mn.code = 'default'
+      and mn.is_active
+      and not exists (select 1 from assigned)
+  ),
+  source as (
+    select * from assigned
+    union all
+    select * from fallback
+  ),
+  tree as (
+    select
+      s.menu_id, s.id,
+      s.code::text as path,
+      null::text   as parent_path,
+      s.name, s.icon_key, s.route_path, s.sort_key
+    from source s
+    where s.parent_id is null
+
+    union all
+
+    select
+      s.menu_id, s.id,
+      p.path || '/' || s.code,
+      p.path,
+      s.name, s.icon_key, s.route_path, s.sort_key
+    from source s
+    join tree p on p.menu_id = s.menu_id and p.id = s.parent_id
+  ),
+  -- Модель — другий сегмент маршруту (`catalog/bank/list` → `bank`), тобто те
+  -- саме ім'я, що приходить у ModelRuntimeService.execute().
+  visible as (
+    select t.*
+    from tree t
+    cross join target tg
+    where t.route_path is null
+       or app.access_can(tg.uid, split_part(ltrim(t.route_path, '/'), '/', 2), 'view')
+  ),
+  -- Тека лишається, лише якщо під нею вцілів хоч один лист — на будь-якій
+  -- глибині. Порожня тека гірша за відсутню: у неї клікають.
+  kept as (
+    select v.*
+    from visible v
+    where v.route_path is not null
+       or exists (
+         select 1
+         from visible leaf
+         where leaf.route_path is not null
+           and starts_with(leaf.path, v.path || '/')
+       )
+  ),
+  merged as (
+    select distinct on (k.path)
+      k.path, k.parent_path, k.name, k.icon_key, k.route_path, k.sort_key
+    from kept k
+    order by k.path, k.sort_key, k.name
+  )
+  select jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', null,
+      'rows', coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'id',       m.path,
+            'parentId', m.parent_path,
+            'name',     m.name,
+            'icon',     m.icon_key,
+            'route',    m.route_path
+          )
+          order by m.sort_key, m.path
+        )
+        from merged m
+      ), '[]'::jsonb),
+      'options', '{}'::jsonb,
+      'totals', jsonb_build_object('count', (select count(*) from merged))
+    ),
+    'messages', '[]'::jsonb
+  );
 $$;
 
-drop function if exists app.menu_load(jsonb);
-create or replace function app.menu_load(user_id bigint, payload jsonb)
+-- ── Адміністрування меню ───────────────────────────────────────────────────
+
+/** Порожня частина `data` конверта — щоб відповіді-помилки мали ту саму форму. */
+drop function if exists app.menu_empty_data();
+create function app.menu_empty_data()
 returns jsonb
 language sql
+immutable
 as $$
-	with selected_menu as (
-		select
-			m.id,
-			m.code,
-			m.name,
-			m.is_active
-		from app.menu m
-		where m.id = (payload->>'id')::bigint
-	),
-	menu_item_rows as (
-		select
-			mi.id::text as id,
-			mi.menu_id::text as "menuId",
-			mi.parent_id::text as "parentId",
-			mi.name,
-			mi.icon_key as "iconKey",
-			mi.sort_order as "sortOrder",
-			mi.route_path as "routePath",
-			mi.is_active as "isActive"
-		from app.menu_item mi
-		where mi.menu_id = (select id from selected_menu)
-		order by
-			coalesce(mi.parent_id, 0),
-			mi.sort_order,
-			mi.id
-	)
-	select jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'item', (
-				select jsonb_build_object(
-					'id', sm.id::text,
-					'code', sm.code,
-					'name', sm.name,
-					'isActive', sm.is_active
-				)
-				from selected_menu sm
-			),
-			'rows', coalesce((select jsonb_agg(row_to_json(menu_item_rows)) from menu_item_rows), '[]'::jsonb),
-			'lookups', '{}'::jsonb,
-			'totals', jsonb_build_object(
-				'count', (select count(*) from menu_item_rows)
-			),
-			'extra', '{}'::jsonb
-		),
-		'messages', '[]'::jsonb,
-		'meta', '{}'::jsonb
-	);
+  select jsonb_build_object('item', null, 'rows', '[]'::jsonb, 'options', '{}'::jsonb, 'totals', '{}'::jsonb);
 $$;
 
-drop function if exists app.menu_update(jsonb);
-create or replace function app.menu_update(user_id bigint, payload jsonb)
+drop function if exists app.menu_fail(text);
+create function app.menu_fail(p_message text)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object('ok', false, 'data', app.menu_empty_data(), 'messages', jsonb_build_array(p_message));
+$$;
+
+drop function if exists app.menu_list(bigint, jsonb);
+create function app.menu_list(user_id bigint, payload jsonb)
+returns jsonb
+language sql
+stable
+as $$
+  with params as (
+    select
+      coalesce(payload->>'search', '')                                   as search,
+      greatest(coalesce((payload->>'page')::int, 1), 1)                  as page,
+      least(greatest(coalesce((payload->>'pageSize')::int, 20), 1), 200) as page_size,
+      coalesce(nullif(payload->>'sortBy', ''), 'code')                   as sort_by,
+      case lower(coalesce(payload->>'sortDir', 'asc')) when 'desc' then 'desc' else 'asc' end as sort_dir
+  ),
+  filtered as (
+    select
+      m.id::text                                              as id,
+      m.code                                                  as code,
+      m.name                                                  as name,
+      m.is_active                                             as "isActive",
+      count(distinct mi.id) filter (where mi.is_active)::int   as "itemCount",
+      count(distinct ugm.id) filter (where ugm.is_active)::int as "groupCount"
+    from app.menu m
+    left join app.menu_item mi        on mi.menu_id = m.id
+    left join app.user_group_menu ugm on ugm.menu_id = m.id
+    cross join params p
+    where p.search = ''
+       or m.code ilike '%' || p.search || '%'
+       or m.name ilike '%' || p.search || '%'
+    group by m.id, m.code, m.name, m.is_active
+  ),
+  paged as (
+    select f.* from filtered f cross join params p
+    order by
+      case when p.sort_by = 'code'       and p.sort_dir = 'asc'  then f.code end asc,
+      case when p.sort_by = 'code'       and p.sort_dir = 'desc' then f.code end desc,
+      case when p.sort_by = 'name'       and p.sort_dir = 'asc'  then f.name end asc,
+      case when p.sort_by = 'name'       and p.sort_dir = 'desc' then f.name end desc,
+      case when p.sort_by = 'itemCount'  and p.sort_dir = 'asc'  then f."itemCount" end asc,
+      case when p.sort_by = 'itemCount'  and p.sort_dir = 'desc' then f."itemCount" end desc,
+      case when p.sort_by = 'groupCount' and p.sort_dir = 'asc'  then f."groupCount" end asc,
+      case when p.sort_by = 'groupCount' and p.sort_dir = 'desc' then f."groupCount" end desc,
+      f.code asc
+    limit (select page_size from params)
+    offset ((select page from params) - 1) * (select page_size from params)
+  )
+  select jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', null,
+      'rows', coalesce((select jsonb_agg(row_to_json(paged)) from paged), '[]'::jsonb),
+      'options', '{}'::jsonb,
+      'totals', jsonb_build_object(
+        'count', (select count(*) from filtered),
+        'page', (select page from params),
+        'pageSize', (select page_size from params)
+      )
+    ),
+    'messages', '[]'::jsonb
+  );
+$$;
+
+/**
+ * Меню з пунктами й призначеними групами.
+ *
+ * Пункти йдуть у порядку дерева (шлях із code), а не за id: у формі це плоска
+ * таблиця, і без такого порядку діти опиняються далеко від батьків.
+ */
+drop function if exists app.menu_get(bigint, jsonb);
+create function app.menu_get(user_id bigint, payload jsonb)
+returns jsonb
+language sql
+stable
+as $$
+  with recursive target as (
+    select nullif(payload->>'id', '')::bigint as id
+  ),
+  found as (
+    select m.* from app.menu m cross join target t where m.id = t.id
+  ),
+  -- `sort_path` — ключ обходу дерева: на кожному рівні спершу sort_order, потім
+  -- code як розв'язувач нічиїх. Зсув на 2^31 робить число завжди додатним, бо
+  -- порівнюються рядки: без нього «-20» опинилося б не там, де −20.
+  tree as (
+    select
+      mi.*, mi.code::text as path, null::varchar(100) as parent_code,
+      array[lpad((mi.sort_order::bigint + 2147483648)::text, 11, '0') || ':' || mi.code] as sort_path
+    from app.menu_item mi cross join target t
+    where mi.menu_id = t.id and mi.parent_id is null
+
+    union all
+
+    select
+      mi.*, p.path || '/' || mi.code, p.code,
+      p.sort_path || (lpad((mi.sort_order::bigint + 2147483648)::text, 11, '0') || ':' || mi.code)
+    from app.menu_item mi
+    join tree p on p.menu_id = mi.menu_id and p.id = mi.parent_id
+  ),
+  entries as (
+    select
+      t.id::text    as id,
+      t.parent_code as "parentCode",
+      t.code        as code,
+      t.name        as name,
+      t.icon_key    as "iconKey",
+      t.route_path  as "routePath",
+      t.sort_order  as "sortOrder",
+      t.is_active   as "isActive"
+    from tree t
+    order by t.sort_path
+  ),
+  assigned as (
+    select g.id::text as id
+    from app.user_group_menu ugm
+    join app.user_group g on g.id = ugm.user_group_id
+    cross join target t
+    where ugm.menu_id = t.id and ugm.is_active
+    order by g.code
+  ),
+  all_groups as (
+    select g.id::text as id, g.name from app.user_group g where g.is_active order by g.code
+  )
+  select jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', (
+        select jsonb_build_object(
+          'id', f.id::text,
+          'code', f.code,
+          'name', f.name,
+          'isActive', f.is_active,
+          'groupIds', coalesce((select jsonb_agg(id) from assigned), '[]'::jsonb),
+          'entries', coalesce((select jsonb_agg(row_to_json(entries)) from entries), '[]'::jsonb)
+        )
+        from found f
+      ),
+      'rows', '[]'::jsonb,
+      'options', jsonb_build_object(
+        'groups', coalesce((select jsonb_agg(row_to_json(all_groups)) from all_groups), '[]'::jsonb)
+      ),
+      'totals', '{}'::jsonb
+    ),
+    'messages', case when exists (select 1 from found)
+      then '[]'::jsonb
+      else jsonb_build_array('Меню не знайдено') end
+  );
+$$;
+
+/**
+ * Запис меню разом із пунктами й призначенням групам.
+ * payload = { item: { id, code, name, isActive, groupIds[], entries[] } }
+ * `entries` і `groupIds` — повний стан, а не дельта.
+ *
+ * Батько пункту задається `parentCode`, тому код унікальний у межах меню
+ * (індекс у БД дозволяє більше — однакові коди під різними батьками, — але
+ * форма цим не користується, а прив'язка за кодом вимагає однозначності).
+ *
+ * Усі перевірки — ДО першого запису. Функція виконується в одній транзакції з
+ * викликом, тож вихід із конвертом-помилкою після часткового запису цей запис
+ * би зафіксував; єдиний спосіб відкотити — raise, а це вже не конверт.
+ */
+drop function if exists app.menu_save(bigint, jsonb);
+create function app.menu_save(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-	item jsonb;
-	item_rows jsonb;
-	input_row record;
-	result_item jsonb;
-	v_menu_id bigint;
-	v_menu_item_id bigint;
-	v_parent_menu_item_id bigint;
-	inserted_count int;
+  v_item    jsonb    := coalesce(payload->'item', '{}'::jsonb);
+  v_id      bigint   := nullif(v_item->>'id', '')::bigint;
+  v_code    text     := trim(coalesce(v_item->>'code', ''));
+  v_name    text     := trim(coalesce(v_item->>'name', ''));
+  v_active  boolean  := coalesce((v_item->>'isActive')::boolean, true);
+  v_entries jsonb    := coalesce(v_item->'entries', '[]'::jsonb);
+  v_groups  bigint[] := coalesce(
+    (select array_agg(value::bigint) from jsonb_array_elements_text(coalesce(v_item->'groupIds', '[]'::jsonb))),
+    '{}'::bigint[]
+  );
+  v_total   int := jsonb_array_length(v_entries);
+  v_reached int;
+  v_added   int;
+  v_bad     text;
 begin
-	item := payload->'item';
-	item_rows := coalesce(payload->'rows', '[]'::jsonb);
-	v_menu_id := nullif(item->>'id', '')::bigint;
+  if v_code = '' then
+    return app.menu_fail('Код меню обов''язковий');
+  end if;
 
-	if item is null or jsonb_typeof(item) <> 'object' then
-		raise exception 'Menu item payload is required';
-	end if;
+  if v_name = '' then
+    return app.menu_fail('Назва меню обов''язкова');
+  end if;
 
-	if coalesce(nullif(trim(item->>'code'), ''), '') = '' then
-		raise exception 'Menu code is required';
-	end if;
+  if exists (select 1 from app.menu m where lower(m.code) = lower(v_code) and (v_id is null or m.id <> v_id)) then
+    return app.menu_fail('Меню з таким кодом уже є');
+  end if;
 
-	if coalesce(nullif(trim(item->>'name'), ''), '') = '' then
-		raise exception 'Menu name is required';
-	end if;
+  -- Розгорнутий payload пунктів. Тимчасова таблиця, а не повторення
+  -- jsonb_array_elements у кожному операторі: перевірок над ним чотири.
+  drop table if exists _menu_entries;
+  create temp table _menu_entries on commit drop as
+  select
+    nullif(trim(coalesce(je->>'parentCode', '')), '') as parent_code,
+    trim(coalesce(je->>'code', ''))                   as code,
+    trim(coalesce(je->>'name', ''))                   as name,
+    nullif(trim(coalesce(je->>'iconKey', '')), '')    as icon_key,
+    nullif(trim(coalesce(je->>'routePath', '')), '')  as route_path,
+    coalesce((je->>'sortOrder')::int, 0)              as sort_order,
+    coalesce((je->>'isActive')::boolean, true)        as is_active
+  from jsonb_array_elements(v_entries) as je;
 
-	if jsonb_typeof(item_rows) <> 'array' then
-		raise exception 'Menu rows must be an array';
-	end if;
+  if exists (select 1 from _menu_entries where code = '') then
+    return app.menu_fail('Код пункту обов''язковий');
+  end if;
 
-	if v_menu_id is null then
-		insert into app.menu (
-			code,
-			name,
-			is_active
-		)
-		values (
-			trim(item->>'code'),
-			trim(item->>'name'),
-			coalesce((item->>'isActive')::boolean, true)
-		)
-		returning id into v_menu_id;
-	else
-		update app.menu
-		set
-			code = trim(item->>'code'),
-			name = trim(item->>'name'),
-			is_active = coalesce((item->>'isActive')::boolean, is_active),
-			updated_at = now()
-		where id = v_menu_id;
+  if exists (select 1 from _menu_entries where name = '') then
+    return app.menu_fail('Назва пункту обов''язкова');
+  end if;
 
-		if not found then
-			raise exception 'Menu % was not found', v_menu_id;
-		end if;
-	end if;
+  select e.code into v_bad from _menu_entries e group by e.code having count(*) > 1 limit 1;
+  if v_bad is not null then
+    return app.menu_fail(format('Код пункту «%s» повторюється — коди мають бути унікальними в межах меню', v_bad));
+  end if;
 
-	create temporary table if not exists pg_temp.tmp_menu_item_input (
-		client_id text primary key,
-		parent_client_id text,
-		name varchar(255) not null,
-		icon_key varchar(100),
-		sort_order int not null,
-		route_path varchar(500),
-		is_active boolean not null,
-		row_order int not null
-	) on commit drop;
+  select e.parent_code into v_bad
+  from _menu_entries e
+  where e.parent_code is not null
+    and not exists (select 1 from _menu_entries p where p.code = e.parent_code)
+  limit 1;
+  if v_bad is not null then
+    return app.menu_fail(format('Невідомий батьківський код «%s»', v_bad));
+  end if;
 
-	create temporary table if not exists pg_temp.tmp_menu_item_saved (
-		client_id text primary key,
-		menu_item_id bigint not null
-	) on commit drop;
+  -- Обхід від коренів має покрити всі пункти. Не покрив — десь цикл.
+  with recursive reach as (
+    select e.code from _menu_entries e where e.parent_code is null
+    union all
+    select e.code from _menu_entries e join reach r on e.parent_code = r.code
+  )
+  select count(*) into v_reached from reach;
 
-	truncate table pg_temp.tmp_menu_item_input;
-	truncate table pg_temp.tmp_menu_item_saved;
+  if v_reached <> v_total then
+    return app.menu_fail('Циклічна прив''язка пунктів: частина з них недосяжна від кореня');
+  end if;
 
-	insert into pg_temp.tmp_menu_item_input (
-		client_id,
-		parent_client_id,
-		name,
-		icon_key,
-		sort_order,
-		route_path,
-		is_active,
-		row_order
-	)
-	select
-		case
-			when coalesce(nullif(trim(row_data.value->>'id'), ''), '') <> '' then trim(row_data.value->>'id')
-			else '__row_' || row_data.ordinality::text
-		end as client_id,
-		nullif(trim(coalesce(row_data.value->>'parentId', '')), '') as parent_client_id,
-		trim(coalesce(row_data.value->>'name', '')) as name,
-		nullif(trim(coalesce(row_data.value->>'iconKey', '')), '') as icon_key,
-		coalesce((row_data.value->>'sortOrder')::int, 0) as sort_order,
-		nullif(trim(coalesce(row_data.value->>'routePath', '')), '') as route_path,
-		coalesce((row_data.value->>'isActive')::boolean, true) as is_active,
-		row_data.ordinality::int as row_order
-	from jsonb_array_elements(item_rows) with ordinality as row_data(value, ordinality);
+  if v_id is null then
+    insert into app.menu (code, name, is_active) values (v_code, v_name, v_active) returning id into v_id;
+  else
+    update app.menu set code = v_code, name = v_name, is_active = v_active, updated_at = now() where id = v_id;
+    if not found then
+      return app.menu_fail('Меню не знайдено');
+    end if;
+  end if;
 
-	if exists (
-		select 1
-		from pg_temp.tmp_menu_item_input i
-		where i.name = ''
-	) then
-		raise exception 'Menu item name is required';
-	end if;
+  -- Пункти переписуються цілком. На menu_item не посилається ніщо, крім нього
+  -- самого (складений FK на батька), а зовні пункт адресується шляхом із code,
+  -- не id, — тож перестворення нічого не рве.
+  delete from app.menu_item where menu_id = v_id;
 
-	if exists (
-		select 1
-		from pg_temp.tmp_menu_item_input i
-		where i.parent_client_id is not null
-			and not exists (
-				select 1
-				from pg_temp.tmp_menu_item_input parent_item
-				where parent_item.client_id = i.parent_client_id
-			)
-	) then
-		raise exception 'Parent menu item was not found in payload';
-	end if;
+  -- Вставка хвилями: спершу корені, далі ті, чий батько вже вставлений.
+  -- Ациклічність уже перевірено, тож цикл завершується, покривши всі пункти.
+  loop
+    insert into app.menu_item (menu_id, parent_id, code, name, icon_key, route_path, sort_order, is_active)
+    select v_id, p.id, e.code, e.name, e.icon_key, e.route_path, e.sort_order, e.is_active
+    from _menu_entries e
+    left join app.menu_item p on p.menu_id = v_id and p.code = e.parent_code
+    where not exists (select 1 from app.menu_item x where x.menu_id = v_id and x.code = e.code)
+      and (e.parent_code is null or p.id is not null);
 
-	delete from app.menu_item where menu_id = v_menu_id;
+    get diagnostics v_added = row_count;
+    exit when v_added = 0;
+  end loop;
 
-	loop
-		inserted_count := 0;
+  -- Призначення групам — теж повний стан.
+  delete from app.user_group_menu ugm where ugm.menu_id = v_id and not (ugm.user_group_id = any(v_groups));
 
-		for input_row in
-			select *
-			from pg_temp.tmp_menu_item_input input_item
-			where not exists (
-				select 1
-				from pg_temp.tmp_menu_item_saved saved_item
-				where saved_item.client_id = input_item.client_id
-			)
-			order by input_item.row_order
-		loop
-			v_parent_menu_item_id := null;
+  insert into app.user_group_menu (user_group_id, menu_id, is_active)
+  select g, v_id, true from unnest(v_groups) as g
+  on conflict (user_group_id, menu_id) do update set is_active = true, updated_at = now();
 
-			if input_row.parent_client_id is not null then
-				select saved_item.menu_item_id
-				into v_parent_menu_item_id
-				from pg_temp.tmp_menu_item_saved saved_item
-				where saved_item.client_id = input_row.parent_client_id;
-
-				if v_parent_menu_item_id is null then
-					continue;
-				end if;
-			end if;
-
-			insert into app.menu_item (
-				menu_id,
-				parent_id,
-				name,
-				icon_key,
-				sort_order,
-				route_path,
-				is_active
-			)
-			values (
-				v_menu_id,
-				v_parent_menu_item_id,
-				input_row.name,
-				input_row.icon_key,
-				input_row.sort_order,
-				input_row.route_path,
-				input_row.is_active
-			)
-			returning id into v_menu_item_id;
-
-			insert into pg_temp.tmp_menu_item_saved (client_id, menu_item_id)
-			values (input_row.client_id, v_menu_item_id);
-
-			inserted_count := inserted_count + 1;
-		end loop;
-
-		exit when inserted_count = 0;
-	end loop;
-
-	if exists (
-		select 1
-		from pg_temp.tmp_menu_item_input input_item
-		left join pg_temp.tmp_menu_item_saved saved_item
-			on saved_item.client_id = input_item.client_id
-		where saved_item.client_id is null
-	) then
-		raise exception 'Menu items hierarchy contains unresolved parent references';
-	end if;
-
-	select jsonb_build_object(
-		'id', m.id::text,
-		'code', m.code,
-		'name', m.name,
-		'isActive', m.is_active
-	)
-	into result_item
-	from app.menu m
-	where m.id = v_menu_id;
-
-	return jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'item', result_item,
-			'rows', coalesce((
-				select jsonb_agg(row_to_json(saved_rows))
-				from (
-					select
-						mi.id::text as id,
-						mi.menu_id::text as "menuId",
-						mi.parent_id::text as "parentId",
-						mi.name,
-						mi.icon_key as "iconKey",
-						mi.sort_order as "sortOrder",
-						mi.route_path as "routePath",
-						mi.is_active as "isActive"
-					from app.menu_item mi
-					where mi.menu_id = v_menu_id
-					order by coalesce(mi.parent_id, 0), mi.sort_order, mi.id
-				) as saved_rows
-			), '[]'::jsonb),
-			'lookups', '{}'::jsonb,
-			'totals', jsonb_build_object(
-				'count', (select count(*) from app.menu_item where menu_id = v_menu_id)
-			),
-			'extra', '{}'::jsonb
-		),
-		'messages', jsonb_build_array('Menu updated successfully'),
-		'meta', '{}'::jsonb
-	);
+  return app.menu_get(user_id, jsonb_build_object('id', v_id::text));
 end;
 $$;
 
-drop function if exists app.interface_index(jsonb);
-create or replace function app.interface_index(user_id bigint, payload jsonb)
-returns jsonb
-language sql
-as $$
-	with params as (
-		select
-			greatest(coalesce((payload->>'page')::int, 1), 1) as page,
-			greatest(coalesce((payload->>'pageSize')::int, 20), 1) as page_size,
-			case coalesce(payload->>'sortBy', 'code')
-				when 'code' then 'code'
-				when 'name' then 'name'
-				when 'isActive' then 'is_active'
-				when 'menuCount' then 'menu_count'
-				else 'code'
-			end as sort_by,
-			case lower(coalesce(payload->>'sortDirection', 'asc'))
-				when 'desc' then 'desc'
-				else 'asc'
-			end as sort_direction
-	),
-	filtered as (
-		select
-			i.id::text as id,
-			i.code,
-			i.name,
-			i.is_active as "isActive",
-			count(im.id)::int as "menuCount"
-		from app.interface i
-		left join app.interface_menu im
-			on im.interface_id = i.id
-			and im.is_active = true
-		where (
-			coalesce(payload->>'search', '') = ''
-			or i.code ilike '%' || (payload->>'search') || '%'
-			or i.name ilike '%' || (payload->>'search') || '%'
-		)
-		and (
-			not (payload ? 'isActive')
-			or (payload->>'isActive') is null
-			or i.is_active = (payload->>'isActive')::boolean
-		)
-		group by i.id, i.code, i.name, i.is_active
-	),
-	counted as (
-		select count(*)::int as total from filtered
-	),
-	paged as (
-		select filtered.*
-		from filtered
-		cross join params
-		order by
-			case when params.sort_by = 'code' and params.sort_direction = 'asc' then filtered.code end asc nulls last,
-			case when params.sort_by = 'code' and params.sort_direction = 'desc' then filtered.code end desc nulls last,
-			case when params.sort_by = 'name' and params.sort_direction = 'asc' then filtered.name end asc nulls last,
-			case when params.sort_by = 'name' and params.sort_direction = 'desc' then filtered.name end desc nulls last,
-			case when params.sort_by = 'is_active' and params.sort_direction = 'asc' then filtered."isActive" end asc nulls last,
-			case when params.sort_by = 'is_active' and params.sort_direction = 'desc' then filtered."isActive" end desc nulls last,
-			case when params.sort_by = 'menu_count' and params.sort_direction = 'asc' then filtered."menuCount" end asc nulls last,
-			case when params.sort_by = 'menu_count' and params.sort_direction = 'desc' then filtered."menuCount" end desc nulls last,
-			filtered.code asc,
-			filtered.id asc
-		limit (select page_size from params)
-		offset ((select page from params) - 1) * (select page_size from params)
-	)
-	select jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'rows', coalesce((select jsonb_agg(row_to_json(paged)) from paged), '[]'::jsonb),
-			'lookups', jsonb_build_object(
-				'activeStates', jsonb_build_array(
-					jsonb_build_object('value', 'true', 'label', 'Активні'),
-					jsonb_build_object('value', 'false', 'label', 'Неактивні')
-				)
-			),
-			'totals', jsonb_build_object(
-				'count', (select total from counted),
-				'page', (select page from params),
-				'pageSize', (select page_size from params)
-			),
-			'extra', '{}'::jsonb
-		),
-		'messages', '[]'::jsonb,
-		'meta', '{}'::jsonb
-	);
-$$;
-
-drop function if exists app.interface_load(jsonb);
-create or replace function app.interface_load(user_id bigint, payload jsonb)
-returns jsonb
-language sql
-as $$
-	with selected_interface as (
-		select
-			i.id,
-			i.code,
-			i.name,
-			i.is_active
-		from app.interface i
-		where i.id = (payload->>'id')::bigint
-	),
-	interface_menu_rows as (
-		select
-			im.id::text as id,
-			im.interface_id::text as "interfaceId",
-			im.menu_id::text as "menuId",
-			m.code as "menuCode",
-			m.name as "menuName",
-			im.sort_order as "sortOrder",
-			im.is_active as "isActive"
-		from app.interface_menu im
-		join app.menu m on m.id = im.menu_id
-		where im.interface_id = (select id from selected_interface)
-		order by im.sort_order, im.id
-	),
-	available_menus as (
-		select jsonb_build_object(
-			'value', m.id::text,
-			'label', m.name
-		) as row_data
-		from app.menu m
-		where m.is_active = true
-		order by m.code, m.id
-	)
-	select jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'item', (
-				select jsonb_build_object(
-					'id', si.id::text,
-					'code', si.code,
-					'name', si.name,
-					'isActive', si.is_active
-				)
-				from selected_interface si
-			),
-			'rows', coalesce((select jsonb_agg(row_to_json(interface_menu_rows)) from interface_menu_rows), '[]'::jsonb),
-			'lookups', jsonb_build_object(
-				'activeStates', jsonb_build_array(
-					jsonb_build_object('value', 'true', 'label', 'Так'),
-					jsonb_build_object('value', 'false', 'label', 'Ні')
-				),
-				'menus', coalesce((select jsonb_agg(row_data) from available_menus), '[]'::jsonb)
-			),
-			'totals', jsonb_build_object(
-				'count', (select count(*) from interface_menu_rows)
-			),
-			'extra', '{}'::jsonb
-		),
-		'messages', '[]'::jsonb,
-		'meta', '{}'::jsonb
-	);
-$$;
-
-drop function if exists app.interface_update(jsonb);
-create or replace function app.interface_update(user_id bigint, payload jsonb)
+drop function if exists app.menu_delete(bigint, jsonb);
+create function app.menu_delete(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-	item jsonb;
-	assignment_rows jsonb;
-	result_item jsonb;
-	v_interface_id bigint;
+  v_id bigint := nullif(payload->>'id', '')::bigint;
 begin
-	item := payload->'item';
-	assignment_rows := coalesce(payload->'rows', '[]'::jsonb);
-	v_interface_id := nullif(item->>'id', '')::bigint;
+  if v_id is null then
+    return app.menu_fail('id обов''язковий');
+  end if;
 
-	if item is null or jsonb_typeof(item) <> 'object' then
-		raise exception 'Interface item payload is required';
-	end if;
+  -- Пункти й призначення групам зникають каскадом: посилатися на меню ззовні
+  -- нема кому, історії воно не несе.
+  delete from app.menu where id = v_id;
+  if not found then
+    return app.menu_fail('Меню не знайдено');
+  end if;
 
-	if coalesce(nullif(trim(item->>'code'), ''), '') = '' then
-		raise exception 'Interface code is required';
-	end if;
-
-	if coalesce(nullif(trim(item->>'name'), ''), '') = '' then
-		raise exception 'Interface name is required';
-	end if;
-
-	if jsonb_typeof(assignment_rows) <> 'array' then
-		raise exception 'Interface rows must be an array';
-	end if;
-
-	if exists (
-		select 1
-		from jsonb_array_elements(assignment_rows) as row_data(value)
-		where coalesce(nullif(trim(coalesce(row_data.value->>'menuId', '')), ''), '') = ''
-	) then
-		raise exception 'menuId is required for each interface menu row';
-	end if;
-
-	if exists (
-		select 1
-		from (
-			select (row_data.value->>'menuId')::bigint as menu_id
-			from jsonb_array_elements(assignment_rows) as row_data(value)
-		) resolved_rows
-		where not exists (
-			select 1
-			from app.menu m
-			where m.id = resolved_rows.menu_id
-		)
-	) then
-		raise exception 'One or more menus were not found for interface assignment';
-	end if;
-
-	if v_interface_id is null then
-		insert into app.interface (
-			code,
-			name,
-			is_active
-		)
-		values (
-			trim(item->>'code'),
-			trim(item->>'name'),
-			coalesce((item->>'isActive')::boolean, true)
-		)
-		returning id into v_interface_id;
-	else
-		update app.interface
-		set
-			code = trim(item->>'code'),
-			name = trim(item->>'name'),
-			is_active = coalesce((item->>'isActive')::boolean, is_active),
-			updated_at = now()
-		where id = v_interface_id;
-
-		if not found then
-			raise exception 'Interface % was not found', v_interface_id;
-		end if;
-	end if;
-
-	delete from app.interface_menu where interface_id = v_interface_id;
-
-	insert into app.interface_menu (
-		interface_id,
-		menu_id,
-		sort_order,
-		is_active
-	)
-	select
-		v_interface_id,
-		(row_data.value->>'menuId')::bigint,
-		coalesce((row_data.value->>'sortOrder')::int, 0),
-		coalesce((row_data.value->>'isActive')::boolean, true)
-	from jsonb_array_elements(assignment_rows) as row_data(value);
-
-	select jsonb_build_object(
-		'id', i.id::text,
-		'code', i.code,
-		'name', i.name,
-		'isActive', i.is_active
-	)
-	into result_item
-	from app.interface i
-	where i.id = v_interface_id;
-
-	return jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'item', result_item,
-			'rows', coalesce((
-				select jsonb_agg(row_to_json(saved_rows))
-				from (
-					select
-						im.id::text as id,
-						im.interface_id::text as "interfaceId",
-						im.menu_id::text as "menuId",
-						m.code as "menuCode",
-						m.name as "menuName",
-						im.sort_order as "sortOrder",
-						im.is_active as "isActive"
-					from app.interface_menu im
-					join app.menu m on m.id = im.menu_id
-					where im.interface_id = v_interface_id
-					order by im.sort_order, im.id
-				) as saved_rows
-			), '[]'::jsonb),
-			'lookups', '{}'::jsonb,
-			'totals', jsonb_build_object(
-				'count', (select count(*) from app.interface_menu where interface_id = v_interface_id)
-			),
-			'extra', '{}'::jsonb
-		),
-		'messages', jsonb_build_array('Interface updated successfully'),
-		'meta', '{}'::jsonb
-	);
+  return jsonb_build_object('ok', true, 'data', app.menu_empty_data(), 'messages', '[]'::jsonb);
 end;
 $$;
 
-drop function if exists app.interface_fetch(jsonb);
-create or replace function app.interface_fetch(user_id bigint, payload jsonb)
+drop function if exists app.menu_lookup(bigint, jsonb);
+create function app.menu_lookup(user_id bigint, payload jsonb)
 returns jsonb
 language sql
+stable
 as $$
-	with options as (
-		select jsonb_build_object(
-			'value', i.id::text,
-			'label', i.name
-		) as row_data
-		from app.interface i
-		where i.is_active = true
-			and (
-				coalesce(payload->>'search', '') = ''
-				or i.code ilike '%' || (payload->>'search') || '%'
-				or i.name ilike '%' || (payload->>'search') || '%'
-			)
-		order by i.code, i.id
-		limit coalesce((payload->>'limit')::int, 50)
-	)
-	select jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'item', null,
-			'rows', coalesce((select jsonb_agg(row_data) from options), '[]'::jsonb),
-			'lookups', '{}'::jsonb,
-			'totals', '{}'::jsonb,
-			'extra', '{}'::jsonb
-		),
-		'messages', '[]'::jsonb,
-		'meta', '{}'::jsonb
-	);
+  with params as (
+    select
+      coalesce(payload->>'search', '') as search,
+      least(coalesce((payload->>'limit')::int, 50), 200) as lim
+  ),
+  found as (
+    select m.id::text as id, m.name
+    from app.menu m
+    cross join params p
+    where m.is_active
+      and (p.search = '' or m.code ilike '%' || p.search || '%' or m.name ilike '%' || p.search || '%')
+    order by m.code
+    limit (select lim from params)
+  )
+  select jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', null,
+      'rows', coalesce((select jsonb_agg(row_to_json(found)) from found), '[]'::jsonb),
+      'options', '{}'::jsonb,
+      'totals', '{}'::jsonb
+    ),
+    'messages', '[]'::jsonb
+  );
 $$;
 
-drop function if exists app.menu_fetch(jsonb);
-create or replace function app.menu_fetch(user_id bigint, payload jsonb)
+/**
+ * Копія меню разом з усіма пунктами. payload = { id }.
+ *
+ * Призначення групам НЕ копіюються свідомо. Меню всіх груп користувача
+ * зливаються, тож копія в тих самих групах не дала б нічого нового — злилася б
+ * із оригіналом назад у той самий список. Копію призначають уже після правки.
+ *
+ * Дерево переноситься хвилями (корені → діти вже скопійованих), а прив'язка
+ * батька шукається за кодом: id у копії інші. Тому коди в межах меню мусять
+ * бути унікальні — це перевіряється до першого запису.
+ */
+drop function if exists app.menu_copy(bigint, jsonb);
+create function app.menu_copy(user_id bigint, payload jsonb)
 returns jsonb
-language sql
+language plpgsql
 as $$
-	with effective_interfaces as (
-		select
-			source.interface_id,
-			min(source.sort_order)::int as sort_order
-		from (
-			select
-				ui.interface_id,
-				ui.sort_order
-			from app.user_interface ui
-			where ui.user_id = user_id
-				and ui.is_active = true
+declare
+  v_id    bigint := nullif(payload->>'id', '')::bigint;
+  v_src   app.menu%rowtype;
+  v_new   bigint;
+  v_code  text;
+  v_n     int := 1;
+  v_added int;
+begin
+  if v_id is null then
+    return app.menu_fail('id обов''язковий');
+  end if;
 
-			union all
+  select * into v_src from app.menu where id = v_id;
+  if not found then
+    return app.menu_fail('Меню не знайдено');
+  end if;
 
-			select
-				ugi.interface_id,
-				ugi.sort_order
-			from app.user_group_member ugm
-			join app.user_group_interface ugi
-				on ugi.user_group_id = ugm.user_group_id
-			where ugm.user_id = user_id
-				and ugm.is_active = true
-				and ugi.is_active = true
-		) as source
-		group by source.interface_id
-	),
-	effective_menus as (
-		select
-			im.menu_id,
-			min((ei.sort_order * 1000) + im.sort_order)::int as menu_order
-		from effective_interfaces ei
-		join app.interface_menu im
-			on im.interface_id = ei.interface_id
-		join app.menu m
-			on m.id = im.menu_id
-		where im.is_active = true
-			and m.is_active = true
-		group by im.menu_id
-	),
-	menu_rows as (
-		select
-			mi.id::text as id,
-			mi.menu_id::text as "menuId",
-			mi.parent_id::text as "parentId",
-			mi.name,
-			mi.icon_key as "iconKey",
-			mi.sort_order as "sortOrder",
-			mi.route_path as "routePath",
-			mi.is_active as "isActive",
-			em.menu_order as "menuOrder"
-		from effective_menus em
-		join app.menu_item mi
-			on mi.menu_id = em.menu_id
-		where mi.is_active = true
-		order by
-			em.menu_order,
-			coalesce(mi.parent_id, 0),
-			mi.sort_order,
-			mi.id
-	)
-	select jsonb_build_object(
-		'ok', true,
-		'data', jsonb_build_object(
-			'item', null,
-			'rows', coalesce((select jsonb_agg(row_to_json(menu_rows)) from menu_rows), '[]'::jsonb),
-			'lookups', '{}'::jsonb,
-			'totals', jsonb_build_object(
-				'count', (select count(*) from menu_rows)
-			),
-			'extra', '{}'::jsonb
-		),
-		'messages', '[]'::jsonb,
-		'meta', '{}'::jsonb
-	);
+  if exists (
+    select 1 from app.menu_item where menu_id = v_id group by code having count(*) > 1
+  ) then
+    return app.menu_fail('У меню є пункти з однаковим кодом — копіювання потребує унікальних');
+  end if;
+
+  -- Вільний код: `_copy`, далі `_copy2`, `_copy3`… Обрізання до 90/88 символів
+  -- лишає місце під суфікс — колонка має ліміт 100.
+  v_code := left(v_src.code, 90) || '_copy';
+  while exists (select 1 from app.menu m where lower(m.code) = lower(v_code)) loop
+    v_n := v_n + 1;
+    v_code := left(v_src.code, 88) || '_copy' || v_n;
+  end loop;
+
+  insert into app.menu (code, name, is_active)
+  values (v_code, left(v_src.name || ' (копія)', 255), v_src.is_active)
+  returning id into v_new;
+
+  loop
+    insert into app.menu_item (menu_id, parent_id, code, name, icon_key, route_path, sort_order, is_active)
+    select v_new, np.id, s.code, s.name, s.icon_key, s.route_path, s.sort_order, s.is_active
+    from app.menu_item s
+    left join app.menu_item sp on sp.id = s.parent_id                       -- батько в оригіналі
+    left join app.menu_item np on np.menu_id = v_new and np.code = sp.code  -- його копія
+    where s.menu_id = v_id
+      and not exists (select 1 from app.menu_item x where x.menu_id = v_new and x.code = s.code)
+      and (s.parent_id is null or np.id is not null);
+
+    get diagnostics v_added = row_count;
+    exit when v_added = 0;
+  end loop;
+
+  return app.menu_get(user_id, jsonb_build_object('id', v_new::text));
+end;
 $$;

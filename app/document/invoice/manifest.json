@@ -17,10 +17,19 @@
   "commands": {
     "sql": {
       "printData": "invoice_print_data"
+    },
+    "access": {
+      "printData": "view"
     }
   },
   "views": {
-    "list": { "module": "./invoiceList.ts", "titleKey": "invoice.titleMany" },
-    "edit": { "module": "./invoiceEdit.ts", "titleKey": "invoice.titleOne" }
+    "list": {
+      "module": "./invoiceList.ts",
+      "titleKey": "invoice.titleMany"
+    },
+    "edit": {
+      "module": "./invoiceEdit.ts",
+      "titleKey": "invoice.titleOne"
+    }
   }
 }

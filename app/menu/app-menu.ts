@@ -1,8 +1,8 @@
 import { LitElement, html, css, svg, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "@client/bus/bus.ts";
-import { menuMock } from "./menu-mock.ts";
-import type { MenuItem } from "./menu.types.ts";
+import { menuIcon } from "./icons.ts";
+import type { MenuItem, MenuRow } from "./menu.types.ts";
 
 interface Flyout {
   item: MenuItem;
@@ -55,6 +55,15 @@ export class AppMenu extends LitElement {
     .menu { flex: 1; overflow-y: auto; overflow-x: hidden; }
     .menu::-webkit-scrollbar { width: 4px; }
     .menu::-webkit-scrollbar-thumb { background: #b8c3cc; }
+
+    .menu-message {
+      padding: 8px;
+      opacity: 0.7;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    :host([collapsed]) .menu-message { display: none; }
 
     /* Пункт меню */
     .item {
@@ -172,11 +181,70 @@ export class AppMenu extends LitElement {
     .flyout-item:hover .icon { opacity: 1; }
   `;
 
+  @state() private items: MenuItem[] = [];
+  @state() private error = "";
   @state() private collapsed = false;
   @state() private expanded = new Set<string>();
   @state() private activeId: string | null = null;
   @state() private tooltip: { label: string; y: number } | null = null;
   @state() private flyout: Flyout | null = null;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    void this.load();
+  }
+
+  /**
+   * Меню приходить із БД уже відфільтрованим правами (`app.menu_current`):
+   * склад задає адміністратор, а що з нього видно — user_group_permission.
+   */
+  private async load() {
+    this.error = "";
+    try {
+      const envelope = await bus.request("data.load", {
+        model: "menu",
+        command: "current",
+        payload: {},
+      }) as { data?: { rows?: unknown[] } } | undefined;
+
+      this.items = this.buildTree((envelope?.data?.rows ?? []) as MenuRow[]);
+    } catch (e) {
+      // Порожнє меню без пояснення виглядає як поломка застосунку, а не як
+      // збій запиту, — тому відмова показується, а не ковтається.
+      console.error("[app-menu] не вдалося завантажити меню:", e);
+      this.items = [];
+      this.error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  /**
+   * Плоский список → дерево. Порядок рядків уже правильний (його задає SQL),
+   * тож достатньо зберегти порядок вставки.
+   */
+  private buildTree(rows: MenuRow[]): MenuItem[] {
+    const byId = new Map<string, MenuItem>();
+    const roots: MenuItem[] = [];
+
+    for (const row of rows) {
+      byId.set(row.id, {
+        id: row.id,
+        label: row.name,
+        icon: menuIcon(row.icon),
+        route: row.route ?? undefined,
+      });
+    }
+
+    for (const row of rows) {
+      const node = byId.get(row.id)!;
+      // Батько має бути в тому ж наборі — його зберігає menu_current. Якщо все
+      // ж немає, пункт піднімається в корінь, а не зникає без сліду.
+      const parent = row.parentId ? byId.get(row.parentId) : undefined;
+      if (parent) (parent.children ??= []).push(node);
+      else roots.push(node);
+    }
+
+    return roots;
+  }
 
   private icon(path: string, size = 18) {
     return svg`
@@ -297,7 +365,9 @@ export class AppMenu extends LitElement {
       </div>
 
       <div class="menu">
-        ${menuMock.map(item => this.renderItem(item))}
+        ${this.error
+          ? html`<div class="menu-message" title="${this.error}">Меню недоступне</div>`
+          : this.items.map(item => this.renderItem(item))}
       </div>
 
       ${this.tooltip ? html`

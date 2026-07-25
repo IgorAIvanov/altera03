@@ -14,6 +14,22 @@ import type {
 
 const STANDARD_COMMANDS = new Set(["list", "get", "save", "delete", "lookup"]);
 const STANDARD_DOCUMENT_COMMANDS = new Set(["post", "unpost"]);
+
+/**
+ * Дія, потрібна стандартній команді. `save` тут немає: вона `create` або
+ * `edit` залежно від payload, і рахується окремо.
+ */
+const STANDARD_COMMAND_ACTIONS: Record<string, string> = {
+  list: "view",
+  get: "view",
+  lookup: "view",
+  delete: "delete",
+  post: "post",
+  unpost: "unpost",
+};
+
+/** Оголошення «досить бути авторизованим»: право моделі не перевіряється. */
+const AUTHENTICATED = "authenticated";
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 const COMMAND_IDENTIFIER_PATTERN = /^[a-z][a-zA-Z0-9_]*$/;
 
@@ -133,6 +149,39 @@ function getSqlCommandConfig(
   return null;
 }
 
+/**
+ * Яке право потрібне цій команді. `null` — не визначено, і це відмова: краще
+ * голосна помилка конфігурації, ніж команда, що працює без перевірки.
+ *
+ * Оголошення в манифесті має пріоритет над виведенням з імені: модель може
+ * навмисно послабити `list` до `authenticated` (як `menu/current`, яку кличе
+ * кожен вхід) або посилити його.
+ */
+function resolveRequiredAction(
+  model: string,
+  command: string,
+  payload: Record<string, unknown>,
+  config: ModelBackendConfig | undefined,
+): string | null {
+  const declared = config?.access?.[command];
+  if (declared) return declared;
+
+  // `save` — це створення або зміна, і різниця видна лише з payload: новий
+  // запис приходить без id. Без цього поділу право `create` не мало б сенсу:
+  // будь-хто з `edit` створював би записи.
+  if (command === "save") {
+    const item = payload.item as Record<string, unknown> | undefined;
+    const id = item?.id;
+    return id === null || id === undefined || id === "" ? "create" : "edit";
+  }
+
+  if (STANDARD_DOCUMENT_COMMANDS.has(command) && !supportsPosting(model)) {
+    return null;
+  }
+
+  return STANDARD_COMMAND_ACTIONS[command] ?? null;
+}
+
 @Injectable()
 export class ModelRuntimeService {
   constructor(private db: DatabaseService) {}
@@ -150,9 +199,28 @@ export class ModelRuntimeService {
     const config = getModelConfig(model);
     const tsCommand = config?.tsCommands?.[command];
 
+    // Перевірки «чи є така модель у реєстрі» тут свідомо немає. Моделі ядра
+    // (attachment) живуть у server/sql і манифеста в застосунку не мають — вони
+    // доходять сюди з `config === undefined` і працюють стандартним маршрутом
+    // `app.<model>_<command>`. Неіснуючу модель відсіє сама база: функції немає,
+    // і нижче це стане зрозумілою 501.
+    const sqlCommand = tsCommand ? null : getSqlCommandConfig(model, command, config);
+
+    // Спершу з'ясовуємо, чи команда взагалі є, і лише потім — чи є право.
+    // Зворотний порядок перетворював би друкарську помилку в імені команди на
+    // «немає доступу», і шукали б її не там.
+    if (!tsCommand && !sqlCommand) {
+      throw ModelCommandError.notConfigured(model, command);
+    }
+
+    const action = resolveRequiredAction(model, command, normalizedPayload, config);
+    if (action === null) {
+      throw ModelCommandError.accessNotDeclared(model, command);
+    }
+
     const result = tsCommand
-      ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand)
-      : await this.executeSqlCommandFor(model, command, normalizedPayload, userId, config);
+      ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand, action)
+      : await this.executeSqlCommand(model, command, normalizedPayload, userId, config, sqlCommand!, action);
 
     // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
     // SQL-функція без `return` або з `return null`: клієнт діставав `null`
@@ -171,24 +239,23 @@ export class ModelRuntimeService {
     return await signEnvelopeTokens(result, { userId, sessionId });
   }
 
-  private async executeSqlCommandFor(
-    model: string,
-    command: string,
-    payload: Record<string, unknown>,
-    userId: string,
-    config: ModelBackendConfig | undefined,
-  ) {
-    const sqlCommand = getSqlCommandConfig(model, command, config);
-    if (!sqlCommand) {
-      throw ModelCommandError.notConfigured(model, command);
-    }
+  /**
+   * Право для TS-команди — окремим запитом: вкласти перевірку в її виклик
+   * нікуди, хендлер виконується в Deno. Один round-trip: `access_can` і готова
+   * відмова приходять разом, тому текст відмови лишається в одному місці — у
+   * `app.access_denied`.
+   */
+  private async assertAccess(model: string, action: string, userId: string) {
+    const rows = await this.db.sql<{ allowed: boolean; denied: unknown }[]>`
+      select
+        app.access_can(${userId}::bigint, ${model}, ${action}) as allowed,
+        app.access_denied(${model}, ${action})                 as denied
+    `;
 
-    // Перевірки «чи є така модель у реєстрі» тут свідомо немає. Моделі ядра
-    // (attachment) живуть у server/sql і манифеста в застосунку не мають — вони
-    // доходять сюди з `config === undefined` і працюють стандартним маршрутом
-    // `app.<model>_<command>`. Неіснуючу модель відсіє сама база: функції немає,
-    // і нижче це стане зрозумілою 501.
-    return await this.executeSqlCommand(model, command, payload, userId, config, sqlCommand);
+    const row = rows[0];
+    if (!row) throw ModelCommandError.badResponse(model, "access_can");
+
+    return row.allowed ? null : row.denied;
   }
 
   private async executeTsCommand(
@@ -197,7 +264,13 @@ export class ModelRuntimeService {
     payload: Record<string, unknown>,
     userId: string,
     tsCommand: TsModelCommandConfig,
+    action: string,
   ) {
+    if (action !== AUTHENTICATED) {
+      const denied = await this.assertAccess(model, action, userId);
+      if (denied) return denied;
+    }
+
     // Реєстр зібрався, а виконувати нема чого: модуль команди не має default-
     // експорту або експортує не функцію. Без цієї перевірки виходив
     // `TypeError: tsCommand.handler is not a function` — повідомлення, з якого
@@ -232,6 +305,7 @@ export class ModelRuntimeService {
     userId: string,
     config: ModelBackendConfig | undefined,
     sqlCommand: SqlModelCommandConfig,
+    action: string,
   ) {
     const validationError = sqlCommand.validate?.(payload) ?? null;
     if (validationError) {
@@ -244,10 +318,24 @@ export class ModelRuntimeService {
     assertIdentifier(schema, "schema");
     assertIdentifier(functionName, "functionName");
 
+    const payloadJson = this.db.sql.json(toSqlJsonPayload(payload));
+
     try {
-      const rows = await this.db.sql<{ result: unknown }[]>`
-        select ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${this.db.sql.json(toSqlJsonPayload(payload))}::jsonb) as result
-      `;
+      // Перевірка вкладена в той самий `select`, а не зроблена окремим
+      // запитом: один round-trip, права завжди свіжі (жодного кешу для
+      // інвалідації), а при відмові команда навіть не виконується — CASE не
+      // обчислює невибрану гілку, і аргументи тут не згортаються в константи.
+      const rows = action === AUTHENTICATED
+        ? await this.db.sql<{ result: unknown }[]>`
+            select ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb) as result
+          `
+        : await this.db.sql<{ result: unknown }[]>`
+            select case
+              when app.access_can(${userId}::bigint, ${model}, ${action})
+                then ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
+              else app.access_denied(${model}, ${action})
+            end as result
+          `;
 
       return rows[0]?.result ?? null;
     } catch (error) {

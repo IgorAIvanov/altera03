@@ -4,7 +4,12 @@
   "schema": "app",
   "commands": {
     "ts": {
-      "ping": { "module": "./db/bank.commands.ts" }
+      "ping": {
+        "module": "./db/bank.commands.ts"
+      }
+    },
+    "access": {
+      "ping": "view"
     }
   },
   "views": {

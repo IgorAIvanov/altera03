@@ -5,9 +5,15 @@
   "commands": {
     "sql": {
       "index": "turnover_balance_index"
+    },
+    "access": {
+      "index": "view"
     }
   },
   "views": {
-    "list": { "module": "./turnoverBalanceReport.ts", "titleKey": "turnoverBalance.title" }
+    "list": {
+      "module": "./turnoverBalanceReport.ts",
+      "titleKey": "turnoverBalance.title"
+    }
   }
 }

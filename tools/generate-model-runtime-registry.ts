@@ -34,6 +34,13 @@ type ManifestRecord = {
   commands?: {
     sql?: Record<string, ManifestSqlCommand>;
     ts?: Record<string, ManifestTsCommand>;
+    /**
+     * Право нестандартної команди: дія (`view`/`create`/`edit`/`delete`/
+     * `post`/`unpost`) або `"authenticated"`. Стандартні команди тут не
+     * потрібні — рантайм виводить їхню дію з імені. Неоголошена нестандартна
+     * команда не виконується взагалі (fail-closed).
+     */
+    access?: Record<string, string>;
   };
   views?: Record<string, { module: string; titleKey?: string }>;
   agent?: {
@@ -90,9 +97,26 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([commandName, definition]) => `    ${JSON.stringify(commandName)}: ${renderSqlCommandConfig(commandName, definition)}`);
 
+    // `printPdf` виводиться з непорожнього `prints` так само, як і сам хендлер,
+    // тож і право їй виводиться тут: друк — це перегляд. Явне оголошення в
+    // манифесті це перекриває.
+    const access: Record<string, string> = { ...manifest.commands?.access };
+    if (Object.keys(manifest.prints ?? {}).length > 0 && !access.printPdf) {
+      access.printPdf = "view";
+    }
+
+    const accessEntries = Object.entries(access)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([commandName, action]) => `    ${JSON.stringify(commandName)}: ${JSON.stringify(action)}`);
+
     const modelTypeLine = manifest.type ? `    type: ${JSON.stringify(manifest.type)}` : null;
     const modelSchemaLine = manifest.schema ? `    schema: ${JSON.stringify(manifest.schema)}` : null;
-    const bodyParts = [modelTypeLine, modelSchemaLine, sqlCommandEntries.length ? `    sqlCommands: {\n${sqlCommandEntries.join(",\n")}\n    }` : null]
+    const bodyParts = [
+      modelTypeLine,
+      modelSchemaLine,
+      sqlCommandEntries.length ? `    sqlCommands: {\n${sqlCommandEntries.join(",\n")}\n    }` : null,
+      accessEntries.length ? `    access: {\n${accessEntries.join(",\n")}\n    }` : null,
+    ]
       .filter((value): value is string => Boolean(value));
 
     if (!bodyParts.length || !manifest.model) {

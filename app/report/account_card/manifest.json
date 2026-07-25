@@ -5,9 +5,15 @@
   "commands": {
     "sql": {
       "index": "account_card_index"
+    },
+    "access": {
+      "index": "view"
     }
   },
   "views": {
-    "list": { "module": "./accountCardReport.ts", "titleKey": "accountCard.title" }
+    "list": {
+      "module": "./accountCardReport.ts",
+      "titleKey": "accountCard.title"
+    }
   }
 }

@@ -31,6 +31,22 @@ export class ModelCommandError extends Error {
     );
   }
 
+  /**
+   * Команда є, але яке право їй потрібне — не оголошено. Це вада конфігурації,
+   * а не запиту, тому 501, а не відмова в конверті: користувач тут нічого не
+   * виправить, а той, хто додав команду, побачить, чого бракує в manifest.json.
+   *
+   * Fail-closed: мовчки пропустити невідому команду означало б, що будь-яка
+   * нова команда з'являється без прав і ніхто цього не помічає.
+   */
+  static accessNotDeclared(model: string, command: string): ModelCommandError {
+    return new ModelCommandError(
+      501,
+      `Команда «${model}/${command}» не оголошує потрібного права. ` +
+        `Додайте її в commands.access у manifest.json моделі й виконайте sql:registry.`,
+    );
+  }
+
   /** Виконалося, але повернуло не конверт — довіряти такій відповіді не можна. */
   static badResponse(model: string, command: string): ModelCommandError {
     return new ModelCommandError(

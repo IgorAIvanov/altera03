@@ -1,0 +1,25 @@
+{
+  "model": "menu",
+  "type": "catalog",
+  "schema": "app",
+  "commands": {
+    "sql": {
+      "current": "menu_current",
+      "copy": "menu_copy"
+    },
+    "access": {
+      "current": "authenticated",
+      "copy": "create"
+    }
+  },
+  "views": {
+    "list": {
+      "module": "./menuList.ts",
+      "titleKey": "menu.titleMany"
+    },
+    "edit": {
+      "module": "./menuEdit.ts",
+      "titleKey": "menu.titleOne"
+    }
+  }
+}

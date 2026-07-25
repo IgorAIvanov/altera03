@@ -5,6 +5,9 @@
   "commands": {
     "sql": {
       "analytics": "chart_of_account_analytics"
+    },
+    "access": {
+      "analytics": "view"
     }
   },
   "views": {

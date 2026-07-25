@@ -1,0 +1,21 @@
+{
+  "model": "user_group",
+  "type": "catalog",
+  "schema": "app",
+  "commands": {
+    "sql": {
+      "get": "user_group_get_ext",
+      "save": "user_group_save_ext"
+    }
+  },
+  "views": {
+    "list": {
+      "module": "./userGroupList.ts",
+      "titleKey": "userGroup.titleMany"
+    },
+    "edit": {
+      "module": "./userGroupEdit.ts",
+      "titleKey": "userGroup.titleOne"
+    }
+  }
+}

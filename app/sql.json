@@ -9,6 +9,8 @@
   "models": [
     "@core/base",
     "@core/access",
+    "admin/menu",
+    "admin/user_group",
     "@core/attachment",
     "catalog/organization",
     "catalog/chart_of_account",

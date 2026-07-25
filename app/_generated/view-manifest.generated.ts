@@ -19,11 +19,18 @@ export const viewManifest = [
   { route: "document/invoice/edit", moduleFile: "app/document/invoice/invoiceEdit.ts", titleKey: "invoice.titleOne" },
   { route: "operation/manual_entry/list", moduleFile: "app/operation/manual_entry/manualEntryList.ts", titleKey: "manualEntry.titleMany" },
   { route: "operation/manual_entry/edit", moduleFile: "app/operation/manual_entry/manualEntryEdit.ts", titleKey: "manualEntry.titleOne" },
+  { route: "admin/menu/list", moduleFile: "app/admin/menu/menuList.ts", titleKey: "menu.titleMany" },
+  { route: "admin/menu/edit", moduleFile: "app/admin/menu/menuEdit.ts", titleKey: "menu.titleOne" },
   { route: "catalog/organization/list", moduleFile: "app/catalog/organization/organizationList.ts", titleKey: "organization.titleMany" },
   { route: "catalog/organization/edit", moduleFile: "app/catalog/organization/organizationEdit.ts", titleKey: "organization.titleOne" },
   { route: "catalog/organization/picker", moduleFile: "app/catalog/organization/organizationPicker.ts", titleKey: "organization.titleMany" },
   { route: "admin/print_template/list", moduleFile: "app/admin/print_template/printTemplateList.ts", titleKey: "printTemplate.titleMany" },
   { route: "admin/print_template/edit", moduleFile: "app/admin/print_template/printTemplateEdit.ts", titleKey: "printTemplate.titleOne" },
-  { route: "report/turnover_balance/list", moduleFile: "app/report/turnover_balance/turnoverBalanceReport.ts", titleKey: "turnoverBalance.title" }
+  { route: "report/turnover_balance/list", moduleFile: "app/report/turnover_balance/turnoverBalanceReport.ts", titleKey: "turnoverBalance.title" },
+  { route: "admin/user/list", moduleFile: "app/admin/user/userList.ts", titleKey: "user.titleMany" },
+  { route: "admin/user/edit", moduleFile: "app/admin/user/userEdit.ts", titleKey: "user.titleOne" },
+  { route: "admin/user/picker", moduleFile: "app/admin/user/userPicker.ts", titleKey: "user.titleMany" },
+  { route: "admin/user_group/list", moduleFile: "app/admin/user_group/userGroupList.ts", titleKey: "userGroup.titleMany" },
+  { route: "admin/user_group/edit", moduleFile: "app/admin/user_group/userGroupEdit.ts", titleKey: "userGroup.titleOne" }
 ];
 
