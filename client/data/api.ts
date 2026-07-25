@@ -152,24 +152,34 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 }
 
 /**
- * Розбір конверта, який може виявитися не конвертом.
+ * Розбір відповіді, яка може виявитися не JSON.
  *
  * `response.json()` тут — найкоротший шлях до незрозумілої помилки: коли бекенд
  * лежить, до браузера доходить сторінка помилки dev-проксі, і замість причини
- * користувач бачив «Unexpected token '<'». Наш сервер відповідає конвертом
- * завжди — навіть на 500 і 503, — тож тіло не-JSON означає, що відповідав не він.
+ * користувач бачив «Unexpected token '<'». Наш сервер відповідає JSON завжди —
+ * навіть на 500 і 503, — тож не-JSON означає, що відповідав не він.
  */
-export async function readEnvelope<TItem = unknown, TRow = unknown>(
-  response: Response,
-): Promise<ApiEnvelope<TItem, TRow>> {
+async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
 
   try {
-    return JSON.parse(text) as ApiEnvelope<TItem, TRow>;
+    return JSON.parse(text) as T;
   } catch {
     reportServerUnavailable(`${response.url || "запит"}: HTTP ${response.status}, відповідь не JSON`);
     throw new ServerUnavailableError(`Сервер відповів не так, як мав (HTTP ${response.status}).`);
   }
+}
+
+/**
+ * Розбір стандартного конверта — публічна двері для всіх відповідей /api.
+ *
+ * Окремої «сирої» версії назовні немає навмисно: конверт у цього API один,
+ * і ендпоінт, якому вона знадобиться, спершу має пояснити, чому він виняток.
+ */
+export function readEnvelope<TItem = unknown, TRow = unknown>(
+  response: Response,
+): Promise<ApiEnvelope<TItem, TRow>> {
+  return readJson<ApiEnvelope<TItem, TRow>>(response);
 }
 
 /** Запит із розбором JSON-конверта. */

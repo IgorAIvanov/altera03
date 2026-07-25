@@ -46,10 +46,25 @@ const DRIVER_CODES = new Set([
 export const DATABASE_UNAVAILABLE_MESSAGE =
   "База даних недоступна. Сервер не може виконати запит — спробуйте пізніше або зверніться до адміністратора.";
 
+/**
+ * Коди PostgreSQL, що означають «того, що викликають, у базі немає».
+ *
+ * `42883` — немає функції з такою сигнатурою, `3F000` — немає схеми. Для
+ * рантайму моделей це та сама подія: SQL моделі не опубліковано (або
+ * опубліковано в іншу базу), а не помилка в даних.
+ */
+const MISSING_OBJECT_CODES = new Set(["42883", "3F000"]);
+
 function errorCode(error: unknown): string | null {
   if (typeof error !== "object" || error === null) return null;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" ? code : null;
+}
+
+/** Чи означає помилка, що викликаної функції (або її схеми) у базі немає. */
+export function isMissingDatabaseFunction(error: unknown): boolean {
+  const code = errorCode(error);
+  return code !== null && MISSING_OBJECT_CODES.has(code);
 }
 
 /**

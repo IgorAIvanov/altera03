@@ -1,6 +1,8 @@
 import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
+import { isMissingDatabaseFunction } from "../../database/database-error.ts";
 import { signEnvelopeTokens } from "../blob/blob-token.ts";
+import { looksLikeEnvelope, ModelCommandError } from "./model-runtime.errors.ts";
 import { getModelConfig, supportsPosting } from "./model-registry.ts";
 import type {
   ModelBackendConfig,
@@ -152,6 +154,18 @@ export class ModelRuntimeService {
       ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand)
       : await this.executeSqlCommandFor(model, command, normalizedPayload, userId, config);
 
+    // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
+    // SQL-функція без `return` або з `return null`: клієнт діставав `null`
+    // замість `{ ok, data, messages }`, форма мовчки не наповнювалася, і слідів
+    // не лишалося ніде. Краще голосна помилка тут, ніж порожня форма там.
+    if (!looksLikeEnvelope(result)) {
+      console.error(
+        `❌ ${model}/${command}: відповідь не є конвертом:`,
+        result === undefined ? "undefined" : JSON.stringify(result)?.slice(0, 200),
+      );
+      throw ModelCommandError.badResponse(model, command);
+    }
+
     // Ключі доступу до вкладень (`token`, `<field>Token`) назовні не виходять —
     // рантайм міняє їх на підписані токени. Див. blob-token.ts.
     return await signEnvelopeTokens(result, { userId, sessionId });
@@ -166,9 +180,14 @@ export class ModelRuntimeService {
   ) {
     const sqlCommand = getSqlCommandConfig(model, command, config);
     if (!sqlCommand) {
-      throw new Error(`Команда ${command} не налаштована для моделі ${model}`);
+      throw ModelCommandError.notConfigured(model, command);
     }
 
+    // Перевірки «чи є така модель у реєстрі» тут свідомо немає. Моделі ядра
+    // (attachment) живуть у server/sql і манифеста в застосунку не мають — вони
+    // доходять сюди з `config === undefined` і працюють стандартним маршрутом
+    // `app.<model>_<command>`. Неіснуючу модель відсіє сама база: функції немає,
+    // і нижче це стане зрозумілою 501.
     return await this.executeSqlCommand(model, command, payload, userId, config, sqlCommand);
   }
 
@@ -179,6 +198,18 @@ export class ModelRuntimeService {
     userId: string,
     tsCommand: TsModelCommandConfig,
   ) {
+    // Реєстр зібрався, а виконувати нема чого: модуль команди не має default-
+    // експорту або експортує не функцію. Без цієї перевірки виходив
+    // `TypeError: tsCommand.handler is not a function` — повідомлення, з якого
+    // не видно ні моделі, ні команди, ні того, що винен саме модуль.
+    if (typeof tsCommand.handler !== "function") {
+      console.error(
+        `❌ ${model}/${command}: TS-хендлер не є функцією (${typeof tsCommand.handler}). ` +
+          `Перевірте default-експорт модуля команди й перезапустіть sql:registry.`,
+      );
+      throw ModelCommandError.notImplemented(model, command);
+    }
+
     const validationError = tsCommand.validate?.(payload) ?? null;
     if (validationError) {
       throw new Error(validationError);
@@ -213,10 +244,27 @@ export class ModelRuntimeService {
     assertIdentifier(schema, "schema");
     assertIdentifier(functionName, "functionName");
 
-    const rows = await this.db.sql<{ result: unknown }[]>`
-      select ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${this.db.sql.json(toSqlJsonPayload(payload))}::jsonb) as result
-    `;
+    try {
+      const rows = await this.db.sql<{ result: unknown }[]>`
+        select ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${this.db.sql.json(toSqlJsonPayload(payload))}::jsonb) as result
+      `;
 
-    return rows[0]?.result ?? null;
+      return rows[0]?.result ?? null;
+    } catch (error) {
+      // Функції немає в базі. Раніше сюди приходило сире повідомлення
+      // PostgreSQL (`function app.bank_list(bigint, jsonb) does not exist`) —
+      // воно доходило аж до форми й нічого не пояснювало тому, хто його бачив.
+      // Ім'я функції потрібне тому, хто читає консоль сервера, — там воно й
+      // лишається; клієнтові вистачає моделі й команди, які він і так знає.
+      if (isMissingDatabaseFunction(error)) {
+        console.error(
+          `❌ ${model}/${command}: у базі немає функції ${schema}.${functionName}(bigint, jsonb). ` +
+            `Найімовірніше не виконано sql:assemble && sql:publish.`,
+        );
+        throw ModelCommandError.notImplemented(model, command);
+      }
+
+      throw error;
+    }
   }
 }

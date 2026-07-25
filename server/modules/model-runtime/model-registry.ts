@@ -55,8 +55,16 @@ function buildRegistry(
   for (const binding of bindings) {
     const handler = binding.handler ?? (binding.handlerKey ? RUNTIME_HANDLERS[binding.handlerKey] : undefined);
     if (!handler) {
+      // Дві різні причини, які раніше зливалися в одне повідомлення про
+      // handlerKey: його справді може не бути в ядрі, а може бути й так, що
+      // прив'язка вказує на власний модуль, а той не має default-експорту —
+      // тоді `binding.handler` приходить `undefined`, і згадка про handlerKey
+      // відправляла шукати проблему не туди.
       throw new Error(
-        `Команда ${binding.model}.${binding.command}: невідомий handlerKey "${binding.handlerKey}"`,
+        binding.handlerKey
+          ? `Команда ${binding.model}.${binding.command}: невідомий handlerKey "${binding.handlerKey}"`
+          : `Команда ${binding.model}.${binding.command}: модуль команди не віддав хендлер. ` +
+            `Перевірте, що він має default-експорт, і перезапустіть sql:registry.`,
       );
     }
 

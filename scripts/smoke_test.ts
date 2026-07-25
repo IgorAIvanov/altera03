@@ -89,11 +89,46 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       assertEquals(Array.isArray(body.data.rows), true);
     });
 
-    await t.step("модель: невідома команда не вдає успіх", async () => {
-      const { body } = await client.model("bank", "no_such_command");
+    // Резолв в'ю був єдиним ендпоінтом поза конвертом (`{ ok, chunkUrl, message }`).
+    // Обидві проби стережуть саме форму відповіді: до неї прив'язані `tab-controller`
+    // і `picker-host`, і мовчазний відкат зламав би відкриття будь-якої форми.
+    await t.step("в'ю: резолв віддає чанк у data.item", async () => {
+      const { status, body } = await client.json<Envelope>("/api/view/catalog/bank/list");
 
+      assertEquals(status, 200);
+      assertEquals(body.ok, true);
+      const item = body.data.item as { chunkUrl?: string } | null;
+      assertExists(item);
+      assertEquals(typeof item.chunkUrl, "string");
+    });
+
+    await t.step("в'ю: неіснуючий маршрут — 404 у тому ж конверті", async () => {
+      const { status, body } = await client.json<Envelope>("/api/view/no_such/no_such/list");
+
+      assertEquals(status, 404);
+      assertEquals(body.ok, false);
+      assertEquals(body.data.item, null);
+      assertEquals(body.messages.length > 0, true);
+    });
+
+    await t.step("модель: невідома команда не вдає успіх", async () => {
+      const { status, body } = await client.model("bank", "no_such_command");
+
+      assertEquals(status, 404);
       assertEquals(body.ok, false);
       assertEquals(body.messages.length > 0, true);
+    });
+
+    // Модель, для якої немає SQL-функції: PostgreSQL кидає 42883, і саме це
+    // раніше долітало до форми сирим текстом (`function app.…_list(bigint,
+    // jsonb) does not exist`). Проба стереже переклад, а не сам факт відмови.
+    await t.step("модель: неопублікована SQL-функція — 501, без тексту від PostgreSQL", async () => {
+      const { status, body } = await client.model("no_such_model_at_all", "list");
+
+      assertEquals(status, 501);
+      assertEquals(body.ok, false);
+      assertEquals(body.messages.length > 0, true);
+      assertEquals(body.messages.some((m) => `${m}`.includes("does not exist")), false);
     });
 
     await t.step("вкладення: повний цикл із прибиранням", async () => {

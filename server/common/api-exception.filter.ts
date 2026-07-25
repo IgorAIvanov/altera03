@@ -2,6 +2,7 @@ import { HttpException, type ExceptionFilter } from "@danet/core";
 import { AuthenticationRequiredError, jsonResponse } from "./http.ts";
 import { err } from "./response.ts";
 import { DATABASE_UNAVAILABLE_MESSAGE, isDatabaseUnavailable } from "../database/database-error.ts";
+import { ModelCommandError } from "../modules/model-runtime/model-runtime.errors.ts";
 
 /**
  * Останній рубіж: будь-яка помилка, що дійшла до HTTP-межі, стає конвертом.
@@ -29,6 +30,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
     }
 
     if (exception instanceof AuthenticationRequiredError) {
+      return jsonResponse(err(exception.message), exception.status);
+    }
+
+    // Рантайм моделей ловить їх сам, але команду може викликати й агент —
+    // тоді єдиний, хто лишається між помилкою і клієнтом, це фільтр.
+    if (exception instanceof ModelCommandError) {
       return jsonResponse(err(exception.message), exception.status);
     }
 

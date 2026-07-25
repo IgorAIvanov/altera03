@@ -5,11 +5,13 @@ import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
 import { shellTags } from "../shell/shell-registry.ts";
 import "@client/ui-kit/picker-host.ts";
-import { apiFetch } from "../data/api.ts";
+import { apiFetch, readEnvelope, ServerUnavailableError } from "../data/api.ts";
 
 const MAX_TABS = 30;
 const HOME_TAB_ID = "home";
 const TAB_STORAGE_KEY = "altera.open-tabs";
+/** Скільки тримати повідомлення про невдале відкриття, мс. */
+const NOTICE_TIMEOUT_MS = 8000;
 
 const iconHome = svg`
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -80,20 +82,50 @@ function storeTabs(state: StoredTabs) {
   }
 }
 
-async function resolveChunk(route: string): Promise<{ chunkUrl: string; titleKey?: string } | null> {
+/**
+ * Результат спроби відкрити вкладку.
+ *
+ * Раніше всі невдачі зводилися до `null`, і користувач бачив одне «не вдалося
+ * відкрити view» на три різні події: форми немає в реєстрі, модуль форми
+ * зламаний, сервер не відповів. Дії в цих випадках теж різні, тож причину треба
+ * донести, а не з'ясовувати щоразу з консолі.
+ */
+type OpenResult<T> = { ok: true; value: T } | { ok: false; reason: string };
+
+interface ResolvedChunk {
+  chunkUrl: string;
+  titleKey?: string;
+}
+
+/** Те, що `/api/view/...` кладе в `data.item` стандартного конверта. */
+interface ViewItem {
+  chunkUrl: string;
+  titleKey: string | null;
+}
+
+async function resolveChunk(route: string): Promise<OpenResult<ResolvedChunk>> {
   const [module, model, view] = route.split("/");
-  try {
-    const res = await apiFetch(`/api/view/${module}/${model}/${view}`);
-    const data = await res.json();
-    if (!data.ok) {
-      console.error(`[tabs] сервер відповів ok:false для ${route}:`, data);
-      return null;
-    }
-    return { chunkUrl: data.chunkUrl, titleKey: data.titleKey };
-  } catch (e) {
-    console.error(`[tabs] помилка fetch для ${route}:`, e);
-    return null;
+  const res = await apiFetch(`/api/view/${module}/${model}/${view}`);
+  // `readEnvelope`, а не `res.json()`: відповідь не від нашого сервера (сторінка
+  // помилки проксі) має піднімати екран «сервера немає», а не вдавати, що
+  // форми не існує. Виняток звідси летить далі навмисно.
+  const envelope = await readEnvelope<ViewItem>(res);
+  const item = envelope.data?.item;
+
+  if (!envelope.ok || !item?.chunkUrl) {
+    console.error(`[tabs] сервер не віддав view ${route}: HTTP ${res.status}`, envelope);
+    return {
+      ok: false,
+      // Маршрут дійшов до сервера, але в'ю там немає: або його не оголошено в
+      // manifest.json моделі, або не перегенеровано реєстр. 404 — саме цей
+      // випадок, решта статусів означає, що зламалося щось інше.
+      reason: res.status === 404
+        ? `Форму «${route}» не зареєстровано на сервері.`
+        : `Сервер не зміг віддати форму «${route}» (помилка ${res.status}).`,
+    };
   }
+
+  return { ok: true, value: { chunkUrl: item.chunkUrl, titleKey: item.titleKey ?? undefined } };
 }
 
 async function createTabElement(
@@ -101,27 +133,31 @@ async function createTabElement(
   modelId: string | null,
   tabId: string,
   params?: Record<string, unknown>,
-): Promise<HTMLElement | null> {
+): Promise<OpenResult<HTMLElement>> {
+  let mod: { tagName?: string; default?: { tagName?: string } };
+
   try {
-    const mod = await import(/* @vite-ignore */ chunkUrl);
-    const tagName: string | undefined = mod.tagName ?? mod.default?.tagName;
-    if (!tagName) {
-      console.error(`[tabs] модуль ${chunkUrl} не експортує tagName`);
-      return null;
-    }
-    const el = document.createElement(tagName);
-    if (modelId) (el as any).modelId = modelId;
-    // Форма має вміти закрити саму себе — інакше кнопка «Закрити» не має
-    // за що вхопитися: елемент нічого не знає про вкладку, в якій живе.
-    (el as any).tabId = tabId;
-    // Параметри відкриття (напр. рахунок і період для картки рахунку).
-    // Передаємо ДО вставки в DOM, щоб connectedCallback побачив уже готовий стан.
-    if (params) (el as any).applyParams?.(params);
-    return el;
+    mod = await import(/* @vite-ignore */ chunkUrl);
   } catch (e) {
     console.error(`[tabs] помилка завантаження чанку ${chunkUrl}`, e);
-    return null;
+    return { ok: false, reason: "Не вдалося завантажити модуль форми." };
   }
+
+  const tagName: string | undefined = mod.tagName ?? mod.default?.tagName;
+  if (!tagName) {
+    console.error(`[tabs] модуль ${chunkUrl} не експортує tagName`);
+    return { ok: false, reason: "Модуль форми не експортує tagName." };
+  }
+
+  const el = document.createElement(tagName);
+  if (modelId) (el as any).modelId = modelId;
+  // Форма має вміти закрити саму себе — інакше кнопка «Закрити» не має
+  // за що вхопитися: елемент нічого не знає про вкладку, в якій живе.
+  (el as any).tabId = tabId;
+  // Параметри відкриття (напр. рахунок і період для картки рахунку).
+  // Передаємо ДО вставки в DOM, щоб connectedCallback побачив уже готовий стан.
+  if (params) (el as any).applyParams?.(params);
+  return { ok: true, value: el };
 }
 
 @customElement("tab-controller")
@@ -201,12 +237,47 @@ export class TabController extends LitElement {
       0%   { transform: translateX(-100%); }
       100% { transform: translateX(350%); }
     }
+    /* Повідомлення про невдале відкриття. Кутом робочої області, а не модальним
+       вікном: користувач нічого не зіпсував і підтверджувати йому нічого — на
+       відміну від alert(), який зупиняв усе й показував адресу сайту. */
+    .notice {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      z-index: 20;
+      max-width: 24rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid #f0b4b4;
+      background: #fdecec;
+      color: #7d1d1d;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+      line-height: 1.45;
+    }
+    .notice-text { flex: 1; }
+    .notice-close {
+      cursor: pointer;
+      opacity: .55;
+      font-size: 15px;
+      line-height: 1;
+      user-select: none;
+    }
+    .notice-close:hover { opacity: 1; }
+    @media (prefers-color-scheme: dark) {
+      .notice { border-color: #7d2b2b; background: #2a1717; color: #f3c9c9; }
+    }
   `;
 
   @state() private tabs: Tab[] = [];
   @state() private activeTabId: string = HOME_TAB_ID;
   @state() private _loadingCount = 0;
+  /** Повідомлення про невдале відкриття вкладки; null — показувати нічого. */
+  @state() private notice: string | null = null;
 
+  private noticeTimer: number | null = null;
   private unsubs: Array<() => void> = [];
   /** Під час відновлення не пишемо у сховище — інакше частковий стан перетре збережений. */
   private restoring = false;
@@ -262,6 +333,10 @@ export class TabController extends LitElement {
     this.unsubs.push(
       bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params)),
       bus.on("tab.close", (msg) => this.handleClose(msg.tabId)),
+      // Оболонка — єдине місце, де показуються короткі повідомлення: вона одна
+      // на застосунок і завжди на екрані, на відміну від форми, яка могла й не
+      // відкритися саме тому, що є про що повідомити.
+      bus.on("notice", (msg) => this.showNotice(msg.text)),
       // Лічильник зміщуємо в микротаск: loading.start/end часто прилітають синхронно
       // під час коміту апдейта (коли монтується вью й одразу вантажить дані), а пряме
       // присвоєння реактивної властивості в цей момент дає Lit-warning "change-in-update".
@@ -279,6 +354,23 @@ export class TabController extends LitElement {
     super.disconnectedCallback();
     this.unsubs.forEach(fn => fn());
     this.unsubs = [];
+    this.dismissNotice();
+  }
+
+  /** Показати повідомлення. Наступне витісняє попереднє разом із його таймером. */
+  private showNotice(text: string) {
+    this.notice = text;
+    if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => {
+      this.notice = null;
+      this.noticeTimer = null;
+    }, NOTICE_TIMEOUT_MS);
+  }
+
+  private dismissNotice() {
+    if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
+    this.noticeTimer = null;
+    this.notice = null;
   }
 
   private activateTab(tabId: string) {
@@ -317,23 +409,23 @@ export class TabController extends LitElement {
     modelId: string | null,
     params?: Record<string, unknown>,
     id: string = crypto.randomUUID(),
-  ): Promise<Tab | null> {
+  ): Promise<OpenResult<Tab>> {
     const resolved = await resolveChunk(route);
-    if (!resolved) {
-      console.error(`[tabs] view не знайдено: ${route}`);
-      return null;
-    }
+    if (!resolved.ok) return resolved;
 
-    const element = await createTabElement(resolved.chunkUrl, modelId, id, params);
-    if (!element) return null;
+    const element = await createTabElement(resolved.value.chunkUrl, modelId, id, params);
+    if (!element.ok) return element;
 
     return {
-      id,
-      route,
-      modelId,
-      titleKey: resolved.titleKey,
-      element,
-      lastUsedAt: Date.now(),
+      ok: true,
+      value: {
+        id,
+        route,
+        modelId,
+        titleKey: resolved.value.titleKey,
+        element: element.value,
+        lastUsedAt: Date.now(),
+      },
     };
   }
 
@@ -350,12 +442,22 @@ export class TabController extends LitElement {
       return;
     }
 
-    const tab = await this.createTab(route, modelId, params);
-    if (!tab) {
-      alert(`Не вдалося відкрити view: ${route}`);
+    let created: OpenResult<Tab>;
+    try {
+      created = await this.createTab(route, modelId, params);
+    } catch (e) {
+      // Недоступний сервер малює власний екран поверх усього — друге
+      // повідомлення про те саме тільки заважало б.
+      if (e instanceof ServerUnavailableError) return;
+      throw e;
+    }
+
+    if (!created.ok) {
+      this.showNotice(created.reason);
       return;
     }
 
+    const tab = created.value;
     if (this.tabs.filter(t => !t.permanent).length >= MAX_TABS) this.evictLru();
 
     // Вкладку, з якої йдемо, позначаємо використаною зараз — тією ж логікою, що в
@@ -383,15 +485,26 @@ export class TabController extends LitElement {
         const pending = this.tabs.find(t => t.id === id);
         if (!pending || pending.element) continue;
 
-        const hydrated = await this.createTab(pending.route, pending.modelId, undefined, id);
-        if (hydrated) {
+        let hydrated: OpenResult<Tab>;
+        try {
+          hydrated = await this.createTab(pending.route, pending.modelId, undefined, id);
+        } catch (e) {
+          // Сервера немає — припиняємо відновлення, лишивши заглушки. Викидати
+          // збережені вкладки через те, що бекенд не запущений, не можна: після
+          // його підняття користувач має побачити свій набір, а не порожньо.
+          if (e instanceof ServerUnavailableError) return;
+          throw e;
+        }
+
+        if (hydrated.ok) {
           // `createTab` ставить свіжу мітку — повертаємо відновлену зі знімка,
           // інакше дозавантаження прикинулося б використанням і зрівняло всі
           // вкладки за часом.
-          const restored = { ...hydrated, lastUsedAt: pending.lastUsedAt };
+          const restored = { ...hydrated.value, lastUsedAt: pending.lastUsedAt };
           this.tabs = this.tabs.map(t => t.id === id ? restored : t);
         } else {
           // View більше не існує — прибираємо вкладку, як і при звичайному закритті.
+          console.warn(`[tabs] відновити вкладку ${pending.route} не вдалося: ${hydrated.reason}`);
           this.tabs = this.tabs.filter(t => t.id !== id);
           if (this.activeTabId === id) this.activateTab(HOME_TAB_ID);
         }
@@ -469,6 +582,13 @@ export class TabController extends LitElement {
               ${tab.element}
             </div>
           `)}
+          ${this.notice
+            ? html`<div class="notice" role="alert">
+                <span class="notice-text">${this.notice}</span>
+                <span class="notice-close" title="Закрити"
+                  @click=${this.dismissNotice}>×</span>
+              </div>`
+            : ""}
         </div>
       </div>
     `;

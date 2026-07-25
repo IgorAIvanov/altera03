@@ -53,6 +53,17 @@ export interface ModelChangedMessage {
   model: string;
 }
 
+/**
+ * Коротке повідомлення користувачеві — те, що раніше або показувалося через
+ * `alert()` (з адресою сайту й блокуванням усього), або не показувалося взагалі
+ * і лишалося в консолі. Показує оболонка; хто відправив — не знає, де саме воно
+ * з'явиться, і це навмисно.
+ */
+export interface NoticeMessage {
+  type: "notice";
+  text: string;
+}
+
 // --- Індикатор завантаження ---
 export interface LoadingStartMessage { type: "loading.start"; }
 export interface LoadingEndMessage   { type: "loading.end"; }
@@ -68,6 +79,7 @@ export type BusMessage =
   | DataLoadMessage
   | DataSaveMessage
   | ModelChangedMessage
+  | NoticeMessage
   | LoadingStartMessage
   | LoadingEndMessage;
 

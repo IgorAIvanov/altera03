@@ -3,7 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
 import type { PickerOpenMessage } from "../bus/bus.types.ts";
-import { apiFetch } from "../data/api.ts";
+import { apiFetch, readEnvelope } from "../data/api.ts";
 
 interface ActivePicker {
   callbackId: string;
@@ -16,8 +16,8 @@ async function resolveChunk(route: string): Promise<string | null> {
   try {
     const [module, model, view] = route.split("/");
     const res = await apiFetch(`/api/view/${module}/${model}/${view}`);
-    const data = await res.json();
-    return data.ok ? data.chunkUrl : null;
+    const envelope = await readEnvelope<{ chunkUrl: string }>(res);
+    return envelope.ok ? envelope.data?.item?.chunkUrl ?? null : null;
   } catch {
     return null;
   }
@@ -90,7 +90,10 @@ export class PickerHost extends LitElement {
   private async _open(msg: PickerOpenMessage) {
     const chunkUrl = await resolveChunk(msg.route);
     if (!chunkUrl) {
+      // Раніше тут був лише `console.error`, і натиснута кнопка вибору просто
+      // нічого не робила — збій, невідрізнимий від зависання.
       console.error(`[picker-host] view не знайдено: ${msg.route}`);
+      bus.emit({ type: "notice", text: `Діалог вибору «${msg.route}» не зареєстровано на сервері.` });
       bus.emit({ type: "picker.cancel", callbackId: msg.callbackId });
       return;
     }
@@ -125,6 +128,7 @@ export class PickerHost extends LitElement {
       });
     } catch (e) {
       console.error("[picker-host] помилка завантаження:", e);
+      bus.emit({ type: "notice", text: "Не вдалося завантажити діалог вибору." });
       bus.emit({ type: "picker.cancel", callbackId: msg.callbackId });
     }
   }

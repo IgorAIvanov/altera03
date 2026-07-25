@@ -5,6 +5,7 @@ import {
   DATABASE_UNAVAILABLE_MESSAGE,
   isDatabaseUnavailable,
 } from "../../database/database-error.ts";
+import { ModelCommandError } from "./model-runtime.errors.ts";
 import { ModelRuntimeService } from "./model-runtime.service.ts";
 
 function modelError(message: string) {
@@ -54,6 +55,12 @@ export class ModelRuntimeController {
       if (isDatabaseUnavailable(error)) {
         console.error(`❌ ${model}/${command}: ${DATABASE_UNAVAILABLE_MESSAGE}`);
         return jsonResponse(modelError(DATABASE_UNAVAILABLE_MESSAGE), 503);
+      }
+
+      // Стан сервера, а не запиту: команди немає, SQL не опубліковано, хендлер
+      // зламаний. Статус несе сама помилка — деталі вже в консолі.
+      if (error instanceof ModelCommandError) {
+        return jsonResponse(modelError(error.message), error.status);
       }
 
       return modelError(
