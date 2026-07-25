@@ -2,8 +2,8 @@ import { html, type TemplateResult } from "lit";
 import { customElement } from "lit/decorators.js";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
-import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
-import { dateFormat } from "@client/shared/datetime.ts";
+import { ReportBase } from "@client/ui-kit/base/report-base.ts";
+import { dateFormat, formatDate } from "@client/shared/datetime.ts";
 import { currentOrg } from "@shared/current-organization.ts";
 import {
   TurnoverBalanceRootSchema,
@@ -28,8 +28,9 @@ function amount(value: number | undefined): string {
 }
 
 @customElement(tagName)
-export class TurnoverBalanceReport extends BaseUI<TurnoverBalanceRoot> {
+export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
   protected model = "turnover_balance";
+  protected reportTitle = "turnoverBalance.title";
 
   constructor() {
     super(TurnoverBalanceRootSchema);
@@ -55,17 +56,25 @@ export class TurnoverBalanceReport extends BaseUI<TurnoverBalanceRoot> {
     if (this.canRun) queueMicrotask(() => this.buildReport());
   }
 
-  private get canRun(): boolean {
+  protected override get canRun(): boolean {
     return !this.busy && !!this.$root.$query.organizationId;
   }
 
-  private async buildReport() {
+  protected override async buildReport() {
     const q = this.$root.$query;
     await this.loadInto("index", {
       organizationId: q.organizationId,
       dateFrom: q.dateFrom,
       dateTo: q.dateTo,
     });
+  }
+
+  /** Рядок під назвою звіту на папері та в Excel: організація й період. */
+  protected override printSubtitle(): string {
+    const q = this.$root.$query;
+    const from = formatDate(q.dateFrom, dateFormat.date);
+    const to = formatDate(q.dateTo, dateFormat.date);
+    return [q.organization?.name, from && to ? `${from} — ${to}` : ""].filter(Boolean).join(" · ");
   }
 
   /**
@@ -91,30 +100,26 @@ export class TurnoverBalanceReport extends BaseUI<TurnoverBalanceRoot> {
   private renderRow(row: TurnoverBalanceRow): TemplateResult {
     return html`
       <tr>
-        <td class="cell-text">
+        <td>
           <button class="link link-hover font-medium" @click=${() => this.openCard(row)}>
             ${row.accountCode}
           </button>
         </td>
-        <td class="cell-text" title=${row.accountName}>${row.accountName}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.openingDebit)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.openingCredit)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.turnoverDebit)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.turnoverCredit)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.closingDebit)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.closingCredit)}</td>
+        <td title=${row.accountName}>${row.accountName}</td>
+        <td class="text-right tabular-nums">${amount(row.openingDebit)}</td>
+        <td class="text-right tabular-nums">${amount(row.openingCredit)}</td>
+        <td class="text-right tabular-nums">${amount(row.turnoverDebit)}</td>
+        <td class="text-right tabular-nums">${amount(row.turnoverCredit)}</td>
+        <td class="text-right tabular-nums">${amount(row.closingDebit)}</td>
+        <td class="text-right tabular-nums">${amount(row.closingCredit)}</td>
       </tr>
     `;
   }
 
-  override render() {
+  protected override renderFilters(): TemplateResult {
     const q = this.$root.$query;
-    const totals = this.$root.totals;
 
     return html`
-      <div class="p-4 flex flex-col gap-2">
-        ${this.renderNotice()}
-
         <div class="flex gap-2 items-end flex-wrap">
           <ui-picker
             .label=${t("document.organization")}
@@ -141,16 +146,17 @@ export class TurnoverBalanceReport extends BaseUI<TurnoverBalanceRoot> {
             format=${dateFormat.date}
             @value-changed=${(e: DateEvent) => { q.dateTo = e.detail.value; }}
           ></ui-date>
-
-          <button class="btn btn-primary" ?disabled=${!this.canRun} @click=${this.buildReport}>
-            ${this.running === "index" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-            ${t("accountCard.build")}
-          </button>
         </div>
+    `;
+  }
 
-        <div class="text-xs text-base-content/50">${t("turnoverBalance.drillHint")}</div>
+  protected override renderBody(): TemplateResult {
+    const totals = this.$root.totals;
 
-        <table class="table table-sm w-full table-tabular">
+    return html`
+        <div class="text-xs text-base-content/50 no-print">${t("turnoverBalance.drillHint")}</div>
+
+        <table class="table table-sm w-full">
           <thead>
             <tr>
               <th rowspan="2" class="w-20">${t("accountCard.account")}</th>
@@ -186,7 +192,6 @@ export class TurnoverBalanceReport extends BaseUI<TurnoverBalanceRoot> {
             </tr>
           </tfoot>
         </table>
-      </div>
     `;
   }
 }

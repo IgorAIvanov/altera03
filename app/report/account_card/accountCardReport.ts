@@ -2,7 +2,7 @@ import { html, type TemplateResult } from "lit";
 import { customElement } from "lit/decorators.js";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
-import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { ReportBase } from "@client/ui-kit/base/report-base.ts";
 import { dateFormat, formatDate } from "@client/shared/datetime.ts";
 import { viewRoute } from "@shared/view-route.ts";
 import { currentOrg } from "@shared/current-organization.ts";
@@ -31,8 +31,9 @@ function amount(value: number | undefined): string {
 }
 
 @customElement(tagName)
-export class AccountCardReport extends BaseUI<AccountCardRoot> {
+export class AccountCardReport extends ReportBase<AccountCardRoot> {
   protected model = "account_card";
+  protected reportTitle = "accountCard.title";
 
   constructor() {
     super(AccountCardRootSchema);
@@ -68,12 +69,12 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
     if (this.canRun) queueMicrotask(() => this.buildReport());
   }
 
-  private get canRun(): boolean {
+  protected override get canRun(): boolean {
     const q = this.$root.$query;
     return !this.busy && !!q.organizationId && !!q.accountCode;
   }
 
-  private async buildReport() {
+  protected override async buildReport() {
     const q = this.$root.$query;
     await this.loadInto("index", {
       organizationId: q.organizationId,
@@ -81,6 +82,17 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
       dateFrom: q.dateFrom,
       dateTo: q.dateTo,
     });
+  }
+
+  /** Рядок під назвою звіту на папері та в Excel: рахунок, організація, період. */
+  protected override printSubtitle(): string {
+    const q = this.$root.$query;
+    const totals = this.$root.totals;
+    const account = [totals.account || q.accountCode, totals.accountName].filter(Boolean).join(" — ");
+    const from = formatDate(q.dateFrom, dateFormat.date);
+    const to = formatDate(q.dateTo, dateFormat.date);
+    return [account, q.organization?.name, from && to ? `${from} — ${to}` : ""]
+      .filter(Boolean).join(" · ");
   }
 
   /**
@@ -134,10 +146,10 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
   private renderExtraCells(row: AccountCardRow): TemplateResult | string {
     return html`
       ${this.showCurrency ? html`
-        <td class="cell-text text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
-        <td class="cell-text text-base-content/60">${row.currencyCode ?? ""}</td>` : ""}
+        <td class="text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
+        <td class="text-base-content/60">${row.currencyCode ?? ""}</td>` : ""}
       ${this.showQuantity
-        ? html`<td class="cell-text text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
+        ? html`<td class="text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
     `;
   }
 
@@ -159,19 +171,19 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
   private renderRow(row: AccountCardRow): TemplateResult {
     return html`
       <tr>
-        <td class="cell-text whitespace-nowrap">${formatDate(row.docDate, dateFormat.date)}</td>
-        <td class="cell-text">
+        <td class="whitespace-nowrap">${formatDate(row.docDate, dateFormat.date)}</td>
+        <td>
           <button class="link link-hover" title=${row.documentTypeName}
             @click=${() => this.openMovements(row)}>
             ${row.documentTypeName} ${row.docNumber ?? ""}
           </button>
         </td>
-        <td class="cell-text">${this.renderAnalytics(row.analytics)}</td>
-        <td class="cell-text whitespace-nowrap" title=${row.corrAccountName ?? ""}>${row.corrAccount ?? ""}</td>
-        <td class="cell-text">${this.renderAnalytics(row.corrAnalytics)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.debit)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.credit)}</td>
-        <td class="cell-text text-right tabular-nums">
+        <td>${this.renderAnalytics(row.analytics)}</td>
+        <td class="whitespace-nowrap" title=${row.corrAccountName ?? ""}>${row.corrAccount ?? ""}</td>
+        <td>${this.renderAnalytics(row.corrAnalytics)}</td>
+        <td class="text-right tabular-nums">${amount(row.debit)}</td>
+        <td class="text-right tabular-nums">${amount(row.credit)}</td>
+        <td class="text-right tabular-nums">
           ${row.balanceDebit ? amount(row.balanceDebit) : ""}
           ${row.balanceCredit ? html`<span class="text-error">${amount(row.balanceCredit)}</span>` : ""}
         </td>
@@ -180,14 +192,10 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
     `;
   }
 
-  override render() {
+  protected override renderFilters(): TemplateResult {
     const q = this.$root.$query;
-    const totals = this.$root.totals;
 
     return html`
-      <div class="p-4 flex flex-col gap-2">
-        ${this.renderNotice()}
-
         <div class="flex gap-2 items-end flex-wrap">
           <ui-picker
             .label=${t("document.organization")}
@@ -227,20 +235,21 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
             format=${dateFormat.date}
             @value-changed=${(e: DateEvent) => { q.dateTo = e.detail.value; }}
           ></ui-date>
-
-          <button class="btn btn-primary" ?disabled=${!this.canRun} @click=${this.buildReport}>
-            ${this.running === "index" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-            ${t("accountCard.build")}
-          </button>
         </div>
+    `;
+  }
 
+  protected override renderBody(): TemplateResult {
+    const totals = this.$root.totals;
+
+    return html`
         ${totals.accountName
-          ? html`<div class="text-sm text-base-content/70">
+          ? html`<div class="text-sm text-base-content/70 no-print">
               ${totals.account} — ${totals.accountName}
             </div>`
           : ""}
 
-        <table class="table table-sm w-full table-tabular">
+        <table class="table table-sm w-full">
           <thead>
             <tr>
               <th class="w-24">${t("invoice.date")}</th>
@@ -259,9 +268,9 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
           </thead>
           <tbody>
             <tr class="font-medium">
-              <td class="cell-text" colspan="5">${t("accountCard.opening")}</td>
-              <td class="cell-text text-right tabular-nums">${amount(totals.openingDebit)}</td>
-              <td class="cell-text text-right tabular-nums">${amount(totals.openingCredit)}</td>
+              <td colspan="5">${t("accountCard.opening")}</td>
+              <td class="text-right tabular-nums">${amount(totals.openingDebit)}</td>
+              <td class="text-right tabular-nums">${amount(totals.openingCredit)}</td>
               <td></td>
               ${this.extraFillerCells("td")}
             </tr>
@@ -287,7 +296,6 @@ export class AccountCardReport extends BaseUI<AccountCardRoot> {
             </tr>
           </tfoot>
         </table>
-      </div>
     `;
   }
 }

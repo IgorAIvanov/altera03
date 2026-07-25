@@ -2,7 +2,7 @@ import { html, type TemplateResult } from "lit";
 import { customElement } from "lit/decorators.js";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
-import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { ReportBase } from "@client/ui-kit/base/report-base.ts";
 import { dateFormat, formatDate } from "@client/shared/datetime.ts";
 import { viewRoute } from "@shared/view-route.ts";
 import {
@@ -25,8 +25,9 @@ function amount(value: number | undefined): string {
 }
 
 @customElement(tagName)
-export class DocumentMovementsReport extends BaseUI<DocumentMovementsRoot> {
+export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
   protected model = "document_movements";
+  protected reportTitle = "documentMovements.title";
 
   constructor() {
     super(DocumentMovementsRootSchema);
@@ -34,14 +35,26 @@ export class DocumentMovementsReport extends BaseUI<DocumentMovementsRoot> {
 
   /**
    * Звіт відкривається лише переходом (з картки рахунку), тому параметри
-   * приходять готовими й вибірка йде одразу — свого тулбара в нього немає.
+   * приходять готовими й вибірка йде одразу — власних фільтрів у нього немає.
    */
   override applyParams(params: Record<string, unknown>) {
     super.applyParams(params);
-    if (this.$root.$query.documentId) queueMicrotask(() => this.load());
+    if (this.$root.$query.documentId) queueMicrotask(() => this.buildReport());
   }
 
-  private async load() {
+  protected override get canRun(): boolean {
+    return !this.busy && !!this.$root.$query.documentId;
+  }
+
+  /** Рядок під назвою звіту на папері та в Excel: сам документ і організація. */
+  protected override printSubtitle(): string {
+    const doc = this.$root.document;
+    const title = [doc.documentTypeName, doc.number].filter(Boolean).join(" ");
+    const date = formatDate(doc.docDate, dateFormat.date);
+    return [title, date, doc.organizationName].filter(Boolean).join(" · ");
+  }
+
+  protected override async buildReport() {
     const env = await this.run<{ extra?: { document?: MovementDocument } }>(
       "index",
       { documentId: this.$root.$query.documentId },
@@ -93,51 +106,58 @@ export class DocumentMovementsReport extends BaseUI<DocumentMovementsRoot> {
   private renderExtraCells(row: DocumentMovementRow): TemplateResult | string {
     return html`
       ${this.showCurrency ? html`
-        <td class="cell-text text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
-        <td class="cell-text text-base-content/60">${row.currencyCode ?? ""}</td>` : ""}
+        <td class="text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
+        <td class="text-base-content/60">${row.currencyCode ?? ""}</td>` : ""}
       ${this.showQuantity
-        ? html`<td class="cell-text text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
+        ? html`<td class="text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
     `;
   }
 
   private renderRow(row: DocumentMovementRow): TemplateResult {
     return html`
       <tr>
-        <td class="cell-text">${row.lineNo}</td>
-        <td class="cell-text whitespace-nowrap" title=${row.debitAccountName ?? ""}>${row.debitAccount ?? ""}</td>
-        <td class="cell-text">${this.renderAnalytics(row.debitAnalytics)}</td>
-        <td class="cell-text whitespace-nowrap" title=${row.creditAccountName ?? ""}>${row.creditAccount ?? ""}</td>
-        <td class="cell-text">${this.renderAnalytics(row.creditAnalytics)}</td>
-        <td class="cell-text text-right tabular-nums">${amount(row.amount)}</td>
+        <td>${row.lineNo}</td>
+        <td class="whitespace-nowrap" title=${row.debitAccountName ?? ""}>${row.debitAccount ?? ""}</td>
+        <td>${this.renderAnalytics(row.debitAnalytics)}</td>
+        <td class="whitespace-nowrap" title=${row.creditAccountName ?? ""}>${row.creditAccount ?? ""}</td>
+        <td>${this.renderAnalytics(row.creditAnalytics)}</td>
+        <td class="text-right tabular-nums">${amount(row.amount)}</td>
         ${this.renderExtraCells(row)}
-        <td class="cell-text">${row.description ?? ""}</td>
+        <td>${row.description ?? ""}</td>
       </tr>
     `;
   }
 
-  override render() {
+  /** Перехід до самого документа — дія цього звіту, тож стоїть у тулбарі. */
+  protected override renderToolbarExtra(): TemplateResult {
+    return html`
+      <button class="btn btn-sm" ?disabled=${!this.$root.document.documentId} @click=${this.openDocument}>
+        ${t("documentMovements.openDocument")}
+      </button>
+    `;
+  }
+
+  protected override renderFilters(): TemplateResult {
     const doc = this.$root.document;
 
     return html`
-      <div class="p-4 flex flex-col gap-3">
-        ${this.renderNotice()}
-
-        <div class="flex items-center gap-3 flex-wrap">
-          <button class="btn btn-primary btn-sm" ?disabled=${!doc.documentId} @click=${this.openDocument}>
-            ${t("documentMovements.openDocument")}
-          </button>
-          <div class="flex flex-col">
-            <span class="font-medium">
-              ${doc.documentTypeName} ${doc.number ?? ""}
-              ${doc.isPosted ? html`<span class="badge badge-success badge-xs ml-1"></span>` : ""}
-            </span>
-            <span class="text-xs text-base-content/60">
-              ${formatDate(doc.docDate, dateFormat.dateTime)} · ${doc.organizationName}
-            </span>
-          </div>
+        <div class="flex flex-col">
+          <span class="font-medium">
+            ${doc.documentTypeName} ${doc.number ?? ""}
+            ${doc.isPosted ? html`<span class="badge badge-success badge-xs ml-1"></span>` : ""}
+          </span>
+          <span class="text-xs text-base-content/60">
+            ${formatDate(doc.docDate, dateFormat.dateTime)} · ${doc.organizationName}
+          </span>
         </div>
+    `;
+  }
 
-        <table class="table table-sm w-full table-tabular">
+  protected override renderBody(): TemplateResult {
+    const doc = this.$root.document;
+
+    return html`
+        <table class="table table-sm w-full">
           <thead>
             <tr>
               <th class="w-10">#</th>
@@ -169,7 +189,6 @@ export class DocumentMovementsReport extends BaseUI<DocumentMovementsRoot> {
             </tr>
           </tfoot>
         </table>
-      </div>
     `;
   }
 }

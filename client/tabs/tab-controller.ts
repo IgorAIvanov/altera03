@@ -264,6 +264,26 @@ export class TabController extends LitElement {
     @media (prefers-color-scheme: dark) {
       .notice { border-color: #7d2b2b; background: #2a1717; color: #f3c9c9; }
     }
+
+    /* Друк: на папір іде тільки активна вкладка.
+       Панель на екрані — абсолютна й із власною прокруткою; лишити її такою
+       означає надрукувати рівно один екран замість усього звіту, тому на друк
+       вона стає звичайним потоковим блоком. Оболонка (шапка, меню, смуга
+       вкладок) не друкується взагалі. Рівні документа й компонента — у
+       client/ui-kit/report/print.ts (зворотних лапок тут бути не може:
+       це тіло css-шаблона). */
+    @media print {
+      :host { display: block; height: auto; }
+      .shell-chrome,
+      .tab-bar,
+      .loading-bar,
+      picker-host,
+      .notice { display: none !important; }
+      .workspace { display: block; overflow: visible; }
+      .panels { position: static; overflow: visible; background: #fff; }
+      .panel { position: static; inset: auto; overflow: visible; }
+      .panel:not(.active) { display: none !important; }
+    }
   `;
 
   @state() private tabs: Tab[] = [];
@@ -290,6 +310,10 @@ export class TabController extends LitElement {
     this.headerEl = document.createElement(shell.header);
     this.menuEl = document.createElement(shell.menu);
     this.homeTag = shell.home;
+    // Клас, а не селектор по тегу: теги оболонки приходять із застосунку
+    // (`shellTags()`), а сховати їх на друк треба тут — розкладка наша.
+    this.headerEl.classList.add("shell-chrome");
+    this.menuEl.classList.add("shell-chrome");
 
     // Збережені вкладки створюємо заглушками ще до першого рендера й одразу
     // ставимо активну — інакше на час асинхронного завантаження чанків

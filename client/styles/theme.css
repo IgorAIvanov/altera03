@@ -144,7 +144,7 @@ html, body {
   font-size: var(--default-font-size);
 }
 .table td {
-  padding: 5px 8px;
+  padding: 3px 8px;
   border: 1px solid #d9e0e6;
   line-height: 1.4;
 }
@@ -226,3 +226,45 @@ html, body {
 
 /* Загрузка */
 .loading { width: 16px; height: 16px; }
+
+/* ─── Друк ────────────────────────────────────────────────────────────────
+   Правила рівня компонента: цей лист адоптується в кожен shadow root, тож
+   `.no-print`/`.print-only` працюють усередині форм. Розкладку документа й
+   оболонки задають інші два рівні — див. `client/ui-kit/report/print.ts`.
+
+   `.print-only` за замовчуванням схований — блок «назва звіту, організація,
+   період» потрібен лише на папері: на екрані те саме видно в тулбарі. */
+.print-only { display: none; }
+.print-title { font-size: 15px; font-weight: 700; margin: 0 0 2px; }
+.print-subtitle { font-size: 12px; color: #444; margin: 0; }
+
+@media print {
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+
+  /* Фон шапки таблиці браузер за замовчуванням не друкує — без цього сітка
+     звіту на папері розсипається на однакові білі клітинки. */
+  .table th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .table th,
+  .table td {
+    padding: 2px 4px;
+    font-size: 9px;
+  }
+
+  /* Шапка повторюється на кожній сторінці (це стандартна поведінка thead,
+     але лише коли таблиця не всередині контейнера з прокруткою — його
+     розтискає рівень оболонки). Рядок не розривається між сторінками. */
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr, td, th { break-inside: avoid; }
+
+  /* Посилання (рахунок, документ, субконто) на папері — звичайний текст:
+     підкреслення й колір там означають лише зайвий шум. */
+  .link, .btn.link, button.link {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+}

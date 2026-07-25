@@ -14,6 +14,10 @@
     "./ui-kit/base/base-ui.ts": "./ui-kit/base/base-ui.ts",
     "./ui-kit/base/model-list-base.ts": "./ui-kit/base/model-list-base.ts",
     "./ui-kit/base/model-picker-base.ts": "./ui-kit/base/model-picker-base.ts",
+    "./ui-kit/base/report-base.ts": "./ui-kit/base/report-base.ts",
+    "./ui-kit/report/xlsx.ts": "./ui-kit/report/xlsx.ts",
+    "./ui-kit/report/table-model.ts": "./ui-kit/report/table-model.ts",
+    "./ui-kit/report/print.ts": "./ui-kit/report/print.ts",
     "./vite": "./vite.ts"
   },
   "license": "MIT",

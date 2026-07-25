@@ -230,6 +230,33 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 [`model-print-form`](.github/skills/model-print-form/SKILL.md); деталі —
 [`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
 
+## Звіти
+
+Екран звіту наслідує `ReportBase` (`client/ui-kit/base/report-base.ts`): підклас задає
+`reportTitle`, `buildReport()`, `renderFilters()` і `renderBody()` — закріплений тулбар
+**Оновити / Друк / Excel**, банер помилок і шапка «назва · організація · період» для
+паперу приходять з бази. Кнопки друку й експорту працюють **без опису колонок**: обидві
+беруть уже намальовану таблицю.
+
+Друк — браузером (`window.print()`), а не серверним PDF: колонки в звітах з'являються за
+наявністю даних (валюта, кількість), тож шаблон розійшовся б з екраном. Правила
+`@media print` живуть на трьох рівнях — документ (`client/ui-kit/report/print.ts`),
+оболонка (`tab-controller`: розабсолютити панель, сховати меню й вкладки), компонент
+(тема: `.no-print` / `.print-only`, компактна таблиця).
+
+Excel — справжній `.xlsx`, зібраний **у браузері** без залежностей
+(`client/ui-kit/report/xlsx.ts`: zip методом `store` + мінімальний OOXML). Дані читаються
+з DOM таблиці (`table-model.ts`), тому файл повторює екран один-в-один. Звідси контракт
+розмітки: числова комірка мусить мати `tabular-nums` (інакше сума приїде текстом), а код
+рахунку — навпаки, не мусить; `<th>`, `colspan`/`rowspan` стають шапкою й об'єднаннями
+аркуша. Класи `table-tabular`/`cell-text` у звіті не використовуються — це контракт
+табличної частини документа, він обнуляє вертикальні відступи рядків.
+
+Деталі — [`docs/report-screen.md`](docs/report-screen.md); skill —
+[`model-report-form`](.github/skills/model-report-form/SKILL.md); еталони —
+`app/report/turnover_balance` (фільтри, дворівнева шапка) і `app/report/document_movements`
+(звіт без власних фільтрів).
+
 ## Доступ (користувачі, групи, права)
 
 У ядрі (`server/sql/access/`, пакет `@core/access`): `app.users`, `app.auth_session`,
