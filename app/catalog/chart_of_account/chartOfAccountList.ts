@@ -30,6 +30,8 @@ export class ChartOfAccountList extends ModelListBase<ChartOfAccountRow> {
     {
       key: "accountType", title: "chartOfAccount.accountType", width: "9rem", muted: true,
       render: (row) => this.t(ACCOUNT_TYPE_KEY[row.accountType] ?? row.accountType),
+      // Без цього в Excel поїхав би код виду рахунку, а не його назва.
+      exportText: (row) => this.t(ACCOUNT_TYPE_KEY[row.accountType] ?? row.accountType),
     },
     {
       key: "_actions", title: "", width: "3rem", align: "center",

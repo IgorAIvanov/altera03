@@ -20,6 +20,8 @@
   "common.pick": "Підбір",
   "common.print": "Друк",
   "common.exportExcel": "Excel",
+  "common.exportTruncated": "Вивантажено перші {count} рядків",
+  "common.yes": "Так",
   "common.loading": "Завантаження...",
   "common.noOpenTabs": "Немає відкритих вкладок",
   "blob.attachments": "Вкладення",

@@ -7,6 +7,8 @@ import { tw } from "@client/shared/styles.ts";
 import { formatDate } from "@client/shared/datetime.ts";
 import { BaseUI } from "./base-ui.ts";
 import { QuerySchema, TotalsSchema, type Query, type Totals } from "@client/shared/schema.ts";
+import { buildRowsSheet, type ExportColumn } from "../report/rows-sheet.ts";
+import { buildXlsx, downloadFile, safeFileName, XLSX_MIME } from "../report/xlsx.ts";
 
 export type SortDir = "asc" | "desc";
 
@@ -53,6 +55,17 @@ export interface ListColumn<Row> {
   sortable?: boolean;
   /** Нативний tooltip комірки (атрибут title). */
   tooltip?: (row: Row) => string;
+  /**
+   * Текст комірки для вивантаження в Excel. Потрібен колонкам, де `render`
+   * малює не текст (посилання, бейдж, вкладений об'єкт): у файл піде рядок,
+   * а не розмітка. Без нього береться `row[key]`, якщо це скаляр.
+   */
+  exportText?: (row: Row) => string;
+  /**
+   * `false` — колонку не вивантажувати. Колонка без заголовка (кнопки дій) і
+   * так не потрапляє у файл: заголовок — ознака того, що колонка з даними.
+   */
+  export?: boolean;
   /**
    * Кастомний рендер комірки. За замовчуванням — row[key].
    * Сюди можна повернути кнопки, бейджі, дворядковий вміст тощо.
@@ -109,6 +122,7 @@ const icon = {
   open: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   delete: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
   refresh: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
+  excel: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="19"/><line x1="15" y1="13" x2="9" y2="19"/></svg>`,
   // Розмір і прозорість — атрибутами SVG, як у решти іконок вище: inline-SVG у
   // shadow DOM не має залежати від того, чи Tailwind згенерував `h-4`/`opacity-50`.
   search: html`<svg width="14" height="14" opacity="0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
@@ -143,10 +157,19 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   protected defaultSortBy = "";
   protected defaultSortDir: SortDir = "asc";
   protected pageSizeOptions = [10, 20, 50, 100];
+  /**
+   * Стеля вивантаження в Excel. Не захист бази (сервер віддасть скільки
+   * попросили), а захист браузера: файл збирається в пам'яті вкладки. Що не
+   * влізло — про це чесно повідомляється банером, а не мовчазно зникає.
+   */
+  protected exportRowLimit = 10_000;
 
   // ── Стан ──────────────────────────────────────────────────────────────────
   /** Виділений рядок — клієнтський транзиент, не частина data-контракту. */
   @state() protected selectedId = "";
+
+  /** Збирається файл вивантаження. Окремо від `running`: запит той самий (`list`). */
+  @state() private exporting = false;
 
   // Проєкції старих імен полів на службовий `$query` та дані `$root`.
   // Логіка/рендер нижче лишаються без змін; читання трекає SignalWatcher,
@@ -233,6 +256,81 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   /** Перезавантаження з першої сторінки (виклик з підкласу при зміні фільтрів). */
   protected reload() { this.page = 1; this.load(); }
 
+  // ── Вивантаження в Excel ────────────────────────────────────────────────────
+
+  /**
+   * Колонки, що йдуть у файл. Колонка без заголовка — це кнопки дій, у файлі
+   * їй немає чого робити; `export: false` прибирає колонку явно.
+   */
+  private exportColumns(): ExportColumn<Row>[] {
+    return this.columns
+      .filter((col) => col.export !== false && t(col.title).trim() !== "")
+      .map((col) => ({
+        title: t(col.title),
+        align: col.align,
+        value: (row: Row) => this.exportValue(row, col),
+      }));
+  }
+
+  /** Значення комірки для файлу — той самий вміст, що на екрані, але текстом. */
+  private exportValue(row: Row, col: ListColumn<Row>): string | number {
+    if (col.exportText) return col.exportText(row);
+
+    const value = (row as Record<string, unknown>)[col.key];
+    if (value == null) return "";
+    if (col.format) return formatDate(value as string, col.format) || String(value);
+    if (typeof value === "boolean") return value ? t("common.yes") : "";
+    if (typeof value === "number" || typeof value === "string") return value;
+    // Об'єкт (напр. `counterparty`) без exportText у файл не поміститься —
+    // краще порожньо, ніж "[object Object]".
+    return "";
+  }
+
+  /** Ім'я аркуша й файлу: назва моделі за конвенцією `<model>.titleMany`. */
+  private exportTitle(): string {
+    const key = `${this.model}.titleMany`;
+    const title = t(key);
+    return title === key ? this.model : title;
+  }
+
+  /**
+   * Вивантажити список у .xlsx. Іде **весь відбір**, а не поточна сторінка:
+   * повторюється та сама команда `list` з тими самими фільтрами й `pageSize` на
+   * весь результат. Екран при цьому не чіпається — відповідь у `$root` не
+   * зливається, інакше після вивантаження в таблиці опинилися б усі рядки.
+   */
+  protected async exportExcel() {
+    this.exporting = true;
+    try {
+      const limit = Math.min(Math.max(this.total, this.rows.length), this.exportRowLimit);
+      const env = await this.run<Partial<ListRoot<Row>>>(this.listCommand, {
+        ...this.$root.$query,
+        ...this.extraPayload(),
+        page: 1,
+        pageSize: limit,
+      });
+
+      const rows = (env.ok && env.data?.rows) || [];
+      if (rows.length === 0) return;
+
+      const title = this.exportTitle();
+      const sheet = buildRowsSheet(this.exportColumns(), rows as Row[]);
+      downloadFile(buildXlsx(title, sheet), `${safeFileName(title)}.xlsx`, XLSX_MIME);
+
+      // Скільки рядків справді у файлі, стільки й кажемо: це покриває і власну
+      // стелю, і випадок, коли `list` моделі сам обмежує сторінку. Ставиться
+      // ПІСЛЯ run() — той перезаписує `messages` відповіддю сервера.
+      if (rows.length < this.total) {
+        this.messages = [{
+          type: "warn",
+          text: t("common.exportTruncated").replace("{count}", String(rows.length)),
+        }];
+      }
+    } finally {
+      this.exporting = false;
+    }
+  }
+
   protected openEdit(id: string | null) {
     bus.emit({ type: "tab.open", route: this.editRoute, id });
   }
@@ -302,6 +400,13 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
             @click=${this.deleteSelected}>
             ${icon.delete} ${t("common.delete")}
           </button>
+          <button class="btn btn-sm" ?disabled=${this.exporting || this.total === 0}
+            @click=${this.exportExcel}>
+            ${this.exporting
+              ? html`<span class="loading loading-spinner loading-xs"></span>`
+              : icon.excel}
+            ${t("common.exportExcel")}
+          </button>
           ${this.renderToolbarExtra()}
           <div class="flex-1"></div>
           <label class="input input-sm flex items-center gap-2">
@@ -313,6 +418,10 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
             ${icon.refresh} ${t("common.refresh")}
           </button>
         </div>
+
+        <!-- Помилки команд і попередження (напр. обрізане вивантаження).
+             Без цього банера відмова сервера в списку не видно взагалі. -->
+        <div class="px-2 empty:hidden">${this.renderNotice()}</div>
 
         ${this.renderHeaderArea()}
 

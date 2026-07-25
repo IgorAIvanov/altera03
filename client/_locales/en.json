@@ -17,6 +17,8 @@
   "common.pick": "Pick",
   "common.print": "Print",
   "common.exportExcel": "Excel",
+  "common.exportTruncated": "Exported the first {count} rows",
+  "common.yes": "Yes",
   "common.loading": "Loading...",
   "common.open": "Open",
   "common.search": "Search",

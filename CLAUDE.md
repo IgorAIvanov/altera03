@@ -204,7 +204,7 @@ Picker-поля використовують компонент `<ui-picker url=
 Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); еталони —
 `app/catalog/bank/bankEdit.ts` (проста форма), `app/document/invoice/invoiceEdit.ts` (з табличною частиною).
 
-**Форма списку** — наслідуй `ModelListBase` (`client/ui-kit/base/model-list-base.ts`): підклас задає лише `model`, `editRoute` та `columns`. Тулбар, серверне сортування, пагінація, пошук, вибір рядка — у базі. Документація для розробника — [`docs/ui-list-form.md`](docs/ui-list-form.md); skill для агента — [`model-list-form`](.github/skills/model-list-form/SKILL.md); еталон — `app/catalog/bank/bankList.ts`.
+**Форма списку** — наслідуй `ModelListBase` (`client/ui-kit/base/model-list-base.ts`): підклас задає лише `model`, `editRoute` та `columns`. Тулбар, серверне сортування, пагінація, пошук, вибір рядка — у базі. Кнопка **Excel** теж у базі: вивантажується **весь відбір** (та сама команда `list` з `pageSize` на весь результат, стеля `exportRowLimit` = 10 000), лист будується з оголошених колонок. Колонка без заголовка (кнопки дій) у файл не йде; колонці, чий `render` малює не сире поле (вкладений об'єкт, перекладений код), потрібен `exportText`. Документація для розробника — [`docs/ui-list-form.md`](docs/ui-list-form.md); skill для агента — [`model-list-form`](.github/skills/model-list-form/SKILL.md); еталон — `app/catalog/bank/bankList.ts`.
 
 **Таблична частина документа** — контракт `.table-tabular` / `.cell-text` / `.cell-control` у `client/styles/theme.css`; контроли підключаються атрибутом `cell` (`<ui-decimal cell>`, `<ui-picker cell>`). Skill — [`document-tabular-section`](.github/skills/document-tabular-section/SKILL.md); еталон — `app/document/invoice/invoiceEdit.ts`.
 

@@ -17,6 +17,7 @@
     "./ui-kit/base/report-base.ts": "./ui-kit/base/report-base.ts",
     "./ui-kit/report/xlsx.ts": "./ui-kit/report/xlsx.ts",
     "./ui-kit/report/table-model.ts": "./ui-kit/report/table-model.ts",
+    "./ui-kit/report/rows-sheet.ts": "./ui-kit/report/rows-sheet.ts",
     "./ui-kit/report/print.ts": "./ui-kit/report/print.ts",
     "./vite": "./vite.ts"
   },

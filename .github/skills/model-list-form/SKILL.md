@@ -73,8 +73,28 @@ That is the whole file. Do not add `render()`, `static styles`, load logic, or p
 | `sortable` | `true` → header is clickable, toggles asc/desc on the server.      |
 | `tooltip`  | `(row) => string` — native cell tooltip (the `title` attribute).   |
 | `render`   | `(row) => TemplateResult \| string` — custom cell (buttons, badges, two-line, formatted dates, picker labels). |
+| `exportText` | `(row) => string` — cell text for the Excel export. Needed whenever `render` shows something other than the raw field. |
+| `export`   | `false` → keep the column out of the export. A column with no title (the actions column) is skipped anyway. |
 
 `sortable: true` requires the SQL `list` function to accept that `key` in its `sortBy` whitelist — see [db-function-contract](../db-function-contract/SKILL.md).
+
+## Excel export
+
+The toolbar has an **Excel** button out of the box. It re-runs the same `list`
+command with the same filters and `pageSize` covering the whole result, then
+builds the `.xlsx` in the browser from the declared columns — the screen is left
+untouched (the response is not merged into `$root`).
+
+What this means when declaring columns:
+
+- **a column whose `render` returns anything but the raw field needs `exportText`** —
+  a nested object (`counterparty.name`), a translated code, a badge. Without it
+  the file gets `row[key]`, and for an object that is an empty cell;
+- numbers stay numbers; a numeric-looking **string** is converted only in a
+  column with `align: "right"`, so account codes keep their leading zeros;
+- `boolean` without `exportText` becomes «Так» / empty;
+- `exportRowLimit` (default 10 000) caps the file; the banner reports how many
+  rows actually made it.
 
 ## Optional overrides
 

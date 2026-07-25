@@ -23,6 +23,8 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
       overflow: "ellipsis",
       render: (r) => r.counterparty?.name ?? "",
       tooltip: (r) => r.counterparty?.name ?? "",
+      // Колонка — вкладений об'єкт; без цього у файл пішло б порожньо.
+      exportText: (r) => r.counterparty?.name ?? "",
     },
     { key: "total", title: "invoice.total", width: "8rem", align: "right" },
     {
