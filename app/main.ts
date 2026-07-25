@@ -9,7 +9,9 @@ import { registerShell } from "@client/shell/shell-registry.ts";
 import { initDataService } from "@client/data/data-service.ts";
 import { ServerUnavailableError } from "@client/data/api.ts";
 import { restoreSession } from "@client/auth/session.ts";
+import { dropLegacyKey } from "@client/shared/user-storage.ts";
 import { setLocale, type Locale } from "@client/locale.ts";
+import { hydrateCurrentOrg } from "@shared/current-organization.ts";
 
 // Компоненти оболонки застосунку — визначають кастомні елементи (@customElement).
 import "./header/app-header.ts";
@@ -19,6 +21,13 @@ import "./login/app-login.ts";
 
 registerShell({ header: "app-header", menu: "app-menu", home: "home-tab", login: "app-login" });
 initDataService();
+
+// Значення, збережені до поділу сховища за користувачем. Не переносимо їх на
+// того, хто увійде першим: невідомо, чий це стан, а привласнити чуже — рівно та
+// вада, заради якої поділ і робився. Рядки можна прибрати, коли всі машини
+// відкриють застосунок хоча б раз.
+dropLegacyKey("altera.open-tabs");
+dropLegacyKey("altera.current-organization");
 
 const savedLocale = (localStorage.getItem("locale") ?? "uk") as Locale;
 await setLocale(savedLocale);
@@ -34,6 +43,9 @@ async function boot(): Promise<void> {
   if (!root) return;
 
   if (await restoreSession()) {
+    // Порядок важливий: обидва читають сховище за ключем із id користувача,
+    // тому мають іти після відновлення сесії й до підняття оболонки.
+    hydrateCurrentOrg();
     await import("@client/tabs/tab-controller.ts");
     root.replaceChildren(document.createElement("tab-controller"));
     return;

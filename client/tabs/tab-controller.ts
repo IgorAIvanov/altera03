@@ -6,9 +6,11 @@ import { t } from "../locale.ts";
 import { shellTags } from "../shell/shell-registry.ts";
 import "@client/ui-kit/picker-host.ts";
 import { apiFetch, readEnvelope, ServerUnavailableError } from "../data/api.ts";
+import { readUserScoped, writeUserScoped } from "../shared/user-storage.ts";
 
 const MAX_TABS = 30;
 const HOME_TAB_ID = "home";
+/** База ключа: справжній ключ дописує id користувача (див. user-storage.ts). */
 const TAB_STORAGE_KEY = "altera.open-tabs";
 /** Скільки тримати повідомлення про невдале відкриття, мс. */
 const NOTICE_TIMEOUT_MS = 8000;
@@ -52,34 +54,27 @@ interface StoredTabs {
 
 function loadStoredTabs(): StoredTabs {
   const empty: StoredTabs = { tabs: [], active: null };
-  try {
-    const raw = globalThis.localStorage?.getItem(TAB_STORAGE_KEY);
-    if (!raw) return empty;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.tabs)) return empty;
-    const tabs = parsed.tabs.filter((v: unknown): v is StoredTab =>
-      !!v && typeof (v as StoredTab).route === "string"
-    ).map((v: StoredTab) => ({
-      route: v.route,
-      modelId: v.modelId ?? null,
-      lastUsedAt: typeof v.lastUsedAt === "number" ? v.lastUsedAt : undefined,
-    }));
-    const rawActive = parsed.active;
-    const active = rawActive && typeof rawActive.route === "string"
-      ? { route: rawActive.route, modelId: rawActive.modelId ?? null }
-      : null;
-    return { tabs, active };
-  } catch {
-    return empty;
-  }
+  // Читання безпечне за часом: `tab-controller` монтується вже після
+  // `restoreSession()` (див. app/main.ts), тож користувач тут завжди відомий.
+  const parsed = readUserScoped(TAB_STORAGE_KEY) as StoredTabs | null;
+  if (!parsed || !Array.isArray(parsed.tabs)) return empty;
+
+  const tabs = parsed.tabs.filter((v: unknown): v is StoredTab =>
+    !!v && typeof (v as StoredTab).route === "string"
+  ).map((v: StoredTab) => ({
+    route: v.route,
+    modelId: v.modelId ?? null,
+    lastUsedAt: typeof v.lastUsedAt === "number" ? v.lastUsedAt : undefined,
+  }));
+  const rawActive = parsed.active;
+  const active = rawActive && typeof rawActive.route === "string"
+    ? { route: rawActive.route, modelId: rawActive.modelId ?? null }
+    : null;
+  return { tabs, active };
 }
 
 function storeTabs(state: StoredTabs) {
-  try {
-    globalThis.localStorage?.setItem(TAB_STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // приватний режим / переповнене сховище — не критично для роботи
-  }
+  writeUserScoped(TAB_STORAGE_KEY, state);
 }
 
 /**

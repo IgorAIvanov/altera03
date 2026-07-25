@@ -1,5 +1,10 @@
 import { HttpException, type ExceptionFilter } from "@danet/core";
-import { AuthenticationRequiredError, jsonResponse } from "./http.ts";
+import {
+  AuthenticationRequiredError,
+  jsonResponse,
+  SESSION_CHANGED_HEADER,
+  SessionChangedError,
+} from "./http.ts";
 import { err } from "./response.ts";
 import { DATABASE_UNAVAILABLE_MESSAGE, isDatabaseUnavailable } from "../database/database-error.ts";
 import { ModelCommandError } from "../modules/model-runtime/model-runtime.errors.ts";
@@ -31,6 +36,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof AuthenticationRequiredError) {
       return jsonResponse(err(exception.message), exception.status);
+    }
+
+    if (exception instanceof SessionChangedError) {
+      return jsonResponse(err(exception.message), exception.status, {
+        [SESSION_CHANGED_HEADER]: "1",
+      });
     }
 
     // Рантайм моделей ловить їх сам, але команду може викликати й агент —

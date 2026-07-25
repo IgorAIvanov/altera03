@@ -1,5 +1,11 @@
 import { Injectable } from "@danet/core";
-import { AuthenticationRequiredError, type HttpRequest, resolveSessionToken } from "./http.ts";
+import {
+  AuthenticationRequiredError,
+  type HttpRequest,
+  resolveSessionToken,
+  SESSION_USER_HEADER,
+  SessionChangedError,
+} from "./http.ts";
 import { getServerConfig } from "../config/server-config.ts";
 import { DatabaseService } from "../database/database.service.ts";
 
@@ -51,15 +57,41 @@ export class RequestUserService {
   async resolveAuthContext(request: HttpRequest, _payload?: unknown): Promise<RequestAuthContext> {
     const session = await this.resolveSession(request);
     if (session) {
-      return session;
+      return this.assertClaimedUser(request, session);
     }
 
     const devBypassUserId = await this.resolveDevBypassUserId(request);
     if (devBypassUserId) {
-      return { userId: devBypassUserId, sessionId: "" };
+      return this.assertClaimedUser(request, { userId: devBypassUserId, sessionId: "" });
     }
 
     throw new AuthenticationRequiredError();
+  }
+
+  /**
+   * Звірка «від чийого імені клієнт вважає, що діє» з тим, чия cookie приїхала.
+   *
+   * Заголовок необов'язковий: без нього перевірки немає. Так і має бути —
+   * `POST /api/auth/login` надсилається ще до того, як користувач відомий, а
+   * скрипти з `Authorization: Bearer` носять один токен і плутати їм нічого.
+   *
+   * Перевіряються обидві гілки, включно з dev-bypass: інакше режим, у якому
+   * розробник і працює щодня, лишився б єдиним, де ця дірка відкрита.
+   */
+  private assertClaimedUser(
+    request: HttpRequest,
+    context: RequestAuthContext,
+  ): RequestAuthContext {
+    const claimed = request.header(SESSION_USER_HEADER)?.trim();
+    if (claimed && claimed !== context.userId) {
+      console.warn(
+        `⚠️ Запит від імені користувача ${claimed}, але сесія належить ${context.userId}. ` +
+          `Найімовірніше — вхід під іншим користувачем у сусідній вкладці.`,
+      );
+      throw new SessionChangedError();
+    }
+
+    return context;
   }
 
   /**

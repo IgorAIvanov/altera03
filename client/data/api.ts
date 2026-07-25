@@ -21,9 +21,11 @@
  */
 import { showServerUnavailable } from "../shell/server-unavailable.ts";
 
-/** Той самий заголовок, що перевіряє сервер (server/common/http.ts). */
+/** Ті самі заголовки, що перевіряє сервер (server/common/http.ts). */
 const CSRF_HEADER = "x-requested-with";
 const CSRF_VALUE = "altera";
+const SESSION_USER_HEADER = "x-session-user";
+const SESSION_CHANGED_HEADER = "x-session-changed";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -63,6 +65,20 @@ export interface ApiEnvelope<TItem = unknown, TRow = unknown> {
   messages: string[];
 }
 
+/**
+ * Сесію змінили в іншій вкладці: cookie вже належить іншому користувачеві.
+ *
+ * Не помилка запиту — запит був правильний, застарілим виявився наш власний
+ * стан. Сервер його відхилив ДО виконання, тож нічого не сталося; лишається
+ * перечитати сесію, і це робить перезавантаження.
+ */
+export class SessionChangedError extends Error {
+  constructor(message = "Сесію змінено в іншій вкладці") {
+    super(message);
+    this.name = "SessionChangedError";
+  }
+}
+
 type SessionLostHandler = () => void;
 
 let onSessionLost: SessionLostHandler = () => {};
@@ -70,6 +86,19 @@ let onSessionLost: SessionLostHandler = () => {};
 /** Кого сповістити, коли сесію продовжити не вдалося. */
 export function setSessionLostHandler(handler: SessionLostHandler): void {
   onSessionLost = handler;
+}
+
+/**
+ * Кого клієнт вважає поточним користувачем — заявка, яку сервер звіряє з cookie.
+ *
+ * Значення кладе сюди `client/auth/session.ts` при кожній зміні сесії. Саме так,
+ * зворотним викликом, а не імпортом `currentUser()`: цей модуль імпортує сам
+ * `session.ts`, і прямий імпорт назад замкнув би цикл.
+ */
+let claimedUserId: string | null = null;
+
+export function setClaimedUserId(userId: string | null): void {
+  claimedUserId = userId;
 }
 
 /** Чи це запит самої авторизації — їх повторювати не можна, буде рекурсія. */
@@ -83,6 +112,12 @@ function withDefaults(init: RequestInit): RequestInit {
 
   if (!SAFE_METHODS.has(method)) {
     headers.set(CSRF_HEADER, CSRF_VALUE);
+  }
+
+  // Читання теж підписуємо: побачити чужі дані під своїм іменем не краще, ніж
+  // записати свої під чужим. До входу заявляти нічого — заголовка просто немає.
+  if (claimedUserId) {
+    headers.set(SESSION_USER_HEADER, claimedUserId);
   }
 
   return { ...init, headers, credentials: "same-origin" };
@@ -136,6 +171,17 @@ function refreshSession(): Promise<boolean> {
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const response = await send(path, withDefaults(init));
+
+  // Перевіряємо раніше за 401: повторювати запит немає сенсу — він відхилений
+  // не через мертву сесію, а через живу, але чужу. `onSessionLost` скидає стан і
+  // перезавантажує сторінку, після чого застосунок підніметься під тим
+  // користувачем, який справді в cookie.
+  if (response.headers.get(SESSION_CHANGED_HEADER)) {
+    console.warn("[api] сесію змінено в іншій вкладці — перезавантажуємо сторінку");
+    onSessionLost();
+    throw new SessionChangedError();
+  }
+
   if (response.status !== 401 || isAuthRequest(path)) {
     return response;
   }

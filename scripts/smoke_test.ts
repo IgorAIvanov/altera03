@@ -119,6 +119,39 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       assertEquals(body.messages.length > 0, true);
     });
 
+    // Вхід під іншим користувачем у сусідній вкладці міняє cookie одразу для
+    // всього походження, а стара сторінка про це не знає. Без цієї перевірки її
+    // запит виконався б від імені нового користувача — і документ дістав би
+    // автором того, кого на екрані ніхто не бачив. Проба стереже саме те, що
+    // відмова приходить ДО виконання команди.
+    await t.step("сесія: заявлений користувач не збігається з сесією — 409", async () => {
+      const { status, body, headers } = await client.json<Envelope>("/api/model/bank/list", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-requested-with": "altera",
+          "x-session-user": MISSING_USER_ID,
+        },
+        body: "{}",
+      });
+
+      assertEquals(status, 409);
+      assertEquals(body.ok, false);
+      // Позначка потрібна клієнтові: за самим 409 звичайний конфлікт даних від
+      // зміни сесії не відрізнити.
+      assertEquals(headers.get("x-session-changed"), "1");
+    });
+
+    // Заявка необов'язкова: `POST /api/auth/login` іде ще до того, як користувач
+    // відомий, а скрипти з `Authorization: Bearer` носять один токен і плутати
+    // їм нічого. Без заголовка поведінка має лишитися рівно тією самою.
+    await t.step("сесія: без заявки перевірки немає", async () => {
+      const { status, body } = await client.model("bank", "list");
+
+      assertEquals(status, 200);
+      assertEquals(body.ok, true);
+    });
+
     // Модель, для якої немає SQL-функції: PostgreSQL кидає 42883, і саме це
     // раніше долітало до форми сирим текстом (`function app.…_list(bigint,
     // jsonb) does not exist`). Проба стереже переклад, а не сам факт відмови.

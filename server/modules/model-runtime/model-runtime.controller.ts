@@ -1,5 +1,11 @@
 import { Controller, Param, Post, Req } from "@danet/core";
-import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../../common/http.ts";
+import {
+  AuthenticationRequiredError,
+  type HttpRequest,
+  jsonResponse,
+  SESSION_CHANGED_HEADER,
+  SessionChangedError,
+} from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
 import {
   DATABASE_UNAVAILABLE_MESSAGE,
@@ -47,6 +53,14 @@ export class ModelRuntimeController {
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
         return jsonResponse(modelError(error.message), 401);
+      }
+
+      // Раніше за все інше: команда до бази ще не дійшла, і саме в цьому суть —
+      // запис не має піти під користувачем, якого на екрані ніхто не бачив.
+      if (error instanceof SessionChangedError) {
+        return jsonResponse(modelError(error.message), error.status, {
+          [SESSION_CHANGED_HEADER]: "1",
+        });
       }
 
       // Недоступна БД — не помилка команди, і повідомлення драйвера

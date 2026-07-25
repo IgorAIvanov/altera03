@@ -8,7 +8,7 @@
  * інакше кожна кнопка ходила б на сервер.
  */
 import { Signal } from "signal-polyfill";
-import { apiFetch, readEnvelope, setSessionLostHandler } from "../data/api.ts";
+import { apiFetch, readEnvelope, setClaimedUserId, setSessionLostHandler } from "../data/api.ts";
 
 export interface SessionUser {
   id: string;
@@ -75,6 +75,9 @@ async function loadPermissions(): Promise<void> {
 function applySession(item: { user: SessionUser; session: SessionInfo } | null): boolean {
   _user.set(item?.user ?? null);
   _session.set(item?.session ?? null);
+  // Транспорт має заявляти серверу, від чийого імені ми діємо. Єдина точка, де
+  // сесія міняється, — ця, тож і заявка оновлюється тільки тут.
+  setClaimedUserId(item?.user.id ?? null);
   if (!item) permissions = new Set();
   return !!item;
 }

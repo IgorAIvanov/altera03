@@ -1,6 +1,8 @@
 import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
+import { bus } from "@client/bus/bus.ts";
+import { currentUser, logout } from "@client/auth/session.ts";
 import { t } from "@client/locale.ts";
 import { currentOrg, setCurrentOrg } from "@shared/current-organization.ts";
 
@@ -81,6 +83,13 @@ export class AppHeader extends SignalWatcher(LitElement) {
       font-size: 12px;
       opacity: 0.7;
       white-space: nowrap;
+    }
+    /* Відмова — не те саме, що порожній довідник, і виглядати однаково вони не мають. */
+    .org-menu-empty.error {
+      color: #ffd0d0;
+      opacity: 1;
+      white-space: normal;
+      max-width: 260px;
     }
 
     .org-menu-item {
@@ -203,11 +212,34 @@ export class AppHeader extends SignalWatcher(LitElement) {
   @state() private open = false;
   @state() private orgOpen = false;
   @state() private orgs: Array<{ id: string; name: string }> = [];
+  /** Чому список порожній. Порожній рядок — причини немає, справді нічого немає. */
+  @state() private orgsError = "";
 
-  // TODO: получать из шины / сервера
   private appName = "Altera ERP";
-  private userName = "Адміністратор";
-  private userRole = "Системний адміністратор";
+  /** Вихід уже почався: другий клік нічого не додасть, крім другого запиту. */
+  @state() private loggingOut = false;
+
+  /**
+   * Хто увійшов — із сесії, а не з константи. Читання сигналу, тож
+   * `SignalWatcher` перемалює шапку, щойно користувач зміниться.
+   */
+  private get userName(): string {
+    const user = currentUser();
+    if (!user) return "";
+    return user.fullName.trim() || user.login;
+  }
+
+  /**
+   * Підпис під іменем — логін.
+   *
+   * Ролі тут немає навмисно: сесія її не несе. Права в цій системі — це трійки
+   * «група → модель → дія» (`app.access_effective`), і звести їх до одного слова
+   * без втрати сенсу не можна. Показувати назви груп теж можна, але це окремий
+   * запит і окреме рішення; логін принаймні не бреше.
+   */
+  private get userSubtitle(): string {
+    return currentUser()?.login ?? "";
+  }
 
   private iconUser() {
     return svg`<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -252,7 +284,9 @@ export class AppHeader extends SignalWatcher(LitElement) {
   }
 
   private initials(): string {
-    return this.userName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+    const words = this.userName.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return "?";
+    return words.map(w => w[0]).join("").slice(0, 2).toUpperCase();
   }
 
   /** Відкрити/закрити список організацій; при відкритті — перечитати перелік. */
@@ -261,21 +295,39 @@ export class AppHeader extends SignalWatcher(LitElement) {
     if (this.orgOpen) void this.loadOrgs();
   }
 
-  /** Перелік організацій для меню — через lookup довідника. */
+  /**
+   * Перелік організацій для меню — через lookup довідника.
+   *
+   * Обов'язково шиною, а не власним `fetch`. Раніше тут стояв голий `fetch`, і
+   * після переходу на httpOnly-cookie він перестав проходити авторизацію:
+   * заголовок `X-Requested-With`, без якого сервер відкидає POST із cookie
+   * (захист від CSRF), ставить лише `apiFetch`. Запит повертав 401, гілка
+   * `data?.data?.rows ?? []` мовчки давала порожній масив — і список організацій
+   * виглядав просто порожнім, без жодної ознаки відмови.
+   */
   private async loadOrgs() {
+    this.orgsError = "";
     try {
-      const res = await fetch("/api/model/organization/lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 100 }),
+      // `pageSize`, а не `limit`: саме це ім'я читає `app.organization_lookup`.
+      // З `limit` payload мовчки ігнорувався, і меню обрізалося на десятій
+      // організації — при двох наявних це було непомітно.
+      const envelope = await bus.request("data.load", {
+        model: "organization",
+        command: "lookup",
+        payload: { pageSize: 100 },
+      }) as { ok?: boolean; data?: { rows?: unknown[] }; messages?: unknown[] } | undefined;
+
+      const rows = envelope?.data?.rows ?? [];
+      this.orgs = rows.map((row) => {
+        const record = row as Record<string, unknown>;
+        return { id: String(record.id), name: String(record.name) };
       });
-      const data = await res.json();
-      const rows = data?.data?.rows ?? data?.rows ?? [];
-      this.orgs = Array.isArray(rows)
-        ? rows.map((r: Record<string, unknown>) => ({ id: String(r.id), name: String(r.name) }))
-        : [];
     } catch (e) {
+      // Тепер помилка видно: data-service кидає повідомлення сервера, і ховати
+      // його за порожнім списком означало б повторити ту саму ваду.
       console.error("[app-header] не вдалося завантажити організації:", e);
+      this.orgs = [];
+      this.orgsError = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -284,10 +336,24 @@ export class AppHeader extends SignalWatcher(LitElement) {
     this.orgOpen = false;
   }
 
-  private handleLogout() {
+  private async handleLogout() {
+    if (this.loggingOut) return;
+    this.loggingOut = true;
     this.open = false;
-    // TODO: bus.emit logout
-    console.log("logout");
+
+    try {
+      await logout();
+    } finally {
+      // Перезавантаження, а не локальне скидання стану: так гарантовано зникає
+      // все, що встигло намалюватися для попереднього користувача — відкриті
+      // вкладки з його даними в тому числі. Той самий підхід, що й у
+      // `setSessionLostHandler` (client/auth/session.ts).
+      //
+      // У `finally`, бо `logout()` і сам не кидає марно: сесію він скидає
+      // локально навіть тоді, коли запит до сервера не пройшов, і лишати
+      // користувача в напівстані через мережевий збій не можна.
+      globalThis.location.reload();
+    }
   }
 
   override render() {
@@ -310,7 +376,9 @@ export class AppHeader extends SignalWatcher(LitElement) {
             <div class="overlay" @click=${() => this.orgOpen = false}></div>
             <div class="org-menu">
               ${this.orgs.length === 0
-                ? html`<div class="org-menu-empty">${t("common.noData")}</div>`
+                ? html`<div class="org-menu-empty ${this.orgsError ? "error" : ""}">
+                    ${this.orgsError || t("common.noData")}
+                  </div>`
                 : this.orgs.map(o => html`
                   <div class="org-menu-item ${o.id === org?.id ? "active" : ""}"
                     @click=${() => this.selectOrg(o)}>
@@ -334,7 +402,7 @@ export class AppHeader extends SignalWatcher(LitElement) {
         <div class="dropdown">
           <div class="dropdown-header">
             <strong>${this.userName}</strong>
-            ${this.userRole}
+            ${this.userSubtitle}
           </div>
           <div class="dropdown-item" @click=${() => this.open = false}>
             ${this.iconSettings()} Налаштування профілю
@@ -344,7 +412,7 @@ export class AppHeader extends SignalWatcher(LitElement) {
           </div>
           <div class="dropdown-divider"></div>
           <div class="dropdown-item danger" @click=${this.handleLogout}>
-            ${this.iconLogout()} Вийти
+            ${this.iconLogout()} ${this.loggingOut ? "Вихід…" : "Вийти"}
           </div>
         </div>
       ` : ""}
