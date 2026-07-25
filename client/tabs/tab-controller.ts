@@ -7,7 +7,7 @@ import { shellTags } from "../shell/shell-registry.ts";
 import "@client/ui-kit/picker-host.ts";
 import { apiFetch } from "../data/api.ts";
 
-const MAX_TABS = 10;
+const MAX_TABS = 30;
 const HOME_TAB_ID = "home";
 const TAB_STORAGE_KEY = "altera.open-tabs";
 
@@ -32,6 +32,14 @@ interface Tab {
 interface StoredTab {
   route: string;
   modelId: string | null;
+  /**
+   * Коли вкладкою користувалися останній раз. Зберігається, щоб після
+   * перезавантаження сторінки LRU не починав з нуля: інакше всі відновлені
+   * вкладки отримали б однакову мітку, і «найдовше не використана» до перших
+   * перемикань визначалася б випадково. Може бути відсутнім у знімках, збережених
+   * попередніми версіями.
+   */
+  lastUsedAt?: number;
 }
 
 interface StoredTabs {
@@ -49,7 +57,11 @@ function loadStoredTabs(): StoredTabs {
     if (!parsed || !Array.isArray(parsed.tabs)) return empty;
     const tabs = parsed.tabs.filter((v: unknown): v is StoredTab =>
       !!v && typeof (v as StoredTab).route === "string"
-    ).map((v: StoredTab) => ({ route: v.route, modelId: v.modelId ?? null }));
+    ).map((v: StoredTab) => ({
+      route: v.route,
+      modelId: v.modelId ?? null,
+      lastUsedAt: typeof v.lastUsedAt === "number" ? v.lastUsedAt : undefined,
+    }));
     const rawActive = parsed.active;
     const active = rawActive && typeof rawActive.route === "string"
       ? { route: rawActive.route, modelId: rawActive.modelId ?? null }
@@ -220,12 +232,17 @@ export class TabController extends LitElement {
       ? { tabs: [], active: null }
       : loadStoredTabs();
     this.restored = true;
+    // Мітку використання беремо зі знімка — так LRU після перезавантаження
+    // пам'ятає, чим користувалися давно, а чим щойно. Знімки старого формату
+    // (без мітки) отримують поточний час: гірше за справжню історію, але
+    // рівномірно, і перше ж перемикання все розставить.
+    const restoredAt = Date.now();
     const placeholders: Tab[] = stored.slice(0, MAX_TABS).map(item => ({
       id: crypto.randomUUID(),
       route: item.route,
       modelId: item.modelId,
       element: null,
-      lastUsedAt: Date.now(),
+      lastUsedAt: item.lastUsedAt ?? restoredAt,
     }));
     const activeTab = active
       ? placeholders.find(t => t.route === active.route && t.modelId === active.modelId)
@@ -265,15 +282,29 @@ export class TabController extends LitElement {
   }
 
   private activateTab(tabId: string) {
+    const now = Date.now();
+    const leaving = this.activeTabId;
     this.tabs = this.tabs.map(t => {
+      // Вкладку, з якої йдемо, позначаємо використаною ЗАРАЗ: інакше її мітка
+      // лишалася б часом входу, і вкладка, в якій довго працювали не
+      // перемикаючись, виглядала б «давно не використаною» — LRU закривав би
+      // саме її, хоч користувач щойно в ній був.
+      if (t.id === leaving && t.id !== tabId) return { ...t, lastUsedAt: now };
       if (t.id !== tabId) return t;
       // Домашня сторінка могла лишитися незмонтованою (див. connectedCallback).
       const element = t.element ?? (t.permanent ? document.createElement(this.homeTag) : null);
-      return { ...t, element, lastUsedAt: Date.now() };
+      return { ...t, element, lastUsedAt: now };
     });
     this.activeTabId = tabId;
   }
 
+  /**
+   * Закриває вкладку, якою не користувалися найдовше (LRU).
+   *
+   * `lastUsedAt` оновлюється і при вході у вкладку, і при виході з неї
+   * (див. `activateTab`), тому «найменше значення» справді означає «найдовше не
+   * відкривали». Активна й домашня вкладки під витіснення не потрапляють.
+   */
   private evictLru() {
     const lru = [...this.tabs]
       .filter(t => !t.permanent && t.id !== this.activeTabId)
@@ -327,7 +358,14 @@ export class TabController extends LitElement {
 
     if (this.tabs.filter(t => !t.permanent).length >= MAX_TABS) this.evictLru();
 
-    this.tabs = [...this.tabs, tab];
+    // Вкладку, з якої йдемо, позначаємо використаною зараз — тією ж логікою, що в
+    // `activateTab` (сюди воно не заходить, бо активною стає щойно створена).
+    const now = Date.now();
+    const leaving = this.activeTabId;
+    this.tabs = [
+      ...this.tabs.map(t => (t.id === leaving ? { ...t, lastUsedAt: now } : t)),
+      tab,
+    ];
     this.activeTabId = tab.id;
   }
 
@@ -347,7 +385,11 @@ export class TabController extends LitElement {
 
         const hydrated = await this.createTab(pending.route, pending.modelId, undefined, id);
         if (hydrated) {
-          this.tabs = this.tabs.map(t => t.id === id ? hydrated : t);
+          // `createTab` ставить свіжу мітку — повертаємо відновлену зі знімка,
+          // інакше дозавантаження прикинулося б використанням і зрівняло всі
+          // вкладки за часом.
+          const restored = { ...hydrated, lastUsedAt: pending.lastUsedAt };
+          this.tabs = this.tabs.map(t => t.id === id ? restored : t);
         } else {
           // View більше не існує — прибираємо вкладку, як і при звичайному закритті.
           this.tabs = this.tabs.filter(t => t.id !== id);
@@ -365,7 +407,13 @@ export class TabController extends LitElement {
     const open = this.tabs.filter(t => !t.permanent);
     const activeTab = open.find(t => t.id === this.activeTabId);
     storeTabs({
-      tabs: open.map(t => ({ route: t.route, modelId: t.modelId })),
+      // Активна вкладка «використовується прямо зараз» — інакше після
+      // перезавантаження вона виглядала б давньою (мітку їй ставили при вході).
+      tabs: open.map(t => ({
+        route: t.route,
+        modelId: t.modelId,
+        lastUsedAt: t.id === this.activeTabId ? Date.now() : t.lastUsedAt,
+      })),
       active: activeTab ? { route: activeTab.route, modelId: activeTab.modelId } : null,
     });
   }

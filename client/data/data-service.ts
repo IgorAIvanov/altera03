@@ -1,6 +1,6 @@
 import { bus } from "../bus/bus.ts";
 import type { DataLoadMessage, DataSaveMessage } from "../bus/bus.types.ts";
-import { apiFetch } from "./api.ts";
+import { apiFetch, readEnvelope } from "./api.ts";
 
 async function callApi(model: string, command: string, payload: unknown): Promise<unknown> {
   bus.emit({ type: "loading.start" });
@@ -10,8 +10,17 @@ async function callApi(model: string, command: string, payload: unknown): Promis
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload ?? {}),
     });
-    if (!res.ok) throw new Error(`API error ${res.status}: ${model}/${command}`);
-    return await res.json();
+
+    // Конверт читаємо й на невдалому статусі: сервер кладе туди причину, а
+    // `API error 503: bank/list` замість неї — рівно та мовчанка, з якої
+    // доводилося лізти в консоль. Розбір ще й ловить відповідь не від нашого
+    // сервера (сторінку помилки проксі) і піднімає екран «сервера немає».
+    const envelope = await readEnvelope(res);
+    if (!res.ok && !envelope.ok) {
+      throw new Error(envelope.messages?.[0] ?? `Помилка ${res.status}: ${model}/${command}`);
+    }
+
+    return envelope;
   } finally {
     bus.emit({ type: "loading.end" });
   }

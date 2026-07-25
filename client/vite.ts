@@ -147,8 +147,14 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
         allow: [process.cwd(), appRoot, FRAMEWORK_DIR],
       },
       proxy: {
+        // 127.0.0.1, а НЕ localhost. Бекенд слухає IPv4 (`Deno.serve` за
+        // замовчуванням `0.0.0.0`), а `localhost` на Windows резолвиться спершу в
+        // IPv6 `::1` — там нікого немає. Кожен проксьований запит робив приречену
+        // спробу по IPv6 і лише потім падав на IPv4: подвійна витрата сокетів, а
+        // коли їх забракне — падіння з `AggregateError` у
+        // `_internalConnectMultiple` замість зрозумілої помилки.
         "/api": {
-          target: `http://localhost:${apiPort}`,
+          target: `http://127.0.0.1:${apiPort}`,
           changeOrigin: true,
         },
       },

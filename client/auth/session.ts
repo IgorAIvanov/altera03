@@ -8,7 +8,7 @@
  * інакше кожна кнопка ходила б на сервер.
  */
 import { Signal } from "signal-polyfill";
-import { apiFetch, setSessionLostHandler } from "../data/api.ts";
+import { apiFetch, readEnvelope, setSessionLostHandler } from "../data/api.ts";
 
 export interface SessionUser {
   id: string;
@@ -32,12 +32,6 @@ export interface BootstrapState {
 export interface AuthMethodOption {
   key: string;
   label: string;
-}
-
-interface Envelope<T> {
-  ok: boolean;
-  data: { item: T | null; rows: unknown[]; options: Record<string, unknown>; totals: Record<string, unknown> };
-  messages: string[];
 }
 
 /** Пара «модель + дія» з app.access_effective. */
@@ -70,7 +64,7 @@ function firstMessage(messages: string[]): string {
 async function loadPermissions(): Promise<void> {
   try {
     const response = await apiFetch("/api/auth/permissions");
-    const envelope = await response.json() as { data: { rows: PermissionRow[] } };
+    const envelope = await readEnvelope<never, PermissionRow>(response);
     permissions = new Set((envelope.data?.rows ?? []).map((row) => permissionKey(row.model, row.action)));
   } catch {
     // Права не критичні для входу: без них інтерфейс просто обережніший.
@@ -88,9 +82,11 @@ function applySession(item: { user: SessionUser; session: SessionInfo } | null):
 /** Чи є жива сесія. Викликається на старті ДО підняття оболонки. */
 export async function restoreSession(): Promise<boolean> {
   const response = await apiFetch("/api/auth/me");
-  const envelope = await response.json() as Envelope<{ user: SessionUser; session: SessionInfo }>;
+  const envelope = await readEnvelope<{ user: SessionUser; session: SessionInfo }>(response);
 
-  if (!applySession(envelope.data.item)) {
+  // `ok: false` тут не розбираємо навмисно: сесії однаково немає, і показати
+  // причину краще на екрані входу — у нього для цього є місце, а тут немає.
+  if (!applySession(envelope.data?.item ?? null)) {
     return false;
   }
 
@@ -100,14 +96,22 @@ export async function restoreSession(): Promise<boolean> {
 
 export async function fetchBootstrapState(): Promise<BootstrapState> {
   const response = await apiFetch("/api/auth/bootstrap-state");
-  const envelope = await response.json() as Envelope<BootstrapState>;
-  return envelope.data.item ?? { needsSetup: false, predefinedUserAvailable: false, predefinedLogin: null };
+  const envelope = await readEnvelope<BootstrapState>(response);
+
+  // Раніше відмова мовчки ставала дефолтом, і зламаний сервер виглядав як
+  // звичайний екран входу: користувач вводив пароль і отримував таку саму
+  // мовчанку. Причина від сервера є — її й показуємо.
+  if (!envelope.ok || !envelope.data?.item) {
+    throw new Error(firstMessage(envelope.messages ?? []));
+  }
+
+  return envelope.data.item;
 }
 
 export async function fetchAuthMethods(): Promise<AuthMethodOption[]> {
   const response = await apiFetch("/api/auth/methods");
-  const envelope = await response.json() as Envelope<never> & { data: { rows: AuthMethodOption[] } };
-  return envelope.data.rows ?? [];
+  const envelope = await readEnvelope<never, AuthMethodOption>(response);
+  return envelope.data?.rows ?? [];
 }
 
 /** Вхід. Кидає помилку з текстом від сервера, якщо не вийшло. */
@@ -118,7 +122,7 @@ export async function login(payload: Record<string, unknown>): Promise<void> {
     body: JSON.stringify(payload),
   });
 
-  const envelope = await response.json() as Envelope<{ user: SessionUser; session: SessionInfo }>;
+  const envelope = await readEnvelope<{ user: SessionUser; session: SessionInfo }>(response);
   if (!envelope.ok) {
     throw new Error(firstMessage(envelope.messages));
   }
@@ -139,7 +143,7 @@ export async function createFirstUser(input: {
     body: JSON.stringify(input),
   });
 
-  const envelope = await response.json() as Envelope<{ user: SessionUser; session: SessionInfo }>;
+  const envelope = await readEnvelope<{ user: SessionUser; session: SessionInfo }>(response);
   if (!envelope.ok) {
     throw new Error(firstMessage(envelope.messages));
   }

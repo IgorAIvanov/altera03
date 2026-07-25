@@ -34,13 +34,22 @@ export class AppLogin extends GlobalStyledLitElement {
   @state() private password = "";
   @state() private fullName = "";
 
-  override async connectedCallback() {
+  override connectedCallback() {
     super.connectedCallback();
+    void this.loadBootstrapState();
+  }
+
+  private async loadBootstrapState() {
+    this.busy = true;
+    this.error = "";
+
     try {
       this.bootstrapState = await fetchBootstrapState();
       this.login = this.bootstrapState.predefinedLogin ?? "";
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.busy = false;
     }
   }
 
@@ -74,9 +83,34 @@ export class AppLogin extends GlobalStyledLitElement {
     }
   }
 
+  /**
+   * Стану ще немає. Досі це малювало «…» назавжди — навіть коли причина була
+   * відома: помилка запису в `this.error` не мала де показатися, бо render()
+   * виходив раніше. Тепер це два різні екрани: очікування і збій.
+   */
+  private renderUnavailable() {
+    return html`
+      <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
+        <div class="card bg-base-100 shadow-xl w-full max-w-sm">
+          <div class="card-body gap-4">
+            <h2 class="card-title">Вхід недоступний</h2>
+            <div class="alert alert-error text-sm">${this.error}</div>
+            <button
+              class="btn btn-primary w-full"
+              @click=${this.loadBootstrapState}
+              ?disabled=${this.busy}
+            >
+              ${this.busy ? "…" : "Спробувати ще раз"}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   override render() {
     if (!this.bootstrapState) {
-      return html`<div class="p-8 text-center">…</div>`;
+      return this.error ? this.renderUnavailable() : html`<div class="p-8 text-center">…</div>`;
     }
 
     const setup = this.isSetup;

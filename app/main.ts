@@ -7,6 +7,7 @@ import "./styles/app-styles.ts";
 
 import { registerShell } from "@client/shell/shell-registry.ts";
 import { initDataService } from "@client/data/data-service.ts";
+import { ServerUnavailableError } from "@client/data/api.ts";
 import { restoreSession } from "@client/auth/session.ts";
 import { setLocale, type Locale } from "@client/locale.ts";
 
@@ -44,6 +45,35 @@ async function boot(): Promise<void> {
   root.replaceChildren(login);
 }
 
+/**
+ * Останній екран, коли застосунок не піднявся з причини, не пов'язаної із
+ * сервером: недоступний сервер показує власну накладку сам (`client/data/api.ts`),
+ * і дублювати її тут ні до чого. Свідомо голий DOM: будь-який компонент тут —
+ * ще одна річ, яка може не завантажитися.
+ */
+function renderFatal(error: unknown): void {
+  if (error instanceof ServerUnavailableError) return;
+
+  const root = document.querySelector("#app");
+  if (!root) return;
+
+  const message = error instanceof Error ? error.message : String(error);
+  const box = document.createElement("div");
+  box.setAttribute(
+    "style",
+    "font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:1.5rem;" +
+      "border:1px solid #e5484d;border-radius:.5rem;color:#e5484d",
+  );
+  box.append(
+    Object.assign(document.createElement("h1"), {
+      textContent: "Застосунок не запустився",
+      style: "font-size:1.125rem;margin:0 0 .5rem",
+    }),
+    Object.assign(document.createElement("p"), { textContent: message, style: "margin:0" }),
+  );
+  root.replaceChildren(box);
+}
+
 // НЕ `await boot()`. Верхньорівневий await тут заморожував би цей модуль
 // (entry-чанк) на весь час boot(). А `tab-controller`, який boot() підвантажує
 // динамічно за живої сесії, залежить від цього ж чанка (Rollup складає сюди
@@ -53,4 +83,5 @@ async function boot(): Promise<void> {
 // catch обов'язковий: раніше будь-який збій boot() давав німий білий екран.
 boot().catch((error) => {
   console.error("[main] не вдалося підняти застосунок:", error);
+  renderFatal(error);
 });

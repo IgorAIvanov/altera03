@@ -1,6 +1,15 @@
 import { Injectable } from "@danet/core";
 import postgres from "postgres";
 import { getServerConfig } from "../config/server-config.ts";
+import { isDatabaseUnavailable } from "./database-error.ts";
+
+/**
+ * Скільки чекати на з'єднання. Дефолт драйвера — 30 секунд, і це рівно той час,
+ * який браузер висить на білому екрані, коли БД просто не піднята. Для живої бази
+ * 10 секунд із запасом достатньо: з'єднання або встановлюється за мілісекунди,
+ * або не встановиться взагалі.
+ */
+const CONNECT_TIMEOUT_SECONDS = 10;
 
 @Injectable()
 export class DatabaseService {
@@ -12,8 +21,40 @@ export class DatabaseService {
 
   onAppBootstrap() {
     const { host, port, database, username, password, poolSize } = getServerConfig().database;
-    this._sql = postgres({ host, port, database, username, password, max: poolSize });
+    this._sql = postgres({
+      host,
+      port,
+      database,
+      username,
+      password,
+      max: poolSize,
+      connect_timeout: CONNECT_TIMEOUT_SECONDS,
+    });
     console.log("✅ Database connection pool created");
+
+    // Проба навздогін і без `await`: сервер має підніматися й без БД — інакше
+    // під `--watch` вийшов би цикл падінь, а розробник не побачив би навіть
+    // причини. Але мовчати теж не можна: без цього рядка перша ознака проблеми —
+    // 500 у браузері, з якого не видно, що PostgreSQL просто не запущений.
+    void this.probeConnection(host, port, database);
+  }
+
+  private async probeConnection(host: string, port: number, database: string) {
+    try {
+      await this._sql`select 1`;
+      console.log(`✅ PostgreSQL ${host}:${port}/${database} відповідає`);
+    } catch (error) {
+      if (isDatabaseUnavailable(error)) {
+        console.error(
+          `❌ PostgreSQL ${host}:${port}/${database} недоступний. ` +
+            `Перевірте, що сервер БД запущений, а DB_HOST/DB_PORT вказують на нього. ` +
+            `Запити до API відповідатимуть 503, доки він не з'явиться.`,
+        );
+        return;
+      }
+
+      console.error(`❌ Не вдалося перевірити з'єднання з ${host}:${port}/${database}:`, error);
+    }
   }
 
   async onAppClose() {

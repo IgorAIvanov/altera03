@@ -1,5 +1,6 @@
 import { DanetApplication } from "@danet/core";
 import { AppModule } from "./app.module.ts";
+import { ApiExceptionFilter } from "./common/api-exception.filter.ts";
 import { resolveServerConfig, setServerConfig, type ServerOptions } from "./config/server-config.ts";
 
 /**
@@ -12,6 +13,9 @@ export async function bootstrap(options: ServerOptions): Promise<DanetApplicatio
   setServerConfig(resolveServerConfig(options));
 
   const application = new DanetApplication();
+  // До `init()`: фільтр має стояти раніше, ніж з'явиться перший запит, який
+  // може впасти — зокрема раніше за bootstrap-хуки, що ходять у БД.
+  application.useGlobalExceptionFilter(new ApiExceptionFilter());
   await application.init(AppModule);
   return application;
 }
