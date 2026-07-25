@@ -1,5 +1,6 @@
 import { LitElement, html, css, svg, type PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
 import { shellTags } from "../shell/shell-registry.ts";
@@ -390,7 +391,7 @@ export class TabController extends LitElement {
     return html`
       ${this.headerEl}
       <div class="tab-bar">
-        ${this.tabs.map(tab => tab.permanent
+        ${repeat(this.tabs, tab => tab.id, tab => tab.permanent
           ? html`<div class="tab home ${tab.id === this.activeTabId ? "active" : ""}"
               @click=${() => this.activateTab(tab.id)} title="Home">${iconHome}</div>`
           : html`<div class="tab ${tab.id === this.activeTabId ? "active" : ""}"
@@ -408,7 +409,14 @@ export class TabController extends LitElement {
       <div class="workspace">
         ${this.menuEl}
         <div class="panels">
-          ${this.tabs.map(tab => html`
+          <!-- repeat з ключем tab.id, а НЕ .map(): панель містить живий DOM-елемент
+               форми. У неключевому списку будь-яка зміна масиву (відкриття/закриття
+               вкладки) змушує Lit перевставляти ці елементи — кожна форма дістає
+               disconnected+connected, а її connectedCallback робить load(). Виходить
+               O(n-квадрат) запитів на n вкладок, і на ~10-й вичерпується сокет-буфер
+               (ERR_NO_BUFFER_SPACE). Ключ прив'язує панель до вкладки, тож Lit чіпає
+               лише ту, що змінилась. -->
+          ${repeat(this.tabs, tab => tab.id, tab => html`
             <div class="panel ${tab.id === this.activeTabId ? "active" : ""}">
               ${tab.element}
             </div>
