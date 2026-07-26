@@ -4,21 +4,62 @@
 //   import { defineAlteraConfig } from "@altera/client/vite";
 //   export default defineAlteraConfig({ appDir: "app", apiPort: 3000 });
 //
-// Каталог фреймворку пресет знаходить від власного розташування (`import.meta`),
-// тому працює однаково і в монорепо (файл лежить у `client/`), і у встановленому
-// пакеті (`node_modules/@altera/client/`). Аліаси Vite сюди не дістають —
-// конфіг вантажиться до того, як вони визначені, — тож шлях беремо з ФС.
+// Каталог фреймворку пресет знаходить сам — і в монорепо, і у встановленому
+// застосунку. Він потрібен трьом речам, і всім трьом — як СПРАВЖНІЙ каталог на
+// диску: аліасу `@client` (через нього Tailwind тягне `styles/theme.css`),
+// копіюванню `_locales` і `server.fs.allow`. Аліаси Vite сюди не дістають:
+// конфіг вантажиться до того, як вони визначені.
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { defineConfig, type Plugin, type UserConfig } from "npm:vite@^6.3.5";
 import { viteStaticCopy } from "npm:vite-plugin-static-copy@^2.3.0";
 import tailwindcss from "npm:@tailwindcss/vite@^4.3.0";
 import deno from "npm:@deno/vite-plugin@^1";
 
-/** Каталог самого фреймворку (`client/`). Стабільний і в монорепо, і в пакеті. */
-const FRAMEWORK_DIR = (import.meta as { dirname?: string }).dirname ??
-  dirname(fileURLToPath(import.meta.url));
+/**
+ * Каталог самого фреймворку (`client/`).
+ *
+ * Два розклади, і другий не такий, як очікувалося спершу:
+ *
+ * - **монорепо** — модуль має `file:`-URL, тож просто його каталог;
+ * - **встановлений застосунок** — модуль виконується з `https://jsr.io/...`
+ *   **навіть при `"vendor": true`**. Вендоринг міняє джерело байтів, а не
+ *   ідентичність модуля, тому `import.meta.dirname` тут `undefined`, а
+ *   `fileURLToPath(import.meta.url)` кидає «The URL must be of scheme file».
+ *   Версія при цьому є в самому URL, тож каталог рахуємо з нього:
+ *   `vendor/jsr.io/@altera/client/<версія>`.
+ *
+ * Кеш DENO_DIR не годиться принципово: там не дерево, а плаский список файлів
+ * з іменами-хешами й без розширень. Тому `"vendor": true` у застосунку —
+ * не побажання, а вимога; якщо каталогу немає, кажемо про це прямо, бо інакше
+ * зламається не тут, а пізніше й тихо (зникнуть стилі фреймворку).
+ */
+function resolveFrameworkDir(): string {
+  const url = import.meta.url;
+
+  if (url.startsWith("file:")) {
+    return (import.meta as { dirname?: string }).dirname ?? dirname(fileURLToPath(url));
+  }
+
+  // https://jsr.io/@altera/client/0.3.2/vite.ts → ["@altera","client","0.3.2",...]
+  const [scope, name, version] = new URL(url).pathname.split("/").filter(Boolean);
+  const vendored = resolve(process.cwd(), "vendor", "jsr.io", scope, name, version);
+
+  if (!existsSync(vendored)) {
+    throw new Error(
+      `Не знайдено каталог фреймворку ${vendored}.\n` +
+        `Пресет Vite потребує вихідників на диску (аліас @client, тема Tailwind, локалі),\n` +
+        `а кеш JSR — це файли з іменами-хешами. Додай у deno.json застосунку\n` +
+        `"vendor": true і виконай \`deno install\` ПЕРЕД збіркою.`,
+    );
+  }
+
+  return vendored;
+}
+
+const FRAMEWORK_DIR = resolveFrameworkDir();
 
 const toPosix = (path: string) => path.replaceAll("\\", "/");
 
