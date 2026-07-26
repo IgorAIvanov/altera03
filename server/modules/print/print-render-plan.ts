@@ -5,6 +5,8 @@
 // PDF-рендерер малюють ОДИН і той самий план — тому вони не розходяться
 // у трактуванні шляхів, ширин колонок і текстових налаштувань.
 
+import { buildBarcode } from "./barcode/barcode.ts";
+import type { BarcodeShape } from "./barcode/barcode.ts";
 import {
   getRenderablePrintTemplateBlocks,
   getRenderablePrintTemplateTableColumns,
@@ -93,6 +95,24 @@ export interface PrintTemplateRenderImageBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
 }
 
+/**
+ * Штрих-код із уже побудованою фігурою.
+ *
+ * Фігура рахується саме тут, а не в рендерері: план — єдине місце, де шаблон
+ * зустрічається з даними, і побудова коду залежить від даних так само, як
+ * підстановка значення в комірку. Помилка значення теж потрапляє сюди
+ * (`error`) — рендерер надрукує її замість коду й не завалить весь документ.
+ */
+export interface PrintTemplateRenderBarcodeBlock {
+  key: string;
+  type: "barcode";
+  shape: BarcodeShape | null;
+  error: string;
+  showText: boolean;
+  placement: ResolvedPrintTemplateBlockPlacement;
+  textOptions: ResolvedPrintTemplateBlockTextOptions;
+}
+
 export interface PrintTemplateRenderHorizontalLineBlock {
   key: string;
   type: "horizontal-line";
@@ -112,6 +132,7 @@ export type PrintTemplateRenderBlock =
   | PrintTemplateRenderFieldListBlock
   | PrintTemplateRenderTableBlock
   | PrintTemplateRenderImageBlock
+  | PrintTemplateRenderBarcodeBlock
   | PrintTemplateRenderHorizontalLineBlock
   | PrintTemplateRenderVerticalLineBlock;
 
@@ -187,6 +208,26 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         src: block.src,
         alt: block.alt,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+      }];
+    }
+
+    if (block.type === "barcode") {
+      // Те саме правило, що й у комірці таблиці: статичне значення перекриває
+      // прив'язку. `stringifyPrintTemplateValue` тут не годиться — його «-» для
+      // порожнього значення став би цілком валідним штрих-кодом із дефіса.
+      const bound = block.path ? resolvePrintTemplatePath(source, block.path) : null;
+      const raw = block.value ||
+        (typeof bound === "string" || typeof bound === "number" ? String(bound) : "");
+      const built = buildBarcode(block.symbology, raw);
+
+      return [{
+        key: block.key,
+        type: "barcode",
+        shape: built.ok ? built.shape : null,
+        error: built.ok ? "" : built.message,
+        showText: block.showText,
+        placement: resolvePrintTemplateBlockPlacement(block.placement),
+        textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
 

@@ -44,6 +44,7 @@
     "npm:pdf-lib@*": "1.17.1",
     "npm:pdf-lib@^1.17.1": "1.17.1",
     "npm:postgres@^3.4.5": "3.4.9",
+    "npm:qrcode-generator@^1.4.4": "1.5.2",
     "npm:signal-polyfill@~0.2.2": "0.2.2",
     "npm:signal-utils@~0.21.1": "0.21.1_signal-polyfill@0.2.2",
     "npm:tailwindcss@^4.3.0": "4.3.0",
@@ -1250,6 +1251,9 @@
     "process-nextick-args@2.0.1": {
       "integrity": "sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag=="
     },
+    "qrcode-generator@1.5.2": {
+      "integrity": "sha512-pItrW0Z9HnDBnFmgiNrY1uxRdri32Uh9EjNYLPVC2zZ3ZRIIEqBoDgm4DkvDwNNDHTK7FNkmr8zAa77BYc9xNw=="
+    },
     "queue-microtask@1.2.3": {
       "integrity": "sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A=="
     },
@@ -1485,6 +1489,7 @@
       "npm:lit@^3.3.1",
       "npm:pdf-lib@^1.17.1",
       "npm:postgres@^3.4.5",
+      "npm:qrcode-generator@^1.4.4",
       "npm:signal-polyfill@~0.2.2",
       "npm:signal-utils@~0.21.1",
       "npm:tailwindcss@^4.3.0",
@@ -1504,7 +1509,8 @@
           "npm:@sinclair/typebox@0.34",
           "npm:decimal.js@^10.6.0",
           "npm:pdf-lib@^1.17.1",
-          "npm:postgres@^3.4.5"
+          "npm:postgres@^3.4.5",
+          "npm:qrcode-generator@^1.4.4"
         ]
       }
     }

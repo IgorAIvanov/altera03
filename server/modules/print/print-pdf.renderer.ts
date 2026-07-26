@@ -8,6 +8,7 @@ import fontkit from "@pdf-lib/fontkit";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
 import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
 import type {
+  PrintTemplateRenderBarcodeBlock,
   PrintTemplateRenderBlock,
   PrintTemplateRenderTableBlock,
   PrintTemplateRenderTableColumn,
@@ -22,6 +23,17 @@ const BLOCK_GAP = 12;
 
 /** Менше цього місця під підвал — краще винести його на нову сторінку. */
 const FOOTER_MIN_SPACE = 24;
+
+/**
+ * Висота штрих-коду, коли її не задали в розкладці.
+ *
+ * 40pt ≈ 14 мм — стандартна висота для лінійного коду на документі: нижче
+ * ручні сканери починають вимагати точного прицілювання.
+ */
+const BARCODE_DEFAULT_HEIGHT = 40;
+
+/** Проміжок між кодом і підписом під ним. */
+const BARCODE_CAPTION_GAP = 3;
 
 // Кирилиці у StandardFonts немає — вантажимо Roboto з node_modules.
 const FONT_REGULAR_URL = new URL(
@@ -182,6 +194,115 @@ export async function renderPrintPdf(
     }
 
     return lines.length * (options.fontSize + 3) + 3;
+  };
+
+  /**
+   * Малює штрих-код і повертає використану висоту.
+   *
+   * Штрихи завжди чорні на прозорому (тобто на білому папері): будь-який інший
+   * колір або інверсія — це код, який сканер не візьме. Тихі зони вже входять у
+   * фігуру, тож масштабування рамкою їх не з'їдає.
+   *
+   * Ширина модуля — просте ділення ширини блока на кількість модулів, без
+   * округлення до цілих пунктів: PDF векторний, а сусідні штрихи малюються
+   * єдиними прямокутниками, тому щілин між ними не виникає.
+   */
+  const drawBarcode = (block: PrintTemplateRenderBarcodeBlock, blockX: number, topY: number, blockWidth: number) => {
+    const height = block.placement.heightPercent > 0
+      ? contentHeight * (block.placement.heightPercent / 100)
+      : BARCODE_DEFAULT_HEIGHT;
+
+    if (!block.shape) {
+      // Помилкове значення друкуємо текстом на місці коду. Мовчки нічого не
+      // малювати не можна: порожнє місце в накладній ніхто не помітить, а
+      // партія товару поїде без коду.
+      return drawParagraph(block.error || "Штрих-код не побудовано", {
+        x: blockX,
+        y: topY,
+        width: blockWidth,
+        fontSize: block.textOptions.fontSize,
+        bold: false,
+        align: block.textOptions.align,
+        color: rgb(0.7, 0.1, 0.1),
+      });
+    }
+
+    const captionHeight = block.showText && block.shape.text
+      ? block.textOptions.fontSize + BARCODE_CAPTION_GAP
+      : 0;
+    const codeHeight = Math.max(height - captionHeight, 1);
+
+    if (block.shape.kind === "linear") {
+      const moduleWidth = blockWidth / block.shape.modules.length;
+      let runStart: number | null = null;
+
+      // Суміжні штрихи зливаються в один прямокутник — інакше на межі двох
+      // сусідніх модулів переглядач може лишити волосяну щілину.
+      for (let index = 0; index <= block.shape.modules.length; index += 1) {
+        const isBar = block.shape.modules[index] === true;
+        if (isBar && runStart === null) {
+          runStart = index;
+          continue;
+        }
+
+        if (!isBar && runStart !== null) {
+          page.drawRectangle({
+            x: blockX + runStart * moduleWidth,
+            y: topY - codeHeight,
+            width: (index - runStart) * moduleWidth,
+            height: codeHeight,
+            color: rgb(0, 0, 0),
+          });
+          runStart = null;
+        }
+      }
+    } else {
+      // Матриця квадратна: сторона — менше з ширини рамки й доступної висоти,
+      // інакше QR розтягнувся б у прямокутник і перестав читатися.
+      const side = Math.min(blockWidth, codeHeight);
+      const moduleSize = side / block.shape.size;
+      const offsetX = blockX + (blockWidth - side) / 2;
+
+      for (let row = 0; row < block.shape.size; row += 1) {
+        let runStart: number | null = null;
+
+        for (let column = 0; column <= block.shape.size; column += 1) {
+          const isDark = column < block.shape.size &&
+            block.shape.modules[row * block.shape.size + column] === true;
+
+          if (isDark && runStart === null) {
+            runStart = column;
+            continue;
+          }
+
+          if (!isDark && runStart !== null) {
+            page.drawRectangle({
+              x: offsetX + runStart * moduleSize,
+              y: topY - (row + 1) * moduleSize,
+              width: (column - runStart) * moduleSize,
+              height: moduleSize,
+              color: rgb(0, 0, 0),
+            });
+            runStart = null;
+          }
+        }
+      }
+    }
+
+    if (captionHeight) {
+      const caption = block.shape.text;
+      const captionWidth = measure(caption, block.textOptions.fontSize, false);
+      drawTextLine(
+        caption,
+        blockX + (blockWidth - captionWidth) / 2,
+        topY - codeHeight - block.textOptions.fontSize,
+        block.textOptions.fontSize,
+        false,
+        hexToRgb(block.textOptions.color),
+      );
+    }
+
+    return height;
   };
 
   type TableColumn = PrintTemplateRenderTableColumn & { width: number; x: number };
@@ -401,6 +522,10 @@ export async function renderPrintPdf(
 
       page.drawImage(image, { x: blockX, y: topY - height, width, height });
       return height;
+    }
+
+    if (block.type === "barcode") {
+      return drawBarcode(block, blockX, topY, blockWidth);
     }
 
     if (block.type === "horizontal-line" || block.type === "vertical-line") {

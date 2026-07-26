@@ -11,6 +11,7 @@ deno task dev:front    # тільки Vite dev server
 deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest) з manifest.json
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
+deno task test:unit    # юніт-проби бібліотек без БД і HTTP (символіки штрих-кодів)
 deno task api          # дьоргнути команду моделі з консолі: api <model> <command> [json]
 deno task passwd       # встановити пароль користувача: passwd <логін> [пароль]
 deno task sql:assemble # зібрати SQL-пакет з db/ файлів моделей
@@ -230,6 +231,14 @@ Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); етал
 редагування шаблонів — звичайна admin-модель `app/admin/print_template/`. Skill —
 [`model-print-form`](.github/skills/model-print-form/SKILL.md); деталі —
 [`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
+
+**Штрих-коди** — блок `barcode` у шаблоні: `code128` (документи), `ean13`
+(номенклатура), `qr`. Значення береться як у комірці таблиці — статичне
+перекриває прив'язку. Кольору в блока немає навмисно (код мусить бути чорним на
+білому), тихі зони входять у сам код, помилкове значення друкується текстом
+замість коду. Code 128 і EAN-13 написані в ядрі (`server/modules/print/barcode/`),
+QR узятий залежністю `qrcode-generator` — Ріда-Соломона з голови не пишуть.
+Символіки перевіряє `deno task test:unit`.
 
 ## Звіти
 

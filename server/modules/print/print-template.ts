@@ -7,13 +7,25 @@
 // Файл лежить в `app/shared/`, бо ним користуються і фронтенд-редактор, і
 // TS-команда `printPdf` — напрямок залежностей `app → client/server` збережено.
 
+import { normalizeBarcodeSymbology } from "./barcode/symbology.ts";
+import type { BarcodeSymbology } from "./barcode/symbology.ts";
+
+export type { BarcodeSymbology } from "./barcode/symbology.ts";
+
 export type PrintTemplateTargetModel = string;
 export type PrintTemplatePaperSize = "A4";
 export type PrintTemplateOrientation = "portrait" | "landscape";
 export type PrintTemplateColumnAlign = "left" | "center" | "right";
 export type PrintTemplateFontWeight = "normal" | "bold";
 export type PrintTemplateBlockPlacementMode = "absolute";
-export type PrintTemplateBlockType = "text" | "field-list" | "table" | "image" | "horizontal-line" | "vertical-line";
+export type PrintTemplateBlockType =
+  | "text"
+  | "field-list"
+  | "table"
+  | "image"
+  | "barcode"
+  | "horizontal-line"
+  | "vertical-line";
 export type PrintTemplateTextStyle = "title" | "section" | "body";
 export type PrintTemplateLineStyle = "solid" | "dashed" | "dotted" | "double";
 
@@ -132,6 +144,28 @@ export interface PrintTemplateImageBlock extends PrintTemplateBlockBase {
   alt: string;
 }
 
+/**
+ * Штрих-код.
+ *
+ * Значення береться так само, як у комірці таблиці: статичний `value` перекриває
+ * прив'язку `path`. Одне правило на весь формат — щоб не доводилось пам'ятати,
+ * де саме пріоритет інший.
+ *
+ * Кольору тут немає навмисно: штрих-код мусить бути чорним на білому, інакше
+ * сканер його не візьме. Дати таке поле означало б дати спосіб зіпсувати
+ * документ, який виглядатиме цілком нормально на екрані.
+ */
+export interface PrintTemplateBarcodeBlock extends PrintTemplateBlockBase {
+  type: "barcode";
+  symbology: BarcodeSymbology;
+  /** Статичне значення. Порожнє — беремо за `path`. */
+  value: string;
+  /** Шлях у даних друку (від того самого кореня, що й у списку полів). */
+  path: string;
+  /** Чи друкувати значення текстом під кодом. */
+  showText: boolean;
+}
+
 export interface PrintTemplateHorizontalLineBlock extends PrintTemplateBlockBase {
   type: "horizontal-line";
   color: string;
@@ -151,6 +185,7 @@ export type PrintTemplateBlock =
   | PrintTemplateFieldListBlock
   | PrintTemplateTableBlock
   | PrintTemplateImageBlock
+  | PrintTemplateBarcodeBlock
   | PrintTemplateHorizontalLineBlock
   | PrintTemplateVerticalLineBlock;
 
@@ -248,6 +283,12 @@ function getDefaultBlockTextOptions(type: PrintTemplateBlockType, textStyle?: Pr
     }
 
     return createDefaultBlockTextOptions({ fontSize: "10", align: "left", fontWeight: "normal" });
+  }
+
+  // Підпис під штрих-кодом — дрібний і по центру: він допоміжний, а вирівнювати
+  // його інакше, ніж по коду, сенсу немає.
+  if (type === "barcode") {
+    return createDefaultBlockTextOptions({ fontSize: "8", align: "center", fontWeight: "normal" });
   }
 
   return createDefaultBlockTextOptions({ fontSize: "10", align: "left", fontWeight: type === "table" ? "normal" : "normal" });
@@ -482,6 +523,21 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       type,
       src: normalizeString(value.src),
       alt: normalizeString(value.alt),
+      placement: normalizeBlockPlacement(value.placement),
+      text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
+    };
+  }
+
+  if (type === "barcode") {
+    return {
+      key,
+      type,
+      symbology: normalizeBarcodeSymbology(value.symbology),
+      value: normalizeString(value.value),
+      path: normalizeString(value.path),
+      // Підпис під кодом за замовчуванням увімкнений: він потрібен людині, коли
+      // сканера немає під рукою, і саме його очікують у EAN-13.
+      showText: value.showText !== false,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };

@@ -17,7 +17,8 @@
     "@std/http": "jsr:@std/http@^1.0.18",
     "typebox": "npm:@sinclair/typebox@^0.34.0",
     "pdf-lib": "npm:pdf-lib@^1.17.1",
-    "@pdf-lib/fontkit": "npm:@pdf-lib/fontkit@^1.1.1"
+    "@pdf-lib/fontkit": "npm:@pdf-lib/fontkit@^1.1.1",
+    "qrcode-generator": "npm:qrcode-generator@^1.4.4"
   },
   "compilerOptions": {
     "experimentalDecorators": true,

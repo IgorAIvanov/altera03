@@ -10,7 +10,15 @@ import {
   type PrintTemplateEditRoot,
   type PrintTemplateItem,
 } from "./printTemplate.schema.ts";
-import { BLOCK_TYPES, cloneBlock, createBlock, createDefaultBlocks, createFieldItem, createTableColumn } from "./printTemplate.blocks.ts";
+import {
+  BARCODE_SYMBOLOGIES,
+  BLOCK_TYPES,
+  cloneBlock,
+  createBlock,
+  createDefaultBlocks,
+  createFieldItem,
+  createTableColumn,
+} from "./printTemplate.blocks.ts";
 import {
   addColumn,
   buildGrid,
@@ -405,7 +413,8 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
    * скрізь (це зручно при компонуванні), але підказку показуємо чесно.
    */
   private heightAffectsPrint(block: PrintTemplateBlock) {
-    return block.type === "image" || block.type === "horizontal-line" || block.type === "vertical-line";
+    return block.type === "image" || block.type === "barcode" ||
+      block.type === "horizontal-line" || block.type === "vertical-line";
   }
 
   /** Кандидати прилипання: краї аркуша, середина та межі інших блоків. */
@@ -960,11 +969,18 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           <div class="grid grid-cols-2 gap-2">
             ${this.field(t("printTemplate.fontSize"), this.textInput(block.text.fontSize, (v) => this.updateTextOptions(block.key, { fontSize: v })))}
             ${this.field(t("printTemplate.fontColor"), this.colorInput(block.text.color, (v) => this.updateTextOptions(block.key, { color: v })))}
-            ${this.field(t("printTemplate.fontAlign"), this.alignButtons(block.text.align, (align) => this.updateTextOptions(block.key, { align })))}
-            ${this.field(t("printTemplate.fontWeight"), html`
-              <button class="btn btn-xs ${block.text.fontWeight === "bold" ? "btn-primary" : ""}"
-                @click=${() => this.updateTextOptions(block.key, { fontWeight: block.text.fontWeight === "bold" ? "normal" : "bold" })}>B</button>
-            `)}
+            ${
+              // У штрих-коду ці налаштування стосуються лише підпису, а він
+              // завжди центрований під кодом — показувати органи керування, які
+              // нічого не міняють, гірше, ніж не показувати їх зовсім.
+              block.type === "barcode" ? nothing : html`
+                ${this.field(t("printTemplate.fontAlign"), this.alignButtons(block.text.align, (align) => this.updateTextOptions(block.key, { align })))}
+                ${this.field(t("printTemplate.fontWeight"), html`
+                  <button class="btn btn-xs ${block.text.fontWeight === "bold" ? "btn-primary" : ""}"
+                    @click=${() => this.updateTextOptions(block.key, { fontWeight: block.text.fontWeight === "bold" ? "normal" : "bold" })}>B</button>
+                `)}
+              `
+            }
           </div>
         ` : nothing}
 
@@ -1009,6 +1025,44 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               b.type === "horizontal-line" || b.type === "vertical-line" ? { ...b, color: v } : b
             ))))}
           </div>
+        ` : nothing}
+
+        ${block.type === "barcode" ? html`
+          ${this.field(t("printTemplate.barcodeSymbology"), html`
+            <select class="select select-sm select-bordered w-full"
+              @change=${(e: Event) => this.updateBlock(block.key, (b) => (
+                b.type === "barcode"
+                  ? { ...b, symbology: (e.target as HTMLSelectElement).value as typeof b.symbology }
+                  : b
+              ))}>
+              ${BARCODE_SYMBOLOGIES.map((symbology) => html`
+                <option value=${symbology} ?selected=${symbology === block.symbology}>
+                  ${t(`printTemplate.barcodeSymbologyOption.${symbology}`)}
+                </option>
+              `)}
+            </select>
+          `)}
+
+          <!-- Значення: або з даних, або вписане руками. Статичне перекриває
+               прив'язку — те саме правило, що й у комірці таблиці. -->
+          ${this.field(t("printTemplate.barcodePath"), this.pathSelect(block.path, scalarPaths, (v) => this.updateBlock(block.key, (b) => (
+            b.type === "barcode" ? { ...b, path: v } : b
+          ))))}
+          ${this.field(t("printTemplate.barcodeValue"), this.textInput(block.value, (v) => this.updateBlock(block.key, (b) => (
+            b.type === "barcode" ? { ...b, value: v } : b
+          ))))}
+          ${block.value && block.path
+            ? html`<div class="text-xs text-warning">${t("printTemplate.barcodeValueWins")}</div>`
+            : nothing}
+
+          ${this.field(t("printTemplate.barcodeShowText"), html`
+            <input type="checkbox" class="checkbox checkbox-sm" .checked=${block.showText}
+              @change=${(e: Event) => this.updateBlock(block.key, (b) => (
+                b.type === "barcode" ? { ...b, showText: (e.target as HTMLInputElement).checked } : b
+              ))} />
+          `)}
+
+          <div class="text-xs text-base-content/60">${t(`printTemplate.barcodeHint.${block.symbology}`)}</div>
         ` : nothing}
 
         ${block.type === "field-list" ? this.renderFieldListProperties(block, scalarPaths) : nothing}
@@ -1478,6 +1532,26 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         ? html`<img class="frame-body" src=${block.src} alt=${block.alt}
             style="width:100%;height:100%;object-fit:contain" />`
         : html`<div class="frame-empty">${t("printTemplate.imageEmpty")}</div>`;
+    }
+
+    if (block.type === "barcode") {
+      // Схема, а не справжній код: генератор живе на сервері (у QR він ще й із
+      // залежністю), і тягнути його в браузер заради ескізу ні до чого. Реальні
+      // штрихи показує вкладка PDF — вона малюється тим самим рендерером, що й друк.
+      const value = block.value ||
+        (block.path ? stringifyValue(resolvePath(this.previewData, block.path)) : "");
+      const stripes = block.symbology === "qr"
+        ? "repeating-conic-gradient(#262626 0% 25%, transparent 0% 50%) 50% / 22% 22%"
+        : "repeating-linear-gradient(90deg, #262626 0 2px, transparent 2px 5px)";
+
+      return html`
+        <div class="frame-body" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+          <div style="flex:1;width:${block.symbology === "qr" ? "auto" : "100%"};aspect-ratio:${block.symbology === "qr" ? "1" : "auto"};background:${stripes};opacity:.75"></div>
+          ${block.showText
+            ? html`<div style="font-size:${pt(block.text.fontSize)};color:${block.text.color}">${value || "—"}</div>`
+            : nothing}
+        </div>
+      `;
     }
 
     if (block.type === "horizontal-line") {

@@ -5,6 +5,7 @@
 // редактору: створення нового блока з дефолтами та клонування.
 
 import type {
+  BarcodeSymbology,
   PrintTemplateBlock,
   PrintTemplateBlockPlacement,
   PrintTemplateBlockTextOptions,
@@ -18,9 +19,16 @@ export const BLOCK_TYPES: PrintTemplateBlockType[] = [
   "field-list",
   "table",
   "image",
+  "barcode",
   "horizontal-line",
   "vertical-line",
 ];
+
+/**
+ * Символіки для випадайки. Список повторює ядро свідомо: тип імпортується, тож
+ * зайве значення тут не скомпілюється, а рантайм-коду ядра в бандл не тягнемо.
+ */
+export const BARCODE_SYMBOLOGIES: BarcodeSymbology[] = ["code128", "ean13", "qr"];
 
 function newKey() {
   return crypto.randomUUID();
@@ -105,6 +113,21 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       alt: "",
       placement: createPlacement({ widthPercent: "24", heightPercent: "12" }),
       text: createTextOptions(),
+    };
+  }
+
+  if (type === "barcode") {
+    return {
+      key: newKey(),
+      type: "barcode",
+      symbology: "code128",
+      value: "",
+      path: "",
+      showText: true,
+      // Пропорції під лінійний код: приблизно 45×15 мм на A4. Для QR ширину
+      // зазвичай зменшують — він квадратний і бере меншу зі сторін.
+      placement: createPlacement({ widthPercent: "30", heightPercent: "7" }),
+      text: createTextOptions({ fontSize: "8", align: "center" }),
     };
   }
 

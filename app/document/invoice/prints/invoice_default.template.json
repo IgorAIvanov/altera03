@@ -12,25 +12,91 @@
         "type": "text",
         "style": "title",
         "value": "Накладна",
-        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "0", "widthPercent": "100", "heightPercent": "7" },
-        "text": { "fontSize": "16", "align": "center", "fontWeight": "bold", "color": "#262626" }
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "0",
+          "widthPercent": "100",
+          "heightPercent": "7"
+        },
+        "text": {
+          "fontSize": "16",
+          "align": "center",
+          "fontWeight": "bold",
+          "color": "#262626"
+        }
+      },
+      {
+        "key": "number_barcode",
+        "type": "barcode",
+        "symbology": "code128",
+        "value": "",
+        "path": "document.number",
+        "showText": true,
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "72",
+          "yPercent": "0",
+          "widthPercent": "28",
+          "heightPercent": "6"
+        },
+        "text": {
+          "fontSize": "8",
+          "align": "center",
+          "fontWeight": "normal",
+          "color": "#262626"
+        }
       },
       {
         "key": "header_fields",
         "type": "field-list",
         "items": [
-          { "key": "number", "label": "Номер", "path": "document.number" },
-          { "key": "date", "label": "Дата", "path": "document.date" },
-          { "key": "counterparty", "label": "Контрагент", "path": "document.counterpartyName" }
+          {
+            "key": "number",
+            "label": "Номер",
+            "path": "document.number"
+          },
+          {
+            "key": "date",
+            "label": "Дата",
+            "path": "document.date"
+          },
+          {
+            "key": "counterparty",
+            "label": "Контрагент",
+            "path": "document.counterpartyName"
+          }
         ],
-        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "9", "widthPercent": "100", "heightPercent": "12" },
-        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" }
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "9",
+          "widthPercent": "100",
+          "heightPercent": "12"
+        },
+        "text": {
+          "fontSize": "10",
+          "align": "left",
+          "fontWeight": "normal",
+          "color": "#262626"
+        }
       },
       {
         "key": "divider",
         "type": "horizontal-line",
-        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "22", "widthPercent": "100", "heightPercent": "1" },
-        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" },
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "22",
+          "widthPercent": "100",
+          "heightPercent": "1"
+        },
+        "text": {
+          "fontSize": "10",
+          "align": "left",
+          "fontWeight": "normal",
+          "color": "#262626"
+        },
         "color": "#595959",
         "lineStyle": "solid",
         "lineWidth": "1"
@@ -41,29 +107,87 @@
         "title": "Склад накладної",
         "source": "document.lines",
         "columns": [
-          { "key": "num", "widthPercent": "8" },
-          { "key": "id", "widthPercent": "14" },
-          { "key": "name", "widthPercent": "30" },
-          { "key": "quantity", "widthPercent": "14" },
-          { "key": "price", "widthPercent": "16" },
-          { "key": "amount", "widthPercent": "18" }
+          {
+            "key": "num",
+            "widthPercent": "8"
+          },
+          {
+            "key": "id",
+            "widthPercent": "14"
+          },
+          {
+            "key": "name",
+            "widthPercent": "30"
+          },
+          {
+            "key": "quantity",
+            "widthPercent": "14"
+          },
+          {
+            "key": "price",
+            "widthPercent": "16"
+          },
+          {
+            "key": "amount",
+            "widthPercent": "18"
+          }
         ],
         "sections": {
           "header": {
             "rows": [
               {
                 "cells": [
-                  { "text": "№", "rowSpan": 2, "align": "center", "fontWeight": "bold", "fontSize": "9" },
-                  { "text": "Номенклатура", "colSpan": 2, "align": "center", "fontWeight": "bold", "fontSize": "9" },
-                  { "text": "Кількість", "rowSpan": 2, "align": "right", "fontWeight": "bold", "fontSize": "9" },
-                  { "text": "Ціна", "rowSpan": 2, "align": "right", "fontWeight": "bold", "fontSize": "9" },
-                  { "text": "Сума", "rowSpan": 2, "align": "right", "fontWeight": "bold", "fontSize": "9" }
+                  {
+                    "text": "№",
+                    "rowSpan": 2,
+                    "align": "center",
+                    "fontWeight": "bold",
+                    "fontSize": "9"
+                  },
+                  {
+                    "text": "Номенклатура",
+                    "colSpan": 2,
+                    "align": "center",
+                    "fontWeight": "bold",
+                    "fontSize": "9"
+                  },
+                  {
+                    "text": "Кількість",
+                    "rowSpan": 2,
+                    "align": "right",
+                    "fontWeight": "bold",
+                    "fontSize": "9"
+                  },
+                  {
+                    "text": "Ціна",
+                    "rowSpan": 2,
+                    "align": "right",
+                    "fontWeight": "bold",
+                    "fontSize": "9"
+                  },
+                  {
+                    "text": "Сума",
+                    "rowSpan": 2,
+                    "align": "right",
+                    "fontWeight": "bold",
+                    "fontSize": "9"
+                  }
                 ]
               },
               {
                 "cells": [
-                  { "text": "Код", "align": "center", "fontWeight": "bold", "fontSize": "9" },
-                  { "text": "Найменування", "align": "left", "fontWeight": "bold", "fontSize": "9" }
+                  {
+                    "text": "Код",
+                    "align": "center",
+                    "fontWeight": "bold",
+                    "fontSize": "9"
+                  },
+                  {
+                    "text": "Найменування",
+                    "align": "left",
+                    "fontWeight": "bold",
+                    "fontSize": "9"
+                  }
                 ]
               }
             ]
@@ -72,12 +196,30 @@
             "rows": [
               {
                 "cells": [
-                  { "path": "index", "align": "center" },
-                  { "path": "id", "align": "center" },
-                  { "path": "name", "align": "left" },
-                  { "path": "quantity", "align": "right" },
-                  { "path": "price", "align": "right" },
-                  { "path": "amount", "align": "right" }
+                  {
+                    "path": "index",
+                    "align": "center"
+                  },
+                  {
+                    "path": "id",
+                    "align": "center"
+                  },
+                  {
+                    "path": "name",
+                    "align": "left"
+                  },
+                  {
+                    "path": "quantity",
+                    "align": "right"
+                  },
+                  {
+                    "path": "price",
+                    "align": "right"
+                  },
+                  {
+                    "path": "amount",
+                    "align": "right"
+                  }
                 ]
               }
             ]
@@ -86,25 +228,64 @@
             "rows": [
               {
                 "cells": [
-                  { "text": "Разом", "colSpan": 5, "align": "right", "fontWeight": "bold" },
-                  { "path": "document.total", "align": "right", "fontWeight": "bold" }
+                  {
+                    "text": "Разом",
+                    "colSpan": 5,
+                    "align": "right",
+                    "fontWeight": "bold"
+                  },
+                  {
+                    "path": "document.total",
+                    "align": "right",
+                    "fontWeight": "bold"
+                  }
                 ]
               }
             ]
           }
         },
-        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "26", "widthPercent": "100", "heightPercent": "45" },
-        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" }
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "26",
+          "widthPercent": "100",
+          "heightPercent": "45"
+        },
+        "text": {
+          "fontSize": "10",
+          "align": "left",
+          "fontWeight": "normal",
+          "color": "#262626"
+        }
       },
       {
         "key": "signatures",
         "type": "field-list",
         "items": [
-          { "key": "released", "label": "Відпустив", "path": "" },
-          { "key": "received", "label": "Отримав", "path": "" }
+          {
+            "key": "released",
+            "label": "Відпустив",
+            "path": ""
+          },
+          {
+            "key": "received",
+            "label": "Отримав",
+            "path": ""
+          }
         ],
-        "placement": { "mode": "absolute", "xPercent": "0", "yPercent": "86", "widthPercent": "100", "heightPercent": "10" },
-        "text": { "fontSize": "10", "align": "left", "fontWeight": "normal", "color": "#262626" }
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "86",
+          "widthPercent": "100",
+          "heightPercent": "10"
+        },
+        "text": {
+          "fontSize": "10",
+          "align": "left",
+          "fontWeight": "normal",
+          "color": "#262626"
+        }
       }
     ]
   }
