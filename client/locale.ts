@@ -1,23 +1,35 @@
 import { Signal } from "signal-polyfill";
+import { CLIENT_LOCALES } from "./_locales.generated.ts";
 
 export type Locale = "uk" | "en";
 
 const _locale = new Signal.State<Locale>("uk");
 const _translations = new Map<string, string>();
 
+/**
+ * Рядки фреймворку вбудовані (`_locales.generated.ts`), рядки застосунку
+ * вантажаться по HTTP. Асиметрія навмисна: у встановленому застосунку локалі
+ * фреймворку копіювати нізвідки — з JSR приїжджають лише модулі, а `.json` у
+ * пакеті для потребувача недосяжний. Заразом зникає мережевий запит, без якого
+ * інтерфейс до першої відповіді показував ключі замість тексту.
+ *
+ * Порядок важливий: застосунок накладається поверх, тож може перевизначити
+ * будь-який рядок фреймворку.
+ */
 async function loadLocale(locale: Locale) {
   _translations.clear();
-  const results = await Promise.allSettled([
-    fetch(`/locales/client/${locale}.json`).then((r) => r.json()),
-    fetch(`/locales/app/${locale}.json`).then((r) => r.json()),
-  ]);
 
-  for (const result of results) {
-    if (result.status === "fulfilled") {
-      for (const [k, v] of Object.entries<string>(result.value)) {
-        _translations.set(k, v);
-      }
+  for (const [k, v] of Object.entries(CLIENT_LOCALES[locale] ?? {})) {
+    _translations.set(k, v);
+  }
+
+  try {
+    const appStrings = await fetch(`/locales/app/${locale}.json`).then((r) => r.json());
+    for (const [k, v] of Object.entries<string>(appStrings)) {
+      _translations.set(k, v);
     }
+  } catch {
+    // Застосунок без власних локалей — не помилка.
   }
 }
 

@@ -260,10 +260,9 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
             src: toPosix(resolve(appRoot, "_public")) + "/*",
             dest: ".",
           },
-          {
-            src: toPosix(join(FRAMEWORK_DIR, "_locales")) + "/*",
-            dest: "locales/client",
-          },
+          // Локалей фреймворку тут немає навмисно: вони вбудовані в модуль
+          // (`_locales.generated.ts`) — у встановленому застосунку копіювати їх
+          // нізвідки, з JSR приїжджають лише модулі.
           {
             src: toPosix(resolve(appRoot, "_locales")) + "/*",
             dest: "locales/app",
