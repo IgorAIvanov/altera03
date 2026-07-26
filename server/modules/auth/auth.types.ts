@@ -4,12 +4,20 @@ export interface AuthUserRow {
   full_name: string;
   is_active?: boolean;
   password_hash?: string;
+  must_change_password?: boolean;
 }
 
 export interface AuthUserDto {
   id: string;
   login: string;
   fullName: string;
+  /**
+   * Пароль тимчасовий — інтерфейс мусить показати екран зміни, а рантайм не
+   * виконає жодної команди моделі, доки прапорець стоїть (див.
+   * ModelRuntimeService). Ставиться тільки для користувача, створеного з
+   * BOOTSTRAP_PASSWORD.
+   */
+  mustChangePassword: boolean;
 }
 
 /**
@@ -152,5 +160,6 @@ export function toAuthUserDto(user: AuthUserRow): AuthUserDto {
     id: user.id,
     login: user.login,
     fullName: user.full_name,
+    mustChangePassword: user.must_change_password === true,
   };
 }

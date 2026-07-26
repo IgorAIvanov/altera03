@@ -31,7 +31,7 @@ export class AuthService {
 
   async findUserByLogin(login: string): Promise<AuthUserRow | null> {
     const rows = await this.db.sql<AuthUserRow[]>`
-      SELECT id, login, password_hash, full_name, is_active
+      SELECT id, login, password_hash, full_name, is_active, must_change_password
       FROM app.users
       WHERE login = ${login} AND is_active = true
     `;
@@ -40,7 +40,7 @@ export class AuthService {
 
   async findUserById(id: string): Promise<AuthUserRow | null> {
     const rows = await this.db.sql<AuthUserRow[]>`
-      SELECT id, login, full_name, is_active
+      SELECT id, login, full_name, is_active, must_change_password
       FROM app.users
       WHERE id = ${id}
     `;
@@ -49,7 +49,7 @@ export class AuthService {
 
   async findFirstActiveUser(): Promise<AuthUserRow | null> {
     const rows = await this.db.sql<AuthUserRow[]>`
-      SELECT id, login, full_name, is_active
+      SELECT id, login, full_name, is_active, must_change_password
       FROM app.users
       WHERE is_active = true
       ORDER BY created_at, login
@@ -58,13 +58,33 @@ export class AuthService {
     return rows[0] ?? null;
   }
 
-  async createUser(login: string, passwordHash: string, fullName: string) {
+  async createUser(
+    login: string,
+    passwordHash: string,
+    fullName: string,
+    mustChangePassword = false,
+  ) {
     const rows = await this.db.sql<AuthUserRow[]>`
-      INSERT INTO app.users (login, password_hash, full_name)
-      VALUES (${login}, ${passwordHash}, ${fullName})
-      RETURNING id, login, full_name
+      INSERT INTO app.users (login, password_hash, full_name, must_change_password)
+      VALUES (${login}, ${passwordHash}, ${fullName}, ${mustChangePassword})
+      RETURNING id, login, full_name, must_change_password
     `;
     return rows[0];
+  }
+
+  /**
+   * Зміна власного пароля. Тут, а не командою моделі, свідомо: доки стоїть
+   * `must_change_password`, рантайм команд моделей не виконує взагалі — інакше
+   * єдиний спосіб зняти прапорець був би заблокований разом з усім іншим.
+   */
+  async changeOwnPassword(userId: string, passwordHash: string): Promise<void> {
+    await this.db.sql`
+      UPDATE app.users
+         SET password_hash = ${passwordHash},
+             must_change_password = false,
+             updated_at = now()
+       WHERE id = ${userId}::bigint
+    `;
   }
 
   /**

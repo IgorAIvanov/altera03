@@ -80,6 +80,29 @@ as $$
 $$;
 
 /**
+ * Відмова через тимчасовий пароль — або NULL, якщо міняти нічого не треба.
+ *
+ * NULL, а не boolean, свідомо: рантайм загортає виклик команди в
+ * `coalesce(password_change_denied(uid), <команда>)`, а coalesce не обчислює
+ * наступні аргументи, коли перший не NULL. Один round-trip, і команда при
+ * заблокованому паролі не виконується взагалі — так само, як із access_denied.
+ */
+drop function if exists app.password_change_denied(bigint);
+create function app.password_change_denied(p_user_id bigint)
+returns jsonb
+language sql
+stable
+as $$
+  select case when u.must_change_password then jsonb_build_object(
+      'ok', false,
+      'data', app.access_empty_data(),
+      'messages', jsonb_build_array('Потрібно змінити тимчасовий пароль')
+    ) end
+  from app.users u
+  where u.id = p_user_id;
+$$;
+
+/**
  * Ефективні права користувача — плоский список (model, action).
  * Застосунку зручно отримати його один раз і вимикати кнопки локально,
  * не питаючи сервер на кожен елемент.

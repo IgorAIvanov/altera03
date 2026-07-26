@@ -1,7 +1,14 @@
 import { html, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
-import { createFirstUser, fetchBootstrapState, login, type BootstrapState } from "@client/auth/session.ts";
+import {
+  changeOwnPassword,
+  createFirstUser,
+  fetchBootstrapState,
+  login,
+  mustChangePassword,
+  type BootstrapState,
+} from "@client/auth/session.ts";
 
 export const tagName = "app-login";
 
@@ -17,6 +24,9 @@ export class AppLogin extends GlobalStyledLitElement {
   @state() private password = "";
   @state() private error = "";
   @state() private busy = false;
+  /** Вхід відбувся, але пароль тимчасовий — показуємо зміну замість оболонки. */
+  @state() private changing = mustChangePassword();
+  @state() private newPassword = "";
 
   override async connectedCallback() {
     super.connectedCallback();
@@ -33,6 +43,8 @@ export class AppLogin extends GlobalStyledLitElement {
   }
 
   override render(): TemplateResult {
+    if (this.changing) return this.#renderPasswordChange();
+
     return html`
       <div class="min-h-screen flex items-center justify-center">
         <form class="w-80 flex flex-col gap-3 p-6 rounded border" @submit=${this.#submit}>
@@ -55,6 +67,49 @@ export class AppLogin extends GlobalStyledLitElement {
     `;
   }
 
+  /**
+   * Обов'язкова зміна пароля. Виникає, коли користувача створив bootstrap із
+   * BOOTSTRAP_PASSWORD: той пароль лежить відкритим текстом у .env і відомий
+   * усім, хто бачив файл. Пропустити екран не можна — сервер під цим
+   * прапорцем не виконує жодної команди моделі.
+   */
+  #renderPasswordChange(): TemplateResult {
+    return html`
+      <div class="min-h-screen flex items-center justify-center">
+        <form class="w-80 flex flex-col gap-3 p-6 rounded border" @submit=${this.#changePassword}>
+          <h1 class="text-lg font-medium">Змініть тимчасовий пароль</h1>
+          <p class="text-sm opacity-70">
+            Пароль задано в налаштуваннях сервера, тому працювати з ним не можна.
+          </p>
+
+          <input class="input" type="password" placeholder="Поточний пароль" .value=${this.password}
+                 @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value} />
+          <input class="input" type="password" placeholder="Новий пароль" .value=${this.newPassword}
+                 @input=${(e: Event) => this.newPassword = (e.target as HTMLInputElement).value} />
+
+          ${this.error ? html`<div class="text-error text-sm">${this.error}</div>` : ""}
+
+          <button class="btn btn-primary" ?disabled=${this.busy}>Зберегти й продовжити</button>
+        </form>
+      </div>
+    `;
+  }
+
+  async #changePassword(event: Event) {
+    event.preventDefault();
+    this.busy = true;
+    this.error = "";
+
+    try {
+      await changeOwnPassword(this.password, this.newPassword);
+      location.reload();
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.busy = false;
+    }
+  }
+
   async #submit(event: Event) {
     event.preventDefault();
     this.busy = true;
@@ -66,6 +121,14 @@ export class AppLogin extends GlobalStyledLitElement {
       } else {
         await login({ login: this.login.trim(), password: this.password });
       }
+      // Вхід міг привести до тимчасового пароля — тоді не перезавантажуємо
+      // сторінку, а перемикаємо цей самий екран у стан зміни.
+      if (mustChangePassword()) {
+        this.changing = true;
+        this.password = "";
+        return;
+      }
+
       location.reload();
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);

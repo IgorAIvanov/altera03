@@ -3,6 +3,11 @@ import { customElement, state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { bus } from "@client/bus/bus.ts";
 import { currentUser, logout } from "@client/auth/session.ts";
+// Побічним ефектом, а не значенням: `ChangePasswordDialog` тут потрібен лише
+// як тип, і звичайний іменований імпорт esbuild вирізає разом із модулем —
+// тоді @customElement не виконується й тег лишається невизначеним.
+import "./change-password-dialog.ts";
+import type { ChangePasswordDialog } from "./change-password-dialog.ts";
 import { t } from "@client/locale.ts";
 import { currentOrg, setCurrentOrg } from "@shared/current-organization.ts";
 
@@ -20,6 +25,18 @@ export class AppHeader extends SignalWatcher(LitElement) {
       font-family: "Roboto", sans-serif;
       font-size: var(--default-font-size, 0.875rem);
       flex-shrink: 0;
+    }
+
+    /* Діалог зміни пароля в розкладці шапки участі не бере. :host тут —
+       flex із space-between на двох блоках (ліворуч меню, праворуч організація
+       й користувач); третій дочірній елемент розтягував би розподіл і зсував
+       правий блок до центру. display: contents прибирає коробку самого
+       елемента, а вміст його shadow root (сам dialog) лишається — і
+       відкривається в top layer, як і має.
+       (Зворотних лапок у коментарі всередині css-шаблона бути не може —
+       вони обривають сам шаблонний рядок.) */
+    change-password-dialog {
+      display: contents;
     }
 
     .right {
@@ -407,7 +424,7 @@ export class AppHeader extends SignalWatcher(LitElement) {
           <div class="dropdown-item" @click=${() => this.open = false}>
             ${this.iconSettings()} Налаштування профілю
           </div>
-          <div class="dropdown-item" @click=${() => this.open = false}>
+          <div class="dropdown-item" @click=${this.openPasswordChange}>
             ${this.iconPassword()} Змінити пароль
           </div>
           <div class="dropdown-divider"></div>
@@ -416,6 +433,17 @@ export class AppHeader extends SignalWatcher(LitElement) {
           </div>
         </div>
       ` : ""}
+
+      <change-password-dialog></change-password-dialog>
     `;
   }
+
+  /**
+   * Діалог живе поза випадним меню й переживає його закриття — інакше форма
+   * зникала б разом із меню на першому ж кліку повз неї.
+   */
+  private openPasswordChange = () => {
+    this.open = false;
+    this.renderRoot.querySelector<ChangePasswordDialog>("change-password-dialog")?.open();
+  };
 }

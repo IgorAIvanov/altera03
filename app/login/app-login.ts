@@ -26,6 +26,8 @@ import {
   login,
   startRedirectLogin,
   takeAuthError,
+  changeOwnPassword,
+  mustChangePassword,
 } from "@client/auth/session.ts";
 
 @customElement("app-login")
@@ -100,6 +102,14 @@ export class AppLogin extends GlobalStyledLitElement {
         });
       } else {
         await login({ login: this.login.trim(), password: this.password });
+      }
+
+      // Вхід міг привести до тимчасового пароля — тоді оболонку не піднімаємо,
+      // а перемикаємо цей самий екран у стан зміни.
+      if (mustChangePassword()) {
+        this.changingPassword = true;
+        this.password = "";
+        return;
       }
 
       this.dispatchEvent(new CustomEvent("auth.success", { bubbles: true, composed: true }));
@@ -218,7 +228,55 @@ export class AppLogin extends GlobalStyledLitElement {
     `;
   }
 
+  @state() private changingPassword = mustChangePassword();
+  @state() private newPassword = "";
+
+  /**
+   * Обов'язкова зміна тимчасового пароля. Виникає для користувача, створеного
+   * з BOOTSTRAP_PASSWORD: той пароль лежить відкритим текстом у .env. Поки
+   * прапорець стоїть, сервер не виконує жодної команди моделі, тож пропустити
+   * екран не можна — оболонка все одно була б порожньою.
+   */
+  private renderPasswordChange() {
+    return html`
+      <div class="min-h-screen flex items-center justify-center">
+        <form class="w-80 flex flex-col gap-3 p-6 rounded border" @submit=${this.changePassword}>
+          <h1 class="text-lg font-medium">Змініть тимчасовий пароль</h1>
+          <p class="text-sm opacity-70">
+            Пароль задано в налаштуваннях сервера, тому працювати з ним не можна.
+          </p>
+
+          <input class="input" type="password" placeholder="Поточний пароль" .value=${this.password}
+                 @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value} />
+          <input class="input" type="password" placeholder="Новий пароль" .value=${this.newPassword}
+                 @input=${(e: Event) => this.newPassword = (e.target as HTMLInputElement).value} />
+
+          ${this.error ? html`<div class="text-error text-sm">${this.error}</div>` : nothing}
+
+          <button class="btn btn-primary" ?disabled=${this.busy}>Зберегти й продовжити</button>
+        </form>
+      </div>
+    `;
+  }
+
+  private changePassword = async (event: Event) => {
+    event.preventDefault();
+    this.busy = true;
+    this.error = "";
+
+    try {
+      await changeOwnPassword(this.password, this.newPassword);
+      location.reload();
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.busy = false;
+    }
+  };
+
   override render() {
+    if (this.changingPassword) return this.renderPasswordChange();
+
     if (!this.bootstrapState) {
       return this.error ? this.renderUnavailable() : html`<div class="p-8 text-center">…</div>`;
     }

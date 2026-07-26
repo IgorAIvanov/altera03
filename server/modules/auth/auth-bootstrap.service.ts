@@ -82,10 +82,14 @@ export class AuthBootstrapService {
     }
 
     const passwordHash = await hashPassword(configuredUser.password);
+    // true: пароль прийшов із BOOTSTRAP_PASSWORD, тобто лежить відкритим
+    // текстом у .env і відомий кожному, хто бачив файл. Користувач мусить
+    // змінити його при першому ж вході — до того рантайм команд не виконує.
     const user = await this.authService.createUser(
       configuredUser.login,
       passwordHash,
       configuredUser.fullName,
+      true,
     );
     await this.authService.ensureDefaultAccess(user.id);
     return toAuthUserDto(user);

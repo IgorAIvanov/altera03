@@ -8,7 +8,7 @@ import "./styles/app-styles.ts";
 import { registerShell } from "@client/shell/shell-registry.ts";
 import { initDataService } from "@client/data/data-service.ts";
 import { ServerUnavailableError } from "@client/data/api.ts";
-import { restoreSession } from "@client/auth/session.ts";
+import { mustChangePassword, restoreSession } from "@client/auth/session.ts";
 import { dropLegacyKey } from "@client/shared/user-storage.ts";
 import { setLocale, type Locale } from "@client/locale.ts";
 import { hydrateCurrentOrg } from "@shared/current-organization.ts";
@@ -42,7 +42,10 @@ async function boot(): Promise<void> {
   const root = document.querySelector("#app");
   if (!root) return;
 
-  if (await restoreSession()) {
+  // Тимчасовий пароль (створений із BOOTSTRAP_PASSWORD) зупиняє тут: оболонку
+  // піднімати нема сенсу — сервер під цим прапорцем не виконує жодної команди
+  // моделі. Екран зміни — той самий app-login, лише в іншому стані.
+  if (await restoreSession() && !mustChangePassword()) {
     // Порядок важливий: обидва читають сховище за ключем із id користувача,
     // тому мають іти після відновлення сесії й до підняття оболонки.
     hydrateCurrentOrg();

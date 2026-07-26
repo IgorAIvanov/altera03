@@ -109,3 +109,8 @@ begin
 	end if;
 end
 $$;
+
+-- Прапорець тимчасового пароля (див. struc.sql). Для вже наявних користувачів
+-- false: їхні паролі задавала людина, а не оточення.
+alter table app.users
+  add column if not exists must_change_password boolean not null default false;

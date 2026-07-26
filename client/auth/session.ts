@@ -14,6 +14,12 @@ export interface SessionUser {
   id: string;
   login: string;
   fullName: string;
+  /**
+   * Пароль тимчасовий — застосунок мусить показати екран зміни замість
+   * оболонки. Це не порада інтерфейсу: доки прапорець стоїть, сервер не
+   * виконує жодної команди моделі, тож оболонка все одно лишиться порожньою.
+   */
+  mustChangePassword: boolean;
 }
 
 export interface SessionInfo {
@@ -194,6 +200,36 @@ export async function createFirstUser(input: {
 
   applySession(envelope.data.item);
   await loadPermissions();
+}
+
+/** Чи мусить поточний користувач змінити пароль перед роботою. */
+export function mustChangePassword(): boolean {
+  return currentUser()?.mustChangePassword === true;
+}
+
+/**
+ * Зміна власного пароля. Поточний вимагається завжди — і при обов'язковій
+ * зміні: форма без нього перетворює чужий незамкнений браузер на захоплення
+ * облікового запису.
+ */
+export async function changeOwnPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const response = await apiFetch("/api/auth/change-password", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+
+  const envelope = await readEnvelope<{ changed: boolean }>(response);
+  if (!envelope.ok) {
+    throw new Error(firstMessage(envelope.messages));
+  }
+
+  // Сесія лишається та сама, змінюється лише прапорець — перечитуємо, щоб
+  // застосунок побачив, що можна вставати на оболонку.
+  await restoreSession();
 }
 
 export async function logout(): Promise<void> {

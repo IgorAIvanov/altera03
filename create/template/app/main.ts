@@ -4,7 +4,7 @@ import "./styles/app-styles.ts";
 
 import { registerShell } from "@client/shell/shell-registry.ts";
 import { initDataService } from "@client/data/data-service.ts";
-import { restoreSession } from "@client/auth/session.ts";
+import { mustChangePassword, restoreSession } from "@client/auth/session.ts";
 import { setLocale } from "@client/locale.ts";
 
 import "./header/app-header.ts";
@@ -21,7 +21,10 @@ async function boot() {
   const host = document.getElementById("app")!;
   const authorized = await restoreSession();
 
-  if (!authorized) {
+  // Тимчасовий пароль зупиняє тут: оболонку піднімати нема сенсу — сервер під
+  // цим прапорцем не виконує жодної команди моделі. Екран зміни — той самий
+  // app-login, лише в іншому стані.
+  if (!authorized || mustChangePassword()) {
     host.replaceChildren(document.createElement("app-login"));
     return;
   }

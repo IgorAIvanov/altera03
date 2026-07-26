@@ -246,14 +246,19 @@ export class ModelRuntimeService {
    * `app.access_denied`.
    */
   private async assertAccess(model: string, action: string, userId: string) {
-    const rows = await this.db.sql<{ allowed: boolean; denied: unknown }[]>`
+    const rows = await this.db.sql<{ allowed: boolean; denied: unknown; password_denied: unknown }[]>`
       select
-        app.access_can(${userId}::bigint, ${model}, ${action}) as allowed,
-        app.access_denied(${model}, ${action})                 as denied
+        app.access_can(${userId}::bigint, ${model}, ${action})   as allowed,
+        app.access_denied(${model}, ${action})                   as denied,
+        app.password_change_denied(${userId}::bigint)            as password_denied
     `;
 
     const row = rows[0];
     if (!row) throw ModelCommandError.badResponse(model, "access_can");
+
+    // Тимчасовий пароль важить більше за право: доки він не змінений, не
+    // виконується жодна команда, навіть дозволена.
+    if (row.password_denied) return row.password_denied;
 
     return row.allowed ? null : row.denied;
   }
@@ -325,16 +330,27 @@ export class ModelRuntimeService {
       // запитом: один round-trip, права завжди свіжі (жодного кешу для
       // інвалідації), а при відмові команда навіть не виконується — CASE не
       // обчислює невибрану гілку, і аргументи тут не згортаються в константи.
+      // coalesce поверх усього: тимчасовий пароль блокує будь-яку команду, і
+      // `authenticated` теж — інакше «команди про себе» лишалися б відкритими
+      // під паролем, який відомий кожному, хто бачив .env. Coalesce не
+      // обчислює другий аргумент, коли перший не NULL, тож round-trip
+      // лишається один, а команда не виконується.
       const rows = action === AUTHENTICATED
         ? await this.db.sql<{ result: unknown }[]>`
-            select ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb) as result
+            select coalesce(
+              app.password_change_denied(${userId}::bigint),
+              ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
+            ) as result
           `
         : await this.db.sql<{ result: unknown }[]>`
-            select case
-              when app.access_can(${userId}::bigint, ${model}, ${action})
-                then ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
-              else app.access_denied(${model}, ${action})
-            end as result
+            select coalesce(
+              app.password_change_denied(${userId}::bigint),
+              case
+                when app.access_can(${userId}::bigint, ${model}, ${action})
+                  then ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
+                else app.access_denied(${model}, ${action})
+              end
+            ) as result
           `;
 
       return rows[0]?.result ?? null;

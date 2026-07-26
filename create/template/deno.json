@@ -22,9 +22,9 @@
   },
 
   "imports": {
-    "@altera/client": "jsr:@altera/client@^0.3.3",
-    "@client/": "jsr:/@altera/client@^0.3.3/",
-    "@altera/server": "jsr:@altera/server@^0.3.0",
+    "@altera/client": "jsr:@altera/client@^0.4.0",
+    "@client/": "jsr:/@altera/client@^0.4.0/",
+    "@altera/server": "jsr:@altera/server@^0.4.0",
     "@app/": "./app/",
     "@shared/": "./app/shared/",
 

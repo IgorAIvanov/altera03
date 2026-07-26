@@ -11,6 +11,7 @@ import {
 } from "./auth-redirect.service.ts";
 import { htmlResponse, redirectBouncePage } from "./auth-redirect-page.ts";
 import { err, ok, rows } from "../../common/response.ts";
+import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "./password-hash.ts";
 import { type HttpRequest, jsonResponse } from "../../common/http.ts";
 import type { AuthLoginRequest, AuthSessionInfo } from "./auth.types.ts";
 
@@ -164,6 +165,45 @@ export class AuthController {
     }
 
     return rows(await this.authService.getEffectivePermissions(sessionUser.user.id));
+  }
+
+  /**
+   * Зміна власного пароля. Окремий маршрут авторизації, а не команда моделі:
+   * доки стоїть `mustChangePassword`, рантайм команд моделей не виконує, тож
+   * командою цей екран заблокував би сам себе.
+   *
+   * Поточний пароль вимагається завжди — і при обов'язковій зміні теж: сесію
+   * могли лишити відкритою, а форма без перевірки старого пароля перетворює
+   * чужий незамкнений браузер на захоплення облікового запису.
+   */
+  @Post("change-password")
+  async changePassword(
+    @Req() req: HttpRequest,
+    @Body() body: { currentPassword?: string; newPassword?: string },
+  ) {
+    const sessionUser = await this.authSessionService.resolveSessionUser(req);
+    if (!sessionUser) {
+      return jsonResponse(err("Необхідна авторизація"), 401);
+    }
+
+    const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+    const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      return jsonResponse(err(`Пароль має містити щонайменше ${MIN_PASSWORD_LENGTH} символів`), 400);
+    }
+
+    if (newPassword === currentPassword) {
+      return jsonResponse(err("Новий пароль збігається з поточним"), 400);
+    }
+
+    const stored = await this.authService.findUserByLogin(sessionUser.user.login);
+    if (!stored?.password_hash || !await verifyPassword(currentPassword, stored.password_hash)) {
+      return jsonResponse(err("Поточний пароль невірний"), 400);
+    }
+
+    await this.authService.changeOwnPassword(sessionUser.user.id, await hashPassword(newPassword));
+    return ok({ changed: true });
   }
 
   @Post("logout")

@@ -28,6 +28,11 @@ create table if not exists app.users (
   password_hash varchar(255) not null,
   full_name     varchar(255) not null,
   is_active     boolean not null default true,
+  -- Пароль тимчасовий і мусить бути змінений при вході. Ставиться, коли
+  -- користувача створив bootstrap із BOOTSTRAP_PASSWORD: цей пароль лежить
+  -- відкритим текстом у .env і відомий усім, хто бачив файл. Прапорець тут, а
+  -- не в сесії, бо він переживає і вихід, і перезапуск сервера.
+  must_change_password boolean not null default false,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
