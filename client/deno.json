@@ -1,25 +1,34 @@
 {
   "name": "@altera/client",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "//": "Точки входу бібліотеки. main.ts тут немає навмисно: composition root (реєстрація оболонки конкретного застосунку) переїхав у app/main.ts — бібліотека не може знати про app-header чи home-tab.",
   "exports": {
-    "./locale.ts": "./locale.ts",
+    "./vite": "./vite.ts",
+    "./auth/session.ts": "./auth/session.ts",
     "./bus/bus.ts": "./bus/bus.ts",
+    "./data/api.ts": "./data/api.ts",
     "./data/data-service.ts": "./data/data-service.ts",
+    "./locale.ts": "./locale.ts",
+    "./shared/datetime.ts": "./shared/datetime.ts",
+    "./shared/schema.ts": "./shared/schema.ts",
+    "./shared/styles.ts": "./shared/styles.ts",
+    "./shared/user-storage.ts": "./shared/user-storage.ts",
     "./shell/shell-registry.ts": "./shell/shell-registry.ts",
     "./tabs/tab-controller.ts": "./tabs/tab-controller.ts",
-    "./shared/styles.ts": "./shared/styles.ts",
-    "./shared/schema.ts": "./shared/schema.ts",
-    "./shared/datetime.ts": "./shared/datetime.ts",
     "./ui-kit/base/base-ui.ts": "./ui-kit/base/base-ui.ts",
+    "./ui-kit/base/gsle.ts": "./ui-kit/base/gsle.ts",
     "./ui-kit/base/model-list-base.ts": "./ui-kit/base/model-list-base.ts",
     "./ui-kit/base/model-picker-base.ts": "./ui-kit/base/model-picker-base.ts",
     "./ui-kit/base/report-base.ts": "./ui-kit/base/report-base.ts",
-    "./ui-kit/report/xlsx.ts": "./ui-kit/report/xlsx.ts",
-    "./ui-kit/report/table-model.ts": "./ui-kit/report/table-model.ts",
-    "./ui-kit/report/rows-sheet.ts": "./ui-kit/report/rows-sheet.ts",
+    "./ui-kit/components/ui-attachments.ts": "./ui-kit/components/ui-attachments.ts",
+    "./ui-kit/components/ui-date.ts": "./ui-kit/components/ui-date.ts",
+    "./ui-kit/components/ui-decimal.ts": "./ui-kit/components/ui-decimal.ts",
+    "./ui-kit/components/ui-image.ts": "./ui-kit/components/ui-image.ts",
+    "./ui-kit/components/ui-picker.ts": "./ui-kit/components/ui-picker.ts",
     "./ui-kit/report/print.ts": "./ui-kit/report/print.ts",
-    "./vite": "./vite.ts"
+    "./ui-kit/report/rows-sheet.ts": "./ui-kit/report/rows-sheet.ts",
+    "./ui-kit/report/table-model.ts": "./ui-kit/report/table-model.ts",
+    "./ui-kit/report/xlsx.ts": "./ui-kit/report/xlsx.ts"
   },
   "license": "MIT",
   "//imports": "Залежності пакета оголошені тут, а не успадковані з кореня воркспейсу: інакше версії, з якими пакет піде в реєстр, є побічним ефектом файлу застосунку. Vite-залежностей тут немає навмисно — vite.ts імпортує їх повними npm:-специфікаторами повз карту (конфіг вантажиться раніше за аліаси). `@client/` — внутрішні імпорти самого пакета.",
@@ -36,12 +45,18 @@
   },
   "//publish": "Проби лишаються в репозиторії: у пакеті вони не потрібні, а @std/assert інакше стає залежністю споживача. Блок `publish` чужих ключів не приймає — навіть `//`, тож коментар тут.",
   "publish": {
-    "exclude": ["**/*_test.ts"]
+    "exclude": [
+      "**/*_test.ts"
+    ]
   },
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strict": true,
-    "lib": ["dom", "dom.iterable", "esnext"]
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ]
   }
 }

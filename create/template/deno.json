@@ -1,0 +1,52 @@
+{
+  "//": "Застосунок на фреймворку Altera. Три пакети приходять із jsr; усе, що нижче, належить застосунку.",
+
+  "//vendor": "ОБОВ'ЯЗКОВО. Пресет Vite і Tailwind читають вихідники фреймворку з диска (аліас @client, @source), а кеш JSR — це файли з іменами-хешами. Вендоринг матеріалізує їх у справжнє дерево. Без нього збірка падає на завантаженні модулів фреймворку.",
+  "vendor": true,
+  "nodeModulesDir": "auto",
+
+  "tasks": {
+    "dev": "deno task dev:server & deno task dev:front",
+    "dev:server": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./app/server.ts",
+    "dev:front": "deno run -A npm:vite",
+    "build:front": "deno run -A npm:vite build",
+
+    "sql:registry": "deno run -A jsr:@altera/tools/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
+    "sql:gen": "deno run -A jsr:@altera/tools/generate-model-sql ./app --verbose",
+    "sql:assemble": "deno run -A jsr:@altera/tools/assemble-sql-package ./app --verbose",
+    "sql:publish": "deno run -A --env-file jsr:@altera/tools/publish-sql ./app --verbose",
+
+    "startdb": "docker compose up -d",
+    "stopdb": "docker compose down"
+  },
+
+  "imports": {
+    "@altera/client": "jsr:@altera/client@^0.3.3",
+    "//@client": "Аліас на той самий пакет. Пиши імпорти саме через нього: пресет наводить його на каталог фреймворку у vendor/, тому забутий `deno install` ламає збірку одразу й голосно. Через ім'я пакета модулі прийшли б із кешу, і тихо зламалися б лише стилі.",
+    "@client/": "jsr:/@altera/client@^0.3.3/",
+    "@altera/server": "jsr:@altera/server@^0.3.0",
+    "@app/": "./app/",
+    "@shared/": "./app/shared/",
+
+    "lit": "npm:lit@^3.3.1",
+    "@lit-labs/signals": "npm:@lit-labs/signals@^0.1.3",
+    "signal-polyfill": "npm:signal-polyfill@^0.2.2",
+    "signal-utils": "npm:signal-utils@^0.21.1",
+    "@sinclair/typebox": "npm:@sinclair/typebox@^0.34.0",
+    "@sinclair/typebox/value": "npm:@sinclair/typebox@^0.34.0/value",
+    "decimal.js": "npm:decimal.js@^10.6.0",
+    "@fontsource/roboto": "npm:@fontsource/roboto@^5.2.10",
+
+    "vite": "npm:vite@^6.3.5",
+    "tailwindcss": "npm:tailwindcss@^4.3.0",
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.3.0",
+    "daisyui": "npm:daisyui@^5.5.20"
+  },
+
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strict": true,
+    "lib": ["deno.ns", "dom", "dom.iterable", "esnext"]
+  }
+}

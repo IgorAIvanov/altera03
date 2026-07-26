@@ -123,6 +123,47 @@ async function checkCssIsPlain(root: string) {
   }
 }
 
+/**
+ * Кожен шлях `@client/...`, яким користується застосунок, оголошений в
+ * `exports` пакета клієнта.
+ *
+ * У монорепо `@client/` — аліас на КАТАЛОГ, тому працює будь-який шлях, і
+ * дірка в експорт-мапі не видно взагалі. У встановленому застосунку той самий
+ * імпорт іде через експорт-мапу і падає. Знайшлося це аж на зібраному з
+ * scaffold застосунку: дев'ять шляхів (`auth/session.ts`, `data/api.ts`,
+ * `ui-kit/components/*` …) не були оголошені жодного разу за весь час.
+ *
+ * Перевіряємо і шаблон scaffold — він генерує код, який теж ходить у пакет.
+ */
+async function checkClientExportsCoverUsage() {
+  const manifest = JSON.parse(await Deno.readTextFile("client/deno.json")) as {
+    exports: Record<string, string>;
+  };
+  const declared = new Set(Object.keys(manifest.exports));
+  const seen = new Map<string, string>();
+
+  for (const root of ["app", "create/template"]) {
+    for await (const file of walk(root, [".ts"])) {
+      const lines = (await Deno.readTextFile(file)).split("\n");
+      for (const line of lines) {
+        const specifier = importSpecifier(line);
+        if (!specifier?.startsWith("@client/")) continue;
+        const exportPath = "." + specifier.slice("@client".length);
+        if (!declared.has(exportPath) && !seen.has(exportPath)) seen.set(exportPath, file);
+      }
+    }
+  }
+
+  for (const [exportPath, file] of seen) {
+    violations.push(
+      `${file}: ${exportPath} не оголошено в exports пакета @altera/client — ` +
+        `у монорепо працює через аліас-каталог, у встановленому застосунку впаде`,
+    );
+  }
+}
+
+await checkClientExportsCoverUsage();
+
 // Винятків більше немає: обидва composition root живуть у застосунку
 // (app/server.ts і app/main.ts), тож бібліотеки про застосунок не знають узагалі.
 await checkNoAppDependency("client", () => false);

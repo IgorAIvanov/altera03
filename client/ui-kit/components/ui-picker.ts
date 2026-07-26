@@ -1,5 +1,5 @@
 import { GlobalStyledLitElement } from "../base/gsle.ts";
-import { html } from "lit";
+import { html, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { apiFetch } from "../../data/api.ts";
@@ -131,7 +131,7 @@ export class UiPicker extends GlobalStyledLitElement {
     this.dispatchEvent(new CustomEvent("item-cleared", { bubbles: true, composed: true }));
   }
 
-  override render() {
+  override render(): TemplateResult {
     const hasBrowse = !!this.url;
 
     if (!this.visible) return html``;

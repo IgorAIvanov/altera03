@@ -11,6 +11,8 @@ deno task dev:front    # тільки Vite dev server
 deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest) з manifest.json
 deno task sql:gen <model>  # перегенерувати CRUD-SQL ОДНІЄЇ моделі: sql:gen catalog/bank
 deno task core:sql     # вбудувати server/sql/**/db/*.sql у core-sql.generated.ts (після правки SQL ядра)
+deno task client:assets    # вбудувати тему й локалі фреймворку (після правки theme.css / client/_locales)
+deno task scaffold:template # вбудувати create/template/** у create/template.generated.ts
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
 deno task test:unit    # юніт-проби бібліотек без БД і HTTP (символіки штрих-кодів)
@@ -86,6 +88,11 @@ server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace
     model-view.registry.ts        # view-реєстр з config.views (без ФС-скану)
   modules/auth/                   # авторизація; методи входу — з config.auth.methods
   database/                       # тільки рантайм: модуль і пул з'єднань
+
+create/                     # scaffold нового застосунку (@altera/create)
+  template/                 # дерево шаблону звичайними файлами — джерело
+  template.generated.ts     # воно ж мапою: команду запускають без установки,
+                            #   тож пакет може віддати лише модулі
 
 tools/                      # пакет інструментів (@altera/tools): codegen, publish, дев-клієнт
   generate-model-sql.ts           # генерація SQL моделей

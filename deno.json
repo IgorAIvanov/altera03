@@ -20,6 +20,8 @@
     // Вбудовує тему й локалі фреймворку в TS-модулі. Запускати після правки
     // client/styles/theme.css або client/_locales/*.json.
     "client:assets": "deno run -A ./tools/generate-client-assets.ts ./client --verbose",
+    // Вбудовує дерево create/template/** у create/template.generated.ts.
+    "scaffold:template": "deno run -A ./tools/generate-scaffold-template.ts ./create/template ./create/template.generated.ts --verbose",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки
@@ -37,7 +39,7 @@
     "model:build": "deno task sql:registry && deno task sql:assemble && deno task sql:publish"
   },
 
-  "workspace": ["./server", "./client", "./app", "./tools"],
+  "workspace": ["./server", "./client", "./app", "./tools", "./create"],
   "imports": {
     "@app/": "./app/",
     "@client/": "./client/",

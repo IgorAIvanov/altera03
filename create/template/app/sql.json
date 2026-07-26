@@ -1,0 +1,16 @@
+{
+  "//": "Порядок важливий: пакети ядра й моделі застосунку чергуються за FK. @core/document_core посилається на catalog/organization, currency і chart_of_account — додай його НИЖЧЕ за ці моделі, коли вони з'являться.",
+  "output": "{{name}}.app.sql",
+  "outputs": {
+    "structure": "{{name}}.struc_app.sql",
+    "models": "{{name}}.models_app.sql",
+    "migrations": "{{name}}.migration_app.sql",
+    "data": "{{name}}.data_app.sql"
+  },
+  "models": [
+    "@core/base",
+    "@core/access",
+    "@core/menu",
+    "@core/attachment"
+  ]
+}

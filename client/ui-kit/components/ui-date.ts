@@ -1,5 +1,5 @@
 import { GlobalStyledLitElement } from "../base/gsle.ts";
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { getLocale } from "../../locale.ts";
 import {
@@ -327,7 +327,7 @@ export class UiDate extends GlobalStyledLitElement {
     `;
   }
 
-  override render() {
+  override render(): TemplateResult {
     if (!this.visible) return html``;
 
     const inputGroup = html`

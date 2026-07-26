@@ -1,4 +1,4 @@
-import { html, type PropertyValues } from "lit";
+import { html, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { t } from "../../locale.ts";
@@ -131,7 +131,7 @@ export class UiImage extends GlobalStyledLitElement {
     }));
   }
 
-  override render() {
+  override render(): TemplateResult {
     const box = `width:${this.size}px;height:${this.size}px`;
 
     return html`

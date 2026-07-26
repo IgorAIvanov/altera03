@@ -1,4 +1,4 @@
-import { html, type PropertyValues } from "lit";
+import { html, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { t } from "../../locale.ts";
@@ -134,7 +134,7 @@ export class UiAttachments extends GlobalStyledLitElement {
     }));
   }
 
-  override render() {
+  override render(): TemplateResult {
     const canAdd = Boolean(this.ownerId && this.ownerModel) && !this.disabled && !this._busy;
 
     return html`

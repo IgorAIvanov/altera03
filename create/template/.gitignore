@@ -1,0 +1,5 @@
+.env
+dist/
+node_modules/
+vendor/
+app/_sqlpackage/*.sql

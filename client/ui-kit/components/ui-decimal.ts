@@ -1,5 +1,5 @@
 import { GlobalStyledLitElement } from "../base/gsle.ts";
-import { html } from "lit";
+import { html, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { Decimal } from "decimal.js";
 
@@ -151,7 +151,7 @@ export class UiDecimal extends GlobalStyledLitElement {
     }
   }
 
-  override render() {
+  override render(): TemplateResult {
     if (!this.visible) return html``;
 
     const input = html`
