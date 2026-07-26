@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "//": "Збіркові й дев-інструменти фреймворку: codegen SQL/реєстру, публікація, in-process клієнт застосунку. Знання про конкретний застосунок у пакет не зашите: codegen/publish отримують каталог аргументом, а AppClient — фабрику `createServer` інжекцією. Тонкі обгортки (api/smoke) живуть у застосунку й передають сюди свій createServer.",
   "exports": {
+    "./generate-core-sql": "./generate-core-sql.ts",
     "./generate-model-sql": "./generate-model-sql.ts",
     "./generate-model-runtime-registry": "./generate-model-runtime-registry.ts",
     "./assemble-sql-package": "./assemble-sql-package.ts",

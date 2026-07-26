@@ -14,6 +14,9 @@
     "stopdb": "docker compose down",
     "sql:registry": "deno run -A ./tools/generate-model-runtime-registry.ts ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
     "sql:gen": "deno run -A ./tools/generate-model-sql.ts ./app --verbose",
+    // Вбудовує server/sql/**/db/*.sql у core-sql.generated.ts. Запускати після
+    // правки SQL ядра; розсинхрон ловить проба в test:unit.
+    "core:sql": "deno run -A ./tools/generate-core-sql.ts ./server/sql",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки

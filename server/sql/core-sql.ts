@@ -2,9 +2,13 @@
  * SQL ядра — схема, без якої не працює жоден застосунок на цьому фреймворку:
  * користувачі й сесії, вкладення, документи з проводками, шаблони друку, довідка.
  *
- * Файли лишаються звичайними `.sql` (їх редагують і читають як SQL), а сюди
- * потрапляють text-імпортами. Завдяки цьому вони їдуть у складі опублікованого
- * пакета й резолвляться однаково — і з робочої копії, і з jsr.
+ * Файли лишаються звичайними `.sql` — їх редагують і читають як SQL. У модуль
+ * текст потрапляє через згенерований `core-sql.generated.ts`
+ * (`deno task core:sql`), а НЕ text-імпортами `with { type: "text" }`: це
+ * експериментальна можливість Deno (`--unstable-raw-imports`), і граф на боці
+ * JSR її не розбирає — публікація пакета падає з «The import attribute type of
+ * "text" is unsupported». Локальний `deno publish --dry-run` цього не показує,
+ * бо граф там будує наш Deno, а не реєстр.
  *
  * Порядок підключення задає НЕ цей файл, а `sql.json` застосунку: `document_core`
  * посилається на `chart_of_account`, `currency` і `organization`, тобто ядро й
@@ -12,41 +16,11 @@
  * окремим записом `@core/<назва>`, і застосунок ставить його туди, куди треба.
  */
 
-import baseStruc from "./base/db/struc.sql" with { type: "text" };
-import baseMigration from "./base/db/migration.sql" with { type: "text" };
-import baseModel from "./base/db/base.sql" with { type: "text" };
-import baseData from "./base/db/data.sql" with { type: "text" };
 
-import accessStruc from "./access/db/struc.sql" with { type: "text" };
-import accessMigration from "./access/db/migration.sql" with { type: "text" };
-import accessModel from "./access/db/access.sql" with { type: "text" };
-import accessData from "./access/db/data.sql" with { type: "text" };
 
-import menuStruc from "./menu/db/struc.sql" with { type: "text" };
-import menuModel from "./menu/db/menu.sql" with { type: "text" };
 
-import attachmentStruc from "./attachment/db/struc.sql" with { type: "text" };
-import attachmentModel from "./attachment/db/attachment.sql" with { type: "text" };
 
-import documentCoreStruc from "./document_core/db/struc.sql" with { type: "text" };
-import documentCoreMigration from "./document_core/db/migration.sql" with { type: "text" };
-import documentCoreModel from "./document_core/db/document_core.sql" with { type: "text" };
-import documentCoreData from "./document_core/db/data.sql" with { type: "text" };
-
-import helpContentStruc from "./help_content/db/struc.sql" with { type: "text" };
-import helpContentMigration from "./help_content/db/migration.sql" with { type: "text" };
-import helpContentModel from "./help_content/db/help_content.sql" with { type: "text" };
-import helpContentData from "./help_content/db/data.sql" with { type: "text" };
-
-import helpScenarioStruc from "./help_scenario/db/struc.sql" with { type: "text" };
-import helpScenarioMigration from "./help_scenario/db/migration.sql" with { type: "text" };
-import helpScenarioModel from "./help_scenario/db/help_scenario.sql" with { type: "text" };
-import helpScenarioData from "./help_scenario/db/data.sql" with { type: "text" };
-
-import printTemplateStruc from "./print_template/db/struc.sql" with { type: "text" };
-import printTemplateMigration from "./print_template/db/migration.sql" with { type: "text" };
-import printTemplateModel from "./print_template/db/print_template.sql" with { type: "text" };
-import printTemplateData from "./print_template/db/data.sql" with { type: "text" };
+import { CORE_SQL_TEXT } from "./core-sql.generated.ts";
 
 /** Кроки складання пакета — ті самі, що й у моделей застосунку. */
 export type CoreSqlStep = "structure" | "migrations" | "models" | "data";
@@ -64,7 +38,13 @@ export interface CoreSqlPackage {
   files: Partial<Record<CoreSqlStep, CoreSqlFile[]>>;
 }
 
-function file(path: string, sql: string): CoreSqlFile {
+function file(path: string): CoreSqlFile {
+  const sql = CORE_SQL_TEXT[path];
+  if (sql === undefined) {
+    throw new Error(
+      `SQL ядра «${path}» немає в core-sql.generated.ts — виконай \`deno task core:sql\`.`,
+    );
+  }
   return { path, sql };
 }
 
@@ -72,20 +52,20 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
   {
     name: "base",
     files: {
-      structure: [file("base/db/struc.sql", baseStruc)],
-      migrations: [file("base/db/migration.sql", baseMigration)],
-      models: [file("base/db/base.sql", baseModel)],
-      data: [file("base/db/data.sql", baseData)],
+      structure: [file("base/db/struc.sql")],
+      migrations: [file("base/db/migration.sql")],
+      models: [file("base/db/base.sql")],
+      data: [file("base/db/data.sql")],
     },
   },
   // access іде одразу за base: attachment і document посилаються на app.users.
   {
     name: "access",
     files: {
-      structure: [file("access/db/struc.sql", accessStruc)],
-      migrations: [file("access/db/migration.sql", accessMigration)],
-      models: [file("access/db/access.sql", accessModel)],
-      data: [file("access/db/data.sql", accessData)],
+      structure: [file("access/db/struc.sql")],
+      migrations: [file("access/db/migration.sql")],
+      models: [file("access/db/access.sql")],
+      data: [file("access/db/data.sql")],
     },
   },
   // menu — одразу за access: app.user_group_menu посилається на app.user_group.
@@ -94,51 +74,51 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
   {
     name: "menu",
     files: {
-      structure: [file("menu/db/struc.sql", menuStruc)],
-      models: [file("menu/db/menu.sql", menuModel)],
+      structure: [file("menu/db/struc.sql")],
+      models: [file("menu/db/menu.sql")],
     },
   },
   {
     name: "attachment",
     files: {
-      structure: [file("attachment/db/struc.sql", attachmentStruc)],
-      models: [file("attachment/db/attachment.sql", attachmentModel)],
+      structure: [file("attachment/db/struc.sql")],
+      models: [file("attachment/db/attachment.sql")],
     },
   },
   {
     name: "document_core",
     files: {
-      structure: [file("document_core/db/struc.sql", documentCoreStruc)],
-      migrations: [file("document_core/db/migration.sql", documentCoreMigration)],
-      models: [file("document_core/db/document_core.sql", documentCoreModel)],
-      data: [file("document_core/db/data.sql", documentCoreData)],
+      structure: [file("document_core/db/struc.sql")],
+      migrations: [file("document_core/db/migration.sql")],
+      models: [file("document_core/db/document_core.sql")],
+      data: [file("document_core/db/data.sql")],
     },
   },
   {
     name: "help_content",
     files: {
-      structure: [file("help_content/db/struc.sql", helpContentStruc)],
-      migrations: [file("help_content/db/migration.sql", helpContentMigration)],
-      models: [file("help_content/db/help_content.sql", helpContentModel)],
-      data: [file("help_content/db/data.sql", helpContentData)],
+      structure: [file("help_content/db/struc.sql")],
+      migrations: [file("help_content/db/migration.sql")],
+      models: [file("help_content/db/help_content.sql")],
+      data: [file("help_content/db/data.sql")],
     },
   },
   {
     name: "help_scenario",
     files: {
-      structure: [file("help_scenario/db/struc.sql", helpScenarioStruc)],
-      migrations: [file("help_scenario/db/migration.sql", helpScenarioMigration)],
-      models: [file("help_scenario/db/help_scenario.sql", helpScenarioModel)],
-      data: [file("help_scenario/db/data.sql", helpScenarioData)],
+      structure: [file("help_scenario/db/struc.sql")],
+      migrations: [file("help_scenario/db/migration.sql")],
+      models: [file("help_scenario/db/help_scenario.sql")],
+      data: [file("help_scenario/db/data.sql")],
     },
   },
   {
     name: "print_template",
     files: {
-      structure: [file("print_template/db/struc.sql", printTemplateStruc)],
-      migrations: [file("print_template/db/migration.sql", printTemplateMigration)],
-      models: [file("print_template/db/print_template.sql", printTemplateModel)],
-      data: [file("print_template/db/data.sql", printTemplateData)],
+      structure: [file("print_template/db/struc.sql")],
+      migrations: [file("print_template/db/migration.sql")],
+      models: [file("print_template/db/print_template.sql")],
+      data: [file("print_template/db/data.sql")],
     },
   },
 ];

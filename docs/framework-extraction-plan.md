@@ -37,8 +37,35 @@ jsr.io і випустити `0.3.0`.
 
 ### 2.1 SQL ядра переїхав у пакет ✅
 
-Було `app/_sqlinit/**`, стало `server/sql/**` + `core-sql.ts` із text-імпортами
-(`with { type: "text" }`). Підключається записами `@core/<назва>` у `app/sql.json`.
+Було `app/_sqlinit/**`, стало `server/sql/**` + `core-sql.ts`. Підключається
+записами `@core/<назва>` у `app/sql.json`.
+
+> **Text-імпорти не пережили першої публікації (2026-07-26).** Спершу `.sql`
+> потрапляли в модуль через `with { type: "text" }`. Локально це працює й
+> `deno publish --dry-run` проходить — але **справжня** публікація впала:
+>
+> ```
+> error: Failed to publish @altera/server@0.3.0
+>   failed to build module graph: The import attribute type of "text" is unsupported.
+>     Specifier: file:///sql/base/db/struc.sql
+> ```
+>
+> Причина: raw-імпорти в Deno експериментальні (`--unstable-raw-imports`), і
+> граф на боці реєстру їх не розбирає. Dry-run цього не ловить у принципі —
+> граф там будує локальний Deno, а не JSR. Це головний урок кроку: **dry-run не
+> є доказом того, що публікація пройде.**
+>
+> Полагоджено генерацією: `deno task core:sql` вбудовує всі 28 файлів у
+> `server/sql/core-sql.generated.ts` (мапа шлях → текст, значення через
+> `JSON.stringify` — у SQL трапляються і зворотні лапки, і `${`). `.sql`
+> лишаються джерелом і далі їдуть у пакеті; `core-sql.ts` бере текст з мапи.
+> Розсинхрон ловиться з двох боків: новий файл, якого немає в мапі, валить
+> збірку пакета (`file()` кидає), а змінений — проба `server/sql/core-sql_test.ts`
+> у `deno task test:unit`. Зібраний SQL після переходу — побайтово той самий.
+>
+> Наслідок для решти: `@altera/tools` пропустило публікацію («depended on a
+> package that failed»), а `@altera/client@0.3.0` уїхало — тобто ця версія
+> клієнта вже спалена, і будь-яка його правка йде в наступну.
 
 **Чому порядок у `sql.json` чергується і його не можна «випрямити»:**
 `document_core/struc.sql` посилається на `chart_of_account` (×3), `organization`

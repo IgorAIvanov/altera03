@@ -10,6 +10,7 @@ deno task dev:server   # тільки backend (--watch)
 deno task dev:front    # тільки Vite dev server
 deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest) з manifest.json
 deno task sql:gen <model>  # перегенерувати CRUD-SQL ОДНІЄЇ моделі: sql:gen catalog/bank
+deno task core:sql     # вбудувати server/sql/**/db/*.sql у core-sql.generated.ts (після правки SQL ядра)
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
 deno task test:unit    # юніт-проби бібліотек без БД і HTTP (символіки штрих-кодів)
@@ -45,6 +46,8 @@ app/                        # застосунок: фронтенд-модул�
   _sqlpackage/              # зібрані SQL-файли (генеруються, не редагувати)
   # SQL ядра (доступ, меню, attachment, document, journal_entry, print_template,
   # help_*) лежить у server/sql/ і підключається записами "@core/<назва>" у sql.json.
+  # Файли там — звичайні .sql, але в модуль текст потрапляє через згенерований
+  # core-sql.generated.ts (deno task core:sql): text-імпорти не приймає JSR.
   # У меню в ядрі тільки структура й функції; сід (склад пунктів — маршрути цього
   # застосунку) лишається в app/admin/menu/db/data.sql, там же й екрани.
   _generated/               # авто-генерація (deno task sql:registry): model-registry, agent-routes, view-manifest
