@@ -43,8 +43,10 @@ app/                        # застосунок: фронтенд-модул�
     app-styles.ts           # ?inline → setAppStyles(): віддає зібраний CSS у client
   _locales/                 # локалізація: en.json, uk.json ...
   _sqlpackage/              # зібрані SQL-файли (генеруються, не редагувати)
-  # SQL ядра (доступ, attachment, document, journal_entry, print_template,
+  # SQL ядра (доступ, меню, attachment, document, journal_entry, print_template,
   # help_*) лежить у server/sql/ і підключається записами "@core/<назва>" у sql.json.
+  # У меню в ядрі тільки структура й функції; сід (склад пунктів — маршрути цього
+  # застосунку) лишається в app/admin/menu/db/data.sql, там же й екрани.
   _generated/               # авто-генерація (deno task sql:registry): model-registry, agent-routes, view-manifest
   server.ts                 # composition root бекенду: реєструє дані з _generated → bootstrap (Danet)
   shared/                   # app-стан: current-organization, view-route

@@ -9,6 +9,7 @@
   "models": [
     "@core/base",
     "@core/access",
+    "@core/menu",
     "admin/menu",
     "admin/user_group",
     "@core/attachment",

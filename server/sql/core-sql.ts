@@ -22,6 +22,9 @@ import accessMigration from "./access/db/migration.sql" with { type: "text" };
 import accessModel from "./access/db/access.sql" with { type: "text" };
 import accessData from "./access/db/data.sql" with { type: "text" };
 
+import menuStruc from "./menu/db/struc.sql" with { type: "text" };
+import menuModel from "./menu/db/menu.sql" with { type: "text" };
+
 import attachmentStruc from "./attachment/db/struc.sql" with { type: "text" };
 import attachmentModel from "./attachment/db/attachment.sql" with { type: "text" };
 
@@ -83,6 +86,16 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       migrations: [file("access/db/migration.sql", accessMigration)],
       models: [file("access/db/access.sql", accessModel)],
       data: [file("access/db/data.sql", accessData)],
+    },
+  },
+  // menu — одразу за access: app.user_group_menu посилається на app.user_group.
+  // Сід меню в ядрі відсутній навмисно: склад пунктів — це маршрути конкретного
+  // застосунку, тож data.sql лишається в нього (app/admin/menu/db/data.sql).
+  {
+    name: "menu",
+    files: {
+      structure: [file("menu/db/struc.sql", menuStruc)],
+      models: [file("menu/db/menu.sql", menuModel)],
     },
   },
   {

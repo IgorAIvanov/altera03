@@ -1116,9 +1116,10 @@ async function main() {
     const manifest = await modelManifest(appRoot, modelPath);
 
     if (manifest?.sql?.generate === false) {
-      // Оголошена відмова: CRUD моделі написаний руками, збирач візьме
-      // db/<model>.sql legacy-гілкою. Друкуємо завжди — щоб пропуск було видно.
-      console.log(`· ${modelPath}: sql.generate=false — CRUD написаний руками, пропуск`);
+      // Оголошена відмова. Причина буває різна — CRUD написаний руками в
+      // db/<model>.sql (збирач візьме його legacy-гілкою) або взагалі живе в
+      // ядрі, як у меню. Друкуємо завжди: пропуск має бути видно.
+      console.log(`· ${modelPath}: sql.generate=false — генерація вимкнена, пропуск`);
       continue;
     }
 
