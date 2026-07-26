@@ -18,7 +18,7 @@ import type {
   AuthExchangeInput,
   AuthExternalIdentity,
   AuthRedirectMethod,
-} from "@scope/server";
+} from "@altera/server";
 
 const PRODUCTION_MARKERS = ["production", "prod", "staging"];
 

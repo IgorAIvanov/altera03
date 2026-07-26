@@ -18,9 +18,11 @@
 
 ## 1. Де ми зараз
 
-`server/` публікується: `deno publish --dry-run` проходить, ліцензія MIT,
-26 `.sql`-файлів ядра їдуть у складі пакета. `client/` — теж проходить, але поки
-лише з `--allow-slow-types` (див. 5.3); CSS-блокера більше немає (див. 2.3).
+Три пакети — `@altera/client`, `@altera/server`, `@altera/tools` — готові до
+публікації: `deno publish --dry-run` **із кореня воркспейсу** проходить начисто,
+без `--allow-slow-types` і без застосунку в списку цілей (5.2, 5.3). Ліцензія MIT,
+28 `.sql`-файлів ядра їдуть у складі server-пакета. Лишилося створити скоуп на
+jsr.io і випустити `0.3.0`.
 
 Обидва composition root живуть у застосунку (`app/server.ts`, `app/main.ts`),
 `deno task check:deps` стереже і залежність від застосунку, і вихід відносним
@@ -128,12 +130,12 @@ daisyUI в одному документі.
 
 Уся машинерія Vite (130 рядків: `root`, аліаси, `build`, `manualChunks`,
 `optimizeDeps.include`, проксі, плагіни, копіювання локалей) переїхала у
-`client/vite.ts` — окремий експорт пакета `@ihor/altera-client/vite`. Плагін
+`client/vite.ts` — окремий експорт пакета `@altera/client/vite`. Плагін
 view-модулів (`vite-plugin-app-modules.ts` із кореня репо) втягнутий туди ж,
 параметризований каталогом застосунку. Корінь репо тепер:
 
 ```ts
-import { defineAlteraConfig } from "@client/vite.ts";      // у пакеті — @ihor/altera-client/vite
+import { defineAlteraConfig } from "@client/vite.ts";      // у пакеті — @altera/client/vite
 export default defineAlteraConfig({ appDir: "app", apiPort: 3000 });
 ```
 
@@ -264,7 +266,7 @@ Vite-трансформ не резолвляться — лише реальн�
 **Хвіст, що лишився від 3.2:** портабельний `@source` на фреймворк так і не вирішено.
 У монорепо працює `@source "../../client"`; у застосунку-з-пакетом фреймворк лежить у
 `node_modules`, який авто-детекція виключає, тож туди потрібен явний `@source` на
-node_modules-шлях (напр. `@source "../node_modules/@ihor/altera-client"` — документований
+node_modules-шлях (напр. `@source "../node_modules/@altera/client"` — документований
 спосіб Tailwind v4). Це справа scaffold (3.5): він згенерує правильний `@source` під
 розкладку встановленого застосунку. Пресет тут не допоможе — Tailwind читає `@source` з
 диска, повз Vite.
@@ -275,8 +277,8 @@ node_modules-шлях (напр. `@source "../node_modules/@ihor/altera-client"`
 
 **3.4a — codegen+publish ✅.** П'ять файлів (`generate-model-sql`,
 `generate-model-runtime-registry`, `assemble-sql-package`, `publish-app-sql`,
-`publish-sql`) переїхали у пакет `tools/` (`@scope/tools`, 4-й workspace-член). Вони
-залежать лише від `@scope/server` і одне від одного; застосунок читають **аргументом
+`publish-sql`) переїхали у пакет `tools/` (`@altera/tools`, 4-й workspace-член). Вони
+залежать лише від `@altera/server` і одне від одного; застосунок читають **аргументом
 `appDir`**, не імпортом. `publish-app-sql`/`publish-sql` для цього параметризовані —
 раніше вони виводили каталог застосунку з `import.meta.url` (`../app`), що в пакеті
 вказувало б у порожнечу; тепер `appDir` приходить аргументом (задачі передають `./app`).
@@ -291,7 +293,7 @@ options)` тепер **приймає фабрику аргументом**, а 
 повертає `app/server.ts`, без імпорту звідти). У `tools/` переїхали `app-client`,
 `dev-guard`, `set-password` (усі без залежності від app). Тонкі обгортки `api.ts` та
 `smoke_test.ts` лишились у `scripts/` (репо-локальні, застосунку-власні): вони імпортують
-`AppClient` з `@scope/tools/app-client` і свій `createServer` з `../app/server.ts`,
+`AppClient` з `@altera/tools/app-client` і свій `createServer` з `../app/server.ts`,
 передаючи його у `start()`. `scripts/` межі не перевіряються, тож імпорт app там законний.
 `check-deps.ts` теж лишився репо-локальним — скачаному застосунку немає що ним перевіряти
 (client/server/tools у нього залежності).
@@ -320,7 +322,7 @@ options)` тепер **приймає фабрику аргументом**, а 
 Ціль:
 
 ```bash
-deno run -A jsr:@ihor/altera-create my-erp
+deno run -A jsr:@altera/create my-erp
 ```
 
 Мінімальний склад нового застосунку описаний у розборі від 2026-07-23:
@@ -515,9 +517,14 @@ cookie до `Lax` було б розміном одного з двох бар'�
 
 ### 5.2 Дрібне
 
-- `server/deno.json` має скоуп `@scope` — перед публікацією замінити на реальний
-  JSR-скоуп; тоді ж поправити імпорти в `app/server.ts`, `app/main.ts`,
-  `scripts/publish-app-sql.ts`, `scripts/set-password.ts`.
+- ~~плейсхолдер `@scope`~~ ✅ 2026-07-26: скоуп **`@altera`**, пакети
+  `@altera/client`, `@altera/server`, `@altera/tools`; під scaffold лишається
+  `@altera/create`. Замінено в 16 файлах (три `deno.json`, імпорти в `app/`,
+  `scripts/`, `tools/`, коментарі в CLAUDE.md і тут). Правила JSR, які визначили
+  вибір: скоуп і назва пакета — 2–20 символів, лише нижній регістр, цифри й дефіс;
+  скоуп глобально унікальний; версія незмінна (тільки `yank`, не видалення), скоуп
+  видаляється лише порожнім, тобто ім'я — рішення назавжди. Скоуп проекту обрано
+  замість особистого: префікс `altera-` у кожній назві дублював би простір імен.
 - `DEV_AUTH_BYPASS=1` у `.env`: поки так, у браузері екран входу з'явиться, але
   дані відкриються й без нього — `/api/auth/me` про dev-bypass не знає, а команди
   моделей знають.
@@ -543,19 +550,47 @@ cookie до `Lax` було б розміном одного з двох бар'�
   **Лишився хвіст:** дрейф між `schema.ts` і закоміченим SQL більше нічим не страхується —
   потрібен режим `--check` (перегенерувати в пам'ять, звірити з диском, впасти при
   розбіжності) пробою в `deno task smoke`. Робити разом із CI.
-- **`app/deno.json` має `name` + `exports` → застосунок є ціллю `deno publish`.**
-  Через це `deno publish` по всьому воркспейсу падає на `?inline`-імпорті CSS в
-  `app/styles/app-styles.ts` — а застосунок публікувати й не треба. `client/` окремо
-  (`cd client && deno publish`) збирається чисто. Прибрати `name`/`exports` з
-  `app/deno.json`, коли переконаємось, що воркспейс-резолвінг від цього не постраждає.
+- ~~**`app/deno.json` має `name` + `exports` → застосунок є ціллю `deno publish`**~~
+  ✅ 2026-07-26. Прибрано разом зі скоупом. Тепер `deno publish --dry-run` **із
+  кореня воркспейсу** проходить і бачить рівно три пакети — `@altera/tools`,
+  `@altera/client`, `@altera/server`; застосунок у публікацію не потрапляє, тож
+  `?inline`-імпорт CSS більше нікому не заважає. Резолвінг не постраждав:
+  `deno check` (app/scripts), `check:deps`, `test:unit`, `sql:registry`,
+  `sql:assemble`, `build:front` зелені, бандл із тим самим хешем чанка. Член
+  воркспейсу без `name` лишається членом воркспейсу — аліас `@app/` дає коренева
+  карта, а не ім'я пакета.
 
-### 5.3 Slow types у клієнті
+### 5.3 Slow types у клієнті ✅
 
-Після зняття CSS-блокера `deno publish --dry-run` для `client/` дає 12 зауважень, усі —
-з fast-check JSR, не з CSS: шість `missing-explicit-type`, п'ять
-`missing-explicit-return-type` і один `unsupported-super-class-expr` на
-`SignalWatcher(GlobalStyledLitElement)` у `base-ui.ts` (лікується винесенням виразу в
-змінну). З `--allow-slow-types` пакет збирається повністю.
+Закрито 2026-07-26. `deno publish --dry-run` проходить **без** `--allow-slow-types` —
+і для `client/` окремо, і для всього воркспейсу. Зауважень виявилося 18, не 12
+(перший підрахунок був до появи `report-base` і `vite.ts` в експортах).
+
+Робити це до першої публікації було принципово: версія в JSR незмінна, тож пакет,
+випущений повільними типами, лишився б без `.d.ts` назавжди — виправити можна лише
+наступною версією.
+
+Чотири класи правок, усі — тільки анотації, без зміни поведінки:
+
+- `static override styles: CSSResultGroup = ...` у чотирьох базових класах і `gsle.ts`;
+- `override render(): TemplateResult` у `tab-controller`, `model-list-base`,
+  `model-picker-base`, `report-base`; плюс `stopRow()` і `bindTo()` — обидві повертають
+  `(e: Event) => void`;
+- `export const bus: Bus`;
+- **TypeBox-схеми** (`SortDirSchema`, `QuerySchema`, `DocumentHeaderSchema`,
+  `TotalsSchema`, `listRootSchema`) — виписані `TObject<{...}>` із типами полів.
+  Це єдине місце, де анотація дублює форму значення, і на це варто зважати при правці
+  схем. Дублювання перевіряє компілятор: розбіжність із `Type.Object()` — помилка
+  збірки, а не тихий дрейф. `Static<typeof X>` продовжує працювати, бо тип точний,
+  а не звужений до `TSchema`.
+
+`unsupported-super-class-expr` вилікувався так, як і передбачалося, — виносом
+`SignalWatcher(GlobalStyledLitElement)` у константу. Анотація точна: сигнатура міксина
+`SignalWatcher<T>(Base: T): T` повертає той самий тип.
+
+Перевірено: `deno check` (client, `app/main.ts`, `app/server.ts`), `test:unit`,
+`check:deps`, `build:front` — бандл із тим самим хешем чанка, тобто рантайм не
+зачеплений узагалі.
 
 Плюс два попередження `unanalyzable-dynamic-import` — `import(/* @vite-ignore */ chunkUrl)`
 у `tabs/` і `ui-kit/picker-host.ts`. Це не помилка, але після публікації такий імпорт не

@@ -83,4 +83,4 @@ class Bus {
   }
 }
 
-export const bus = new Bus();
+export const bus: Bus = new Bus();

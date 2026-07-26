@@ -1,7 +1,7 @@
 import { basename, join, relative, resolve, SEPARATOR } from "@std/path";
 // Тільки SQL ядра, окремим експортом: тягнути сюди весь граф сервера (Danet,
 // postgres, pdf-lib) заради текстових констант ні до чого.
-import { type CoreSqlStep, getCoreSqlPackage } from "@scope/server/sql";
+import { type CoreSqlStep, getCoreSqlPackage } from "@altera/server/sql";
 
 type PackageStep = {
   key: string;

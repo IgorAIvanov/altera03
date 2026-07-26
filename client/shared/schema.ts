@@ -3,9 +3,29 @@
 // а застосунок імпортує їх звідси через `@client/shared/schema.ts` — напрям
 // app → client дозволений, тоді як client → app (як було, поки файл лежав у
 // app/shared) — порушення межі, яке `check:deps` тепер ловить.
-import { Type, type Static } from "@sinclair/typebox";
+import {
+  type Static,
+  type TBoolean,
+  type TLiteral,
+  type TNull,
+  type TNumber,
+  type TObject,
+  type TOptional,
+  type TString,
+  type TUnion,
+  Type,
+} from "@sinclair/typebox";
 
-export const SortDirSchema = Type.Union([Type.Literal("asc"), Type.Literal("desc")]);
+// Типи схем виписані явно, хоч TypeBox і виводить їх сам. Причина зовнішня:
+// JSR не приймає виведені типи в публічному API — пакет пішов би «повільними
+// типами», без .d.ts і з важчою перевіркою в споживача. Розсинхрон із
+// значенням неможливий: анотація не збігається з Type.Object() — помилка
+// компіляції, а не тихий дрейф.
+
+/** Напрям сортування — тип поля sortDir у QuerySchema. */
+type TSortDir = TUnion<[TLiteral<"asc">, TLiteral<"desc">]>;
+
+export const SortDirSchema: TSortDir = Type.Union([Type.Literal("asc"), Type.Literal("desc")]);
 export type SortDir = Static<typeof SortDirSchema>;
 
 /**
@@ -14,7 +34,13 @@ export type SortDir = Static<typeof SortDirSchema>;
  * (нормалізований) варіант, який дзеркалиться назад через assign().
  * Дефолти через `default` → Value.Create засіває стан ще до першого запиту.
  */
-export const QuerySchema = Type.Object({
+export const QuerySchema: TObject<{
+  search: TString;
+  page: TNumber;
+  pageSize: TNumber;
+  sortBy: TString;
+  sortDir: TSortDir;
+}> = Type.Object({
   search:   Type.String({ default: "" }),
   page:     Type.Number({ minimum: 1, default: 1 }),
   pageSize: Type.Number({ minimum: 1, maximum: 200, default: 20 }),
@@ -34,7 +60,17 @@ export type Query = Static<typeof QuerySchema>;
  *
  * `number` порожній для нового документа — його підставить app.doc_next_number.
  */
-export const DocumentHeaderSchema = Type.Object({
+export const DocumentHeaderSchema: TObject<{
+  id: TUnion<[TString, TNull]>;
+  organizationId: TString;
+  number: TOptional<TString>;
+  docDate: TString;
+  total: TOptional<TNumber>;
+  presentation: TOptional<TString>;
+  description: TOptional<TString>;
+  isPosted: TOptional<TBoolean>;
+  isDeleted: TOptional<TBoolean>;
+}> = Type.Object({
   id: Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
   organizationId: Type.String({
     title: "Організація",
@@ -62,7 +98,11 @@ export const DocumentHeaderSchema = Type.Object({
 export type DocumentHeader = Static<typeof DocumentHeaderSchema>;
 
 /** Підсумки списку (лічильник + ехо пагінації від БД). */
-export const TotalsSchema = Type.Object({
+export const TotalsSchema: TObject<{
+  count: TNumber;
+  page: TNumber;
+  pageSize: TNumber;
+}> = Type.Object({
   count:    Type.Number({ default: 0 }),
   page:     Type.Number({ default: 1 }),
   pageSize: Type.Number({ default: 20 }),

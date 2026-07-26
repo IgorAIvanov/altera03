@@ -6,7 +6,7 @@
 import { join, resolve } from "@std/path";
 import postgres from "postgres";
 import { buildRepoPrintTemplateRepublishSql } from "./assemble-sql-package.ts";
-import { configFromEnv } from "@scope/server";
+import { configFromEnv } from "@altera/server";
 
 interface SqlManifest {
   output?: string;

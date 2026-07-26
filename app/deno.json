@@ -1,7 +1,5 @@
 {
-  "name": "@scope/app",
-  "version": "0.3.0",
-  "exports":  "./main.ts",
+  "//": "Ані name, ані exports тут немає навмисно: застосунок — не пакет. З ними він ставав ціллю `deno publish` по воркспейсу й валив публікацію на ?inline-імпорті CSS у styles/app-styles.ts. Член воркспейсу без імені лишається членом воркспейсу — аліас @app/ задає коренева карта.",
   "compilerOptions": {
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,

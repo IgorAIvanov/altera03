@@ -1,4 +1,4 @@
-import { css, html, type TemplateResult } from "lit";
+import { type CSSResultGroup, css, html, type TemplateResult } from "lit";
 import { t } from "@client/locale.ts";
 import { tw } from "@client/shared/styles.ts";
 import { BaseUI } from "./base-ui.ts";
@@ -30,7 +30,7 @@ const icon = {
  * Обов'язкове для підкласу: `model`, `reportTitle`, `buildReport()`.
  */
 export abstract class ReportBase<Root extends Record<string, unknown>> extends BaseUI<Root> {
-  static override styles = [tw, css`
+  static override styles: CSSResultGroup = [tw, css`
     /* Тулбар не їде вгору разом зі звітом: прокручується панель вкладки, а
        блок липне до її верху. Фон непрозорий — під ним проїжджають рядки. */
     .report-head {
@@ -148,7 +148,7 @@ export abstract class ReportBase<Root extends Record<string, unknown>> extends B
   /** Тіло звіту — таблиця. Реалізує підклас. */
   protected abstract renderBody(): TemplateResult;
 
-  override render() {
+  override render(): TemplateResult {
     return html`
       <div class="flex flex-col">
         ${this.renderToolbar()}

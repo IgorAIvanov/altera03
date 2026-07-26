@@ -52,8 +52,16 @@ function normalizeMessages(raw: (Message | string)[] | undefined, ok: boolean): 
  *
  * Підклас зобов'язаний задати `model` і передати схему в `super(...)`.
  */
+/**
+ * Базовий клас винесений у константу з явним типом навмисно: виклик міксина
+ * прямо в `extends` JSR розібрати не може («super class expression was too
+ * complex») і публікує пакет повільними типами. `SignalWatcher<T>(Base: T): T`
+ * повертає той самий тип, тому анотація точна, а не звужена.
+ */
+const SignalWatchingElement: typeof GlobalStyledLitElement = SignalWatcher(GlobalStyledLitElement);
+
 export abstract class BaseUI<T extends Record<string, unknown>>
-  extends SignalWatcher(GlobalStyledLitElement) {
+  extends SignalWatchingElement {
 
   /** Локалізатор — доступний у render підкласу: `this.t("common.save")`. */
   protected t = t;
@@ -184,7 +192,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * Працює для будь-якого вузла (`$root.item`, `$root.$query`) — deep-проксі
    * робить запис реактивним.
    */
-  protected bindTo<O extends Record<string, unknown>>(obj: O, field: keyof O) {
+  protected bindTo<O extends Record<string, unknown>>(obj: O, field: keyof O): (e: Event) => void {
     return (e: Event) => {
       obj[field] = (e.target as HTMLInputElement).value as O[keyof O];
     };

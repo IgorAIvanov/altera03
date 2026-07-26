@@ -1,6 +1,6 @@
-import { html, css, nothing, type TemplateResult } from "lit";
+import { type CSSResultGroup, html, css, nothing, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
-import { Type } from "@sinclair/typebox";
+import { type TArray, type TObject, type TUnknown, Type } from "@sinclair/typebox";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
@@ -21,7 +21,11 @@ export type ListRoot<Row> = { $query: Query; rows: Row[]; totals: Totals };
  * Тож підкласам не потрібен власний конструктор чи `<Model>RootSchema`.
  * Спільна для `ModelListBase` та `ModelPickerBase`.
  */
-export const listRootSchema = Type.Object({
+export const listRootSchema: TObject<{
+  $query: typeof QuerySchema;
+  rows: TArray<TUnknown>;
+  totals: typeof TotalsSchema;
+}> = Type.Object({
   $query: QuerySchema,
   rows:   Type.Array(Type.Unknown()),
   totals: TotalsSchema,
@@ -101,7 +105,7 @@ export function cellStyle<Row>(col: ListColumn<Row>): string {
  * клік по кнопці в рядку не виділяє/не активує рядок.
  * Приклад: `@click=${stopRow(() => this.openEdit(row.id))}`
  */
-export function stopRow(fn: (e: Event) => void) {
+export function stopRow(fn: (e: Event) => void): (e: Event) => void {
   return (e: Event) => { e.stopPropagation(); fn(e); };
 }
 
@@ -143,7 +147,7 @@ const icon = {
  *  - `onActivate()`          — дія по подвійному кліку (за замовч. — відкрити edit)
  */
 export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<ListRoot<Row>> {
-  static override styles = [tw, css`
+  static override styles: CSSResultGroup = [tw, css`
     tr.selected td { background: #cfe0f3 !important; color: var(--color-base-content, #243746) !important; }
     th.sortable { cursor: pointer; user-select: none; }
   `];
@@ -381,7 +385,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   }
 
   // ── Рендер ──────────────────────────────────────────────────────────────────
-  override render() {
+  override render(): TemplateResult {
     const totalPages = this.#totalPages();
 
     return html`

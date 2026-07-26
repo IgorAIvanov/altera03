@@ -13,8 +13,8 @@
  * Запис у БД тут можливий (save/delete — звичайні команди), тому інструмент
  * підпорядкований тому самому запобіжнику оточення, що й smoke.
  */
-import { AppClient } from "@scope/tools/app-client";
-import { assertDevEnvironmentOrExit } from "@scope/tools/dev-guard";
+import { AppClient } from "@altera/tools/app-client";
+import { assertDevEnvironmentOrExit } from "@altera/tools/dev-guard";
 import { createServer } from "../app/server.ts";
 
 const USAGE = `Використання:

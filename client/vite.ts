@@ -1,12 +1,12 @@
 // Пресет Vite для застосунків на цьому фреймворку — те, що в кожному застосунку
 // має бути однаковим і оновлюватися разом із бібліотекою, а не копіюватися.
 //
-//   import { defineAlteraConfig } from "@ihor/altera-client/vite";
+//   import { defineAlteraConfig } from "@altera/client/vite";
 //   export default defineAlteraConfig({ appDir: "app", apiPort: 3000 });
 //
 // Каталог фреймворку пресет знаходить від власного розташування (`import.meta`),
 // тому працює однаково і в монорепо (файл лежить у `client/`), і у встановленому
-// пакеті (`node_modules/@ihor/altera-client/`). Аліаси Vite сюди не дістають —
+// пакеті (`node_modules/@altera/client/`). Аліаси Vite сюди не дістають —
 // конфіг вантажиться до того, як вони визначені, — тож шлях беремо з ФС.
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

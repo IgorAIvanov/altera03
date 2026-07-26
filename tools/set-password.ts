@@ -18,7 +18,7 @@
  *   deno task passwd admin 'МійПароль123'  # поставить заданий
  */
 import postgres from "postgres";
-import { configFromEnv, hashPassword } from "@scope/server";
+import { configFromEnv, hashPassword } from "@altera/server";
 import { assertDevEnvironmentOrExit } from "./dev-guard.ts";
 
 const USAGE = `Використання:

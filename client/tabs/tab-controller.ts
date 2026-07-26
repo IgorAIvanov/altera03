@@ -1,4 +1,4 @@
-import { LitElement, html, css, svg, type PropertyValues } from "lit";
+import { type CSSResultGroup, LitElement, html, css, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { bus } from "../bus/bus.ts";
@@ -157,7 +157,7 @@ async function createTabElement(
 
 @customElement("tab-controller")
 export class TabController extends LitElement {
-  static override styles = css`
+  static override styles: CSSResultGroup = css`
     :host {
       display: flex;
       flex-direction: column;
@@ -568,7 +568,7 @@ export class TabController extends LitElement {
     return tab.modelId ? `${base} #${tab.modelId}` : base;
   }
 
-  override render() {
+  override render(): TemplateResult {
     return html`
       ${this.headerEl}
       <div class="tab-bar">

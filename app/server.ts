@@ -5,7 +5,7 @@
 import { fromFileUrl } from "jsr:@std/path@^1.1.2";
 import { serveDir } from "jsr:@std/http@^1.0.18/file-server";
 
-import { bootstrap, configFromEnv } from "@scope/server";
+import { bootstrap, configFromEnv } from "@altera/server";
 
 import { generatedModelRegistry, generatedTsCommandBindings } from "./_generated/model-registry.generated.ts";
 import { agentModelRoutes } from "./_generated/agent-routes.generated.ts";

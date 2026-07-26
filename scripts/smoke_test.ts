@@ -8,7 +8,7 @@
  * з прибиранням за собою у `finally`. Ніяка проба не чіпає чужі рядки.
  */
 import { assertEquals, assertExists } from "@std/assert";
-import { AppClient, type Envelope } from "@scope/tools/app-client";
+import { AppClient, type Envelope } from "@altera/tools/app-client";
 import { createServer } from "../app/server.ts";
 
 /** Свідомо неіснуючий користувач: 401 від нього — доказ, що заголовок прочитано. */

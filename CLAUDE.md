@@ -59,14 +59,14 @@ client/                     # ui-kit та клієнтський runtime — Б�
   styles/theme.css          # тема й контракти компонентів — ПЛОСКИЙ CSS, без директив Tailwind
   shared/styles.ts          # `tw`: порожній CSSStyleSheet, який заповнює застосунок
   shared/schema.ts          # спільні TypeBox-контракти: SortDir, Query, Totals, DocumentHeader
-  vite.ts                   # пресет defineAlteraConfig() — уся машинерія Vite (експорт "@scope/client/vite")
+  vite.ts                   # пресет defineAlteraConfig() — уся машинерія Vite (експорт "@altera/client/vite")
   # index.html і main.ts тут немає навмисно: вони належать застосунку (app/).
   # Вхід збірки Tailwind (app/styles/tailwind.css) — теж: він сканує каталоги
   # застосунку. Але сама машинерія Vite — пресет тут: вона однакова для всіх застосунків.
 
 server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace), не залежить від app
   main.ts                         # public API бібліотеки: bootstrap + configFromEnv + типи (барель)
-  sql/                            # SQL ядра + core-sql.ts (окремий експорт "@scope/server/sql")
+  sql/                            # SQL ядра + core-sql.ts (окремий експорт "@altera/server/sql")
     access/                       # користувачі, сесії, групи, права (див. нижче)
   config/
     server-config.ts              # ServerOptions/ServerConfig — увесь контракт налаштувань
@@ -84,7 +84,7 @@ server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace
   modules/auth/                   # авторизація; методи входу — з config.auth.methods
   database/                       # тільки рантайм: модуль і пул з'єднань
 
-tools/                      # пакет інструментів (@scope/tools): codegen, publish, дев-клієнт
+tools/                      # пакет інструментів (@altera/tools): codegen, publish, дев-клієнт
   generate-model-sql.ts           # генерація SQL моделей
   generate-model-runtime-registry.ts  # генерація app/_generated (registry/routes/views)
   assemble-sql-package.ts         # збірка SQL-пакета з db/ файлів моделей + @core
@@ -95,7 +95,7 @@ tools/                      # пакет інструментів (@scope/tools)
   # знання про застосунок приходить ззовні: codegen/publish — аргументом appDir,
   # AppClient — фабрикою createServer; статичного імпорту app у пакеті немає.
 
-scripts/                    # репо-локальні обгортки (НЕ пакет): імпортують app + @scope/tools
+scripts/                    # репо-локальні обгортки (НЕ пакет): імпортують app + @altera/tools
   api.ts, smoke_test.ts           # дев-обгортки: інжектять createServer з ../app/server.ts
   check-deps.ts                   # guardrail меж пакетів (client/server/tools vs app)
 ```
@@ -291,7 +291,7 @@ app.user_group_list / user_group_get / user_group_save / user_group_delete / use
 `user_save` пароля не приймає: хеш рахує TS (PBKDF2-SHA256, `password-hash.ts`), новий
 користувач створюється з порожнім хешем і увійти не може, доки пароль не встановлять.
 Зробити це можна з консолі — `deno task passwd <логін> [пароль]` — або з адмін-екрана
-застосунку через `hashPassword()` з `@scope/server`. Перевірка вимагає префікс
+застосунку через `hashPassword()` з `@altera/server`. Перевірка вимагає префікс
 `pbkdf2_sha256$`, тому «сирий» рядок у `password_hash` означає, що увійти неможливо
 взагалі — саме так виглядає користувач, заведений в обхід цієї схеми. `user_delete` не видаляє користувача, на якого посилаються документи чи
 вкладення, — деактивує.
