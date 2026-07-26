@@ -5,6 +5,9 @@
   "commands": {
     "ts": {
       "preview": { "handlerKey": "runtime.printPreview" }
+    },
+    "access": {
+      "preview": "view"
     }
   },
   "views": {

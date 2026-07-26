@@ -2,7 +2,7 @@ import { css, html, type TemplateResult } from "lit";
 import { t } from "@client/locale.ts";
 import { tw } from "@client/shared/styles.ts";
 import { BaseUI } from "./base-ui.ts";
-import { readReportTable, withTitleRows } from "../report/table-model.ts";
+import { NO_EXPORT_CLASS, readReportTable, withTitleRows } from "../report/table-model.ts";
 import { buildXlsx, downloadFile, safeFileName, XLSX_MIME } from "../report/xlsx.ts";
 import { printCurrentView } from "../report/print.ts";
 
@@ -79,9 +79,15 @@ export abstract class ReportBase<Root extends Record<string, unknown>> extends B
 
   // ── Дії тулбару ───────────────────────────────────────────────────────────
 
-  /** Основна таблиця звіту у власному shadow root. */
+  /**
+   * Основна таблиця звіту у власному shadow root.
+   *
+   * Перша, що не позначена `no-export`. Позначка потрібна, коли на екрані є ще
+   * одна таблиця — легенда графіка, довідкова врізка: без неї експорт вивантажив
+   * би саме її, бо вона трапилась у розмітці раніше.
+   */
   private reportTable(): HTMLTableElement | null {
-    return this.renderRoot.querySelector<HTMLTableElement>("table");
+    return this.renderRoot.querySelector<HTMLTableElement>(`table:not(.${NO_EXPORT_CLASS})`);
   }
 
   protected print() {

@@ -16,6 +16,12 @@
  *
  * Усі три вже стоять у звітах для екрана — окремої розмітки «для експорту» не
  * з'являється.
+ *
+ * Четвертий сигнал — `no-export`: «цей вузол не належить аркушу». Аналог
+ * `.no-print` у темі, але читає його не браузер, а цей обхід. Потрібен там, де
+ * на екрані стоїть щось, чого в таблиці Excel бути не може: графік, кнопка дії,
+ * рядок-перемикач. Поводиться по-різному залежно від вузла — див. нижче, і
+ * різниця не косметична: рядок із сітки прибрати можна, комірку — ні.
  */
 
 import type { SheetCell, SheetModel } from "./xlsx.ts";
@@ -58,9 +64,23 @@ function longestLine(text: string): number {
   return text.split("\n").reduce((max, line) => Math.max(max, line.length), 0);
 }
 
+/** Клас-маркер: вузол не потрапляє в аркуш. Аналог `.no-print` для експорту. */
+export const NO_EXPORT_CLASS = "no-export";
+
 /**
  * Читає таблицю в модель аркуша: сітка з урахуванням `colspan`/`rowspan`,
  * числа числами, ширини колонок за вмістом.
+ *
+ * `no-export` діє на двох рівнях, і по-різному:
+ *  - на `<tr>` — рядок пропускається цілком (так виноситься рядок із графіком
+ *    на всю ширину чи з кнопками);
+ *  - на `<td>`/`<th>` — комірка лишається на своєму місці, але порожня. Забрати
+ *    її не можна: сітка поїхала б, і всі наступні колонки рядка стали б не під
+ *    своїми заголовками.
+ *
+ * Індекси рядків для `rowspan` рахуються по **вихідній** таблиці, а не по
+ * відібраних рядках: об'єднання зверху вниз мусить лишатися узгодженим навіть
+ * тоді, коли між ними викинуто рядок.
  */
 export function readReportTable(table: HTMLTableElement): SheetModel {
   const rows: SheetCell[][] = [];
@@ -69,15 +89,19 @@ export function readReportTable(table: HTMLTableElement): SheetModel {
   const occupied = new Set<string>();
 
   for (let r = 0; r < table.rows.length; r++) {
+    const row = table.rows[r];
+    if (row.classList.contains(NO_EXPORT_CLASS)) continue;
+
     const rowCells: SheetCell[] = [];
     let col = 0;
 
-    for (const cell of Array.from(table.rows[r].cells)) {
+    for (const cell of Array.from(row.cells)) {
       while (occupied.has(`${r}:${col}`)) col++;
 
       const colSpan = Math.max(1, cell.colSpan || 1);
       const rowSpan = Math.max(1, cell.rowSpan || 1);
-      const text = cellText(cell);
+      // Порожній текст, а не пропуск комірки: місце в сітці лишається за нею.
+      const text = cell.classList.contains(NO_EXPORT_CLASS) ? "" : cellText(cell);
       const numeric = cell.classList.contains("tabular-nums");
       const value = numeric ? cellNumber(text) : undefined;
 
@@ -112,7 +136,10 @@ export function readReportTable(table: HTMLTableElement): SheetModel {
   return {
     rows,
     colWidths: widths.map((w) => w ?? MIN_WIDTH),
-    headerRows: table.tHead?.rows.length ?? 0,
+    // Рахуємо лише ті рядки шапки, що дійсно потрапили в аркуш: інакше
+    // викинутий `no-export` рядок зсунув би межу закріплення на один вниз.
+    headerRows: Array.from(table.tHead?.rows ?? [])
+      .filter((row) => !row.classList.contains(NO_EXPORT_CLASS)).length,
   };
 }
 

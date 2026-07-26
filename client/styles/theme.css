@@ -238,6 +238,22 @@ html, body {
 .print-title { font-size: 15px; font-weight: 700; margin: 0 0 2px; }
 .print-subtitle { font-size: 12px; color: #444; margin: 0; }
 
+/* ─── Графік у звіті ──────────────────────────────────────────────────────
+   Фреймворк графіків не малює — чим саме, вирішує застосунок. Але місце для
+   нього описане тут, бо з друком і експортом графік стикається однаково,
+   незалежно від бібліотеки.
+
+   Контракт: полотно чи SVG кладуть у `.report-chart`. Маркер потрібен саме
+   тому, що правила не можна повісити на `canvas, svg` взагалі — під `svg`
+   потрапили б і вбудовані іконки в комірках.
+
+   В Excel графік не потрапляє: аркуш читається з таблиці, а графік — не
+   таблиця. Якщо він усе-таки живе всередині `<table>` (рядок на всю ширину),
+   позначте цей рядок `no-export` — див. `client/ui-kit/report/table-model.ts`. */
+.report-chart { break-inside: avoid; }
+.report-chart canvas,
+.report-chart svg { max-width: 100%; height: auto; }
+
 @media print {
   .no-print { display: none !important; }
   .print-only { display: block !important; }
@@ -266,5 +282,25 @@ html, body {
   .link, .btn.link, button.link {
     color: inherit !important;
     text-decoration: none !important;
+  }
+
+  /* Графік на папері. Три різні біди, і кожну лікує свій рядок:
+       · `break-inside` — інакше графік розсікається межею сторінки навпіл;
+       · `max-width` + `height: auto` — вписати в поля, зберігши пропорції.
+         Саме max-width, а не width: графік, вужчий за сторінку, не треба
+         розтягувати — від цього полотно тільки замилюється;
+       · `print-color-adjust` — браузер за замовчуванням не друкує заливки, і
+         стовпчикова діаграма виходить із самих контурів. Та сама причина, що
+         й у шапки таблиці вище. */
+  .report-chart {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .report-chart canvas,
+  .report-chart svg {
+    max-width: 100% !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

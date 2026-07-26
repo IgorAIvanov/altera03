@@ -17,8 +17,8 @@
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки
-    // штрих-кодів і подібне. Димові проби межі — окремо, у `smoke`.
-    "test:unit": "deno test --allow-read ./server/",
+    // штрих-кодів, читач таблиці звіту. Димові проби межі — окремо, у `smoke`.
+    "test:unit": "deno test --allow-read ./server/ ./client/",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
     "sql:assemble": "deno run -A ./tools/assemble-sql-package.ts ./app --verbose",

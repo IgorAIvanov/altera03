@@ -82,7 +82,10 @@ export const generatedModelRegistry = {
   },
   "print_template": {
     type: "admin",
-    schema: "app"
+    schema: "app",
+    access: {
+    "preview": "view"
+    }
   },
   "turnover_balance": {
     type: "report",
