@@ -1,6 +1,8 @@
 {
   "model": "user_group",
   "type": "catalog",
+  "//sql": "Групи доступу під стандартну п'ятірку не лягають: збереження веде ще й склад прав (user_group_permission). SQL написаний руками в db/user_group.sql.",
+  "sql": { "generate": false },
   "schema": "app",
   "commands": {
     "sql": {

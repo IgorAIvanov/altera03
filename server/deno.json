@@ -6,6 +6,10 @@
     "./sql": "./sql/core-sql.ts"
   },
   "license": "MIT",
+  "//publish": "Проби лишаються в репозиторії: у пакеті вони не потрібні, а @std/assert інакше стає залежністю споживача.",
+  "publish": {
+    "exclude": ["**/*_test.ts"]
+  },
   "imports": {
     "@danet/core": "jsr:@danet/core@^2.11.1",
     "@danet/validatte": "jsr:@danet/validatte@^0.7.9",

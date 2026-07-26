@@ -9,6 +9,7 @@ deno task dev          # запустити frontend + backend одночасн�
 deno task dev:server   # тільки backend (--watch)
 deno task dev:front    # тільки Vite dev server
 deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest) з manifest.json
+deno task sql:gen <model>  # перегенерувати CRUD-SQL ОДНІЄЇ моделі: sql:gen catalog/bank
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
 deno task test:unit    # юніт-проби бібліотек без БД і HTTP (символіки штрих-кодів)
@@ -416,12 +417,35 @@ Primary key: `bigint` у БД, `string` у TypeScript/JSON (щоб уникну�
 1. Створити `app/<family>/<model>/manifest.json`
 2. Створити `<model>.schema.ts` з TypeBox-схемами
 3. Створити UI-компоненти: `<Model>List.ts` (skill [`model-list-form`](.github/skills/model-list-form/SKILL.md) — наслідувати `ModelListBase`, не писати тулбар/таблицю/пагінацію вручну), `<Model>Edit.ts`, `<Model>Picker.ts`
-4. Створити `db/struc.sql`, `db/<model>.sql` (функції list/get/save/delete/lookup)
+4. Створити `db/struc.sql`, а CRUD — або згенерувати (`deno task sql:gen <family>/<model>`,
+   вихід у `db/_generated/<model>.crud.gen.sql`), або написати руками в `db/<model>.sql`
+   і оголосити відмову від генерації (див. нижче). Доробки поверх генерації — у
+   `db/<model>.custom.sql`.
 5. Додати модель у `app/sql.json`
 6. Запустити `deno task sql:registry` → оновить generated-файли
 7. Запустити `deno task sql:assemble && deno task sql:publish` → опублікувати SQL у БД
 
 Окремий backend-модуль/контролер потрібен лише для нестандартної логіки.
+
+**Згенерований CRUD — закомічений вихідник, а не продукт збірки.** `sql:gen` навмисно
+не входить у `model:build`: генерація робиться свідомо і по одній моделі, коли змінилася
+схема, і потрапляє в дифф рев'ю разом зі схемою. Пакетний прогін без аргументу лишається
+(зручно перевірити, що нічого не роз'їхалося), але помилка однієї моделі більше не спиняє
+решту — вона друкується рядком `✗`, а ненульовий код виходу віддається наприкінці.
+
+Збирач бере файли в такому порядку: `_generated/<model>.crud.gen.sql` → `<model>.custom.sql`,
+а `<model>.sql` — **лише якщо генерації немає**. Тобто модель із рукописним CRUD просто не
+має генерованого файлу. Щоб це було оголошено, а не випадково, у `manifest.json` пишеться:
+
+```json
+"sql": { "generate": false }
+```
+
+Без цього пропуск тримався б на тому, що ім'я файлу схеми не збіглося з очікуваним
+(`userGroup.schema.ts` замість `user_group.schema.ts`) — генератор про таке тепер попереджає
+окремим рядком `⚠`, бо модель при цьому виглядає охопленою, хоча не генерується. Моделі з
+`type`, відмінним від `catalog`/`document` (звіт, admin), пропускаються за типом — їм
+оголошення не потрібне.
 
 ## Інструменти розробника
 

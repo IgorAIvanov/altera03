@@ -13,6 +13,11 @@
     "./set-password": "./set-password.ts"
   },
   "license": "MIT",
+  "//imports": "Як і в client: залежності пакета оголошені тут, а не успадковані з кореня воркспейсу — інакше версія, з якою пакет піде в реєстр, є побічним ефектом файлу застосунку. JSR до того ж вимагає обмеження версії: голий `jsr:@std/path` у коді валить публікацію.",
+  "imports": {
+    "@std/path": "jsr:@std/path@^1.1.2",
+    "postgres": "npm:postgres@^3.4.5"
+  },
   "compilerOptions": {
     "strict": true
   }

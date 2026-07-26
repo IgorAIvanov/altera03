@@ -1,4 +1,4 @@
-import { basename, join, relative, resolve, SEPARATOR } from "jsr:@std/path";
+import { basename, join, relative, resolve, SEPARATOR } from "@std/path";
 // Тільки SQL ядра, окремим експортом: тягнути сюди весь граф сервера (Danet,
 // postgres, pdf-lib) заради текстових констант ні до чого.
 import { type CoreSqlStep, getCoreSqlPackage } from "@scope/server/sql";
@@ -413,7 +413,7 @@ async function buildGeneratedDataSections(appDir: string, models: string[]) {
   return sections;
 }
 
-export async function buildRepoPrintTemplateRepublishSql(appDirArg = "./src/app") {
+export async function buildRepoPrintTemplateRepublishSql(appDirArg = "./src/app"): Promise<string> {
   const appDir = resolve(Deno.cwd(), appDirArg);
   const manifest = await readManifest(appDir);
 

@@ -3,7 +3,7 @@
 // Це збірковий інструмент, а не частина server-бібліотеки: він читає sql.json
 // застосунку й ходить у _sqlpackage, тобто знає про конкретний застосунок —
 // рівно те, чого рантайму знати не можна. Тому живе поряд із рештою збірки.
-import { join, resolve } from "jsr:@std/path@^1.1.2";
+import { join, resolve } from "@std/path";
 import postgres from "postgres";
 import { buildRepoPrintTemplateRepublishSql } from "./assemble-sql-package.ts";
 import { configFromEnv } from "@scope/server";

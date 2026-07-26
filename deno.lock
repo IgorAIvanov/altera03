@@ -1497,6 +1497,17 @@
       "npm:vite@^6.3.5"
     ],
     "members": {
+      "client": {
+        "dependencies": [
+          "jsr:@std/assert@^1.0.15",
+          "npm:@lit-labs/signals@~0.1.3",
+          "npm:@sinclair/typebox@0.34",
+          "npm:decimal.js@^10.6.0",
+          "npm:lit@^3.3.1",
+          "npm:signal-polyfill@~0.2.2",
+          "npm:signal-utils@~0.21.1"
+        ]
+      },
       "server": {
         "dependencies": [
           "jsr:@danet/core@^2.11.1",
@@ -1511,6 +1522,12 @@
           "npm:pdf-lib@^1.17.1",
           "npm:postgres@^3.4.5",
           "npm:qrcode-generator@^1.4.4"
+        ]
+      },
+      "tools": {
+        "dependencies": [
+          "jsr:@std/path@^1.1.2",
+          "npm:postgres@^3.4.5"
         ]
       }
     }

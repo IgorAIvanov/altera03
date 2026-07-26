@@ -292,7 +292,8 @@ export class TabController extends LitElement {
   /** Повідомлення про невдале відкриття вкладки; null — показувати нічого. */
   @state() private notice: string | null = null;
 
-  private noticeTimer: number | null = null;
+  // ReturnType, а не number — див. коментар у shell/server-unavailable.ts.
+  private noticeTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubs: Array<() => void> = [];
   /** Під час відновлення не пишемо у сховище — інакше частковий стан перетре збережений. */
   private restoring = false;

@@ -32,7 +32,9 @@ interface OverlayRefs {
 }
 
 let refs: OverlayRefs | null = null;
-let timer: number | null = null;
+// ReturnType, а не number: у програмі публікації разом із цим файлом типізується
+// `vite.ts`, і типи Node роблять поверненням `Timeout`, а не число.
+let timer: ReturnType<typeof setInterval> | null = null;
 let serverIsBack = false;
 
 /**

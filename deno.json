@@ -23,7 +23,12 @@
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
     "sql:assemble": "deno run -A ./tools/assemble-sql-package.ts ./app --verbose",
     "sql:publish": "deno run -A --env-file ./tools/publish-sql.ts ./app --verbose",
-    "model:build": "deno task sql:registry && deno task sql:gen && deno task sql:assemble && deno task sql:publish"
+    // sql:gen тут немає навмисно: згенерований CRUD (app/<model>/db/_generated/
+    // *.crud.gen.sql) — закомічений вихідник, а не продукт збірки. Перегенерація
+    // робиться свідомо і по одній моделі — `deno task sql:gen catalog/bank`, —
+    // коли змінилася схема, і потрапляє в дифф рев'ю. Пакетний прогін без
+    // аргументу лишається, але сам себе в збірку не вставляє.
+    "model:build": "deno task sql:registry && deno task sql:assemble && deno task sql:publish"
   },
 
   "workspace": ["./server", "./client", "./app", "./tools"],

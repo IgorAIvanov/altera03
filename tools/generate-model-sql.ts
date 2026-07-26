@@ -8,7 +8,7 @@
 //
 // Запуск:  deno run -A ./scripts/generate-model-sql.ts ./app [catalog/bank] --verbose
 
-import { basename, join, resolve, toFileUrl } from "jsr:@std/path";
+import { basename, join, resolve, toFileUrl } from "@std/path";
 
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 
@@ -52,6 +52,8 @@ type FeatureManifest = {
   type?: string;
   schema?: string;
   document?: DocumentMeta;
+  /** `generate: false` — CRUD написаний руками, генератор моделі не торкається. */
+  sql?: { generate?: boolean };
 };
 
 type Ref = {
@@ -894,13 +896,12 @@ async function importSchema(path: string): Promise<Record<string, TSchema>> {
   return await import(toFileUrl(resolve(path)).href);
 }
 
-/** Тип моделі з manifest.json (catalog | document | report | register). */
-async function modelType(appRoot: string, modelPath: string): Promise<string | undefined> {
+/** manifest.json моделі; undefined — файлу немає або він нечитабельний. */
+async function modelManifest(appRoot: string, modelPath: string): Promise<FeatureManifest | undefined> {
   try {
-    const manifest = JSON.parse(
+    return JSON.parse(
       await Deno.readTextFile(join(appRoot, modelPath, "manifest.json")),
     ) as FeatureManifest;
-    return manifest.type;
   } catch {
     return undefined;
   }
@@ -1100,32 +1101,101 @@ async function main() {
   if (verbose) console.log(`· карта моделей: [${[...map.keys()]}]`);
 
   const models = allModels.filter((m) => !filter || m === filter);
+  if (filter && models.length === 0) {
+    console.error(`✗ ${filter}: немає такого запису в sql.json`);
+    Deno.exit(1);
+  }
+
   let count = 0;
+  const failed: Array<{ modelPath: string; message: string }> = [];
+
   for (const modelPath of models) {
-    const { path } = schemaModuleFor(appRoot, modelPath);
-    try {
-      await Deno.stat(path);
-    } catch {
-      if (verbose) console.log(`· ${modelPath}: немає schema.ts — пропуск`);
+    // Порядок перевірок важливий: спершу оголошені причини пропуску (відмова
+    // в манифесті, тип моделі), і лише потім наявність файлу схеми. Зворотний
+    // порядок скаржився б на ім'я файлу там, де модель і так не генерується.
+    const manifest = await modelManifest(appRoot, modelPath);
+
+    if (manifest?.sql?.generate === false) {
+      // Оголошена відмова: CRUD моделі написаний руками, збирач візьме
+      // db/<model>.sql legacy-гілкою. Друкуємо завжди — щоб пропуск було видно.
+      console.log(`· ${modelPath}: sql.generate=false — CRUD написаний руками, пропуск`);
       continue;
     }
-    const manifestType = await modelType(appRoot, modelPath);
+
+    const manifestType = manifest?.type;
     if (manifestType && manifestType !== "catalog" && manifestType !== "document") {
       // Звіт не має CRUD: у нього одна команда вибірки, написана руками в
       // db/<model>.sql. Схема лишається — з неї живе форма параметрів.
       if (verbose) console.log(`· ${modelPath}: type=${manifestType} — генерація CRUD не потрібна`);
       continue;
     }
-    const spec = await buildSpec(appRoot, modelPath, map, verbose);
-    const outDir = join(appRoot, modelPath, "db", "_generated");
-    await Deno.mkdir(outDir, { recursive: true });
-    const outFile = join(outDir, `${spec.model}.crud.gen.sql`);
-    await Deno.writeTextFile(outFile, renderFile(spec));
-    console.log(`✓ ${modelPath} → ${outFile}`);
-    count++;
+
+    const { model, path } = schemaModuleFor(appRoot, modelPath);
+    try {
+      await Deno.stat(path);
+    } catch {
+      // Файлу немає з двох різних причин, і плутати їх дорого. Пакет ядра
+      // (@core/*) схеми не має взагалі — це норма. А от каталог моделі, у
+      // якому лежить схема під ІНШИМ іменем, — це мовчазний пропуск не з тієї
+      // причини: модель виглядає охопленою, хоча генератор її не бачить.
+      const stray = await straySchemaFile(appRoot, modelPath, model);
+      if (stray) {
+        console.warn(
+          `⚠ ${modelPath}: генератор шукає ${model}.schema.ts, а поруч лежить ${stray}. ` +
+            `Модель пропущена. Якщо CRUD тут написаний руками — оголоси це явно: ` +
+            `"sql": { "generate": false } у manifest.json.`,
+        );
+      } else if (verbose) {
+        console.log(`· ${modelPath}: немає schema.ts — пропуск`);
+      }
+      continue;
+    }
+
+    // Помилка однієї моделі не спиняє решту: інакше одна неузгоджена схема
+    // лишає без генерації всі моделі, що стоять у sql.json нижче за неї.
+    // Ненульовий код виходу при цьому зберігається — див. нижче.
+    try {
+      const spec = await buildSpec(appRoot, modelPath, map, verbose);
+      const outDir = join(appRoot, modelPath, "db", "_generated");
+      await Deno.mkdir(outDir, { recursive: true });
+      const outFile = join(outDir, `${spec.model}.crud.gen.sql`);
+      await Deno.writeTextFile(outFile, renderFile(spec));
+      console.log(`✓ ${modelPath} → ${outFile}`);
+      count++;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`✗ ${modelPath}: ${message}`);
+      failed.push({ modelPath, message });
+    }
   }
 
   console.log(`\nЗгенеровано моделей: ${count}`);
+
+  if (failed.length) {
+    console.error(`Не вдалося: ${failed.length} — [${failed.map((f) => f.modelPath).join(", ")}]`);
+    Deno.exit(1);
+  }
+}
+
+/**
+ * Схема під іншим іменем у каталозі моделі (`userGroup.schema.ts` там, де
+ * генератор чекає `user_group.schema.ts`). Повертає ім'я файлу або null.
+ */
+async function straySchemaFile(
+  appRoot: string,
+  modelPath: string,
+  model: string,
+): Promise<string | null> {
+  try {
+    for await (const entry of Deno.readDir(join(appRoot, modelPath))) {
+      if (entry.isFile && entry.name.endsWith(".schema.ts") && entry.name !== `${model}.schema.ts`) {
+        return entry.name;
+      }
+    }
+  } catch {
+    // Каталогу немає — це пакет ядра (@core/*), а не модель застосунку.
+  }
+  return null;
 }
 
 if (import.meta.main) {

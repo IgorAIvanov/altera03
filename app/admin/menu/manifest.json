@@ -2,6 +2,8 @@
   "model": "menu",
   "type": "catalog",
   "schema": "app",
+  "//sql": "Меню під стандартну п'ятірку не лягає: збереження перевіряє коди, батьків і цикли ДО першого запису, а menu_current зливає меню всіх груп користувача. SQL написаний руками в db/menu.sql, збирач бере його legacy-гілкою.",
+  "sql": { "generate": false },
   "commands": {
     "sql": {
       "current": "menu_current",

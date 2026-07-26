@@ -1,4 +1,4 @@
-import { dirname, join, relative, resolve, SEPARATOR } from "jsr:@std/path";
+import { dirname, join, relative, resolve, SEPARATOR } from "@std/path";
 
 type ManifestSqlCommand = string | {
   schema?: string;

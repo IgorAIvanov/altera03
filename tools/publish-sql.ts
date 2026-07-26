@@ -1,4 +1,4 @@
-import { resolve } from "jsr:@std/path";
+import { resolve } from "@std/path";
 import { assembleSqlPackage } from "./assemble-sql-package.ts";
 import { publishAppSql } from "./publish-app-sql.ts";
 
