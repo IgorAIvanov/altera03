@@ -1,0 +1,14 @@
+{
+  "//": "Потрібен саме esbuild усередині Vite — deno.json він не читає. Без цього файлу декоратори Lit транслюються за СТАНДАРТНОЮ семантикою, і застосунок падає в рантаймі з «Unsupported decorator location: field»: збірка проходить, типи проходять, API відповідає, а сторінка лишається білою. esbuild шукає найближчий tsconfig.json угору по каталогах, тож цей файл покриває і app/, і вендорені вихідники фреймворку у vendor/.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "strict": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true
+  },
+  "include": ["app/**/*.ts", "vite.config.ts"]
+}

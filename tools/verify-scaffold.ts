@@ -63,6 +63,25 @@ export async function verifyScaffold(options: { createEntry: string; keep?: bool
     }
   }
 
+  // Декоратори Lit ламаються не на збірці, а в браузері — «Unsupported decorator
+  // location: field», біла сторінка при зелених типах і робочому API. Причина
+  // завжди одна: esbuild усередині Vite не бачить `experimentalDecorators`, бо
+  // читає tsconfig.json, а не deno.json. Тут перевіряємо хоча б наявність.
+  if (ok) {
+    try {
+      const tsconfig = JSON.parse(await Deno.readTextFile(join(appDir, "tsconfig.json")));
+      if (tsconfig.compilerOptions?.experimentalDecorators !== true) {
+        console.error("✗ tsconfig.json без experimentalDecorators — декоратори Lit впадуть у рантаймі");
+        ok = false;
+      } else {
+        console.log("✓ tsconfig experimentalDecorators");
+      }
+    } catch {
+      console.error("✗ у згенерованому застосунку немає tsconfig.json — esbuild не побачить experimentalDecorators");
+      ok = false;
+    }
+  }
+
   if (options.keep) {
     console.log(`\nкаталог лишено: ${appDir}`);
   } else {
