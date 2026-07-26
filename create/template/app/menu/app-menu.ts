@@ -23,7 +23,14 @@ export class AppMenu extends GlobalStyledLitElement {
 
   override async connectedCallback() {
     super.connectedCallback();
-    const envelope = await bus.request("data.load", { model: "menu", command: "current", payload: {} });
+    // Конверт звужуємо явно: bus.request типізований узагальнено, а форму
+    // відповіді знає тільки той, хто кличе конкретну команду.
+    const envelope = await bus.request("data.load", {
+      model: "menu",
+      command: "current",
+      payload: {},
+    }) as { data?: { rows?: unknown[] } } | undefined;
+
     this.items = (envelope?.data?.rows ?? []) as MenuItem[];
   }
 

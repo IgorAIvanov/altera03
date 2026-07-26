@@ -13,6 +13,7 @@ deno task sql:gen <model>  # перегенерувати CRUD-SQL ОДНІЄЇ 
 deno task core:sql     # вбудувати server/sql/**/db/*.sql у core-sql.generated.ts (після правки SQL ядра)
 deno task client:assets    # вбудувати тему й локалі фреймворку (після правки theme.css / client/_locales)
 deno task scaffold:template # вбудувати create/template/** у create/template.generated.ts
+deno task scaffold:verify   # згенерувати застосунок у тимчасовий каталог і перевірити типи й збірку
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
 deno task test:unit    # юніт-проби бібліотек без БД і HTTP (символіки штрих-кодів)

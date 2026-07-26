@@ -1,5 +1,5 @@
 {
-  "//": "Порядок важливий: пакети ядра й моделі застосунку чергуються за FK. @core/document_core посилається на catalog/organization, currency і chart_of_account — додай його НИЖЧЕ за ці моделі, коли вони з'являться.",
+  "//": "Порядок важливий: пакети ядра й моделі застосунку чергуються за FK. @core/document_core посилається на catalog/organization, currency і chart_of_account — додай його НИЖЧЕ за ці моделі, коли вони з'являться. Запис admin/menu — це лише манифест і сід застосунку: структура й функції меню живуть у ядрі (@core/menu).",
   "output": "{{name}}.app.sql",
   "outputs": {
     "structure": "{{name}}.struc_app.sql",
@@ -11,6 +11,7 @@
     "@core/base",
     "@core/access",
     "@core/menu",
+    "admin/menu",
     "@core/attachment"
   ]
 }

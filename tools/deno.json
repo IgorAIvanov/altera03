@@ -5,6 +5,7 @@
   "exports": {
     "./generate-client-assets": "./generate-client-assets.ts",
     "./generate-scaffold-template": "./generate-scaffold-template.ts",
+    "./verify-scaffold": "./verify-scaffold.ts",
     "./generate-core-sql": "./generate-core-sql.ts",
     "./generate-model-sql": "./generate-model-sql.ts",
     "./generate-model-runtime-registry": "./generate-model-runtime-registry.ts",
