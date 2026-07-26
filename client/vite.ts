@@ -14,6 +14,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { defineConfig, type Plugin, type UserConfig } from "npm:vite@^6.3.5";
 import { viteStaticCopy } from "npm:vite-plugin-static-copy@^2.3.0";
 import tailwindcss from "npm:@tailwindcss/vite@^4.3.0";
+import deno from "npm:@deno/vite-plugin@^1";
 
 /** Каталог самого фреймворку (`client/`). Стабільний і в монорепо, і в пакеті. */
 const FRAMEWORK_DIR = (import.meta as { dirname?: string }).dirname ??
@@ -185,13 +186,31 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
       ],
     },
     resolve: {
-      alias: {
-        "@app": appRoot,
-        "@client": FRAMEWORK_DIR,
-        "@shared": resolve(appRoot, "shared"),
-      },
+      // Масив, а не об'єкт: потрібен запис із RegExp (див. нижче).
+      alias: [
+        // `deno publish` запікає в опублікований код ПОВНІ специфікатори
+        // (`npm:@sinclair/typebox@^0.34.0` замість голого імені). Rollup таких
+        // не розуміє, а `@deno/vite-plugin` резолвить не всі: `npm:lit@^3.3.1`
+        // проходить, а typebox падає з `Could not load … ENOENT` — заважає
+        // подвійний cjs/esm-`exports`. Аліас повертає специфікатор до голого
+        // імені, яке резолвиться з node_modules штатно.
+        //
+        // У монорепо це правило не спрацьовує жодного разу (застосунок пише
+        // голі імена), тож ціни тут немає — воно потрібне саме встановленому
+        // застосунку, який тягне фреймворк із jsr.
+        { find: /^npm:\/?(@?[^@]+)@[^/]*(\/.*)?$/, replacement: "$1$2" },
+        { find: "@app", replacement: appRoot },
+        { find: "@client", replacement: FRAMEWORK_DIR },
+        { find: "@shared", replacement: resolve(appRoot, "shared") },
+      ],
     },
     plugins: [
+      // Vite сам не резолвить ані `jsr:`, ані карту імпортів Deno: без цього
+      // плагіна встановлений застосунок падає на першому ж імпорті фреймворку
+      // (`Rollup failed to resolve import "@altera/client/..."`). У монорепо
+      // фреймворк приходить аліасом `@client`, тому там плагін не потрібен —
+      // але він і не заважає, а пресет має працювати в обох розкладках.
+      deno(),
       tailwindcss(),
       appModulesPlugin(appRoot),
       viteStaticCopy({

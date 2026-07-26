@@ -30,6 +30,7 @@
     "jsr:@std/path@^1.1.6": "1.1.6",
     "jsr:@std/streams@^1.0.17": "1.0.17",
     "jsr:@std/streams@^1.1.1": "1.1.1",
+    "npm:@deno/vite-plugin@1": "1.0.6_vite@6.4.2",
     "npm:@fontsource/roboto@^5.2.10": "5.2.10",
     "npm:@lit-labs/signals@~0.1.3": "0.1.3",
     "npm:@pdf-lib/fontkit@*": "1.1.1",
@@ -167,6 +168,12 @@
     }
   },
   "npm": {
+    "@deno/vite-plugin@1.0.6_vite@6.4.2": {
+      "integrity": "sha512-Sh5XqvFuKAwjARTesi0n6xRpEXm1V0UeqKh+SxIrexCofxOaieNDMqXZD02RiZCg0mrJ43V8eCMuVrDfq6mLmg==",
+      "dependencies": [
+        "vite"
+      ]
+    },
     "@esbuild/aix-ppc64@0.25.12": {
       "integrity": "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==",
       "os": ["aix"],
