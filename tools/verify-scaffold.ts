@@ -13,7 +13,8 @@
 //   - `bus.request()` типізований узагальнено, тож `envelope.data` без явного
 //     звуження не компілюється.
 // Обидва видно лише на згенерованому застосунку. Звідси й ця перевірка.
-import { join, resolve } from "@std/path";
+import { join, relative, resolve, SEPARATOR } from "@std/path";
+import { normalizeEol } from "./normalize-eol.ts";
 
 async function run(cmd: string[], cwd: string): Promise<{ ok: boolean; output: string }> {
   const command = new Deno.Command(Deno.execPath(), { args: cmd, cwd, stdout: "piped", stderr: "piped" });
@@ -22,6 +23,52 @@ async function run(cmd: string[], cwd: string): Promise<{ ok: boolean; output: s
     ok: success,
     output: new TextDecoder().decode(stdout) + new TextDecoder().decode(stderr),
   };
+}
+
+/**
+ * Згенерована мапа не розійшлася з деревом шаблону.
+ *
+ * Це не теоретична обережність: `@altera/create@0.1.4` пішов у реєстр саме
+ * таким — у `create/template/deno.json` версії фреймворку вже підняли на
+ * `^0.4.0`, а `scaffold:template` не перезапустили, тож у пакет поїхали старі
+ * `^0.3.3`. Згенерований застосунок ставив попередній клієнт і не компілювався.
+ * Збірка цього не бачить: вона працює з мапою, а не з деревом.
+ */
+async function checkTemplateFresh(): Promise<string[]> {
+  const templateDir = resolve("create/template");
+  const problems: string[] = [];
+
+  let TEMPLATE: Record<string, string>;
+  try {
+    ({ TEMPLATE } = await import(`file://${resolve("create/template.generated.ts").replaceAll("\\", "/")}`));
+  } catch {
+    return ["не вдалося прочитати create/template.generated.ts"];
+  }
+
+  const onDisk = new Map<string, string>();
+  async function walk(dir: string) {
+    for await (const entry of Deno.readDir(dir)) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory) await walk(full);
+      else if (entry.isFile) {
+        onDisk.set(
+          relative(templateDir, full).split(SEPARATOR).join("/"),
+          normalizeEol(await Deno.readTextFile(full)),
+        );
+      }
+    }
+  }
+  await walk(templateDir);
+
+  for (const [key, body] of onDisk) {
+    if (!(key in TEMPLATE)) problems.push(`${key}: немає в мапі`);
+    else if (TEMPLATE[key] !== body) problems.push(`${key}: вміст розійшовся`);
+  }
+  for (const key of Object.keys(TEMPLATE)) {
+    if (!onDisk.has(key)) problems.push(`${key}: є в мапі, але немає на диску`);
+  }
+
+  return problems;
 }
 
 export async function verifyScaffold(options: { createEntry: string; keep?: boolean }): Promise<boolean> {
@@ -35,6 +82,15 @@ export async function verifyScaffold(options: { createEntry: string; keep?: bool
   let ok = true;
 
   console.log(`· каталог: ${appDir}`);
+
+  const stale = await checkTemplateFresh();
+  if (stale.length) {
+    console.error("✗ template.generated.ts застарів — виконай `deno task scaffold:template`:");
+    for (const problem of stale) console.error(`    ${problem}`);
+    if (!options.keep) await Deno.remove(target, { recursive: true });
+    return false;
+  }
+  console.log("✓ template.generated.ts свіжий");
 
   const steps: Array<[string, string[], string]> = [
     ["scaffold", ["run", "-A", createEntry, appDir], target],
