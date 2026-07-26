@@ -8,6 +8,23 @@ import { SortDirSchema } from "@client/shared/schema.ts";
  * рахує TS (PBKDF2-SHA256), тож пароль ходить окремою командою `setPassword` —
  * так схема хешування лишається в одному місці.
  */
+/**
+ * Зв'язка користувача із зовнішнім провайдером входу.
+ *
+ * `externalId` — стабільний ідентифікатор у провайдера (OIDC `sub`), а не
+ * e-mail: e-mail міняють, і зв'язка тихо переїхала б на іншу людину. Решта
+ * полів довідкові — їх заповнює сам вхід.
+ */
+export const UserIdentitySchema = Type.Object({
+  id:         Type.Optional(Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint" })),
+  provider:   Type.String({ title: "Провайдер", minLength: 1, maxLength: 50 }),
+  externalId: Type.String({ title: "Зовнішній ідентифікатор", minLength: 1, maxLength: 255 }),
+  email:       Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  displayName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  lastLoginAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+export type UserIdentity = Static<typeof UserIdentitySchema>;
+
 export const UserItemSchema = Type.Object({
   id:    Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
   login: Type.String({
@@ -26,6 +43,13 @@ export const UserItemSchema = Type.Object({
   isActive: Type.Boolean({ title: "Активний", default: true }),
   /** Групи користувача. Повний стан, а не дельта. */
   groupIds: Type.Array(Type.String({ "x-db-type": "bigint" }), { default: [] }),
+  /**
+   * Зв'язки із зовнішніми провайдерами входу. Теж повний стан.
+   *
+   * Без рядка тут зовнішній вхід не пускає нікого: провайдер підтверджує, що
+   * людина та сама, але не те, що їй у цій системі щось можна.
+   */
+  identities: Type.Array(UserIdentitySchema, { default: [] }),
 });
 export type UserItem = Static<typeof UserItemSchema>;
 

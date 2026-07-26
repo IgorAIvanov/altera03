@@ -1,9 +1,11 @@
 import { html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { dateFormat, formatDate } from "@client/shared/datetime.ts";
 import {
   UserEditRootSchema,
   type UserEditRoot,
+  type UserIdentity,
 } from "./user.schema.ts";
 
 export const tagName = "user-edit";
@@ -39,6 +41,25 @@ export class UserEdit extends BaseUI<UserEditRoot> {
     const current = new Set(this.$root.item.groupIds);
     checked ? current.add(id) : current.delete(id);
     this.$root.item = { ...this.$root.item, groupIds: [...current] };
+  }
+
+  /** Список зв'язок — повний стан, тому правки завжди йдуть новим масивом. */
+  private setIdentities(identities: UserIdentity[]) {
+    this.$root.item = { ...this.$root.item, identities };
+  }
+
+  private addIdentity() {
+    this.setIdentities([...this.$root.item.identities, { provider: "", externalId: "" }]);
+  }
+
+  private removeIdentity(index: number) {
+    this.setIdentities(this.$root.item.identities.filter((_, i) => i !== index));
+  }
+
+  private patchIdentity(index: number, patch: Partial<UserIdentity>) {
+    this.setIdentities(
+      this.$root.item.identities.map((identity, i) => i === index ? { ...identity, ...patch } : identity),
+    );
   }
 
   /**
@@ -106,6 +127,62 @@ export class UserEdit extends BaseUI<UserEditRoot> {
                   </label>
                 `)}
               </div>
+            `}
+        </div>
+
+        <!-- Зовнішні входи. Політика свідомо сувора: провайдер підтверджує
+             особу, але право працювати в системі дає рядок ось тут. Без нього
+             вхід через провайдера відхиляється, навіть якщо він успішний. -->
+        <div class="mt-4">
+          <div class="flex items-center gap-2 mb-1">
+            <div class="font-semibold">${this.t("user.identities")}</div>
+            <button class="btn btn-xs btn-outline" ?disabled=${this.busy} @click=${this.addIdentity}>
+              ${this.t("user.identityAdd")}
+            </button>
+          </div>
+
+          ${this.$root.item.identities.length === 0
+            ? html`<div class="text-base-content/50">${this.t("user.identitiesEmpty")}</div>`
+            : html`
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>${this.t("user.identityProvider")}</th>
+                    <th>${this.t("user.identityExternalId")}</th>
+                    <th>${this.t("user.identityLastLogin")}</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${this.$root.item.identities.map((identity, index) => html`
+                    <tr>
+                      <td>
+                        <input class="input input-bordered input-sm w-32"
+                          .value=${identity.provider ?? ""}
+                          placeholder="google"
+                          @input=${(e: Event) =>
+                            this.patchIdentity(index, { provider: (e.target as HTMLInputElement).value })} />
+                      </td>
+                      <td>
+                        <input class="input input-bordered input-sm w-full"
+                          .value=${identity.externalId ?? ""}
+                          placeholder="sub"
+                          @input=${(e: Event) =>
+                            this.patchIdentity(index, { externalId: (e.target as HTMLInputElement).value })} />
+                      </td>
+                      <td class="text-base-content/60">
+                        ${identity.lastLoginAt ? formatDate(identity.lastLoginAt, dateFormat.dateTime) : "—"}
+                      </td>
+                      <td class="text-right">
+                        <button class="btn btn-xs btn-ghost" ?disabled=${this.busy}
+                          @click=${() => this.removeIdentity(index)}>
+                          ${this.t("common.delete")}
+                        </button>
+                      </td>
+                    </tr>
+                  `)}
+                </tbody>
+              </table>
             `}
         </div>
 

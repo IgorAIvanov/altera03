@@ -10,6 +10,7 @@ import { bootstrap, configFromEnv } from "@scope/server";
 import { generatedModelRegistry, generatedTsCommandBindings } from "./_generated/model-registry.generated.ts";
 import { agentModelRoutes } from "./_generated/agent-routes.generated.ts";
 import { viewManifest } from "./_generated/view-manifest.generated.ts";
+import { devAuthMethods } from "./login/dev-redirect-auth.method.ts";
 
 // Корінь репо — батьківський каталог app/.
 const projectRoot = fromFileUrl(new URL("../", import.meta.url)).replace(/\/$/, "");
@@ -47,11 +48,16 @@ export interface AppServer {
 export async function createServer(): Promise<AppServer> {
   // Уся конфігурація сервера — один аргумент. Значення з оточення бібліотека
   // сама не читає: беремо їх явно через configFromEnv() і за потреби перекриваємо.
-  // Зовнішній провайдер входу підключається сюди:
-  //   const env = configFromEnv();
+  //
+  // `auth.methods` — місце для зовнішніх провайдерів входу. Фреймворк їх не
+  // постачає: він дає контракт (`AuthDirectMethod` / `AuthRedirectMethod`) і
+  // веде redirect-потік, а хто саме підтверджує особу — вибір застосунку:
   //   auth: { ...env.auth, methods: [new GoogleAuthMethod(...)] }
+  // Зараз тут лише dev-заглушка, і лише коли її увімкнено явно.
+  const env = configFromEnv();
   const application = await bootstrap({
-    ...configFromEnv(),
+    ...env,
+    auth: { ...env.auth, methods: devAuthMethods() },
     models: {
       registry: generatedModelRegistry,
       tsCommands: generatedTsCommandBindings,

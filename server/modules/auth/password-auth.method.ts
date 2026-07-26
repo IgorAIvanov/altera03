@@ -1,12 +1,14 @@
 import { Injectable } from "@danet/core";
 import { AuthBootstrapService } from "./auth-bootstrap.service.ts";
 import { AuthService } from "./auth.service.ts";
-import type { AuthMethod, AuthUserDto } from "./auth.types.ts";
+import type { AuthDirectMethod, AuthUserDto } from "./auth.types.ts";
 import { toAuthUserDto } from "./auth.types.ts";
 import { verifyPassword } from "./password-hash.ts";
 
+// `AuthDirectMethod`, а не `AuthMethod`: останній — об'єднання, а implements
+// вимагає типу зі статично відомим складом полів.
 @Injectable()
-export class PasswordAuthMethod implements AuthMethod {
+export class PasswordAuthMethod implements AuthDirectMethod {
   readonly key = "password";
   readonly label = "Логін і пароль";
 

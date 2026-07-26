@@ -27,11 +27,20 @@ export type {
 export { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "./modules/auth/password-hash.ts";
 
 // Контракт методу входу: застосунок реалізує його, щоб додати зовнішнього
-// провайдера, і кладе екземпляр у `auth.methods`.
+// провайдера, і кладе екземпляр у `auth.methods`. Два різновиди —
+// `AuthDirectMethod` (обмін на місці) і `AuthRedirectMethod` (похід у браузер:
+// OAuth/OIDC). Другий фреймворк веде сам: маршрути, `state`, зв'язка з
+// користувачем — його, обмін коду на особу — метода.
 export type {
+  AuthAuthorizeInput,
+  AuthDirectMethod,
+  AuthExchangeInput,
+  AuthExternalIdentity,
   AuthLoginResult,
   AuthMethod,
   AuthMethodDescriptor,
+  AuthMethodKind,
+  AuthRedirectMethod,
   AuthSessionInfo,
   AuthUserDto,
 } from "./modules/auth/auth.types.ts";

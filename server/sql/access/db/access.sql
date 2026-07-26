@@ -200,6 +200,19 @@ as $$
   ),
   all_groups as (
     select g.id::text as id, g.name from app.user_group g where g.is_active order by g.code
+  ),
+  identities as (
+    select
+      i.id::text        as id,
+      i.provider        as provider,
+      i.external_id     as "externalId",
+      i.email           as email,
+      i.display_name    as "displayName",
+      i.last_login_at   as "lastLoginAt"
+    from app.user_identity i
+    cross join target t
+    where i.user_id = t.id
+    order by i.provider, i.external_id
   )
   select jsonb_build_object(
     'ok', true,
@@ -210,7 +223,10 @@ as $$
           'login', f.login,
           'fullName', f.full_name,
           'isActive', f.is_active,
-          'groupIds', coalesce((select jsonb_agg(id) from member_groups where "isActive"), '[]'::jsonb)
+          'groupIds', coalesce((select jsonb_agg(id) from member_groups where "isActive"), '[]'::jsonb),
+          -- Зв'язки із зовнішніми провайдерами. Повний стан, а не дельта:
+          -- user_save переписує список цілком, як і членство в групах.
+          'identities', coalesce((select jsonb_agg(row_to_json(identities)) from identities), '[]'::jsonb)
         )
         from found f
       ),
@@ -227,9 +243,16 @@ as $$
 $$;
 
 /**
- * Створення/зміна користувача. payload = { item: { id, login, fullName, isActive, groupIds } }.
+ * Створення/зміна користувача.
+ * payload = { item: { id, login, fullName, isActive, groupIds, identities } }.
+ *
  * Пароль не приймається: новий користувач створюється з порожнім хешем і не
  * може увійти, доки пароль не встановлять через auth-модуль.
+ *
+ * `identities` — зв'язки із зовнішніми провайдерами входу. Поле
+ * **необов'язкове**, і його відсутність означає «не чіпати»: інакше будь-яка
+ * форма, що про зв'язки не знає, мовчки відв'язувала б людину від провайдера
+ * при звичайному збереженні імені.
  */
 drop function if exists app.user_save(bigint, jsonb);
 create function app.user_save(user_id bigint, payload jsonb)
@@ -251,6 +274,8 @@ declare
     (select array_agg(value::bigint) from jsonb_array_elements_text(coalesce(v_item->'groupIds', '[]'::jsonb))),
     '{}'::bigint[]
   );
+  v_identities jsonb := v_item->'identities';
+  v_taken text;
 begin
   if v_login = '' then
     return jsonb_build_object('ok', false, 'data', app.access_empty_data(), 'messages', jsonb_build_array('Логін обов''язковий'));
@@ -284,6 +309,65 @@ begin
   insert into app.user_group_member (user_group_id, user_id, is_active)
   select g, v_id, true from unnest(v_groups) as g
   on conflict (user_group_id, user_id) do update set is_active = true, updated_at = now();
+
+  if jsonb_typeof(v_identities) = 'array' then
+    if exists (
+      select 1 from jsonb_array_elements(v_identities) e
+      where trim(coalesce(e->>'provider', '')) = '' or trim(coalesce(e->>'externalId', '')) = ''
+    ) then
+      return jsonb_build_object('ok', false, 'data', app.access_empty_data(), 'messages',
+        jsonb_build_array('Для зв''язки потрібні провайдер і зовнішній ідентифікатор'));
+    end if;
+
+    if exists (
+      select 1 from jsonb_array_elements(v_identities) e
+      group by lower(trim(e->>'provider')), trim(e->>'externalId')
+      having count(*) > 1
+    ) then
+      return jsonb_build_object('ok', false, 'data', app.access_empty_data(), 'messages',
+        jsonb_build_array('Однакова зв''язка вказана двічі'));
+    end if;
+
+    -- Зайнято іншим користувачем. Перевіряємо явно, хоча є унікальний індекс:
+    -- інакше замість зрозумілого тексту прилетів би 500 від порушення
+    -- обмеження, а адміністратор не дізнався б, що саме не так.
+    select string_agg(distinct u.login, ', ')
+      into v_taken
+    from jsonb_array_elements(v_identities) e
+    join app.user_identity i
+      on i.provider = lower(trim(e->>'provider'))
+     and i.external_id = trim(e->>'externalId')
+    join app.users u on u.id = i.user_id
+    where i.user_id <> v_id;
+
+    if v_taken is not null then
+      return jsonb_build_object('ok', false, 'data', app.access_empty_data(), 'messages',
+        jsonb_build_array('Цю зв''язку вже використовує: ' || v_taken));
+    end if;
+
+    -- Список у формі — повний стан, як і членство в групах.
+    delete from app.user_identity i
+     where i.user_id = v_id
+       and not exists (
+         select 1 from jsonb_array_elements(v_identities) e
+         where lower(trim(e->>'provider')) = i.provider
+           and trim(e->>'externalId') = i.external_id
+       );
+
+    insert into app.user_identity (user_id, provider, external_id, email, display_name)
+    select
+      v_id,
+      lower(trim(e->>'provider')),
+      trim(e->>'externalId'),
+      nullif(trim(coalesce(e->>'email', '')), ''),
+      nullif(trim(coalesce(e->>'displayName', '')), '')
+    from jsonb_array_elements(v_identities) e
+    on conflict (provider, external_id) do update
+       set email = excluded.email,
+           display_name = excluded.display_name,
+           updated_at = now()
+     where app.user_identity.user_id = v_id;
+  end if;
 
   return app.user_get(v_actor, jsonb_build_object('id', v_id::text));
 end;

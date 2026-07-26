@@ -7,7 +7,10 @@ import {
   AuthLoginResult,
   AuthMethod,
   AuthMethodDescriptor,
+  authMethodKind,
+  AuthRedirectMethod,
   AuthResolvedAttempt,
+  isRedirectMethod,
 } from "./auth.types.ts";
 
 @Injectable()
@@ -31,13 +34,24 @@ export class AuthFlowService {
     return this.methods.map((method) => ({
       key: method.key,
       label: method.label,
+      kind: authMethodKind(method),
     }));
+  }
+
+  /** Redirect-метод за ключем — для маршрутів authorize/callback. */
+  findRedirectMethod(key: string): AuthRedirectMethod | null {
+    const method = this.methods.find((item) => item.key === key);
+    return method && isRedirectMethod(method) ? method : null;
   }
 
   async login(request: AuthLoginRequest): Promise<AuthLoginResult | null> {
     const attempt = this.resolveAttempt(request);
     const method = this.methods.find((item) => item.key === attempt.method);
-    if (!method) {
+    // Redirect-метод сюди не ходить: у нього немає облікових даних, які можна
+    // прислати тілом. Спроба увійти ним через /login — помилка виклику, а не
+    // невірний пароль, але назовні різниці немає навмисно: підказувати, який
+    // саме метод існує, ні до чого.
+    if (!method || isRedirectMethod(method)) {
       return null;
     }
 

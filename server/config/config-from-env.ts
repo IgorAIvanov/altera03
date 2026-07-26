@@ -120,6 +120,9 @@ export function configFromEnv(): EnvDerivedConfig {
       // Зовнішні провайдери оточенням не задаються — це код. Застосунок
       // додає їх сам: `auth: { ...env.auth, methods: [...] }`.
       methods: [],
+      // Потрібна лише за зворотним проксі: без неї redirect_uri будується з
+      // походження запиту, а це `http://localhost:3000`, а не публічна адреса.
+      publicBaseUrl: readTrimmed("AUTH_PUBLIC_BASE_URL")?.replace(/\/+$/, "") ?? null,
     },
     blob: {
       // Окремий секрет, інакше — той самий JWT_SECRET (однаковий рівень довіри).

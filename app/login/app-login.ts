@@ -18,15 +18,20 @@ import { customElement, state } from "lit/decorators.js";
 // ні схеми немає. Потрібні лише спільні стилі.
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
 import {
+  type AuthMethodOption,
   type BootstrapState,
   createFirstUser,
+  fetchAuthMethods,
   fetchBootstrapState,
   login,
+  startRedirectLogin,
+  takeAuthError,
 } from "@client/auth/session.ts";
 
 @customElement("app-login")
 export class AppLogin extends GlobalStyledLitElement {
   @state() private bootstrapState: BootstrapState | null = null;
+  @state() private methods: AuthMethodOption[] = [];
   @state() private busy = false;
   @state() private error = "";
 
@@ -36,16 +41,26 @@ export class AppLogin extends GlobalStyledLitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    // Причину відмови кладе в адресний рядок callback провайдера — забираємо її
+    // до першого запиту, інакше вона потонула б у стані завантаження.
+    this.error = takeAuthError();
     void this.loadBootstrapState();
   }
 
   private async loadBootstrapState() {
     this.busy = true;
-    this.error = "";
 
     try {
-      this.bootstrapState = await fetchBootstrapState();
-      this.login = this.bootstrapState.predefinedLogin ?? "";
+      // Разом: стан першого запуску і доступні способи входу. Другий запит
+      // вирішує, що взагалі малювати, тож чекати на нього окремо ні до чого.
+      const [bootstrapState, methods] = await Promise.all([
+        fetchBootstrapState(),
+        fetchAuthMethods(),
+      ]);
+
+      this.bootstrapState = bootstrapState;
+      this.methods = methods;
+      this.login = bootstrapState.predefinedLogin ?? "";
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
     } finally {
@@ -56,6 +71,19 @@ export class AppLogin extends GlobalStyledLitElement {
   /** Створювати першого користувача треба лише коли підставляти нема кого. */
   private get isSetup(): boolean {
     return !!this.bootstrapState?.needsSetup && !this.bootstrapState.predefinedUserAvailable;
+  }
+
+  /**
+   * Форма логіна й пароля потрібна, лише коли пароль увімкнений на сервері
+   * (`AUTH_PASSWORD_ENABLED`). Інакше вхід іде тільки через провайдерів, і
+   * порожні поля на екрані обіцяли б неіснуючу можливість.
+   */
+  private get hasPasswordLogin(): boolean {
+    return this.methods.some((method) => method.kind === "direct");
+  }
+
+  private get redirectMethods(): AuthMethodOption[] {
+    return this.methods.filter((method) => method.kind === "redirect");
   }
 
   private async submit(event: Event) {
@@ -108,67 +136,122 @@ export class AppLogin extends GlobalStyledLitElement {
     `;
   }
 
+  /**
+   * Кнопки зовнішніх провайдерів.
+   *
+   * Не всередині `<form>`: це навігація браузера, а не надсилання форми, і
+   * випадковий submit по Enter тут був би сюрпризом.
+   */
+  private renderRedirectMethods() {
+    const methods = this.redirectMethods;
+    if (!methods.length) {
+      return nothing;
+    }
+
+    return html`
+      ${this.hasPasswordLogin ? html`<div class="divider text-xs opacity-60">або</div>` : nothing}
+      <div class="flex flex-col gap-2">
+        ${methods.map((method) =>
+          html`
+            <button
+              class="btn btn-outline w-full"
+              type="button"
+              ?disabled=${this.busy}
+              @click=${() => startRedirectLogin(method.key)}
+            >
+              ${method.label}
+            </button>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderPasswordForm(setup: boolean) {
+    return html`
+      <form class="flex flex-col gap-4" @submit=${this.submit}>
+        ${setup
+          ? html`<p class="text-sm opacity-70">
+              База порожня. Створіть користувача, який керуватиме системою.
+            </p>`
+          : nothing}
+
+        ${this.bootstrapState?.predefinedUserAvailable
+          ? html`<p class="text-sm opacity-70">
+              Увійдіть як <b>${this.bootstrapState.predefinedLogin}</b> — паролем із налаштувань.
+            </p>`
+          : nothing}
+
+        <input
+          class="input input-bordered w-full"
+          placeholder="Логін"
+          autocomplete="username"
+          .value=${this.login}
+          @input=${(e: Event) => this.login = (e.target as HTMLInputElement).value}
+          required
+        />
+
+        ${setup
+          ? html`<input
+              class="input input-bordered w-full"
+              placeholder="Повне ім'я"
+              .value=${this.fullName}
+              @input=${(e: Event) => this.fullName = (e.target as HTMLInputElement).value}
+              required
+            />`
+          : nothing}
+
+        <input
+          class="input input-bordered w-full"
+          type="password"
+          placeholder="Пароль"
+          autocomplete=${setup ? "new-password" : "current-password"}
+          .value=${this.password}
+          @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value}
+          required
+        />
+
+        <button class="btn btn-primary w-full" type="submit" ?disabled=${this.busy}>
+          ${this.busy ? "…" : setup ? "Створити й увійти" : "Увійти"}
+        </button>
+      </form>
+    `;
+  }
+
   override render() {
     if (!this.bootstrapState) {
       return this.error ? this.renderUnavailable() : html`<div class="p-8 text-center">…</div>`;
     }
 
-    const setup = this.isSetup;
+    // Створення першого користувача паролем має сенс, лише поки пароль
+    // увімкнений. Коли ні — першого адміністратора заводить сам вхід через
+    // провайдера: на порожній базі зв'язка створюється разом із користувачем.
+    const setup = this.isSetup && this.hasPasswordLogin;
 
     return html`
       <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
-        <form class="card bg-base-100 shadow-xl w-full max-w-sm" @submit=${this.submit}>
+        <div class="card bg-base-100 shadow-xl w-full max-w-sm">
           <div class="card-body gap-4">
             <h2 class="card-title">${setup ? "Створення адміністратора" : "Вхід"}</h2>
 
-            ${setup
+            ${this.isSetup && !this.hasPasswordLogin
               ? html`<p class="text-sm opacity-70">
-                  База порожня. Створіть користувача, який керуватиме системою.
+                  База порожня. Перший, хто ввійде через провайдера, стане адміністратором.
                 </p>`
               : nothing}
 
-            ${this.bootstrapState.predefinedUserAvailable
-              ? html`<p class="text-sm opacity-70">
-                  Увійдіть як <b>${this.bootstrapState.predefinedLogin}</b> — паролем із налаштувань.
-                </p>`
-              : nothing}
-
-            <input
-              class="input input-bordered w-full"
-              placeholder="Логін"
-              autocomplete="username"
-              .value=${this.login}
-              @input=${(e: Event) => this.login = (e.target as HTMLInputElement).value}
-              required
-            />
-
-            ${setup
-              ? html`<input
-                  class="input input-bordered w-full"
-                  placeholder="Повне ім'я"
-                  .value=${this.fullName}
-                  @input=${(e: Event) => this.fullName = (e.target as HTMLInputElement).value}
-                  required
-                />`
-              : nothing}
-
-            <input
-              class="input input-bordered w-full"
-              type="password"
-              placeholder="Пароль"
-              autocomplete=${setup ? "new-password" : "current-password"}
-              .value=${this.password}
-              @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value}
-              required
-            />
+            ${this.hasPasswordLogin ? this.renderPasswordForm(setup) : nothing}
+            ${this.renderRedirectMethods()}
 
             ${this.error ? html`<div class="alert alert-error text-sm">${this.error}</div>` : nothing}
 
-            <button class="btn btn-primary w-full" type="submit" ?disabled=${this.busy}>
-              ${this.busy ? "…" : setup ? "Створити й увійти" : "Увійти"}
-            </button>
+            ${!this.hasPasswordLogin && !this.redirectMethods.length
+              ? html`<div class="alert alert-warning text-sm">
+                  Сервер не пропонує жодного способу входу.
+                </div>`
+              : nothing}
           </div>
-        </form>
+        </div>
       </div>
     `;
   }

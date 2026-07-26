@@ -127,7 +127,8 @@ const application = await bootstrap({
 
 Змінні оточення (усі — лише через `configFromEnv`): `DB_HOST/PORT/NAME/USERNAME/PASSWORD`,
 `DB_POOL_SIZE`, `AUTH_SESSION_TTL_HOURS`, `BOOTSTRAP_LOGIN/PASSWORD/FULL_NAME`,
-`DEV_AUTH_BYPASS`, `DEV_AUTH_USER_ID`, `DEFAULT_USER_ID`, `NODE_ENV`/`APP_ENV`/`DENO_ENV`,
+`DEV_AUTH_BYPASS`, `DEV_AUTH_USER_ID`, `DEFAULT_USER_ID`, `AUTH_PUBLIC_BASE_URL`,
+`NODE_ENV`/`APP_ENV`/`DENO_ENV`,
 `BLOB_TOKEN_SECRET`, `JWT_SECRET`, `BLOB_TOKEN_TTL_HOURS`, `BLOB_MAX_SIZE_MB`,
 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_ROUTER_MODEL`.
 
@@ -304,16 +305,29 @@ app.user_group_list / user_group_get / user_group_save / user_group_delete / use
 Перший запуск — не окрема сторінка, а стан того самого екрана (див. `bootstrap-state`).
 
 **Методи входу.** Вбудований — пароль (`AUTH_PASSWORD_ENABLED=false` вимикає). Зовнішні
-провайдери застосунок підкладає сам, реалізувавши `AuthMethod` і поклавши екземпляр у конфіг:
+провайдери застосунок підкладає сам, поклавши екземпляр у конфіг:
 
 ```ts
 const env = configFromEnv();
 bootstrap({ ...env, auth: { ...env.auth, methods: [new GoogleAuthMethod(...)] }, … })
 ```
 
-Метод потрапляє в `GET /api/auth/methods` і в `auth_session.auth_method`. Redirect-потік
-(OAuth-код і callback) контрактом `authenticate(payload)` поки не описаний, як і зв'язка
-локального користувача із зовнішнім `sub` — це наступний крок.
+Контракт — об'єднання двох різновидів: `AuthDirectMethod` (обмін на місці, як пароль) і
+`AuthRedirectMethod` (похід у браузер: OAuth/OIDC — `authorizeUrl` + `exchange`). Саме
+об'єднання, тому `implements AuthMethod` не компілюється — реалізуй конкретний вид.
+
+Redirect-потік веде фреймворк: маршрути `GET /api/auth/authorize/:method` і
+`/callback/:method`, разовий `state` у `app.auth_login_state`, зв'язка з користувачем,
+cookie. Метод відповідає лише за розмову з провайдером — discovery і JWKS у ядрі немає
+навмисно. Вхід пускає **тільки за наявності зв'язки** `app.user_identity (provider,
+external_id)`, яку заводить адміністратор на екрані користувача; єдиний виняток —
+порожня база, де зовнішній вхід створює першого адміністратора.
+
+Дві речі, що виглядають дивно, поки не знаєш причини: callback віддає HTML-сторінку, а не
+302 (cookie `SameSite=Strict` не пережила б редирект із крос-сайтового ланцюжка), і `state`
+лежить у БД, а не в пам'яті (`--watch` вбивав би його посеред відлагодження). Перевірити
+без живого провайдера можна заглушкою `DEV_AUTH_REDIRECT=1`
+(`app/login/dev-redirect-auth.method.ts`). Деталі — [`docs/external-login.md`](docs/external-login.md).
 **Інтерфейсної частини у фреймворку немає навмисно** — структури й функції дає ядро, а екрани
 керування доступом застосунок робить як і де йому зручно (у цьому застосунку — `app/admin/user`
 і `app/admin/user_group`).

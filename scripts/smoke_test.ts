@@ -14,11 +14,39 @@ import { createServer } from "../app/server.ts";
 /** Свідомо неіснуючий користувач: 401 від нього — доказ, що заголовок прочитано. */
 const MISSING_USER_ID = "999999999";
 
+/** Свій користувач для проб redirect-входу. Прибирається у `finally`. */
+const REDIRECT_PROBE_LOGIN = "smoke-redirect-probe";
+const REDIRECT_PROBE_SUBJECT = "smoke-redirect-subject";
+
 function bytes(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
+/**
+ * Значення cookie сесії з відповіді. Порожній рядок означає, що сервер її
+ * **гасить** — саме так виглядає відмова, і з «заголовка немає взагалі» це
+ * плутати не можна.
+ */
+function sessionCookie(headers: Headers): string | null {
+  const raw = headers.get("set-cookie");
+  if (!raw) return null;
+
+  const name = Deno.env.get("AUTH_COOKIE_NAME")?.trim() || "altera_session";
+  const match = raw.match(new RegExp(`(?:^|,\\s*)${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+/** `state` із заголовка Location, який віддав authorize. */
+function stateFromLocation(location: string): string {
+  return new URL(location, "http://in-process").searchParams.get("state") ?? "";
+}
+
 Deno.test("smoke: HTTP-межа застосунку", async (t) => {
+  // Провайдер-заглушка вмикається до підняття застосунку: конфігурацію читає
+  // composition root, і після bootstrap міняти оточення вже пізно.
+  Deno.env.set("DEV_AUTH_REDIRECT", "1");
+  Deno.env.set("DEV_AUTH_REDIRECT_SUBJECT", REDIRECT_PROBE_SUBJECT);
+
   const client = await AppClient.start("smoke", createServer, { quiet: true });
 
   try {
@@ -198,6 +226,127 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertEquals(forbidden.status, 403);
       } finally {
         const removed = await client.model("attachment", "delete", { id: item.id });
+        assertEquals(removed.body.ok, true);
+      }
+    });
+
+    // ── Redirect-вхід ────────────────────────────────────────────────────────
+    //
+    // Живого OAuth-провайдера в розробці немає, тому шлях проходить заглушка
+    // (`app/login/dev-redirect-auth.method.ts`): вона одразу «підтверджує»
+    // особу й повертає браузер на наш же callback. Усе, що перевіряється далі,
+    // належить фреймворку — state, обмін, зв'язка, cookie.
+
+    await t.step("redirect: метод видно у списку способів входу", async () => {
+      const { body } = await client.json<Envelope>("/api/auth/methods");
+      const methods = body.data.rows as { key: string; kind: string }[];
+
+      const dev = methods.find((method) => method.key === "dev");
+      assertExists(dev);
+      // Без `kind` екран входу не відрізнив би провайдера від пароля.
+      assertEquals(dev.kind, "redirect");
+      assertEquals(methods.find((method) => method.key === "password")?.kind, "direct");
+    });
+
+    await t.step("redirect: authorize віддає перехід зі state", async () => {
+      const response = await client.fetch("/api/auth/authorize/dev?redirect=/");
+
+      assertEquals(response.status, 302);
+      const location = response.headers.get("location") ?? "";
+      assertEquals(location.includes("/api/auth/callback/dev"), true);
+      assertEquals(stateFromLocation(location).length > 0, true);
+    });
+
+    await t.step("redirect: невідомий метод не заводить потік", async () => {
+      const response = await client.fetch("/api/auth/authorize/no_such_provider");
+
+      assertEquals(response.status, 400);
+      assertEquals((await response.text()).includes("authError"), true);
+    });
+
+    // Без state callback приймав би будь-який code ззовні — тобто дозволяв би
+    // посадити користувача в чужу сесію переходом за підсунутим посиланням.
+    await t.step("redirect: чужий state не створює сесію", async () => {
+      const response = await client.fetch(
+        `/api/auth/callback/dev?code=dev:${REDIRECT_PROBE_SUBJECT}&state=not-a-real-state`,
+      );
+
+      assertEquals(response.status, 200);
+      assertEquals(sessionCookie(response.headers), "");
+      assertEquals((await response.text()).includes("authError"), true);
+    });
+
+    // Політика зв'язки: провайдер підтвердив особу, але користувача з нею не
+    // пов'язано — вхід відхиляється. База непорожня, тож гілка bootstrap
+    // недосяжна, і створюватися нічого не повинно.
+    await t.step("redirect: непов'язана особа не пускає", async () => {
+      const started = await client.fetch("/api/auth/authorize/dev");
+      const state = stateFromLocation(started.headers.get("location") ?? "");
+
+      const response = await client.fetch(
+        `/api/auth/callback/dev?code=dev:${REDIRECT_PROBE_SUBJECT}&state=${state}`,
+      );
+
+      assertEquals(response.status, 200);
+      assertEquals(sessionCookie(response.headers), "");
+      assertEquals(decodeURIComponent(await response.text()).includes("не пов'язаний"), true);
+    });
+
+    await t.step("redirect: повний цикл зі зв'язкою", async () => {
+      const created = await client.model("user", "save", {
+        item: {
+          login: REDIRECT_PROBE_LOGIN,
+          fullName: "Smoke redirect probe",
+          isActive: true,
+          groupIds: [],
+          identities: [{ provider: "dev", externalId: REDIRECT_PROBE_SUBJECT }],
+        },
+      });
+
+      assertEquals(created.body.ok, true);
+      const user = created.body.data.item as { id: string; login: string } | null;
+      assertExists(user);
+
+      // Прибирання — у finally: перевірки нижче можуть впасти, але свій рядок
+      // ми приберемо в будь-якому разі.
+      try {
+        const started = await client.fetch("/api/auth/authorize/dev?redirect=/");
+        const state = stateFromLocation(started.headers.get("location") ?? "");
+
+        const callback = await client.fetch(
+          `/api/auth/callback/dev?code=dev:${REDIRECT_PROBE_SUBJECT}&state=${state}`,
+        );
+
+        assertEquals(callback.status, 200);
+        // Документ, а не 302: cookie з SameSite=Strict не пережила б редирект
+        // із крос-сайтового ланцюжка (див. auth-redirect-page.ts).
+        assertEquals(callback.headers.get("content-type")?.includes("text/html"), true);
+
+        const token = sessionCookie(callback.headers);
+        assertExists(token);
+        assertEquals(token.length > 0, true);
+
+        const me = await client.json<Envelope>("/api/auth/me", {
+          headers: { cookie: `${Deno.env.get("AUTH_COOKIE_NAME")?.trim() || "altera_session"}=${token}` },
+        });
+
+        const session = me.body.data.item as
+          | { user: { login: string }; session: { authMethod: string } }
+          | null;
+        assertExists(session);
+        assertEquals(session.user.login, REDIRECT_PROBE_LOGIN);
+        // Метод входу лишається в сесії — інакше не видно, ким саме зайшли.
+        assertEquals(session.session.authMethod, "dev");
+
+        // Той самий state удруге: погашення й читання роблять одним UPDATE,
+        // тому повтор не має жодного вікна, в яке міг би прослизнути.
+        const replay = await client.fetch(
+          `/api/auth/callback/dev?code=dev:${REDIRECT_PROBE_SUBJECT}&state=${state}`,
+        );
+
+        assertEquals(sessionCookie(replay.headers), "");
+      } finally {
+        const removed = await client.model("user", "delete", { id: user.id });
         assertEquals(removed.body.ok, true);
       }
     });

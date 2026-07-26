@@ -1,9 +1,15 @@
-import { Body, Controller, Get, Post, Req } from "@danet/core";
+import { Body, Controller, Get, Param, Post, Req } from "@danet/core";
 import { AuthBootstrapService } from "./auth-bootstrap.service.ts";
 import { AuthFlowService } from "./auth-flow.service.ts";
 import { AuthSessionService } from "./auth-session.service.ts";
 import { AuthService } from "./auth.service.ts";
 import { clearSessionCookieHeaders, sessionCookieHeaders } from "./auth-cookie.ts";
+import {
+  AUTH_ERROR_PARAM,
+  AuthRedirectService,
+  redirectFailureMessage,
+} from "./auth-redirect.service.ts";
+import { htmlResponse, redirectBouncePage } from "./auth-redirect-page.ts";
 import { err, ok, rows } from "../../common/response.ts";
 import { type HttpRequest, jsonResponse } from "../../common/http.ts";
 import type { AuthLoginRequest, AuthSessionInfo } from "./auth.types.ts";
@@ -20,6 +26,17 @@ function publicSession(session: AuthSessionInfo): Omit<AuthSessionInfo, "token">
   return rest;
 }
 
+/** Query-параметри запиту плоским об'єктом: провайдери додають свої поля. */
+function queryParams(request: HttpRequest): Record<string, string> {
+  return Object.fromEntries(new URL(request.url).searchParams);
+}
+
+/** Шлях повернення з причиною відмови — її покаже екран входу. */
+function withAuthError(path: string, message: string): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${AUTH_ERROR_PARAM}=${encodeURIComponent(message)}`;
+}
+
 /**
  * Авторизація. Відповідає тим самим конвертом, що й команди моделей:
  * одиночний об'єкт — у `data.item`, список — у `data.rows`.
@@ -34,6 +51,7 @@ export class AuthController {
     private authFlowService: AuthFlowService,
     private authSessionService: AuthSessionService,
     private authService: AuthService,
+    private authRedirectService: AuthRedirectService,
   ) {}
 
   @Get("bootstrap-state")
@@ -74,6 +92,56 @@ export class AuthController {
   @Get("methods")
   methods() {
     return rows(this.authFlowService.getAvailableMethods());
+  }
+
+  /**
+   * Початок входу через зовнішнього провайдера. Це навігація браузера, а не
+   * fetch: у відповідь — 302 на провайдера, тому й GET.
+   *
+   * `?redirect=/шлях` — куди повернути після входу; приймається лише шлях від
+   * кореня (див. `safeRedirectPath`), інакше вхід став би відкритим редиректом.
+   */
+  @Get("authorize/:method")
+  async authorize(@Req() req: HttpRequest, @Param("method") method: string) {
+    const params = queryParams(req);
+    const result = await this.authRedirectService.begin(req, method, params.redirect ?? null);
+
+    if (!result.ok) {
+      return htmlResponse(
+        redirectBouncePage(withAuthError("/", redirectFailureMessage(result.reason))),
+        400,
+      );
+    }
+
+    return new Response(null, { status: 302, headers: { location: result.authorizeUrl } });
+  }
+
+  /**
+   * Повернення від провайдера.
+   *
+   * Відповідь — документ, а не 302: cookie сесії має `SameSite=Strict`, і
+   * редирект із крос-сайтового ланцюжка не доніс би її до наступного запиту.
+   * Подробиці — в `auth-redirect-page.ts`.
+   */
+  @Get("callback/:method")
+  async callback(@Req() req: HttpRequest, @Param("method") method: string) {
+    const result = await this.authRedirectService.complete(req, method, queryParams(req));
+
+    if (!result.ok) {
+      return htmlResponse(
+        redirectBouncePage(withAuthError(result.returnTo, redirectFailureMessage(result.reason))),
+        200,
+        // Cookie гасимо: на цьому шляху могла лишитися чужа або мертва сесія,
+        // а показувати екран входу з живою cookie — найкоротший шлях до плутанини.
+        clearSessionCookieHeaders(),
+      );
+    }
+
+    return htmlResponse(
+      redirectBouncePage(result.returnTo),
+      200,
+      sessionCookieHeaders(result.session.token),
+    );
   }
 
   @Get("me")

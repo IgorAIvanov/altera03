@@ -29,9 +29,50 @@ export interface BootstrapState {
   predefinedLogin: string | null;
 }
 
+/**
+ * Спосіб входу, доступний на цьому сервері.
+ *
+ * `kind` визначає, що малювати: `direct` — форму (логін і пароль), `redirect` —
+ * кнопку, яка веде браузер на сервер. Без цього поля екран не міг би відрізнити
+ * вбудований пароль від зовнішнього провайдера й малював би поле пароля для
+ * Google.
+ */
 export interface AuthMethodOption {
   key: string;
   label: string;
+  kind: "direct" | "redirect";
+}
+
+/**
+ * Початок входу через зовнішнього провайдера.
+ *
+ * Саме `location.assign`, а не `fetch`: далі йде перехід на чужий домен, а
+ * потім повернення на наш callback, який ставить cookie сесії. XHR тут
+ * безсилий — потрібна справжня навігація браузера.
+ */
+export function startRedirectLogin(methodKey: string, returnTo = "/"): void {
+  const url = `/api/auth/authorize/${encodeURIComponent(methodKey)}` +
+    `?redirect=${encodeURIComponent(returnTo)}`;
+  globalThis.location?.assign(url);
+}
+
+/**
+ * Причина відмови, яку callback поклав у адресний рядок.
+ *
+ * Читаємо й одразу прибираємо з URL: інакше перезавантаження сторінки після
+ * успішного входу знову показало б стару помилку.
+ */
+export function takeAuthError(): string {
+  const location = globalThis.location;
+  if (!location) return "";
+
+  const url = new URL(location.href);
+  const message = url.searchParams.get("authError");
+  if (!message) return "";
+
+  url.searchParams.delete("authError");
+  globalThis.history?.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  return message;
 }
 
 /** Пара «модель + дія» з app.access_effective. */

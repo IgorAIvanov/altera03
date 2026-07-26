@@ -8,7 +8,7 @@ do $$
 declare
   v_table text;
 begin
-  foreach v_table in array array['users', 'user_group', 'user_group_member', 'user_group_permission']
+  foreach v_table in array array['users', 'user_group', 'user_group_member', 'user_group_permission', 'user_identity']
   loop
     execute format(
       'select setval(pg_get_serial_sequence(%L, %L), coalesce((select max(id) from app.%I), 0) + 1, false)',
@@ -21,6 +21,10 @@ end $$;
 -- лише контейнером для набору екранів і власних прав не мала. Тепер група без
 -- жодного права не значить нічого, крім того, що вона з тієї епохи —
 -- видаляємо, щоб її учасники дісталися групам із реальними правами.
+-- Разові state redirect-потоку живуть хвилини. Основне прибирання робить TS при
+-- кожному новому вході; це — на випадок, коли потік довго не запускали взагалі.
+delete from app.auth_login_state where expires_at < now();
+
 delete from app.user_group g
 where not exists (
 	select 1 from app.user_group_permission p where p.user_group_id = g.id

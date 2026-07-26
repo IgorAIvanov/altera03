@@ -80,6 +80,17 @@ export interface AuthConfig {
    * ```
    */
   methods: AuthMethod[];
+  /**
+   * Зовнішня адреса застосунку — з неї будується `redirect_uri` для провайдерів
+   * входу (`https://облік.example/api/auth/callback/google`).
+   *
+   * `null` — брати походження з самого запиту. Локально цього досить, а за
+   * зворотним проксі — ні: там запит приходить як `http://localhost:3000`, і
+   * провайдер відхилив би такий `redirect_uri` як незареєстрований. Заголовкам
+   * `X-Forwarded-*` навмисно не віримо: їх підставляє хто завгодно, а тут з них
+   * будується адреса, на яку прилетить код авторизації.
+   */
+  publicBaseUrl: string | null;
 }
 
 export interface BlobConfig {
@@ -154,6 +165,7 @@ const DEFAULT_AUTH: AuthConfig = {
   devBypass: null,
   passwordEnabled: true,
   methods: [],
+  publicBaseUrl: null,
 };
 
 const DEFAULT_BLOB: BlobConfig = {
