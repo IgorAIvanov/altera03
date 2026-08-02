@@ -1,6 +1,8 @@
 import type {
   BusMessage,
   BusMessageType,
+  ChoiceButton,
+  DialogIcon,
   MessageOfType,
   PickerValue,
 } from "./bus.types.ts";
@@ -20,6 +22,10 @@ class Bus {
     resolve: (value: PickerValue) => void;
     reject: (reason?: unknown) => void;
   }>();
+
+  // очікують confirm.result / choice.result
+  private pendingConfirms = new Map<string, (value: boolean) => void>();
+  private pendingChoices = new Map<string, (value: string | null) => void>();
 
   // --- pub/sub ---
 
@@ -43,6 +49,14 @@ class Bus {
     if (message.type === "picker.cancel") {
       this.pending.get(message.callbackId)?.resolve(null);
       this.pending.delete(message.callbackId);
+    }
+    if (message.type === "confirm.result") {
+      this.pendingConfirms.get(message.callbackId)?.(message.value);
+      this.pendingConfirms.delete(message.callbackId);
+    }
+    if (message.type === "choice.result") {
+      this.pendingChoices.get(message.callbackId)?.(message.value);
+      this.pendingChoices.delete(message.callbackId);
     }
 
     const handlers = this.listeners.get(message.type);
@@ -79,6 +93,37 @@ class Bus {
       this.pending.set(callbackId, { resolve, reject });
     });
     this.emit({ type: "picker.open", route, callbackId, params });
+    return promise;
+  }
+
+  // --- confirm ---
+
+  /**
+   * Модальне підтвердження в стилі застосунку замість нативного confirm()
+   * (той блокує вкладку й показує адресу сайту). Показує confirm-host в
+   * оболонці; true — підтверджено. `okKey` — підпис кнопки підтвердження
+   * (напр. common.delete для видалень), без нього — common.yes.
+   */
+  async confirm(text: string, okKey?: string, icon?: DialogIcon): Promise<boolean> {
+    const callbackId = crypto.randomUUID();
+    const promise = new Promise<boolean>((resolve) => {
+      this.pendingConfirms.set(callbackId, resolve);
+    });
+    this.emit({ type: "confirm.open", text, callbackId, okKey, icon });
+    return promise;
+  }
+
+  /**
+   * Діалог вибору з довільними кнопками («Зберегти / Не зберігати /
+   * Скасувати»). Повертає key натиснутої кнопки; null — відмова (Esc,
+   * хрестик, клік повз вікно). Enter натискає кнопку з primary: true.
+   */
+  async choose(text: string, buttons: ChoiceButton[], icon?: DialogIcon): Promise<string | null> {
+    const callbackId = crypto.randomUUID();
+    const promise = new Promise<string | null>((resolve) => {
+      this.pendingChoices.set(callbackId, resolve);
+    });
+    this.emit({ type: "choice.open", text, callbackId, buttons, icon });
     return promise;
   }
 }

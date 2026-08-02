@@ -239,6 +239,61 @@ html, body {
 /* Загрузка */
 .loading { width: 16px; height: 16px; }
 
+/* ── Діалоги застосунку ───────────────────────────────────────────────────
+   Спільний контракт модального вікна (confirm-host, вибір групи, будь-які
+   майбутні діалоги): «вікно 1С» — смуга заголовка кольору оболонки з
+   хрестиком, біле тіло, підвал дій на сірому. Живе в темі, бо лист
+   адоптується в кожен shadow root — діалог будь-якого компонента виглядає
+   однаково, без копіювання стилів. */
+.app-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(36, 55, 70, .45);
+}
+.app-dialog {
+  background: var(--color-base-100, #ffffff);
+  border: 1px solid var(--app-border-strong, #98a7b4);
+  border-radius: var(--radius-box, 2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+  min-width: 20rem;
+  max-width: 32rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px 5px 10px;
+  background: var(--color-primary, #2f5f8f);
+  color: var(--color-primary-content, #ffffff);
+  font-weight: 500;
+  user-select: none;
+}
+.app-dialog-close {
+  cursor: pointer;
+  opacity: .75;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 2px;
+}
+.app-dialog-close:hover { opacity: 1; background: rgba(255, 255, 255, .18); }
+.app-dialog-body { padding: 12px; }
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--app-header, #e7edf2);
+  border-top: 1px solid var(--app-border, #b8c3cc);
+}
+
 /* ─── Друк ────────────────────────────────────────────────────────────────
    Правила рівня компонента: цей лист адоптується в кожен shadow root, тож
    `.no-print`/`.print-only` працюють усередині форм. Розкладку документа й

@@ -32,6 +32,9 @@ const searchIcon = html`<svg width="14" height="14" opacity="0.5" viewBox="0 0 2
  * `align` керує вирівнюванням, `sortable` вмикає серверне сортування колонки.
  */
 export abstract class ModelPickerBase<Row extends { id: string }> extends BaseUI<ListRoot<Row>> {
+  // Пікер нічого не зберігає — незбережених змін у нього не буває.
+  protected override dirtyTracking = false;
+
   static override styles: CSSResultGroup = [tw, css`
     :host { display: block; height: 100%; }
     tr.selected td { background: #cfe0f3 !important; color: var(--color-base-content, #243746) !important; }

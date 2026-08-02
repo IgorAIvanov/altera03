@@ -5,6 +5,7 @@ import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
 import { shellTags } from "../shell/shell-registry.ts";
 import "@client/ui-kit/picker-host.ts";
+import "@client/ui-kit/confirm-host.ts";
 import { apiFetch, readEnvelope, ServerUnavailableError } from "../data/api.ts";
 import { readUserScoped, writeUserScoped } from "../shared/user-storage.ts";
 
@@ -30,6 +31,12 @@ interface Tab {
   element: HTMLElement | null;
   lastUsedAt: number;
   permanent?: boolean;
+  /**
+   * Незбережені зміни — для «*» у заголовку. Дублює `element.isDirty`
+   * навмисно: смуга вкладок перемальовується лише зі зміною `tabs`, а про
+   * зміни всередині форми контролер дізнається подією `tab.dirty`.
+   */
+  dirty?: boolean;
 }
 
 /** Знімок вкладки для localStorage: тільки те, з чого її можна відтворити. */
@@ -278,6 +285,7 @@ export class TabController extends LitElement {
       .tab-bar,
       .loading-bar,
       picker-host,
+      confirm-host,
       .notice { display: none !important; }
       .workspace { display: block; overflow: visible; }
       .panels { position: static; overflow: visible; background: #fff; }
@@ -350,9 +358,18 @@ export class TabController extends LitElement {
     }, ...placeholders];
     this.activeTabId = activeTab?.id ?? HOME_TAB_ID;
 
+    // Перезавантаження/закриття сторінки з незбереженими змінами — нативне
+    // попередження браузера: свій діалог тут показати не можна (браузер не
+    // чекає), тож перевіряємо лише факт наявності брудних вкладок.
+    globalThis.addEventListener("beforeunload", this.#onBeforeUnload);
+    this.unsubs.push(() => globalThis.removeEventListener("beforeunload", this.#onBeforeUnload));
+
     this.unsubs.push(
       bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params)),
       bus.on("tab.close", (msg) => this.handleClose(msg.tabId)),
+      bus.on("tab.dirty", (msg) => {
+        this.tabs = this.tabs.map(t => t.id === msg.tabId ? { ...t, dirty: msg.dirty } : t);
+      }),
       // Оболонка — єдине місце, де показуються короткі повідомлення: вона одна
       // на застосунок і завжди на екрані, на відміну від форми, яка могла й не
       // відкритися саме тому, що є про що повідомити.
@@ -418,10 +435,13 @@ export class TabController extends LitElement {
    * відкривали». Активна й домашня вкладки під витіснення не потрапляють.
    */
   private evictLru() {
+    // Вкладки з незбереженими змінами під витіснення не потрапляють: LRU не
+    // має права мовчки викинути введене. Якщо всі кандидати брудні — ліміт
+    // м'яко перевищується, це дешевше за втрату даних.
     const lru = [...this.tabs]
-      .filter(t => !t.permanent && t.id !== this.activeTabId)
+      .filter(t => !t.permanent && t.id !== this.activeTabId && !this.tabDirty(t))
       .sort((a, b) => a.lastUsedAt - b.lastUsedAt)[0];
-    if (lru) this.handleClose(lru.id);
+    if (lru) this.closeTab(lru);
   }
 
   private async createTab(
@@ -551,21 +571,55 @@ export class TabController extends LitElement {
     });
   }
 
-  private handleClose(tabId: string) {
+  /** Чи має вкладка незбережені зміни (питаємо сам елемент форми). */
+  private tabDirty(tab: Tab): boolean {
+    return (tab.element as { isDirty?: boolean } | null)?.isDirty === true;
+  }
+
+  #onBeforeUnload = (e: BeforeUnloadEvent) => {
+    if (this.tabs.some(t => this.tabDirty(t))) e.preventDefault();
+  };
+
+  private async handleClose(tabId: string) {
     const tab = this.tabs.find(t => t.id === tabId);
     if (!tab || tab.permanent) return;
+    if (this.tabDirty(tab)) {
+      // Спершу показуємо, ЩО саме втрачається, і лише потім питаємо — трьома
+      // кнопками, як у A2v10: зберегти / не зберігати / скасувати.
+      this.activateTab(tab.id);
+      const choice = await bus.choose(t("common.unsavedClose"), [
+        { key: "save", labelKey: "common.save", primary: true },
+        { key: "discard", labelKey: "common.dontSave" },
+        { key: "cancel", labelKey: "common.cancel" },
+      ], "warning");
+      if (choice === "save") {
+        const saved = await (tab.element as { save?: () => Promise<boolean> } | null)?.save?.();
+        // Збереження не вдалося (валідація) — вкладка лишається, форма вже
+        // показує повідомлення сервера.
+        if (!saved) return;
+      } else if (choice !== "discard") {
+        return;
+      }
+    }
+    this.closeTab(tab);
+  }
+
+  /** Закриття без питань — для чистих вкладок і LRU-витіснення. */
+  private closeTab(tab: Tab) {
     const idx = this.tabs.indexOf(tab);
-    this.tabs = this.tabs.filter(t => t.id !== tabId);
-    if (this.activeTabId === tabId) {
+    this.tabs = this.tabs.filter(t => t.id !== tab.id);
+    if (this.activeTabId === tab.id) {
       const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? this.tabs[0];
       this.activateTab(next?.id ?? HOME_TAB_ID);
     }
-    bus.emit({ type: "tab.closed", tabId, route: tab.route, id: tab.modelId });
+    bus.emit({ type: "tab.closed", tabId: tab.id, route: tab.route, id: tab.modelId });
   }
 
   private tabTitle(tab: Tab): string {
     const base = tab.titleKey ? t(tab.titleKey) : tab.route;
-    return tab.modelId ? `${base} #${tab.modelId}` : base;
+    const title = tab.modelId ? `${base} #${tab.modelId}` : base;
+    // «*» — на вкладці є незбережені зміни (стандарт редакторів).
+    return tab.dirty ? `* ${title}` : title;
   }
 
   override render(): TemplateResult {
@@ -587,6 +641,7 @@ export class TabController extends LitElement {
         ${this._loadingCount > 0 ? html`<div class="loading-bar-inner"></div>` : ""}
       </div>
       <picker-host></picker-host>
+      <confirm-host></confirm-host>
       <div class="workspace">
         ${this.menuEl}
         <div class="panels">

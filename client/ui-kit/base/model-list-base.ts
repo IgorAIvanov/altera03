@@ -159,6 +159,9 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   protected abstract columns: ListColumn<Row>[];
   protected abstract editRoute: string;
 
+  // Список не має незбережених змін: його $root оновлюється кожним load.
+  protected override dirtyTracking = false;
+
   // ── Опційні налаштування ──────────────────────────────────────────────────
   protected listCommand = "list";
   /**
@@ -385,7 +388,14 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   protected async deleteSelected() {
     if (!this.selectedId) return;
     const row = this.rows.find((r) => r.id === this.selectedId);
-    if (!confirm(`${t("common.confirmDelete")} "${row ? this.rowLabel(row) : ""}"?`)) return;
+    // bus.confirm, а не нативний confirm(): той блокує вкладку й показує
+    // адресу сайту. Кнопка підтвердження — «Видалити», не абстрактне «Так».
+    const confirmed = await bus.confirm(
+      `${t("common.confirmDelete")} "${row ? this.rowLabel(row) : ""}"?`,
+      "common.delete",
+      "warning",
+    );
+    if (!confirmed) return;
     // kind:"save" → data-service емітить model.changed → підписка нижче перезавантажує.
     await this.run("delete", { id: this.selectedId }, "save");
     this.selectedId = "";
@@ -536,15 +546,22 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
 
         ${this.moveOpen
           ? html`
-            <dialog class="modal" open>
-              <div class="modal-box max-w-sm p-4">
-                <h3 class="font-medium mb-2">${t("groups.moveTitle")}</h3>
-                <div class="max-h-72 overflow-auto border border-base-300 rounded">
-                  <ui-group-tree .model=${this.model} mode="select" show-root
-                    @group-selected=${(e: CustomEvent<{ id: string }>) => { this.moveTarget = e.detail.id; }}>
-                  </ui-group-tree>
+            <div class="app-dialog-overlay"
+              @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") this.moveOpen = false; }}
+              @click=${(e: Event) => { if (e.target === e.currentTarget) this.moveOpen = false; }}>
+              <div class="app-dialog w-96">
+                <div class="app-dialog-title">
+                  <span>${t("groups.moveTitle")}</span>
+                  <span class="app-dialog-close" @click=${() => { this.moveOpen = false; }}>×</span>
                 </div>
-                <div class="flex justify-end gap-2 mt-3">
+                <div class="app-dialog-body">
+                  <div class="max-h-72 overflow-auto border border-base-300 rounded">
+                    <ui-group-tree .model=${this.model} mode="select" show-root
+                      @group-selected=${(e: CustomEvent<{ id: string }>) => { this.moveTarget = e.detail.id; }}>
+                    </ui-group-tree>
+                  </div>
+                </div>
+                <div class="app-dialog-actions">
                   <button class="btn btn-sm" @click=${() => { this.moveOpen = false; }}>
                     ${t("common.cancel")}
                   </button>
@@ -554,7 +571,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
                   </button>
                 </div>
               </div>
-            </dialog>`
+            </div>`
           : nothing}
 
         <!-- Пагінація -->

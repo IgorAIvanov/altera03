@@ -23,6 +23,7 @@ import { css, type CSSResultGroup, html, nothing, type TemplateResult } from "li
 import { customElement, property, state } from "lit/decorators.js";
 import { t } from "../../locale.ts";
 import { apiFetch } from "../../data/api.ts";
+import { bus } from "../../bus/bus.ts";
 import { tw } from "../../shared/styles.ts";
 
 export interface GroupNode {
@@ -236,7 +237,7 @@ export class UiGroupTree extends GlobalStyledLitElement {
     if (this.currentId === null) return;
     const node = this.nodes.find((n) => n.id === this.currentId);
     if (!node) return;
-    if (!confirm(`${t("common.confirmDelete")} "${node.name}"?`)) return;
+    if (!(await bus.confirm(`${t("common.confirmDelete")} "${node.name}"?`, "common.delete", "warning"))) return;
     // Непорожню групу сервер відмовиться видаляти (fail-closed) — текст
     // відмови показуємо як є.
     const env = await this.command("groupDelete", { id: node.id });
@@ -343,21 +344,28 @@ export class UiGroupTree extends GlobalStyledLitElement {
 
         ${this.movingGroup
           ? html`
-            <dialog class="modal" open>
-              <div class="modal-box max-w-sm p-4">
-                <h3 class="font-medium mb-2">${t("groups.moveTitle")}</h3>
-                <div class="max-h-72 overflow-auto border border-base-300 rounded">
-                  <ui-group-tree .model=${this.model} mode="select" show-root
-                    @group-selected=${(e: CustomEvent<{ id: string }>) => {
-                      e.stopPropagation();
-                      this.groupMoveTarget = e.detail.id;
-                    }}>
-                  </ui-group-tree>
+            <div class="app-dialog-overlay"
+              @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") this.movingGroup = false; }}
+              @click=${(e: Event) => { if (e.target === e.currentTarget) this.movingGroup = false; }}>
+              <div class="app-dialog w-96">
+                <div class="app-dialog-title">
+                  <span>${t("groups.moveTitle")}</span>
+                  <span class="app-dialog-close" @click=${() => { this.movingGroup = false; }}>×</span>
                 </div>
-                ${this.moveError
-                  ? html`<div class="text-error text-xs mt-2">${this.moveError}</div>`
-                  : nothing}
-                <div class="flex justify-end gap-2 mt-3">
+                <div class="app-dialog-body">
+                  <div class="max-h-72 overflow-auto border border-base-300 rounded">
+                    <ui-group-tree .model=${this.model} mode="select" show-root
+                      @group-selected=${(e: CustomEvent<{ id: string }>) => {
+                        e.stopPropagation();
+                        this.groupMoveTarget = e.detail.id;
+                      }}>
+                    </ui-group-tree>
+                  </div>
+                  ${this.moveError
+                    ? html`<div class="text-error text-xs mt-2">${this.moveError}</div>`
+                    : nothing}
+                </div>
+                <div class="app-dialog-actions">
                   <button class="btn btn-sm" @click=${() => { this.movingGroup = false; }}>
                     ${t("common.cancel")}
                   </button>
@@ -367,7 +375,7 @@ export class UiGroupTree extends GlobalStyledLitElement {
                   </button>
                 </div>
               </div>
-            </dialog>`
+            </div>`
           : nothing}
       </div>
     `;

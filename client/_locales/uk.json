@@ -47,5 +47,8 @@
   "tabular.delete": "Видалити рядок",
   "tabular.up": "Вище",
   "tabular.down": "Нижче",
-  "tabular.total": "Разом"
+  "tabular.total": "Разом",
+  "common.unsavedClose": "Дані змінено. Зберегти зміни?",
+  "common.dontSave": "Не зберігати",
+  "common.confirmTitle": "Підтвердження"
 }

@@ -167,23 +167,29 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     }
     await Promise.all([...accounts].map((a) => this.ensureSlots(a)));
     this.slotsReady = true;
+    // Нормалізація міняє $root ПІСЛЯ знімка loadInto — перезнімаємо, інакше
+    // щойно відкрита форма виглядала б зміненою.
+    this.markClean();
   }
 
   protected override async saveItem(): Promise<boolean> {
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
     const ok = await super.saveItem();
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
+    if (ok) this.markClean();
     return ok;
   }
 
   private async post() {
     await this.loadInto("post", { id: this.$root.item.id });
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
+    this.markClean();
   }
 
   private async unpost() {
     await this.loadInto("unpost", { id: this.$root.item.id });
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
+    this.markClean();
   }
 
   /** Суми в канонічному вигляді — рахує примітив (колонки + normalizeLine). */

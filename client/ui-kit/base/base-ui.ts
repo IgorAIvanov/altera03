@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from "lit";
+import { html, type PropertyValues, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { deep } from "signal-utils/deep";
@@ -111,6 +111,75 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     this.rootSchema = schema as TSchema & { properties?: Record<string, unknown> };
   }
 
+  // ── Незбережені зміни (dirty) ──────────────────────────────────────────────
+
+  /**
+   * Трекінг незбережених змін. Вимкнений у списках/пікерах/звітах: їх `$root`
+   * міняється кожним завантаженням, а зберігати там нічого.
+   */
+  protected dirtyTracking = true;
+
+  /** Знімок «чистих» даних; null — ще не знято (до першого рендера). */
+  #cleanSnapshot: string | null = null;
+
+  /** Дані `$root` без службових `$`-ключів ($query — не дані форми). */
+  #dataSnapshot(): string {
+    const data: Record<string, unknown> = {};
+    for (const key of Object.keys(this.$root)) {
+      if (key.startsWith("$")) continue;
+      data[key] = (this.$root as Record<string, unknown>)[key];
+    }
+    return JSON.stringify(data);
+  }
+
+  /**
+   * Зафіксувати поточний стан як «чистий». База кличе це сама після першого
+   * рендера, `loadInto` і `saveItem`; форма, що НОРМАЛІЗУЄ дані після цих
+   * викликів (десяткові в табличній частині), мусить покликати ще раз після
+   * нормалізації — інакше форма виглядатиме зміненою одразу після відкриття.
+   */
+  protected markClean() {
+    this.#cleanSnapshot = this.dirtyTracking ? this.#dataSnapshot() : null;
+    this.#notifyDirty();
+  }
+
+  /** Останнє повідомлене значення — шоб не спамити шину кожним рендером. */
+  #lastDirtyNotified = false;
+
+  /** Повідомити оболонку про зміну dirty-стану — «*» на вкладці. */
+  #notifyDirty() {
+    if (!this.tabId) return;
+    const dirty = this.isDirty;
+    if (dirty === this.#lastDirtyNotified) return;
+    this.#lastDirtyNotified = dirty;
+    bus.emit({ type: "tab.dirty", tabId: this.tabId, dirty });
+  }
+
+  /**
+   * Чи є незбережені зміни. Публічний (без protected) навмисно: tab-controller
+   * питає це в елемента вкладки перед закриттям і LRU-витісненням.
+   */
+  get isDirty(): boolean {
+    if (!this.dirtyTracking || this.#cleanSnapshot === null) return false;
+    return this.#dataSnapshot() !== this.#cleanSnapshot;
+  }
+
+  protected override firstUpdated(changed: PropertyValues) {
+    super.firstUpdated(changed);
+    // Після першого рендера синхронні дефолти (applyDefaultOrg тощо) вже
+    // застосовані — це і є «чистий» стан нової форми. Асинхронний load()
+    // перезніме знімок сам, коли завершиться.
+    this.markClean();
+  }
+
+  protected override updated(changed: PropertyValues) {
+    super.updated(changed);
+    // Кожен рендер — нагода звірити dirty-стан: введення користувача міняє
+    // $root → SignalWatcher перемальовує → сюди. Подія йде лише на ЗМІНІ
+    // стану (див. #notifyDirty), а не на кожен символ.
+    if (this.dirtyTracking) this.#notifyDirty();
+  }
+
   /**
    * Виклик команди моделі через шину. Розгортає конверт,
    * наповнює `messages`, керує `running`.
@@ -159,6 +228,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
       return false;
     }
     this.assign(env.data);
+    this.markClean();
     return true;
   }
 
@@ -282,6 +352,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     );
     if (!env.ok || !env.data) return false;
     this.assign(env.data);
+    this.markClean();
     return true;
   }
 
@@ -297,6 +368,15 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     const query = (this.$root as Record<string, unknown>).$query;
     if (!query || typeof query !== "object") return;
     Object.assign(query as Record<string, unknown>, params);
+  }
+
+  /**
+   * Публічний виклик збереження — для оболонки: «Зберегти» у діалозі
+   * закриття брудної вкладки. Проходить через saveItem(), тож перевизначення
+   * форм (нормалізація табличних частин) спрацьовують і тут.
+   */
+  async save(): Promise<boolean> {
+    return await this.saveItem();
   }
 
   /** Закрити власну вкладку. `tabId` проставляє tab-controller при створенні. */

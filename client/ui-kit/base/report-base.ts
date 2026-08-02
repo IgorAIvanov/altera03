@@ -30,6 +30,9 @@ const icon = {
  * Обов'язкове для підкласу: `model`, `reportTitle`, `buildReport()`.
  */
 export abstract class ReportBase<Root extends Record<string, unknown>> extends BaseUI<Root> {
+  // Звіт нічого не зберігає — незбережених змін у нього не буває.
+  protected override dirtyTracking = false;
+
   static override styles: CSSResultGroup = [tw, css`
     /* Тулбар не їде вгору разом зі звітом: прокручується панель вкладки, а
        блок липне до її верху. Фон непрозорий — під ним проїжджають рядки. */

@@ -15,6 +15,12 @@ export interface TabClosedMessage {
   route: string;
   id?: string | null;
 }
+/** Форма повідомляє про зміну стану «є незбережені зміни» — для «*» на вкладці. */
+export interface TabDirtyMessage {
+  type: "tab.dirty";
+  tabId: string;
+  dirty: boolean;
+}
 
 // --- Пиккер ---
 export interface PickerOpenMessage {
@@ -31,6 +37,45 @@ export interface PickerSelectMessage {
 export interface PickerCancelMessage {
   type: "picker.cancel";
   callbackId: string;
+}
+
+// --- Підтвердження / вибір ---
+
+/** Іконка діалогу: знак питання, знак оклику, хрест, «i». */
+export type DialogIcon = "question" | "warning" | "error" | "info";
+
+export interface ConfirmOpenMessage {
+  type: "confirm.open";
+  text: string;
+  callbackId: string;
+  /** Ключ локалізації кнопки підтвердження; без нього — common.yes. */
+  okKey?: string;
+  icon?: DialogIcon;
+}
+export interface ConfirmResultMessage {
+  type: "confirm.result";
+  callbackId: string;
+  value: boolean;
+}
+
+/** Кнопка діалогу вибору; primary — та, що спрацьовує на Enter. */
+export interface ChoiceButton {
+  key: string;
+  labelKey: string;
+  primary?: boolean;
+}
+export interface ChoiceOpenMessage {
+  type: "choice.open";
+  text: string;
+  callbackId: string;
+  buttons: ChoiceButton[];
+  icon?: DialogIcon;
+}
+export interface ChoiceResultMessage {
+  type: "choice.result";
+  callbackId: string;
+  /** key натиснутої кнопки; null — Esc / хрестик / клік повз вікно. */
+  value: string | null;
 }
 
 // --- Данные ---
@@ -73,9 +118,14 @@ export type BusMessage =
   | TabOpenMessage
   | TabCloseMessage
   | TabClosedMessage
+  | TabDirtyMessage
   | PickerOpenMessage
   | PickerSelectMessage
   | PickerCancelMessage
+  | ConfirmOpenMessage
+  | ConfirmResultMessage
+  | ChoiceOpenMessage
+  | ChoiceResultMessage
   | DataLoadMessage
   | DataSaveMessage
   | ModelChangedMessage

@@ -97,6 +97,9 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     this.$root.item.lines ??= [];
     // SQL віддає numeric → JSON number; у формі десяткові поля живуть як рядки
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
+    // Нормалізація міняє $root ПІСЛЯ знімка loadInto — перезнімаємо, інакше
+    // щойно відкрита форма виглядала б зміненою.
+    this.markClean();
   }
 
   /**
@@ -107,6 +110,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
     const ok = await super.saveItem();
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
+    if (ok) this.markClean();
     return ok;
   }
 
@@ -117,11 +121,13 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
   private async post() {
     await this.loadInto("post", { id: this.$root.item.id });
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
+    this.markClean();
   }
 
   private async unpost() {
     await this.loadInto("unpost", { id: this.$root.item.id });
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
+    this.markClean();
   }
 
   /** Усі рядки з qty/price у канонічному вигляді — рахує примітив за колонками. */
