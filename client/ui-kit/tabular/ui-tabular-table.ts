@@ -35,7 +35,7 @@ const CELL_CONTROL = "ui-picker, ui-decimal, ui-date, input, select";
 
 // Рядки читаються з `$root` форми через сигнали — без SignalWatcher
 // компонент не дізнавався б про зміни (секція чужого стану не тримає).
-const Base = SignalWatcher(GlobalStyledLitElement);
+const Base: typeof GlobalStyledLitElement = SignalWatcher(GlobalStyledLitElement);
 
 export const tagName = "ui-tabular-table";
 
