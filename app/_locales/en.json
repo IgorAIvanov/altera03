@@ -157,6 +157,8 @@
   "manualEntry.credit": "Credit",
   "manualEntry.debitAnalytics": "Debit analytics",
   "manualEntry.creditAnalytics": "Credit analytics",
+  "manualEntry.account": "Account",
+  "manualEntry.analytics": "Analytics",
   "manualEntry.description": "Description",
   "accountCard.title": "Account card",
   "accountCard.account": "Account",

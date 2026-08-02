@@ -51,7 +51,15 @@ between rows, Insert adds, Ctrl+Delete removes. Column kinds: `text`,
 `decimal`, `picker`, `date`, `checkbox`, `computed`, and the escape hatch
 `custom` (`render(line, index)` returns the `<td>` CONTENT — never the `<td>`
 itself). Conditional columns: `visible: () => boolean` (see currency columns
-in `manualEntryEdit.ts`). Dynamic per-line controls (subconto pickers that
+in `manualEntryEdit.ts`). Two-level headers: ADJACENT columns sharing the same
+`group: "key"` get one spanning header cell above their own titles («Дебет»
+over «Рахунок» + «Субконто»); columns without `group` span both rows.
+Multi-row records (1С style): a column with `row: 2` renders as a SECOND `<tr>`
+of the same record, laid left-to-right under the row-1 grid; `span: N` says how
+many grid columns its cell covers (default 1, remainder is padded). The `#` and
+delete cells rowspan the whole record; a sub-row header line appears only if a
+`row: 2` column has a `title`; `total` on sub-row columns is ignored. Reference:
+subconto under its account in `manualEntryEdit.ts`. Dynamic per-line controls (subconto pickers that
 depend on the line's account) stay in `custom` cells — that reference is
 `app/operation/manual_entry/manualEntryEdit.ts`.
 

@@ -129,18 +129,22 @@ export class UiTabularTable extends Base {
     );
 
     if (e.key === "Enter" && !e.shiftKey) {
-      // Enter веде вправо; ui-decimal свій Enter (канонізація) не гасить —
-      // подія долітає сюди вже після його обробки.
+      // Enter веде вправо (порядок — оголошення колонок, підрядкові після
+      // сіткових); ui-decimal свій Enter (канонізація) не гасить — подія
+      // долітає сюди вже після його обробки. Спроби по черзі: custom-комірка
+      // може не мати контрола (тире валюти) — фокус не вдався, йдемо далі.
       const editable = this.#editableCols();
-      const next = editable.find((c) => c > cell.col);
       e.preventDefault();
-      if (next !== undefined) {
-        this.#focusCell(cell.row, next);
-      } else if (cell.row + 1 < section.rows.length) {
-        this.#focusCell(cell.row + 1, editable[0] ?? 0);
-      } else {
-        section.addLine();
+      for (const c of editable) {
+        if (c > cell.col && this.#focusCell(cell.row, c)) return;
       }
+      if (cell.row + 1 < section.rows.length) {
+        for (const c of editable) {
+          if (this.#focusCell(cell.row + 1, c)) return;
+        }
+        return;
+      }
+      section.addLine();
       return;
     }
 
@@ -219,59 +223,168 @@ export class UiTabularTable extends Base {
 
   // ── Рендер ─────────────────────────────────────────────────────────────────
 
+  /** Колонки сітки (row 1) — вони визначають ширини всієї таблиці. */
+  #grid(columns: Array<TabularColumn<Record<string, unknown>>>) {
+    return columns.filter((c) => (c.row ?? 1) <= 1);
+  }
+
+  /** Рівні підрядків (row ≥ 2), за зростанням. */
+  #subLevels(columns: Array<TabularColumn<Record<string, unknown>>>): number[] {
+    return [...new Set(columns.map((c) => c.row ?? 1).filter((r) => r >= 2))].sort((a, b) => a - b);
+  }
+
   override render(): TemplateResult {
     const section = this.section;
     if (!section) return html``;
 
     const columns = section.visibleColumns();
-    const totals = columns.some((c) => c.total);
-    // Колонок у рядку: [#] + колонки + [кошик]
-    const colCount = columns.length + (section.showLineNo ? 1 : 0) + (section.rowDelete ? 1 : 0);
+    const grid = this.#grid(columns);
+    const levels = this.#subLevels(columns);
+    const totals = grid.some((c) => c.total);
+    // Колонок сітки в рядку: [#] + сітка + [кошик]
+    const colCount = grid.length + (section.showLineNo ? 1 : 0) + (section.rowDelete ? 1 : 0);
 
     return html`
       <table class="table table-sm w-full table-tabular"
         @keydown=${this.#onKeyDown} @focusin=${this.#onFocusIn}>
-        <thead>
-          <tr>
-            ${section.showLineNo ? html`<th class="w-10">#</th>` : nothing}
-            ${columns.map((col) => html`
-              <th style=${col.width ? `width:${col.width}` : ""}
-                class=${col.align === "right" || col.kind === "decimal" || col.kind === "computed" ? "text-right" : ""}>
-                ${col.title ? t(col.title) : ""}
-              </th>
-            `)}
-            ${section.rowDelete ? html`<th class="w-10"></th>` : nothing}
-          </tr>
-        </thead>
+        ${this.#renderHead(columns, section)}
         <tbody>
-          ${section.rows.map((line, i) => html`
-            <tr class=${i === section.currentIndex ? "current" : ""}
-              @click=${() => section.select(i)}>
-              ${section.showLineNo
-                ? html`<td class="cell-text">${section.lineNoKey ? String(line[section.lineNoKey] ?? i + 1) : i + 1}</td>`
-                : nothing}
-              ${columns.map((col, c) => html`
-                <td data-row=${i} data-col=${c} class=${this.#cellClass(col)}>
-                  ${this.#cellContent(col, line, i)}
-                </td>
-              `)}
-              ${section.rowDelete
-                ? html`
-                  <td class="text-center">
-                    <button class="btn btn-ghost btn-xs text-error" title=${t("tabular.delete")}
-                      @click=${(e: Event) => { e.stopPropagation(); section.removeLine(i); }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                    </button>
-                  </td>`
-                : nothing}
-            </tr>
-          `)}
+          ${section.rows.map((line, i) => this.#renderRecord(line, i, columns, grid, levels))}
           ${section.rows.length === 0
             ? html`<tr><td colspan=${colCount} class="text-center text-base-content/40 py-4">${t("common.noData")}</td></tr>`
             : nothing}
         </tbody>
-        ${totals ? this.#renderTotals(columns, section) : nothing}
+        ${totals ? this.#renderTotals(grid, section) : nothing}
       </table>
+    `;
+  }
+
+  /**
+   * Один запис = 1 + N рядків `<tr>` (N — рівні підрядків). Ячейки підрядка
+   * лягають під сітку зліва направо, ширина — `span` у колонках сітки;
+   * залишок добивається порожньою ячейкою. № і кошик — rowspan на весь запис.
+   */
+  #renderRecord(
+    line: Record<string, unknown>,
+    i: number,
+    columns: Array<TabularColumn<Record<string, unknown>>>,
+    grid: Array<TabularColumn<Record<string, unknown>>>,
+    levels: number[],
+  ): TemplateResult {
+    const section = this.section!;
+    const recordSpan = 1 + levels.length;
+    const cur = i === section.currentIndex ? "current" : "";
+    return html`
+      <tr class=${cur} @click=${() => section.select(i)}>
+        ${section.showLineNo
+          ? html`<td class="cell-text" rowspan=${recordSpan}>
+              ${section.lineNoKey ? String(line[section.lineNoKey] ?? i + 1) : i + 1}
+            </td>`
+          : nothing}
+        ${grid.map((col) => html`
+          <td data-row=${i} data-col=${columns.indexOf(col)} class=${this.#cellClass(col)}>
+            ${this.#cellContent(col, line, i)}
+          </td>
+        `)}
+        ${section.rowDelete
+          ? html`
+            <td class="text-center" rowspan=${recordSpan}>
+              <button class="btn btn-ghost btn-xs text-error" title=${t("tabular.delete")}
+                @click=${(e: Event) => { e.stopPropagation(); section.removeLine(i); }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </button>
+            </td>`
+          : nothing}
+      </tr>
+      ${levels.map((level) => {
+        const subs = columns.filter((c) => (c.row ?? 1) === level);
+        const used = subs.reduce((s, c) => s + (c.span ?? 1), 0);
+        const pad = grid.length - used;
+        return html`
+          <tr class=${cur} @click=${() => section.select(i)}>
+            ${subs.map((col) => html`
+              <td colspan=${col.span ?? 1} data-row=${i} data-col=${columns.indexOf(col)}
+                class=${this.#cellClass(col)}>
+                ${this.#cellContent(col, line, i)}
+              </td>
+            `)}
+            ${pad > 0 ? html`<td colspan=${pad}></td>` : nothing}
+          </tr>
+        `;
+      })}
+    `;
+  }
+
+  #leafTh(col: TabularColumn<Record<string, unknown>>, rowspan = 1): TemplateResult {
+    const right = col.align === "right" || col.kind === "decimal" || col.kind === "computed";
+    return html`
+      <th rowspan=${rowspan} style=${col.width ? `width:${col.width}` : ""}
+        class=${right ? "text-right" : ""}>
+        ${col.title ? t(col.title) : ""}
+      </th>
+    `;
+  }
+
+  /**
+   * Шапка. Однорядна, доки колонки сітки не оголосили `group`; з групами —
+   * два ряди: суміжні колонки однієї групи накриті спільною ячейкою
+   * (colspan), негруповані розтягнуті на обидва ряди (rowspan). Підрядки
+   * (row ≥ 2) додають свій ряд заголовків, лише якщо мають хоч один title.
+   */
+  #renderHead(
+    columns: Array<TabularColumn<Record<string, unknown>>>,
+    section: TabularSection<Record<string, unknown>>,
+  ): TemplateResult {
+    const grid = this.#grid(columns);
+    const hasGroups = grid.some((c) => c.group);
+    const subHeaderLevels = this.#subLevels(columns).filter((level) =>
+      columns.some((c) => (c.row ?? 1) === level && c.title)
+    );
+    const headRows = (hasGroups ? 1 : 0) + 1 + subHeaderLevels.length;
+
+    const gridRow: TemplateResult[] = [];
+    const groupRow: TemplateResult[] = [];
+    if (hasGroups) {
+      let i = 0;
+      while (i < grid.length) {
+        const col = grid[i];
+        if (col.group) {
+          let span = 1;
+          while (i + span < grid.length && grid[i + span].group === col.group) span++;
+          groupRow.push(html`<th colspan=${span} class="text-center">${t(col.group)}</th>`);
+          for (let k = i; k < i + span; k++) gridRow.push(this.#leafTh(grid[k]));
+          i += span;
+        } else {
+          groupRow.push(this.#leafTh(col, 2));
+          i++;
+        }
+      }
+    }
+
+    const subRows = subHeaderLevels.map((level) => {
+      const subs = columns.filter((c) => (c.row ?? 1) === level);
+      const used = subs.reduce((s, c) => s + (c.span ?? 1), 0);
+      const pad = grid.length - used;
+      return html`
+        <tr>
+          ${subs.map((col) => html`
+            <th colspan=${col.span ?? 1}>${col.title ? t(col.title) : ""}</th>
+          `)}
+          ${pad > 0 ? html`<th colspan=${pad}></th>` : nothing}
+        </tr>
+      `;
+    });
+
+    return html`
+      <thead>
+        <tr>
+          ${section.showLineNo ? html`<th class="w-10" rowspan=${headRows}>#</th>` : nothing}
+          ${hasGroups ? groupRow : grid.map((col) => this.#leafTh(col))}
+          ${section.rowDelete ? html`<th class="w-10" rowspan=${headRows}></th>` : nothing}
+        </tr>
+        ${hasGroups ? html`<tr>${gridRow}</tr>` : nothing}
+        ${subRows}
+      </thead>
     `;
   }
 

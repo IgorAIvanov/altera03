@@ -100,11 +100,12 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
       debitAnalytics: l.debitAnalytics ?? {},
       creditAnalytics: l.creditAnalytics ?? {},
     }),
+    // Багаторядковий запис (стиль 1С): рахунок — у сітці, субконто —
+    // другим рядом ПІД своїм рахунком (row: 2, span: 1). Підрядок без
+    // title, тому окремого ряду заголовків для нього немає.
     columns: [
-      { kind: "custom", title: "manualEntry.debit", width: "6.5rem", render: (l, i) => this.renderAccount(l, i, "debit") },
-      { kind: "custom", title: "manualEntry.debitAnalytics", render: (l, i) => this.renderAnalytics(l, i, "debit") },
-      { kind: "custom", title: "manualEntry.credit", width: "6.5rem", render: (l, i) => this.renderAccount(l, i, "credit") },
-      { kind: "custom", title: "manualEntry.creditAnalytics", render: (l, i) => this.renderAnalytics(l, i, "credit") },
+      { kind: "custom", title: "manualEntry.debit", render: (l, i) => this.renderAccount(l, i, "debit") },
+      { kind: "custom", title: "manualEntry.credit", render: (l, i) => this.renderAccount(l, i, "credit") },
       { kind: "decimal", key: "amount", title: "invoice.amount", precision: MONEY_PRECISION, width: "8rem", total: true },
       {
         kind: "custom", title: "manualEntry.currency", width: "5rem",
@@ -121,6 +122,8 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
         visible: () => this.showQuantity,
         render: (l, i) => this.renderQuantity(l, i),
       },
+      { kind: "custom", row: 2, span: 1, render: (l, i) => this.renderAnalytics(l, i, "debit") },
+      { kind: "custom", row: 2, span: 1, render: (l, i) => this.renderAnalytics(l, i, "credit") },
     ],
   });
 

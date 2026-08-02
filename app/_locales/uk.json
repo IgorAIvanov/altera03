@@ -157,6 +157,8 @@
   "manualEntry.credit": "Кредит",
   "manualEntry.debitAnalytics": "Субконто Дт",
   "manualEntry.creditAnalytics": "Субконто Кт",
+  "manualEntry.account": "Рахунок",
+  "manualEntry.analytics": "Субконто",
   "manualEntry.description": "Зміст",
   "accountCard.title": "Картка рахунку",
   "accountCard.account": "Рахунок",
