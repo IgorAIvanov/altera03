@@ -35,6 +35,7 @@ from (values
   ('catalog',        'currency',           'Валюти',                         'catalog',      'catalog/currency/list',           30),
   ('catalog',        'bank',               'Банки',                          'bank',         'catalog/bank/list',               40),
   ('catalog',        'counterparty',       'Контрагенти',                    'counterparty', 'catalog/counterparty/list',       50),
+  ('catalog',        'nomenclature',       'Номенклатура',                   'catalog',      'catalog/nomenclature/list',       60),
   ('document',       'manual_entry',       'Операції (бухгалтерські)',       'document',     'operation/manual_entry/list',     10),
   ('document',       'invoice',            'Рахунки',                        'invoice',      'document/invoice/list',           20),
   ('report',         'turnover_balance',   'Оборотно-сальдова',              'balance',      'report/turnover_balance/list',    10),

@@ -230,6 +230,61 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Ієрархічний довідник (патерн A2v10): проба ганяє повний цикл на СВОЇХ
+    // даних — група → підгрупа → позиція; фільтр по батьківській групі мусить
+    // бачити вміст підгрупи, непорожня група не видаляється, перенесення в
+    // корінь працює. Прибирання — вкладені finally.
+    await t.step("ієрархія: групи, фільтр з підгрупами, перенесення", async () => {
+      const grp = await client.model("nomenclature", "groupSave", { item: { name: "Smoke група" } });
+      assertEquals(grp.body.ok, true);
+      const g = grp.body.data.item as { id: string } | null;
+      assertExists(g);
+
+      try {
+        const sub = await client.model("nomenclature", "groupSave", {
+          item: { parentId: g.id, name: "Smoke підгрупа" },
+        });
+        assertEquals(sub.body.ok, true);
+        const s = sub.body.data.item as { id: string } | null;
+        assertExists(s);
+
+        try {
+          const created = await client.model("nomenclature", "save", {
+            item: { code: "SMOKE-H1", name: "Smoke позиція", groupId: s.id },
+          });
+          assertEquals(created.body.ok, true);
+          const item = created.body.data.item as { id: string } | null;
+          assertExists(item);
+
+          try {
+            const filtered = await client.model("nomenclature", "list", { groupIds: [g.id] });
+            assertEquals(filtered.body.ok, true);
+            const rows = filtered.body.data.rows as Array<{ id: string }>;
+            assertEquals(rows.some((r) => r.id === item.id), true);
+
+            const refuse = await client.model("nomenclature", "groupDelete", { id: s.id });
+            assertEquals(refuse.body.ok, false);
+            assertEquals(refuse.body.messages.length > 0, true);
+
+            const moved = await client.model("nomenclature", "moveToGroup", {
+              id: item.id,
+              groupId: null,
+            });
+            assertEquals(moved.body.ok, true);
+          } finally {
+            const removed = await client.model("nomenclature", "delete", { id: item.id });
+            assertEquals(removed.body.ok, true);
+          }
+        } finally {
+          const removed = await client.model("nomenclature", "groupDelete", { id: s.id });
+          assertEquals(removed.body.ok, true);
+        }
+      } finally {
+        const removed = await client.model("nomenclature", "groupDelete", { id: g.id });
+        assertEquals(removed.body.ok, true);
+      }
+    });
+
     await t.step("вкладення: повний цикл із прибиранням", async () => {
       const payload = "smoke payload";
       const uploaded = await client.upload({

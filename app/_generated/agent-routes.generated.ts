@@ -44,6 +44,15 @@ export const agentModelRoutes = {
     listPath: "/admin/menu/list",
     type: "catalog"
   },
+  "nomenclature": {
+    editPath: "/catalog/nomenclature/edit",
+    listPath: "/catalog/nomenclature/list",
+    type: "catalog",
+    allow: true,
+    allowCommands: ["get","save","list","lookup"],
+    aliases: ["номенклатура","товар","товари","послуга","послуги"],
+    priority: 10
+  },
   "organization": {
     editPath: "/catalog/organization/edit",
     listPath: "/catalog/organization/list",

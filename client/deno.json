@@ -1,6 +1,6 @@
 {
   "name": "@altera/client",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "//": "Точки входу бібліотеки. main.ts тут немає навмисно: composition root (реєстрація оболонки конкретного застосунку) переїхав у app/main.ts — бібліотека не може знати про app-header чи home-tab.",
   "exports": {
     "./vite": "./vite.ts",
@@ -23,6 +23,7 @@
     "./ui-kit/components/ui-attachments.ts": "./ui-kit/components/ui-attachments.ts",
     "./ui-kit/components/ui-date.ts": "./ui-kit/components/ui-date.ts",
     "./ui-kit/components/ui-decimal.ts": "./ui-kit/components/ui-decimal.ts",
+    "./ui-kit/components/ui-group-tree.ts": "./ui-kit/components/ui-group-tree.ts",
     "./ui-kit/components/ui-image.ts": "./ui-kit/components/ui-image.ts",
     "./ui-kit/components/ui-picker.ts": "./ui-kit/components/ui-picker.ts",
     "./ui-kit/report/print.ts": "./ui-kit/report/print.ts",

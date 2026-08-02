@@ -152,7 +152,7 @@ two-line text. Two helpers from `model-list-base.ts` cover the common needs, and
 ## Variants (build as sibling subclasses)
 
 - **Document list with filters (`отбори`)**: override `renderHeaderArea()` to draw a filter panel, and `extraPayload()` to send the selected filters into the `list` command. Call `this.reload()` when a filter changes.
-- **Catalog with groups**: a two-pane group-tree + element-list layout is a separate base (a future `ModelTreeListBase`) — do not force it into `ModelListBase`. Reuse the same column/selection/pagination conventions documented here.
+- **Hierarchical catalog (A2v10 pattern)**: set `protected override hierarchy = true` in the subclass AND `"hierarchy": true` in the model's `manifest.json`. The flat paginated list stays the main area; a group tree with checkboxes appears on the right (checking a group filters the list by that branch INCLUDING subgroups), and a "To group…" toolbar button moves the selected row (root is just another target — there is no separate "remove from group"). Requirements: `app.{model}_group` table (id, parent_id, name) in `struc.sql`, a `groupId` field in ItemSchema (`x-db-type: bigint`), optional `groupName` in RowSchema (the generator joins it), and `commands.sql`/`commands.access` declarations for `groupTree`/`groupSave`/`groupDelete`/`moveToGroup` in the manifest. `deno task sql:gen` emits all group SQL. Reference: `app/catalog/nomenclature/`.
 
 ## Rules
 

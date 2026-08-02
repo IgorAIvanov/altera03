@@ -23,6 +23,7 @@
     "admin/print_template",
     "catalog/bank",
     "catalog/counterparty",
+    "catalog/nomenclature",
     "document/invoice",
     "operation/manual_entry",
     "report/account_card",

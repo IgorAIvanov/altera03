@@ -1,0 +1,31 @@
+{
+  "model": "nomenclature",
+  "type": "catalog",
+  "schema": "app",
+  "hierarchy": true,
+  "views": {
+    "list":   { "module": "./nomenclatureList.ts",   "titleKey": "nomenclature.titleMany" },
+    "edit":   { "module": "./nomenclatureEdit.ts",   "titleKey": "nomenclature.titleOne" },
+    "picker": { "module": "./nomenclaturePicker.ts", "titleKey": "nomenclature.titleMany" }
+  },
+  "commands": {
+    "sql": {
+      "groupTree":   "nomenclature_group_tree",
+      "groupSave":   "nomenclature_group_save",
+      "groupDelete": "nomenclature_group_delete",
+      "moveToGroup": "nomenclature_move_to_group"
+    },
+    "access": {
+      "groupTree":   "view",
+      "groupSave":   "edit",
+      "groupDelete": "delete",
+      "moveToGroup": "edit"
+    }
+  },
+  "agent": {
+    "allow": true,
+    "allowCommands": ["get", "save", "list", "lookup"],
+    "aliases": ["номенклатура", "товар", "товари", "послуга", "послуги"],
+    "priority": 10
+  }
+}

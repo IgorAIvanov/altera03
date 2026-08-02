@@ -32,5 +32,13 @@
   "blob.download": "Завантажити",
   "blob.noImage": "Немає зображення",
   "blob.saveFirst": "Збережіть запис, щоб додати вкладення",
-  "blob.tooLarge": "Файл більший за {size}"
+  "blob.tooLarge": "Файл більший за {size}",
+  "groups.title": "Групи",
+  "groups.root": "Корінь",
+  "groups.add": "Додати групу",
+  "groups.rename": "Перейменувати групу",
+  "groups.delete": "Видалити групу",
+  "groups.name": "Назва групи",
+  "groups.toGroup": "До групи…",
+  "groups.moveTitle": "Перемістити до групи"
 }

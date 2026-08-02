@@ -32,5 +32,13 @@
   "blob.download": "Download",
   "blob.noImage": "No image",
   "blob.saveFirst": "Save the record to add attachments",
-  "blob.tooLarge": "File is larger than {size}"
+  "blob.tooLarge": "File is larger than {size}",
+  "groups.title": "Groups",
+  "groups.root": "Root",
+  "groups.add": "Add group",
+  "groups.rename": "Rename group",
+  "groups.delete": "Delete group",
+  "groups.name": "Group name",
+  "groups.toGroup": "To group…",
+  "groups.moveTitle": "Move to group"
 }

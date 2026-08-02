@@ -9,6 +9,8 @@ import { BaseUI } from "./base-ui.ts";
 import { QuerySchema, TotalsSchema, type Query, type Totals } from "@client/shared/schema.ts";
 import { buildRowsSheet, type ExportColumn } from "../report/rows-sheet.ts";
 import { buildXlsx, downloadFile, safeFileName, XLSX_MIME } from "../report/xlsx.ts";
+// Побічний імпорт — реєструє <ui-group-tree> для ієрархічних довідників.
+import "../components/ui-group-tree.ts";
 
 export type SortDir = "asc" | "desc";
 
@@ -130,6 +132,7 @@ const icon = {
   // Розмір і прозорість — атрибутами SVG, як у решти іконок вище: inline-SVG у
   // shadow DOM не має залежати від того, чи Tailwind згенерував `h-4`/`opacity-50`.
   search: html`<svg width="14" height="14" opacity="0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
+  toGroup: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 17v-5"/><path d="m9 14.5 3-3 3 3"/></svg>`,
 };
 
 /**
@@ -158,6 +161,13 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
 
   // ── Опційні налаштування ──────────────────────────────────────────────────
   protected listCommand = "list";
+  /**
+   * Ієрархічний довідник (патерн A2v10): основну площу займає плоский список
+   * із пагінацією, праворуч — дерево груп із чекбоксами-фільтром, у тулбарі —
+   * «До групи…» для виділеного рядка. Вимагає `"hierarchy": true` у
+   * manifest.json моделі (генерує SQL-команди груп) — див. ui-group-tree.ts.
+   */
+  protected hierarchy = false;
   protected defaultSortBy = "";
   protected defaultSortDir: SortDir = "asc";
   protected pageSizeOptions = [10, 20, 50, 100];
@@ -174,6 +184,13 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
 
   /** Збирається файл вивантаження. Окремо від `running`: запит той самий (`list`). */
   @state() private exporting = false;
+
+  /** Відмічені групи дерева (ієрархія). Транзиент, як і selectedId. */
+  @state() protected groupIds: string[] = [];
+
+  /** Діалог «перемістити до групи»: null — ціль не вибрана, "" — корінь. */
+  @state() private moveOpen = false;
+  @state() private moveTarget: string | null = null;
 
   // Проєкції старих імен полів на службовий `$query` та дані `$root`.
   // Логіка/рендер нижче лишаються без змін; читання трекає SignalWatcher,
@@ -252,6 +269,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
     // якщо БД поверне ефективний $query — він віддзеркалиться назад.
     const env = await this.run<Partial<ListRoot<Row>>>(this.listCommand, {
       ...this.$root.$query,
+      ...(this.hierarchy ? { groupIds: this.groupIds } : {}),
       ...this.extraPayload(),
     });
     if (env.ok && env.data) this.assign(env.data);
@@ -309,6 +327,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
       const limit = Math.min(Math.max(this.total, this.rows.length), this.exportRowLimit);
       const env = await this.run<Partial<ListRoot<Row>>>(this.listCommand, {
         ...this.$root.$query,
+        ...(this.hierarchy ? { groupIds: this.groupIds } : {}),
         ...this.extraPayload(),
         page: 1,
         pageSize: limit,
@@ -337,6 +356,30 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
 
   protected openEdit(id: string | null) {
     bus.emit({ type: "tab.open", route: this.editRoute, id });
+  }
+
+  // ── Ієрархія: фільтр дерева і перенесення до групи ─────────────────────────
+
+  #onGroupsChanged(e: CustomEvent<{ ids: string[] }>) {
+    this.groupIds = e.detail.ids;
+    this.reload();
+  }
+
+  #openMoveDialog() {
+    if (!this.selectedId) return;
+    this.moveTarget = null;
+    this.moveOpen = true;
+  }
+
+  async #confirmMove() {
+    const target = this.moveTarget;
+    this.moveOpen = false;
+    if (target === null || !this.selectedId) return;
+    // kind:"save" → model.changed → підписка перезавантажує список.
+    await this.run("moveToGroup", {
+      id: this.selectedId,
+      groupId: target === "" ? null : target,
+    }, "save");
   }
 
   protected async deleteSelected() {
@@ -404,6 +447,12 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
             @click=${this.deleteSelected}>
             ${icon.delete} ${t("common.delete")}
           </button>
+          ${this.hierarchy
+            ? html`
+              <button class="btn btn-sm" ?disabled=${!this.selectedId} @click=${this.#openMoveDialog}>
+                ${icon.toGroup} ${t("groups.toGroup")}
+              </button>`
+            : nothing}
           <button class="btn btn-sm" ?disabled=${this.exporting || this.total === 0}
             @click=${this.exportExcel}>
             ${this.exporting
@@ -428,6 +477,9 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
         <div class="px-2 empty:hidden">${this.renderNotice()}</div>
 
         ${this.renderHeaderArea()}
+
+        <!-- Основна площа: таблиця (+ дерево груп праворуч для ієрархії) -->
+        <div class="flex flex-1 min-h-0">
 
         <!-- Таблиця -->
         <div class="flex-1 overflow-auto px-2">
@@ -470,6 +522,40 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
                 </table>
               `}
         </div>
+
+        ${this.hierarchy
+          ? html`
+            <aside class="w-60 shrink-0 border-l border-base-300 overflow-auto bg-base-100">
+              <ui-group-tree .model=${this.model} mode="filter"
+                @groups-changed=${this.#onGroupsChanged}
+                @groups-mutated=${() => this.load()}>
+              </ui-group-tree>
+            </aside>`
+          : nothing}
+        </div>
+
+        ${this.moveOpen
+          ? html`
+            <dialog class="modal" open>
+              <div class="modal-box max-w-sm p-4">
+                <h3 class="font-medium mb-2">${t("groups.moveTitle")}</h3>
+                <div class="max-h-72 overflow-auto border border-base-300 rounded">
+                  <ui-group-tree .model=${this.model} mode="select" show-root
+                    @group-selected=${(e: CustomEvent<{ id: string }>) => { this.moveTarget = e.detail.id; }}>
+                  </ui-group-tree>
+                </div>
+                <div class="flex justify-end gap-2 mt-3">
+                  <button class="btn btn-sm" @click=${() => { this.moveOpen = false; }}>
+                    ${t("common.cancel")}
+                  </button>
+                  <button class="btn btn-sm btn-primary" ?disabled=${this.moveTarget === null}
+                    @click=${this.#confirmMove}>
+                    ${t("common.select")}
+                  </button>
+                </div>
+              </div>
+            </dialog>`
+          : nothing}
 
         <!-- Пагінація -->
         <div class="flex items-center justify-between px-3 py-2 border-t border-base-300 text-sm">

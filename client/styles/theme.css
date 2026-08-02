@@ -56,6 +56,18 @@
   --radius-btn:     2px;
   --radius-badge:   2px;
 
+  /* Структурні змінні daisyUI. Плагін підключено з `themes: false` (тема — цей
+     файл), а компоненти daisyUI (checkbox, radio, toggle, select…) спираються
+     на ці змінні БЕЗ фолбеків: невизначений `--border` анулює всю декларацію
+     рамки, і разом з `appearance: none` контрол стає невидимим — саме так
+     зникали чекбокси. Значення — під плоский стиль 1С: без глибини й шуму. */
+  --border:          1px;
+  --size-selector:   0.25rem;
+  --size-field:      0.25rem;
+  --radius-selector: 2px;
+  --depth:           0;
+  --noise:           0;
+
   /* Шрифт */
   --default-font-family: "Roboto", sans-serif;
   --default-font-size:   0.875rem;

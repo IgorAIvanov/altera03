@@ -76,6 +76,22 @@ export const generatedModelRegistry = {
     "current": "authenticated"
     }
   },
+  "nomenclature": {
+    type: "catalog",
+    schema: "app",
+    sqlCommands: {
+    "groupDelete": "nomenclature_group_delete",
+    "groupSave": "nomenclature_group_save",
+    "groupTree": "nomenclature_group_tree",
+    "moveToGroup": "nomenclature_move_to_group"
+    },
+    access: {
+    "groupDelete": "delete",
+    "groupSave": "edit",
+    "groupTree": "view",
+    "moveToGroup": "edit"
+    }
+  },
   "organization": {
     type: "catalog",
     schema: "app"

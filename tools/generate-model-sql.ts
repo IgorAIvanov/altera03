@@ -52,6 +52,13 @@ type FeatureManifest = {
   type?: string;
   schema?: string;
   document?: DocumentMeta;
+  /**
+   * Ієрархічний довідник (патерн A2v10): плоский список + дерево груп збоку.
+   * Конвенція: таблиця груп `{schema}.{model}_group` (id, parent_id, name),
+   * колонка `group_id` у елемента. Генерує додатково group_tree / group_save /
+   * group_delete / move_to_group і фільтр groupIds (з підгрупами) у list.
+   */
+  hierarchy?: boolean;
   /** `generate: false` — CRUD написаний руками, генератор моделі не торкається. */
   sql?: { generate?: boolean };
 };
@@ -133,6 +140,10 @@ type ModelSpec = {
   lookupSort: SortEntry[];
   listJoins: string[];
   hasIsActive: boolean;
+  /** Ієрархічний довідник: див. FeatureManifest.hierarchy. */
+  hierarchy: boolean;
+  groupTable: string; // {schema}.{model}_group
+  rowHasGroupName: boolean; // Row оголошує groupName → list віддає ім'я групи
 };
 
 type ModelMeta = { schema: string; model: string; pk: string; displayCol: string };
@@ -420,12 +431,41 @@ function baseAnd(spec: ModelSpec): string {
 
 function renderList(spec: ModelSpec): string {
   const defaultSort = spec.listSort[0]?.token ?? spec.pk;
-  const rowCols = fieldEntries(spec.listFields).map((e) => `      ${e}`).join(",\n");
-  const joins = spec.listJoins.length ? "\n    " + spec.listJoins.join("\n    ") : "";
+  const rowEntries = fieldEntries(spec.listFields);
+  // Ім'я групи в рядку — конвенція ієрархії, а не x-ref: таблиця груп не є
+  // моделлю, тож звичайна ссылка на неї не оголошується.
+  if (spec.hierarchy && spec.rowHasGroupName) {
+    rowEntries.push(`'groupName', gr.name`);
+  }
+  const rowCols = rowEntries.map((e) => `      ${e}`).join(",\n");
+  const allJoins = [...spec.listJoins];
+  if (spec.hierarchy && spec.rowHasGroupName) {
+    allJoins.push(`left join ${spec.groupTable} gr on gr.id = t.group_id`);
+  }
+  const joins = allJoins.length ? "\n    " + allJoins.join("\n    ") : "";
   const joinsCount = spec.listJoins.length ? "\n  " + spec.listJoins.join("\n  ") : "";
   const sortGuard = spec.listSort.length
     ? `  if v_sort_by not in (${whitelist(spec.listSort)}) then\n    v_sort_by := '${defaultSort}';\n  end if;\n\n`
     : "";
+  // Фільтр дерева: відмічена група показує і вміст підгруп — обхід рекурсивний.
+  // null (groupIds не прислали або порожні) — без фільтра, повний список.
+  const groupDecl = spec.hierarchy
+    ? `  v_group_ids bigint[] := (
+    select array_agg(nullif(x, '')::bigint)
+    from jsonb_array_elements_text(coalesce(payload->'groupIds', '[]'::jsonb)) x
+  );\n`
+    : "";
+  const groupCond = (indent: string) =>
+    spec.hierarchy
+      ? `\n${indent}and (v_group_ids is null or t.group_id in (
+${indent}  with recursive grp as (
+${indent}    select id from ${spec.groupTable} where id = any(v_group_ids)
+${indent}    union all
+${indent}    select c.id from ${spec.groupTable} c join grp on c.parent_id = grp.id
+${indent}  )
+${indent}  select id from grp
+${indent}))`
+      : "";
   return `drop function if exists ${spec.table}_list(bigint, jsonb);
 create function ${spec.table}_list(user_id bigint, payload jsonb)
 returns jsonb
@@ -436,14 +476,14 @@ declare
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 20), 1);
   v_sort_by   text := coalesce(payload->>'sortBy', '${defaultSort}');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
-  v_rows      jsonb;
+${groupDecl}  v_rows      jsonb;
   v_total     int;
 begin
 ${sortGuard}  select count(*)::int into v_total
   from ${spec.fromClause}${joinsCount}
   where ${baseAnd(spec)}(
 ${searchClause(spec.searchExprsList, "    ")}
-  );
+  )${groupCond("  ")};
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
@@ -453,7 +493,7 @@ ${rowCols}
     from ${spec.fromClause}${joins}
     where ${baseAnd(spec)}(
 ${searchClause(spec.searchExprsList, "      ")}
-    )
+    )${groupCond("    ")}
     order by
 ${orderLadder(spec.listSort, "      ", spec.pkExpr)}
     limit v_page_size
@@ -870,6 +910,182 @@ end;
 $$;`;
 }
 
+// ── ієрархія (патерн A2v10: плоский список + дерево груп) ────────────────────
+// Групи живуть в окремій таблиці {model}_group, а не в таблиці моделі з
+// прапорцем is_group: список і lookup ніколи не мішають групи з елементами,
+// пагінація і підбори не потребують фільтра «без груп», FK каскади прозорі.
+
+function renderGroupTree(spec: ModelSpec): string {
+  return `drop function if exists ${spec.table}_group_tree(bigint, jsonb);
+create function ${spec.table}_group_tree(user_id bigint, payload jsonb)
+returns jsonb
+language sql
+as $$
+  select ${
+    envelope([
+      `'rows', coalesce((
+          select jsonb_agg(jsonb_build_object(
+            'id', g.id::text,
+            'parentId', g.parent_id::text,
+            'name', g.name
+          ) order by g.name)
+          from ${spec.groupTable} g
+        ), '[]'::jsonb)`,
+      `'item',    null`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   '{}'::jsonb`,
+    ])
+  };
+$$;`;
+}
+
+function renderGroupSave(spec: ModelSpec): string {
+  return `drop function if exists ${spec.table}_group_save(bigint, jsonb);
+create function ${spec.table}_group_save(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_item   jsonb  := payload->'item';
+  v_id     bigint := nullif(v_item->>'id', '')::bigint;
+  v_parent bigint := nullif(v_item->>'parentId', '')::bigint;
+  v_name   text   := nullif(trim(coalesce(v_item->>'name', '')), '');
+  v_result jsonb;
+begin
+  if v_name is null then
+    raise exception 'name обов''язковий';
+  end if;
+
+  if v_parent is not null and not exists (select 1 from ${spec.groupTable} where id = v_parent) then
+    raise exception 'Батьківської групи не існує';
+  end if;
+
+  -- Цикл: групу не можна переносити під саму себе чи власного нащадка.
+  if v_id is not null and v_parent is not null then
+    if exists (
+      with recursive d as (
+        select id from ${spec.groupTable} where id = v_id
+        union all
+        select c.id from ${spec.groupTable} c join d on c.parent_id = d.id
+      )
+      select 1 from d where id = v_parent
+    ) then
+      raise exception 'Група не може бути підгрупою власного нащадка';
+    end if;
+  end if;
+
+  if v_id is null then
+    insert into ${spec.groupTable} (parent_id, name)
+    values (v_parent, v_name)
+    returning id into v_id;
+  else
+    update ${spec.groupTable}
+    set parent_id = v_parent, name = v_name, updated_at = now()
+    where id = v_id;
+    if not found then
+      raise exception 'Групу не знайдено';
+    end if;
+  end if;
+
+  select jsonb_build_object('id', g.id::text, 'parentId', g.parent_id::text, 'name', g.name)
+  into v_result
+  from ${spec.groupTable} g
+  where g.id = v_id;
+
+  return ${
+    envelope([
+      `'item',    v_result`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   '{}'::jsonb`,
+    ])
+  };
+end;
+$$;`;
+}
+
+function renderGroupDelete(spec: ModelSpec): string {
+  return `drop function if exists ${spec.table}_group_delete(bigint, jsonb);
+create function ${spec.table}_group_delete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint := nullif(payload->>'id', '')::bigint;
+begin
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  -- Fail-closed: непорожня група не видаляється — ні каскаду на підгрупи,
+  -- ні тихого переносу елементів у корінь.
+  if exists (select 1 from ${spec.groupTable} where parent_id = v_id) then
+    raise exception 'У групі є підгрупи — спочатку приберіть їх';
+  end if;
+  if exists (select 1 from ${spec.table} where group_id = v_id) then
+    raise exception 'У групі є елементи — спочатку перемістіть їх';
+  end if;
+
+  delete from ${spec.groupTable} where id = v_id;
+  if not found then
+    raise exception 'Групу не знайдено';
+  end if;
+
+  return ${
+    envelope([
+      `'item',    null`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   jsonb_build_object('deletedId', v_id::text)`,
+    ])
+  };
+end;
+$$;`;
+}
+
+function renderMoveToGroup(spec: ModelSpec): string {
+  return `drop function if exists ${spec.table}_move_to_group(bigint, jsonb);
+create function ${spec.table}_move_to_group(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id    bigint := nullif(payload->>'id', '')::bigint;
+  -- null — перемістити в корінь: окремої команди «з групи» немає навмисно,
+  -- корінь — це просто ще одна ціль у тому самому діалозі.
+  v_group bigint := nullif(payload->>'groupId', '')::bigint;
+begin
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  if v_group is not null and not exists (select 1 from ${spec.groupTable} where id = v_group) then
+    raise exception 'Групи не існує';
+  end if;
+
+  update ${spec.table}
+  set group_id = v_group, updated_at = now()
+  where id = v_id;
+  if not found then
+    raise exception 'Запис не знайдено';
+  end if;
+
+  return ${
+    envelope([
+      `'item',    null`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   jsonb_build_object('movedId', v_id::text)`,
+    ])
+  };
+end;
+$$;`;
+}
+
 function renderFile(spec: ModelSpec): string {
   const header = `-- ⚠ ЗГЕНЕРОВАНО deno task sql:gen — НЕ РЕДАГУВАТИ.\n` +
     `-- Джерело: ${spec.model}.schema.ts + manifest.json. Override — db/${spec.model}.custom.sql\n`;
@@ -881,6 +1097,9 @@ function renderFile(spec: ModelSpec): string {
     renderDelete(spec),
     renderLookup(spec),
     ...(spec.isDocument ? [renderPost(spec), renderUnpost(spec)] : []),
+    ...(spec.hierarchy
+      ? [renderGroupTree(spec), renderGroupSave(spec), renderGroupDelete(spec), renderMoveToGroup(spec)]
+      : []),
     "",
   ].join("\n\n");
 }
@@ -977,6 +1196,11 @@ async function buildSpec(
 
   const isDocument = manifest.type === "document";
 
+  const hierarchy = manifest.hierarchy === true;
+  if (hierarchy && isDocument) {
+    throw new Error(`${model}: hierarchy можлива лише для catalog, не для document`);
+  }
+
   // Документ не описує спільні реквізити у власній схемі — генератор підмішує
   // DocumentHeaderSchema сам. Поля шапки живуть у app.document (аліас h),
   // реквізити документа — у app.<model> (аліас t) з ключем document_id.
@@ -1049,6 +1273,12 @@ async function buildSpec(
 
   const hasIsActive = itemFields.some((f) => f.col === "is_active");
 
+  // Без groupId у схемі save мовчки губив би належність до групи при кожному
+  // збереженні форми — краще голосно на генерації.
+  if (hierarchy && !itemFields.some((f) => f.col === "group_id")) {
+    throw new Error(`${model}: hierarchy вимагає поля groupId (колонка group_id) в ItemSchema`);
+  }
+
   if (verbose) {
     const refs = itemFields.filter((f) => f.ref).map((f) => f.ref!.as);
     console.log(
@@ -1079,6 +1309,9 @@ async function buildSpec(
     lookupSort,
     listJoins,
     hasIsActive,
+    hierarchy,
+    groupTable: `${schemaName}.${model}_group`,
+    rowHasGroupName: hierarchy && rowKeys.has("groupName"),
   };
 }
 
