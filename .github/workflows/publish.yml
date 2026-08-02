@@ -47,6 +47,10 @@ jobs:
           deno-version: v2.x
       - name: Install dependencies
         run: deno install
+      # deno install міг оновити deno.lock (якщо imports мінялися без локального
+      # install) — публікації це не стосується, а брудне дерево її валить.
+      - name: Restore lockfile
+        run: git checkout -- deno.lock
       # Порядок — за залежностями: server → client → tools → create. Публікація
       # йде з каталогу пакета: воркспейс із кореня спробував би перевидати все.
       # Взаємні залежності при перевірці резолвляться локально (воркспейс), тож
@@ -58,8 +62,10 @@ jobs:
             # deno.json — це JSONC (у server/ є //-коментарі), jq його не бере;
             # реєстр теж читаємо Deno-скриптом: збій мережі тоді валить крок
             # голосно, а не тихо перетворюється на «публікувати все».
-            version=$(deno eval 'import { parse } from "jsr:@std/jsonc@1"; console.log(parse(await Deno.readTextFile(Deno.args[0])).version)' "$pkg/deno.json")
-            published=$(deno eval '
+            # --no-lock: інакше eval дописує @std/jsonc у deno.lock, дерево
+            # стає брудним, і deno publish відмовляється працювати.
+            version=$(deno eval --no-lock 'import { parse } from "jsr:@std/jsonc@1"; console.log(parse(await Deno.readTextFile(Deno.args[0])).version)' "$pkg/deno.json")
+            published=$(deno eval --no-lock '
               const [pkg, version] = Deno.args;
               const response = await fetch(`https://jsr.io/@altera/${pkg}/meta.json`);
               if (!response.ok && response.status !== 404) throw new Error(`jsr.io: HTTP ${response.status}`);
