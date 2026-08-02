@@ -1,0 +1,67 @@
+# Публікація пакетів у JSR (docs/development-plan.md, 4.5).
+#
+# Запуск — кнопкою зі сторінки Actions (workflow_dispatch). Публікуються лише
+# пакети, чия версія з deno.json ще відсутня в реєстрі: бамп версії в коміті і
+# є командою на реліз, решта тихо пропускається — тому запуск ідемпотентний і
+# «воркспейс перевидає вже опубліковане» неможливе.
+#
+# Автентифікація — OIDC: пакети зв'язані з цим репозиторієм у налаштуваннях на
+# jsr.io, жодних токенів у секретах. Право id-token: write — саме для цього.
+name: Publish to JSR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read   # гейту потрібно читати прогони CI через GitHub API
+  id-token: write
+
+jobs:
+  # Гейт — зелений CI цього ж коміту, а не повторний прогін перевірок:
+  # test:unit там стереже свіжість generated-файлів, scaffold:verify — шаблон
+  # (саме його пропуск випустив зламаний create@0.1.4).
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require green CI for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${{ github.sha }}&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // empty')
+          if [ "$conclusion" != "success" ]; then
+            echo "CI для ${{ github.sha }} не зелений (стан: ${conclusion:-не знайдено})." >&2
+            echo "Дочекайтеся зеленого прогону CI і запустіть публікацію знову." >&2
+            exit 1
+          fi
+
+  publish:
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Install dependencies
+        run: deno install
+      # Порядок — за залежностями: server → client → tools → create. Публікація
+      # йде з каталогу пакета: воркспейс із кореня спробував би перевидати все.
+      # Взаємні залежності при перевірці резолвляться локально (воркспейс), тож
+      # minimum dependency age свіжої версії тут не заважає.
+      - name: Publish packages with new versions
+        run: |
+          set -euo pipefail
+          for pkg in server client tools create; do
+            version=$(jq -r .version "$pkg/deno.json")
+            published=$(curl -sf "https://jsr.io/@altera/$pkg/meta.json" \
+              | jq -r --arg v "$version" '.versions | has($v)' || echo "false")
+            if [ "$published" = "true" ]; then
+              echo "= @altera/$pkg@$version вже в реєстрі — пропуск"
+              continue
+            fi
+            echo "→ публікую @altera/$pkg@$version"
+            (cd "$pkg" && deno publish)
+          done
