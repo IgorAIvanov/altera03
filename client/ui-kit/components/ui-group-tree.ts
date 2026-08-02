@@ -46,6 +46,7 @@ function firstMessage(env: Envelope): string {
 const icon = {
   add: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
   rename: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  move: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 17v-5"/><path d="m9 14.5 3-3 3 3"/></svg>`,
   del: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
 };
 
@@ -101,6 +102,11 @@ export class UiGroupTree extends GlobalStyledLitElement {
   @state() private editing: { id: string | null; parentId: string | null; name: string } | null = null;
   @state() private error = "";
 
+  /** Діалог «перемістити групу»: ціль null — не вибрана, "" — корінь. */
+  @state() private movingGroup = false;
+  @state() private groupMoveTarget: string | null = null;
+  @state() private moveError = "";
+
   override connectedCallback() {
     super.connectedCallback();
     if (this.model) this.load();
@@ -149,6 +155,13 @@ export class UiGroupTree extends GlobalStyledLitElement {
   }
 
   #select(id: string) {
+    // У фільтр-режимі повторний клік знімає виділення: інакше «додати групу в
+    // корінь» вимагало б перезавантаження сторінки — виділення нікуди не
+    // дівалося. У select-режимі повторний клік нешкідливий і лишається вибором.
+    if (this.mode === "filter" && this.currentId === id) {
+      this.currentId = null;
+      return;
+    }
     this.currentId = id;
     if (this.mode === "select") {
       this.dispatchEvent(new CustomEvent("group-selected", {
@@ -187,6 +200,34 @@ export class UiGroupTree extends GlobalStyledLitElement {
     });
     if (!env.ok) { this.error = firstMessage(env); return; }
     this.editing = null;
+    await this.load();
+    this.#mutated();
+  }
+
+  #startMoveGroup() {
+    if (this.currentId === null) return;
+    this.error = "";
+    this.moveError = "";
+    this.groupMoveTarget = null;
+    this.movingGroup = true;
+  }
+
+  async #commitMoveGroup() {
+    if (this.currentId === null || this.groupMoveTarget === null) return;
+    const node = this.nodes.find((n) => n.id === this.currentId);
+    if (!node) { this.movingGroup = false; return; }
+    // Перенесення групи — той самий groupSave з новим parentId; цикл
+    // (перенесення під власного нащадка) відсікає сервер — текст показуємо
+    // просто в діалозі, не закриваючи його.
+    const env = await this.command("groupSave", {
+      item: {
+        id: node.id,
+        parentId: this.groupMoveTarget === "" ? null : this.groupMoveTarget,
+        name: node.name,
+      },
+    });
+    if (!env.ok) { this.moveError = firstMessage(env); return; }
+    this.movingGroup = false;
     await this.load();
     this.#mutated();
   }
@@ -274,6 +315,10 @@ export class UiGroupTree extends GlobalStyledLitElement {
                 ?disabled=${this.currentId === null} @click=${this.#startRename}>
                 ${icon.rename}
               </button>
+              <button class="btn btn-ghost btn-xs px-1" title=${t("groups.move")}
+                ?disabled=${this.currentId === null} @click=${this.#startMoveGroup}>
+                ${icon.move}
+              </button>
               <button class="btn btn-ghost btn-xs px-1" title=${t("groups.delete")}
                 ?disabled=${this.currentId === null} @click=${this.#deleteCurrent}>
                 ${icon.del}
@@ -295,6 +340,35 @@ export class UiGroupTree extends GlobalStyledLitElement {
             : nothing}
           ${this.childrenOf(null).map((n) => this.#renderNode(n))}
         </div>
+
+        ${this.movingGroup
+          ? html`
+            <dialog class="modal" open>
+              <div class="modal-box max-w-sm p-4">
+                <h3 class="font-medium mb-2">${t("groups.moveTitle")}</h3>
+                <div class="max-h-72 overflow-auto border border-base-300 rounded">
+                  <ui-group-tree .model=${this.model} mode="select" show-root
+                    @group-selected=${(e: CustomEvent<{ id: string }>) => {
+                      e.stopPropagation();
+                      this.groupMoveTarget = e.detail.id;
+                    }}>
+                  </ui-group-tree>
+                </div>
+                ${this.moveError
+                  ? html`<div class="text-error text-xs mt-2">${this.moveError}</div>`
+                  : nothing}
+                <div class="flex justify-end gap-2 mt-3">
+                  <button class="btn btn-sm" @click=${() => { this.movingGroup = false; }}>
+                    ${t("common.cancel")}
+                  </button>
+                  <button class="btn btn-sm btn-primary" ?disabled=${this.groupMoveTarget === null}
+                    @click=${this.#commitMoveGroup}>
+                    ${t("common.select")}
+                  </button>
+                </div>
+              </div>
+            </dialog>`
+          : nothing}
       </div>
     `;
   }

@@ -37,6 +37,7 @@
   "groups.root": "Root",
   "groups.add": "Add group",
   "groups.rename": "Rename group",
+  "groups.move": "Move group",
   "groups.delete": "Delete group",
   "groups.name": "Group name",
   "groups.toGroup": "To group…",

@@ -37,6 +37,7 @@
   "groups.root": "Корінь",
   "groups.add": "Додати групу",
   "groups.rename": "Перейменувати групу",
+  "groups.move": "Перемістити групу",
   "groups.delete": "Видалити групу",
   "groups.name": "Назва групи",
   "groups.toGroup": "До групи…",
