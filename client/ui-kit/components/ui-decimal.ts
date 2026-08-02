@@ -20,6 +20,13 @@ import { Decimal } from "decimal.js";
  */
 @customElement("ui-decimal")
 export class UiDecimal extends GlobalStyledLitElement {
+  /** host.focus() веде у внутрішній input — без цього клавіатурний обхід
+      табличної частини (ui-tabular-table) не міг би сфокусувати комірку. */
+  static override shadowRootOptions: ShadowRootInit = {
+    ...GlobalStyledLitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
+
   /** Канонічне значення як рядок (щоб не втрачати точність). */
   @property({ type: String }) value = "";
   /** Кількість знаків після коми: сума — 2, кількість — 3, курс — 6. */

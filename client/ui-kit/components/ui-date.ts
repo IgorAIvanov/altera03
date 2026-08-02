@@ -37,6 +37,13 @@ import {
  */
 @customElement("ui-date")
 export class UiDate extends GlobalStyledLitElement {
+  /** host.focus() веде у внутрішній input — без цього клавіатурний обхід
+      табличної частини (ui-tabular-table) не міг би сфокусувати комірку. */
+  static override shadowRootOptions: ShadowRootInit = {
+    ...GlobalStyledLitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
+
   /** ISO-значення: `YYYY-MM-DD` | `YYYY-MM-DDTHH:mm:ss` | `""`. */
   @property({ type: String }) value = "";
   /** Шаблон відображення/розбору: `DD.MM.YY`, `MM.YYYY`, `HH:mm` ... */

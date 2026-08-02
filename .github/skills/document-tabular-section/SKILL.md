@@ -16,6 +16,49 @@ Use this skill when:
 Reference implementation: `app/document/invoice/invoiceEdit.ts`.
 Contract: `client/styles/theme.css`, section «Табличні частини документів».
 
+## Default path: the TabularSection primitive
+
+Do NOT hand-write the table markup and row mechanics — use the primitive
+(`client/ui-kit/tabular/`). The form declares a typed section (columns, where
+rows live, how a new row looks) and places two INDEPENDENT view components —
+either can be replaced with custom markup, all actions are public on the section:
+
+```ts
+private lines = new TabularSection<InvoiceLine>(this, {
+  rows: () => this.$root.item.lines,
+  setRows: (lines) => { this.$root.item = { ...this.$root.item, lines }; },
+  createLine: () => ({ id: null, lineNo: 0, bankId: "", bank: null, qty: "0.000", price: "0.00" }),
+  columns: [
+    { kind: "picker",  key: "bankId", refKey: "bank", title: "invoice.bank", url: "catalog/bank" },
+    { kind: "decimal", key: "qty",   title: "invoice.qty",   precision: 3, width: "7rem" },
+    { kind: "decimal", key: "price", title: "invoice.price", precision: 2, width: "7rem" },
+    { kind: "computed", title: "invoice.amount", width: "7rem", total: true,
+      value: (l) => dec(l.qty).mul(dec(l.price)).toFixed(2) },
+  ],
+});
+// render():
+//   <ui-tabular-toolbar .section=${this.lines}></ui-tabular-toolbar>
+//   <ui-tabular-table   .section=${this.lines}></ui-tabular-table>
+```
+
+What the primitive provides: add / copy (id is stripped — the save merge would
+otherwise overwrite the original) / delete / move up-down with automatic
+`lineNo` renumbering, current-row highlight, live totals in `<tfoot>`
+(`total: true`), empty state, canonical decimal normalization
+(`section.normalizedRows()` — call it around save/get/post), and keyboard
+entry: Enter walks editable cells and appends a row at the end, ↑/↓ move
+between rows, Insert adds, Ctrl+Delete removes. Column kinds: `text`,
+`decimal`, `picker`, `date`, `checkbox`, `computed`, and the escape hatch
+`custom` (`render(line, index)` returns the `<td>` CONTENT — never the `<td>`
+itself). Conditional columns: `visible: () => boolean` (see currency columns
+in `manualEntryEdit.ts`). Dynamic per-line controls (subconto pickers that
+depend on the line's account) stay in `custom` cells — that reference is
+`app/operation/manual_entry/manualEntryEdit.ts`.
+
+The CSS knowledge below still applies to `custom` cells and to fully
+hand-written tables (which remain legal — the primitive is a default, not a
+requirement).
+
 ## The trap: read this before touching any CSS
 
 `client/styles/theme.css` contains a hand-written theme layer — `.input`,

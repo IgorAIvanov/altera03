@@ -1,9 +1,9 @@
 import { html, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { Decimal } from "decimal.js";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { dec, TabularSection } from "@client/ui-kit/tabular/tabular-section.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
 import { viewFamily } from "@shared/view-route.ts";
 import { currentOrg } from "@shared/current-organization.ts";
@@ -17,6 +17,8 @@ import {
 import "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-decimal.ts";
 import "@client/ui-kit/components/ui-date.ts";
+import "@client/ui-kit/tabular/ui-tabular-table.ts";
+import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
 
 export const tagName = "manual-entry-edit";
 
@@ -44,14 +46,6 @@ function viewPath(modelKey: string): string {
   return `${viewFamily(modelKey) ?? "catalog"}/${modelKey}`;
 }
 
-function dec(raw: unknown): Decimal {
-  try {
-    return new Decimal(String(raw ?? "").replace(",", ".") || 0);
-  } catch {
-    return new Decimal(0);
-  }
-}
-
 @customElement(tagName)
 export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
   protected model = "manual_entry";
@@ -67,14 +61,81 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
    */
   @state() private slots = new Map<string, AccountConfig>();
 
+  /**
+   * Форма не показується, доки конфігурація рахунків усіх рядків не
+   * завантажена: інакше субконто й валютні колонки «доїжджали» через мить
+   * після появи форми — видима двоетапна відрисовка.
+   */
+  @state() private slotsReady = false;
+
+  /**
+   * Таблична частина: каркас (номер, дії над рядками, підсумок, клавіатура) —
+   * у примітиві. Рахунки й субконто — custom-комірки: набір пікерів у них
+   * залежить від рахунку рядка, готовим видом це не описується. Валютні
+   * колонки умовні (visible) — показуються, коли хоч один рядок їх потребує.
+   */
+  private entries = new TabularSection<ManualEntryFormLine>(this, {
+    rows: () => this.$root.item.entries,
+    setRows: (entries) => { this.$root.item = { ...this.$root.item, entries }; },
+    createLine: () => ({
+      id: null,
+      lineNo: 0,
+      debitAccount: "",
+      debitAnalytics: {},
+      creditAccount: "",
+      creditAnalytics: {},
+      amount: "0.00",
+      currencyId: "",
+      currency: null,
+      currencyAmount: "0.00",
+      quantity: "0.000",
+      description: "",
+    }),
+    // Декум-канон покриває лише decimal-колонки; custom-комірки (валюта,
+    // кількість) канонізуються тут — разом із `analytics ?? {}`.
+    normalizeLine: (l) => ({
+      ...l,
+      currencyAmount: dec(l.currencyAmount).toFixed(MONEY_PRECISION),
+      quantity: dec(l.quantity).toFixed(QTY_PRECISION),
+      debitAnalytics: l.debitAnalytics ?? {},
+      creditAnalytics: l.creditAnalytics ?? {},
+    }),
+    columns: [
+      { kind: "custom", title: "manualEntry.debit", width: "6.5rem", render: (l, i) => this.renderAccount(l, i, "debit") },
+      { kind: "custom", title: "manualEntry.debitAnalytics", render: (l, i) => this.renderAnalytics(l, i, "debit") },
+      { kind: "custom", title: "manualEntry.credit", width: "6.5rem", render: (l, i) => this.renderAccount(l, i, "credit") },
+      { kind: "custom", title: "manualEntry.creditAnalytics", render: (l, i) => this.renderAnalytics(l, i, "credit") },
+      { kind: "decimal", key: "amount", title: "invoice.amount", precision: MONEY_PRECISION, width: "8rem", total: true },
+      {
+        kind: "custom", title: "manualEntry.currency", width: "5rem",
+        visible: () => this.showCurrency,
+        render: (l, i) => this.renderCurrencyPicker(l, i),
+      },
+      {
+        kind: "custom", title: "manualEntry.currencyAmount", width: "7rem", align: "right",
+        visible: () => this.showCurrency,
+        render: (l, i) => this.renderCurrencyAmount(l, i),
+      },
+      {
+        kind: "custom", title: "manualEntry.quantity", width: "7rem", align: "right",
+        visible: () => this.showQuantity,
+        render: (l, i) => this.renderQuantity(l, i),
+      },
+    ],
+  });
+
   constructor() {
     super(ManualEntryEditRootSchema);
   }
 
   override connectedCallback() {
     super.connectedCallback();
-    if (this.modelId) this.load();
-    else this.applyDefaultOrg();
+    if (this.modelId) {
+      this.load();
+    } else {
+      this.applyDefaultOrg();
+      this.slotsReady = true;
+    }
   }
 
   /** Нова операція — підставляємо поточну організацію застосунку. */
@@ -89,13 +150,20 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
   }
 
   private async load() {
-    if (!await this.loadInto("get", { id: this.modelId })) return;
+    if (!await this.loadInto("get", { id: this.modelId })) {
+      this.slotsReady = true;
+      return;
+    }
     this.$root.item.entries ??= [];
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
+    // Конфігурації всіх рахунків — паралельно і ДО показу форми (slotsReady).
+    const accounts = new Set<string>();
     for (const line of this.$root.item.entries) {
-      this.ensureSlots(line.debitAccount);
-      this.ensureSlots(line.creditAccount);
+      if (line.debitAccount) accounts.add(line.debitAccount);
+      if (line.creditAccount) accounts.add(line.creditAccount);
     }
+    await Promise.all([...accounts].map((a) => this.ensureSlots(a)));
+    this.slotsReady = true;
   }
 
   protected override async saveItem(): Promise<boolean> {
@@ -115,16 +183,9 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
   }
 
-  /** Суми в канонічному вигляді: SQL віддає numeric числом, форма тримає рядок. */
+  /** Суми в канонічному вигляді — рахує примітив (колонки + normalizeLine). */
   private normalizedEntries(): ManualEntryForm["entries"] {
-    return (this.$root.item.entries ?? []).map((l) => ({
-      ...l,
-      amount: dec(l.amount).toFixed(MONEY_PRECISION),
-      currencyAmount: dec(l.currencyAmount).toFixed(MONEY_PRECISION),
-      quantity: dec(l.quantity).toFixed(QTY_PRECISION),
-      debitAnalytics: l.debitAnalytics ?? {},
-      creditAnalytics: l.creditAnalytics ?? {},
-    }));
+    return this.entries.normalizedRows();
   }
 
   /** Підвантажити конфігурацію рахунку (субконто + ознаки) — один раз на код. */
@@ -144,6 +205,9 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
       isCurrency: env?.data?.extra?.isCurrency ?? false,
       isQuantitative: env?.data?.extra?.isQuantitative ?? false,
     });
+    // Комірки субконто й умовні валютні колонки читають slots — стан форми,
+    // не $root: таблиця сама про його зміну не дізнається.
+    this.entries.refresh();
   }
 
   /** Чи веде рахунок рядка (будь-який бік) валютний / кількісний облік. */
@@ -167,8 +231,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
   }
 
   private setLine(index: number, patch: Partial<ManualEntryFormLine>) {
-    const entries = this.$root.item.entries.map((l, i) => (i === index ? { ...l, ...patch } : l));
-    this.$root.item = { ...this.$root.item, entries };
+    this.entries.patch(index, patch);
   }
 
   /**
@@ -189,39 +252,6 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     if (value) current[dimension] = value;
     else delete current[dimension];
     this.setLine(index, side === "debit" ? { debitAnalytics: current } : { creditAnalytics: current });
-  }
-
-  private addLine() {
-    this.$root.item = {
-      ...this.$root.item,
-      entries: [...this.$root.item.entries, {
-        id: null,
-        lineNo: this.$root.item.entries.length + 1,
-        debitAccount: "",
-        debitAnalytics: {},
-        creditAccount: "",
-        creditAnalytics: {},
-        amount: new Decimal(0).toFixed(MONEY_PRECISION),
-        currencyId: "",
-        currency: null,
-        currencyAmount: new Decimal(0).toFixed(MONEY_PRECISION),
-        quantity: new Decimal(0).toFixed(QTY_PRECISION),
-        description: "",
-      }],
-    };
-  }
-
-  private removeLine(index: number) {
-    const entries = this.$root.item.entries
-      .filter((_, i) => i !== index)
-      .map((l, i) => ({ ...l, lineNo: i + 1 }));
-    this.$root.item = { ...this.$root.item, entries };
-  }
-
-  private get total(): string {
-    return this.$root.item.entries
-      .reduce((s, l) => s.plus(dec(l.amount)), new Decimal(0))
-      .toFixed(MONEY_PRECISION);
   }
 
   /** Комірка рахунку: пікер плану рахунків (групи в нього не потрапляють). */
@@ -274,59 +304,60 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
   }
 
   /**
-   * Комірки валюти + суми у валюті. Порожні, якщо рахунки рядка валюту не
-   * ведуть: колонка показана заради інших рядків, але цей її не потребує.
+   * Комірки валюти й суми у валюті — порожні (тире), якщо рахунки рядка валюту
+   * не ведуть: колонка показана заради інших рядків, але цей її не потребує.
+   * Custom-комірки примітива повертають вміст `<td>`, не сам `<td>`.
    */
-  private renderCurrencyCells(line: ManualEntryFormLine, index: number): TemplateResult {
+  private renderCurrencyPicker(line: ManualEntryFormLine, index: number): TemplateResult {
     if (!this.lineNeeds(line, "currency")) {
-      return html`<td class="cell-text text-base-content/20 text-center">—</td><td></td>`;
+      return html`<span class="text-base-content/20 px-2">—</span>`;
     }
     return html`
-      <td>
-        <ui-picker
-          cell
-          url="catalog/currency"
-          fetch="lookup"
-          display-field="code"
-          hint-field="name"
-          .displayValue=${line.currency?.name ?? ""}
-          .selectedId=${line.currencyId ?? ""}
-          @item-selected=${(e: PickEvent) =>
-            this.setLine(index, { currencyId: e.detail.id, currency: { id: e.detail.id, name: e.detail.label } })}
-          @item-cleared=${() => this.setLine(index, { currencyId: "", currency: null })}
-        ></ui-picker>
-      </td>
-      <td>
-        <ui-decimal
-          cell
-          .precision=${MONEY_PRECISION}
-          .value=${line.currencyAmount}
-          @value-input=${(e: DecimalEvent) => this.setLine(index, { currencyAmount: e.detail.value })}
-          @value-changed=${(e: DecimalEvent) => this.setLine(index, { currencyAmount: e.detail.value })}
-        ></ui-decimal>
-      </td>
+      <ui-picker
+        cell
+        url="catalog/currency"
+        fetch="lookup"
+        display-field="code"
+        hint-field="name"
+        .displayValue=${line.currency?.name ?? ""}
+        .selectedId=${line.currencyId ?? ""}
+        @item-selected=${(e: PickEvent) =>
+          this.setLine(index, { currencyId: e.detail.id, currency: { id: e.detail.id, name: e.detail.label } })}
+        @item-cleared=${() => this.setLine(index, { currencyId: "", currency: null })}
+      ></ui-picker>
     `;
   }
 
-  private renderQuantityCell(line: ManualEntryFormLine, index: number): TemplateResult {
+  private renderCurrencyAmount(line: ManualEntryFormLine, index: number): TemplateResult {
+    if (!this.lineNeeds(line, "currency")) return html``;
+    return html`
+      <ui-decimal
+        cell
+        .precision=${MONEY_PRECISION}
+        .value=${line.currencyAmount}
+        @value-input=${(e: DecimalEvent) => this.setLine(index, { currencyAmount: e.detail.value })}
+        @value-changed=${(e: DecimalEvent) => this.setLine(index, { currencyAmount: e.detail.value })}
+      ></ui-decimal>
+    `;
+  }
+
+  private renderQuantity(line: ManualEntryFormLine, index: number): TemplateResult {
     if (!this.lineNeeds(line, "quantity")) {
-      return html`<td class="cell-text text-base-content/20 text-center">—</td>`;
+      return html`<span class="text-base-content/20 px-2">—</span>`;
     }
     return html`
-      <td>
-        <ui-decimal
-          cell
-          .precision=${QTY_PRECISION}
-          .value=${line.quantity}
-          @value-input=${(e: DecimalEvent) => this.setLine(index, { quantity: e.detail.value })}
-          @value-changed=${(e: DecimalEvent) => this.setLine(index, { quantity: e.detail.value })}
-        ></ui-decimal>
-      </td>
+      <ui-decimal
+        cell
+        .precision=${QTY_PRECISION}
+        .value=${line.quantity}
+        @value-input=${(e: DecimalEvent) => this.setLine(index, { quantity: e.detail.value })}
+        @value-changed=${(e: DecimalEvent) => this.setLine(index, { quantity: e.detail.value })}
+      ></ui-decimal>
     `;
   }
 
   override render() {
-    if (this.running === "get") return html`
+    if (this.running === "get" || !this.slotsReady) return html`
       <div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>
     `;
 
@@ -375,68 +406,13 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
           ? html`<div class="badge badge-success badge-sm self-start">${t("document.posted")}</div>`
           : ""}
 
+        <!-- Табличная часть: каркас — у примітиві (колонки оголошені в
+             конструкторі секції), рахунки/субконто — custom-комірки вище. -->
         <div class="flex items-center justify-between mt-2 mb-1">
           <span class="font-semibold">${t("manualEntry.entries")}</span>
-          <button class="btn btn-sm" @click=${this.addLine}>+ ${t("invoice.addLine")}</button>
+          <ui-tabular-toolbar .section=${this.entries}></ui-tabular-toolbar>
         </div>
-
-        <table class="table table-sm w-full table-tabular">
-          <thead>
-            <tr>
-              <th class="w-10">#</th>
-              <th class="w-24">${t("manualEntry.debit")}</th>
-              <th>${t("manualEntry.debitAnalytics")}</th>
-              <th class="w-24">${t("manualEntry.credit")}</th>
-              <th>${t("manualEntry.creditAnalytics")}</th>
-              <th class="w-32 text-right">${t("invoice.amount")}</th>
-              ${this.showCurrency ? html`
-                <th class="w-20">${t("manualEntry.currency")}</th>
-                <th class="w-28 text-right">${t("manualEntry.currencyAmount")}</th>` : ""}
-              ${this.showQuantity ? html`<th class="w-28 text-right">${t("manualEntry.quantity")}</th>` : ""}
-              <th class="w-10"></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${item.entries.map((line, i) => html`
-              <tr>
-                <td class="cell-text">${line.lineNo}</td>
-                <td>${this.renderAccount(line, i, "debit")}</td>
-                <td>${this.renderAnalytics(line, i, "debit")}</td>
-                <td>${this.renderAccount(line, i, "credit")}</td>
-                <td>${this.renderAnalytics(line, i, "credit")}</td>
-                <td>
-                  <ui-decimal
-                    cell
-                    .precision=${MONEY_PRECISION}
-                    .value=${line.amount}
-                    @value-input=${(e: DecimalEvent) => this.setLine(i, { amount: e.detail.value })}
-                    @value-changed=${(e: DecimalEvent) => this.setLine(i, { amount: e.detail.value })}
-                  ></ui-decimal>
-                </td>
-                ${this.showCurrency ? this.renderCurrencyCells(line, i) : ""}
-                ${this.showQuantity ? this.renderQuantityCell(line, i) : ""}
-                <td class="text-center">
-                  <button class="btn btn-ghost btn-xs text-error" title=${t("common.delete")}
-                    @click=${() => this.removeLine(i)}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                  </button>
-                </td>
-              </tr>
-            `)}
-            ${item.entries.length === 0
-              ? html`<tr><td colspan="7" class="text-center text-base-content/40 py-4">${t("common.noData")}</td></tr>`
-              : ""}
-          </tbody>
-          <tfoot>
-            <tr>
-              <th colspan="5" class="text-right">${t("invoice.total")}</th>
-              <th class="text-right tabular-nums">${this.total}</th>
-              ${this.showCurrency ? html`<th></th><th></th>` : ""}
-              ${this.showQuantity ? html`<th></th>` : ""}
-              <th></th>
-            </tr>
-          </tfoot>
-        </table>
+        <ui-tabular-table .section=${this.entries}></ui-tabular-table>
 
         ${this.renderFormActions(html`
           ${item.isPosted

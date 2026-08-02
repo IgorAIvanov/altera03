@@ -41,5 +41,11 @@
   "groups.delete": "Видалити групу",
   "groups.name": "Назва групи",
   "groups.toGroup": "До групи…",
-  "groups.moveTitle": "Перемістити до групи"
+  "groups.moveTitle": "Перемістити до групи",
+  "tabular.add": "Додати рядок",
+  "tabular.copy": "Копіювати рядок",
+  "tabular.delete": "Видалити рядок",
+  "tabular.up": "Вище",
+  "tabular.down": "Нижче",
+  "tabular.total": "Разом"
 }

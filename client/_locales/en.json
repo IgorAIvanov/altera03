@@ -41,5 +41,11 @@
   "groups.delete": "Delete group",
   "groups.name": "Group name",
   "groups.toGroup": "To group…",
-  "groups.moveTitle": "Move to group"
+  "groups.moveTitle": "Move to group",
+  "tabular.add": "Add row",
+  "tabular.copy": "Copy row",
+  "tabular.delete": "Delete row",
+  "tabular.up": "Up",
+  "tabular.down": "Down",
+  "tabular.total": "Total"
 }

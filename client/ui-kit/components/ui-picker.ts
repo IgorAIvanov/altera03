@@ -6,6 +6,13 @@ import { apiFetch } from "../../data/api.ts";
 
 @customElement("ui-picker")
 export class UiPicker extends GlobalStyledLitElement {
+  /** host.focus() веде у внутрішній input — без цього клавіатурний обхід
+      табличної частини (ui-tabular-table) не міг би сфокусувати комірку. */
+  static override shadowRootOptions: ShadowRootInit = {
+    ...GlobalStyledLitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
+
   @property({ type: String }) label = "";
   /** Позначка обов'язковості біля підпису — зірочка, як у renderField() форм. */
   @property({ type: Boolean }) required = false;
