@@ -192,6 +192,44 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       assertEquals(body.messages.some((m) => `${m}`.includes("does not exist")), false);
     });
 
+    // Порушення унікальності раніше долітало до форми сирим текстом PostgreSQL
+    // (`duplicate key value violates unique constraint "uq_bank_code"`) зі
+    // статусом 200. Проба стереже переклад за SQLSTATE: відмова — конвертом,
+    // без внутрішньої будови бази.
+    await t.step("модель: порушення унікальності — конверт без тексту PostgreSQL", async () => {
+      const code = "SMOKEUQ1";
+      const created = await client.model("bank", "save", {
+        item: { code, name: "Smoke unique probe" },
+      });
+
+      assertEquals(created.body.ok, true);
+      const bank = created.body.data.item as { id: string } | null;
+      assertExists(bank);
+
+      // Прибирання — у finally: проба нижче може впасти, але свій рядок ми
+      // приберемо в будь-якому разі.
+      try {
+        const duplicate = await client.model("bank", "save", {
+          item: { code, name: "Smoke unique probe 2" },
+        });
+
+        assertEquals(duplicate.status, 200);
+        assertEquals(duplicate.body.ok, false);
+        assertEquals(duplicate.body.messages.length > 0, true);
+        assertEquals(
+          duplicate.body.messages.some((m) => `${m}`.includes("duplicate key")),
+          false,
+        );
+        assertEquals(
+          duplicate.body.messages.some((m) => `${m}`.includes("uq_bank_code")),
+          false,
+        );
+      } finally {
+        const removed = await client.model("bank", "delete", { id: bank.id });
+        assertEquals(removed.body.ok, true);
+      }
+    });
+
     await t.step("вкладення: повний цикл із прибиранням", async () => {
       const payload = "smoke payload";
       const uploaded = await client.upload({

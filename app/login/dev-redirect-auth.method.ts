@@ -13,6 +13,7 @@
  * Це файл **застосунку**, а не фреймворку: ядро провайдерів не постачає, воно
  * дає контракт. Заглушка заразом показує, як виглядає його реалізація.
  */
+import { isProductionEnvironment } from "@altera/server";
 import type {
   AuthAuthorizeInput,
   AuthExchangeInput,
@@ -20,17 +21,8 @@ import type {
   AuthRedirectMethod,
 } from "@altera/server";
 
-const PRODUCTION_MARKERS = ["production", "prod", "staging"];
-
 /** Кого «підтверджує» заглушка, якщо не сказано інакше. */
 const DEFAULT_SUBJECT = "dev-subject";
-
-function isProductionEnvironment(): boolean {
-  return ["NODE_ENV", "APP_ENV", "DENO_ENV"].some((name) => {
-    const value = Deno.env.get(name)?.trim().toLowerCase();
-    return !!value && PRODUCTION_MARKERS.includes(value);
-  });
-}
 
 export interface DevRedirectAuthOptions {
   /** Зовнішній ідентифікатор (аналог OIDC `sub`), який віддасть заглушка. */

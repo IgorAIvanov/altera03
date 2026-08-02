@@ -7,6 +7,7 @@ import { join, resolve } from "@std/path";
 import postgres from "postgres";
 import { buildRepoPrintTemplateRepublishSql } from "./assemble-sql-package.ts";
 import { configFromEnv } from "@altera/server";
+import { assertDevEnvironmentOrExit } from "./dev-guard.ts";
 
 interface SqlManifest {
   output?: string;
@@ -103,6 +104,10 @@ export async function publishAppSql(options: { appDir: string; verbose?: boolean
 }
 
 async function main() {
+  // Той самий запобіжник, що й у publish-sql: пряма точка входу не має бути
+  // дірою повз нього.
+  assertDevEnvironmentOrExit("publish-app-sql");
+
   const verboseMode = Deno.args.includes("--verbose");
   const appArg = Deno.args.find((arg) => !arg.startsWith("--"));
   if (!appArg) {

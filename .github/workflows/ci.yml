@@ -1,0 +1,106 @@
+# CI: чотири перевірки, які досі ганялися лише руками (див. docs/development-plan.md, 1.5).
+#
+# Три незалежні джоби замість одного ланцюжка: smoke і scaffold найдовші, і
+# паралель скорочує час відповіді на PR. Падіння будь-якої — червоний build.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # --allow-scripts: без нього Deno блокує lifecycle-скрипти npm-пакетів,
+      # а збірці фронтенду потрібен бінарник esbuild.
+      - name: Install dependencies
+        run: deno install --allow-scripts
+      - name: Type-check
+        run: deno check server/main.ts app/main.ts app/server.ts scripts/smoke_test.ts scripts/api.ts
+      - name: Package boundaries (check:deps)
+        run: deno task check:deps
+      - name: Unit tests
+        run: deno task test:unit
+      - name: Frontend build
+        run: deno task build:front
+
+  smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: altera
+          POSTGRES_PASSWORD: altera_ci
+          POSTGRES_DB: altera
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U altera"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Install dependencies
+        run: deno install --allow-scripts
+      # Задачі читають ./.env через --env-file — файл мусить існувати.
+      # VITE_DEV_URL непорожній: інакше резолв в'ю шукає dist/.vite/manifest.json,
+      # якого в цьому джобі немає (фронтенд збирається в сусідньому).
+      - name: Create CI .env
+        run: |
+          cat > .env <<'EOF'
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_NAME=altera
+          DB_USERNAME=altera
+          DB_PASSWORD=altera_ci
+          PORT=3000
+          JWT_SECRET=ci-only-secret
+          AUTH_SESSION_TTL_HOURS=720
+          DEV_AUTH_BYPASS=1
+          DEV_AUTH_USER_ID=1
+          VITE_DEV_URL=http://localhost:5173
+          EOF
+      - name: Publish SQL
+        run: deno task sql:assemble && deno task sql:publish
+      # Свіжа база порожня, а dev-bypass відключає автентифікацію, не
+      # авторизацію: DEV_AUTH_USER_ID мусить вказувати на реального користувача
+      # в групі admin. Перший insert у порожню базу дає id = 1.
+      - name: Seed CI user
+        run: |
+          PGPASSWORD=altera_ci psql -h localhost -U altera -d altera -v ON_ERROR_STOP=1 <<'EOF'
+          insert into app.users (login, password_hash, full_name)
+          values ('ci', '', 'CI runner');
+          insert into app.user_group_member (user_group_id, user_id)
+          select g.id, u.id
+          from app.user_group g
+          join app.users u on u.login = 'ci'
+          where g.code = 'admin';
+          EOF
+      - name: Smoke
+        run: deno task smoke
+
+  # Найдорожча перевірка: генерує застосунок у тимчасовий каталог, ставить
+  # опубліковані пакети з JSR і збирає його. Ловить те, чого не видно в
+  # монорепо (експорт-мапи, свіжість template.generated.ts, tsconfig шаблону).
+  scaffold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Install dependencies
+        run: deno install --allow-scripts
+      - name: Scaffold verify
+        run: deno task scaffold:verify

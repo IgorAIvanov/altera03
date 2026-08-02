@@ -409,13 +409,15 @@ skill для агента — [`model-command-access`](.github/skills/model-comm
 контрагентами, AI-розпізнавання вхідних). Гіпотези, прийняті рішення й план —
 [`docs/doc-exchange-plan.md`](docs/doc-exchange-plan.md); коду ще немає.
 
-## Винесення фреймворку в пакети
+## План розвитку
 
-`server/` і `client/` рухаються до того, щоб бути окремими пакетами, на яких
-новий застосунок піднімається scaffold-ом. План, зроблені кроки, відкриті борги
-(перевірка прав у рантаймі, redirect-потік для зовнішніх провайдерів, дрейф схеми
-меню/інтерфейсів) і вже прийняті рішення —
-[`docs/framework-extraction-plan.md`](docs/framework-extraction-plan.md).
+Фреймворк винесено в пакети (`@altera/client`, `@altera/server`, `@altera/tools`,
+`@altera/create` на jsr.io); журнал того кроку — прийняті рішення й знайдені пастки —
+[`docs/legacy/framework-extraction-plan.md`](docs/legacy/framework-extraction-plan.md).
+Актуальний план — [`docs/development-plan.md`](docs/development-plan.md): критичні
+виправлення, обов'язкові компоненти фреймворку (ієрархічні довідники, таблична
+частина як примітив, audit log, dirty-форма), перший прикладний контур (банк/каса),
+експлуатаційний контур. Виконані плани переїжджають у `docs/legacy/`.
 
 ## TypeBox-схема
 
@@ -533,7 +535,8 @@ DB_NAME=altera
 DB_USERNAME=altera
 DB_PASSWORD=altera_secret
 PORT=3000                   # читає app/server.ts, не configFromEnv
-JWT_SECRET=change-me-in-production
+BLOB_TOKEN_SECRET=change-me-in-production  # підпис токенів вкладень; JWT_SECRET — legacy-фолбек;
+                            # з плейсхолдером у продуктиві сервер не стартує
 AUTH_SESSION_TTL_HOURS=720
 BOOTSTRAP_LOGIN=            # логін+пароль разом → створюється адміністратор на старті
 BOOTSTRAP_PASSWORD=

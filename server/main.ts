@@ -7,6 +7,11 @@ export { bootstrap } from "./bootstrap.ts";
 export { configFromEnv } from "./config/config-from-env.ts";
 export type { EnvDerivedConfig } from "./config/config-from-env.ts";
 
+// Єдине означення «продуктивного» оточення (production/prod/staging у
+// NODE_ENV/APP_ENV/DENO_ENV). Локальні копії цієї перевірки в інструментах і
+// застосунку розповзалися — тепер усі беруть її звідси.
+export { findProductionMarker, isProductionEnvironment } from "./config/config-from-env.ts";
+
 export type {
   AgentConfig,
   AuthConfig,

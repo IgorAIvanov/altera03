@@ -126,6 +126,22 @@ create table if not exists app.user_group_member (
 create unique index if not exists uq_user_group_member on app.user_group_member (user_group_id, user_id);
 create index if not exists ix_user_group_member_user on app.user_group_member (user_id) where is_active;
 
+-- ── Одноразове прибирання прототипу ────────────────────────────────────────
+-- Групи епохи «доступу через інтерфейси» були лише контейнерами наборів
+-- екранів і власних прав не мали — у новій схемі вони не значать нічого.
+-- Маркер — таблиця НОВОЇ схеми (як у server/sql/menu): app.user_group_permission
+-- не існує рівно до першої публікації цього файлу, тому умова істинна
+-- один-єдиний раз, і прав у жодної групи на той момент ще немає. Перевіряти
+-- «групу без прав» у migration.sql не можна: він виконується при кожній
+-- публікації і зносив би щойно створену групу, яку ще не наповнили правами.
+do $$
+begin
+  if to_regclass('app.user_group_permission') is null then
+    delete from app.user_group
+    where code not in ('admin', 'viewer');
+  end if;
+end $$;
+
 -- Дії. Перші чотири мають сенс для будь-якої моделі, останні дві — лише для
 -- документів (тип моделі оголошений у manifest.json, а не в БД, тому обмежити
 -- їх на рівні таблиці не можна — це перевіряє рантайм).

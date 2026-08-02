@@ -210,4 +210,4 @@ select * from jsonb_array_elements(app.access_effective(1, '{}'::jsonb) -> 'data
 | `access_can`, `access_denied`, `access_effective` | `server/sql/access/db/access.sql` |
 | Перенос объявления в реестр | `tools/generate-model-runtime-registry.ts` |
 | Экраны управления | `app/admin/user`, `app/admin/user_group` |
-| Разбор принятых решений | [`framework-extraction-plan.md`](framework-extraction-plan.md), п. 4.1 |
+| Разбор принятых решений | [`legacy/framework-extraction-plan.md`](legacy/framework-extraction-plan.md), п. 4.1 |

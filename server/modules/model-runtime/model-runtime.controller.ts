@@ -10,6 +10,8 @@ import { RequestUserService } from "../../common/request-user.service.ts";
 import {
   DATABASE_UNAVAILABLE_MESSAGE,
   isDatabaseUnavailable,
+  isPostgresError,
+  postgresErrorClientMessage,
 } from "../../database/database-error.ts";
 import { ModelCommandError } from "./model-runtime.errors.ts";
 import { ModelRuntimeService } from "./model-runtime.service.ts";
@@ -75,6 +77,20 @@ export class ModelRuntimeController {
       // зламаний. Статус несе сама помилка — деталі вже в консолі.
       if (error instanceof ModelCommandError) {
         return jsonResponse(modelError(error.message), error.status);
+      }
+
+      // Помилка PostgreSQL, що дійшла аж сюди, — вже не «функції немає» (її
+      // перехопив сервіс) і не недоступна БД. Навмисний `raise exception` і
+      // відомі порушення даних (унікальність, довжина, формат) перекладаються
+      // за SQLSTATE — сирий текст називає таблиці й констрейнти і назовні не
+      // виходить. Невідомий код — загальна помилка: деталі лишаються в консолі.
+      if (isPostgresError(error)) {
+        const message = postgresErrorClientMessage(error);
+        if (message !== null) {
+          return modelError(message);
+        }
+        console.error(`❌ ${model}/${command}: PostgreSQL ${error.code}: ${error.message}`);
+        return jsonResponse(modelError("Внутрішня помилка сервера"), 500);
       }
 
       return modelError(

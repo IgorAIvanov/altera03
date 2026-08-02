@@ -22,7 +22,8 @@ export interface EnvDerivedConfig {
 }
 
 const BIGINT_ID_PATTERN = /^\d+$/;
-const PRODUCTION_MARKERS = ["production", "prod"];
+const PRODUCTION_MARKERS = ["production", "prod", "staging"];
+const ENVIRONMENT_VARIABLES = ["NODE_ENV", "APP_ENV", "DENO_ENV"];
 
 function readPositiveInt(name: string, fallback: number): number {
   const raw = Number.parseInt(Deno.env.get(name) ?? "", 10);
@@ -45,11 +46,25 @@ function readBoolean(name: string): boolean | null {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
-function isProductionEnvironment(): boolean {
-  return ["NODE_ENV", "APP_ENV", "DENO_ENV"].some((name) => {
+/**
+ * Єдине означення «продуктивного» оточення на всю систему: ним користуються
+ * дефолт Secure-cookie й заборона DEV_AUTH_BYPASS тут, dev-guard інструментів
+ * (`@altera/tools`) і дев-заглушки входу застосунку. `staging` теж рахується:
+ * дані там такі ж чужі, як у продуктиві. Повертає знайдений маркер у вигляді
+ * `NODE_ENV=production` — готовий рядок для повідомлення про відмову.
+ */
+export function findProductionMarker(): string | null {
+  for (const name of ENVIRONMENT_VARIABLES) {
     const value = Deno.env.get(name)?.trim().toLowerCase();
-    return !!value && PRODUCTION_MARKERS.includes(value);
-  });
+    if (value && PRODUCTION_MARKERS.includes(value)) {
+      return `${name}=${value}`;
+    }
+  }
+  return null;
+}
+
+export function isProductionEnvironment(): boolean {
+  return findProductionMarker() !== null;
 }
 
 function normalizeUserId(value: string | null | undefined): string | null {
@@ -74,6 +89,34 @@ function readDevBypass(): DevBypassConfig | null {
   return {
     userId: normalizeUserId(Deno.env.get("DEV_AUTH_USER_ID") ?? Deno.env.get("DEFAULT_USER_ID")),
   };
+}
+
+const PLACEHOLDER_SECRET = "change-me-in-production";
+
+/**
+ * Секрет підпису токенів вкладень. Основна змінна — BLOB_TOKEN_SECRET;
+ * JWT_SECRET читається як legacy-фолбек. Плейсхолдер з .env.example —
+ * загальновідомий рядок: з ним будь-хто, хто знає id вкладення, підпише
+ * собі `?token=` і обійде права. Тому в продуктиві плейсхолдер або
+ * відсутній секрет валить старт, а не мовчки підписує посилання.
+ */
+function readBlobTokenSecret(): string | null {
+  const secret = readTrimmed("BLOB_TOKEN_SECRET") ?? readTrimmed("JWT_SECRET");
+
+  if (isProductionEnvironment() && (!secret || secret === PLACEHOLDER_SECRET)) {
+    throw new Error(
+      "BLOB_TOKEN_SECRET не задано або лишився плейсхолдер 'change-me-in-production' " +
+        "у продуктивному оточенні — згенеруй власний секрет",
+    );
+  }
+
+  if (secret === PLACEHOLDER_SECRET) {
+    console.warn(
+      "⚠ BLOB_TOKEN_SECRET — плейсхолдер з .env.example; у продуктивному оточенні сервер із ним не стартує",
+    );
+  }
+
+  return secret;
 }
 
 function readBootstrapUser(): AuthConfig["bootstrapUser"] {
@@ -125,8 +168,7 @@ export function configFromEnv(): EnvDerivedConfig {
       publicBaseUrl: readTrimmed("AUTH_PUBLIC_BASE_URL")?.replace(/\/+$/, "") ?? null,
     },
     blob: {
-      // Окремий секрет, інакше — той самий JWT_SECRET (однаковий рівень довіри).
-      tokenSecret: readTrimmed("BLOB_TOKEN_SECRET") ?? readTrimmed("JWT_SECRET"),
+      tokenSecret: readBlobTokenSecret(),
       tokenTtlHours: readPositiveInt("BLOB_TOKEN_TTL_HOURS", 12),
       maxSizeMb: readPositiveInt("BLOB_MAX_SIZE_MB", 10),
     },
