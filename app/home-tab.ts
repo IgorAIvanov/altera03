@@ -3,12 +3,20 @@ import { customElement, state } from "lit/decorators.js";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import "@client/ui-kit/components/ui-select.ts";
+
+const testSelectOptions = [
+  { value: "draft", label: "Чернетка" },
+  { value: "active", label: "Активний" },
+  { value: "archived", label: "Архів" },
+];
 
 @customElement("home-tab")
 export class HomeTab extends LitElement {
   static override styles = [css`:host { display: block; height: 100%; }`, tw];
 
   @state() private pickerResult = "";
+  @state() private selectResult = "";
 
   private open(route: string, id?: string) {
     bus.emit({ type: "tab.open", route, id: id ?? null });
@@ -41,6 +49,23 @@ export class HomeTab extends LitElement {
           ></ui-picker>
           ${this.pickerResult ? html`
             <div class="mt-2 text-xs text-success">${this.pickerResult}</div>
+          ` : ""}
+        </div>
+
+        <div class="card bg-base-200 border border-base-300 p-4 w-80">
+          <h4 class="text-sm font-semibold mb-3 text-base-content/70">Тест ui-select</h4>
+          <ui-select
+            .value=${this.selectResult}
+            .options=${testSelectOptions}
+            placeholder="Оберіть стан..."
+            label="Стан"
+            label-position="left"
+            @value-changed=${(e: CustomEvent<{ value: string }>) => {
+              this.selectResult = e.detail.value;
+            }}
+          ></ui-select>
+          ${this.selectResult ? html`
+            <div class="mt-2 text-xs text-success">value=${this.selectResult}</div>
           ` : ""}
         </div>
       </div>

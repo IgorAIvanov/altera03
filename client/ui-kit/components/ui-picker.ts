@@ -45,6 +45,7 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: Boolean }) visible = true;
 
   @state() private _items: Array<Record<string, unknown>> = [];
+  @state() private _activeIndex = -1;
 
   @query("ul") private _popover?: HTMLUListElement;
   @query("input") private _input?: HTMLInputElement;
@@ -58,19 +59,36 @@ export class UiPicker extends GlobalStyledLitElement {
       this._popover.showPopover();
     }
     if (this._items.length === 0 && open) this._popover.hidePopover();
+    if (this._activeIndex >= 0) {
+      this._popover.querySelector<HTMLElement>(`[data-index="${this._activeIndex}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    }
   }
 
   private _positionPopover() {
     if (!this._popover || !this._input) return;
     const rect = this._input.getBoundingClientRect();
-    this._popover.style.top    = `${rect.bottom + 2}px`;
+    const gap = 2;
+    const desiredHeight = Math.min(this._items.length, this.listSize) * 28 + 8;
+    const below = window.innerHeight - rect.bottom - gap;
+    const above = rect.top - gap;
+    const openAbove = below < desiredHeight && above > below;
+    const availableHeight = Math.max(0, openAbove ? above : below);
+
+    this._popover.style.top = openAbove
+      ? `${Math.max(0, rect.top - gap - Math.min(desiredHeight, availableHeight))}px`
+      : `${rect.bottom + gap}px`;
     this._popover.style.left   = `${rect.left}px`;
     this._popover.style.width  = `${rect.width}px`;
+    this._popover.style.maxHeight = `${Math.min(desiredHeight, availableHeight)}px`;
   }
 
-  // браузер закрыл popover (Esc или клик снаружи) — очищаем список
+  // браузер закрыл popover (Esc или клік ззовні) — очищаємо список
   private _onPopoverToggle(e: Event) {
-    if ((e as ToggleEvent).newState === "closed") this._items = [];
+    if ((e as ToggleEvent).newState === "closed") {
+      this._items = [];
+      this._activeIndex = -1;
+    }
   }
 
   private get _modelName() {
@@ -88,6 +106,7 @@ export class UiPicker extends GlobalStyledLitElement {
       const data = await res.json();
       const rows = data?.data?.rows ?? data?.rows ?? [];
       this._items = Array.isArray(rows) ? rows as Array<Record<string, unknown>> : [];
+      this._activeIndex = -1;
     } catch (e) {
       console.error("[ui-picker] fetch error:", e);
     }
@@ -96,8 +115,45 @@ export class UiPicker extends GlobalStyledLitElement {
   private _onInput(e: Event) {
     const val = (e.target as HTMLInputElement).value;
     this.displayValue = val;
-    if (!val) { this.selectedId = ""; this._items = []; this._emitCleared(); return; }
+    if (!val) { this.selectedId = ""; this._items = []; this._activeIndex = -1; this._emitCleared(); return; }
     this._fetch(val);
+  }
+
+  private _onKeyDown(e: KeyboardEvent) {
+    if (this._items.length === 0) return;
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      e.stopPropagation();
+      this._moveActive(e.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+
+    if (e.key === "Enter" && this._activeIndex >= 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      this._onSelect(this._items[this._activeIndex]);
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      this._items = [];
+      this._activeIndex = -1;
+      this._popover?.hidePopover();
+      this._input?.focus();
+    }
+  }
+
+  /** Перший ↑/↓ переносить фокус із input у список, наступні — між пунктами. */
+  private _moveActive(step: 1 | -1) {
+    this._activeIndex = this._activeIndex < 0
+      ? (step > 0 ? 0 : this._items.length - 1)
+      : (this._activeIndex + step + this._items.length) % this._items.length;
+    requestAnimationFrame(() => {
+      this._popover?.querySelector<HTMLButtonElement>(`[data-index="${this._activeIndex}"]`)?.focus();
+    });
   }
 
   private _onSelect(item: Record<string, unknown>) {
@@ -156,6 +212,7 @@ export class UiPicker extends GlobalStyledLitElement {
           placeholder="${this.placeholder}"
           ?disabled=${this.disabled}
           @input=${this._onInput}
+          @keydown=${this._onKeyDown}
         />
         ${this.showClear ? html`
           <button class="btn btn-square btn-sm join-item"
@@ -181,12 +238,14 @@ export class UiPicker extends GlobalStyledLitElement {
       <ul
         popover
         @toggle=${this._onPopoverToggle}
-        class="menu menu-xs rounded-box shadow-md overflow-y-auto p-1"
-        style="position:fixed; margin:0; inset:unset; max-height:calc(${this.listSize} * 1.75rem); background:#ffffff; border:1px solid var(--color-base-300,#d1d5db); flex-direction:column; flex-wrap:nowrap;${this._items.length === 0 ? "display:none;" : ""}"
+        @keydown=${this._onKeyDown}
+        class="menu rounded-box shadow-md overflow-y-auto p-1"
+        style="position:fixed; margin:0; inset:unset; background:#ffffff; border:1px solid var(--color-base-300,#d1d5db); flex-direction:column; flex-wrap:nowrap;${this._items.length === 0 ? "display:none;" : ""}"
       >
-        ${this._items.map(item => html`
+        ${this._items.map((item, index) => html`
           <li>
-            <button @mousedown=${(e: Event) => { e.preventDefault(); this._onSelect(item); }}>
+            <button data-index=${index} class=${index === this._activeIndex ? "active" : ""}
+              @mousedown=${(e: Event) => { e.preventDefault(); this._onSelect(item); }}>
               ${item[this.displayField] ?? item.name}
               ${this.hintField
                 ? html`<span class="text-xs opacity-50 truncate">${item[this.hintField] ?? ""}</span>`

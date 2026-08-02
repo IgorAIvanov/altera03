@@ -26,6 +26,7 @@
     "./ui-kit/components/ui-group-tree.ts": "./ui-kit/components/ui-group-tree.ts",
     "./ui-kit/components/ui-image.ts": "./ui-kit/components/ui-image.ts",
     "./ui-kit/components/ui-picker.ts": "./ui-kit/components/ui-picker.ts",
+    "./ui-kit/components/ui-select.ts": "./ui-kit/components/ui-select.ts",
     "./ui-kit/tabular/tabular-section.ts": "./ui-kit/tabular/tabular-section.ts",
     "./ui-kit/tabular/ui-tabular-table.ts": "./ui-kit/tabular/ui-tabular-table.ts",
     "./ui-kit/tabular/ui-tabular-toolbar.ts": "./ui-kit/tabular/ui-tabular-toolbar.ts",

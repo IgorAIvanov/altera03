@@ -26,6 +26,7 @@ import { dec, type TabularColumn, type TabularSection } from "./tabular-section.
 import "../components/ui-picker.ts";
 import "../components/ui-decimal.ts";
 import "../components/ui-date.ts";
+import "../components/ui-select.ts";
 
 type PickEvent = CustomEvent<{ id: string; label: string }>;
 type ValueEvent = CustomEvent<{ value: string }>;
