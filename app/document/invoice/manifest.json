@@ -2,6 +2,9 @@
   "model": "invoice",
   "type": "document",
   "schema": "app",
+  "audit": {
+    "commands": ["save", "delete", "post", "unpost"]
+  },
   "document": {
     "name": "Накладна",
     "shortName": "Накл.",

@@ -26,6 +26,13 @@ type ManifestRecord = {
   type?: string;
   schema?: string;
   /**
+   * Політика аудиту моделі. `true` пише всі команди, об'єкт — лише перелічені;
+   * відсутність блоку не створює записів аудиту.
+   */
+  audit?: boolean | {
+    commands?: string[];
+  };
+  /**
    * Друковані форми моделі. Сам блок читає `sql:assemble` (сеє шаблони в БД);
    * тут його наявність — ознака «модель друкується», з якої виводиться
    * TS-команда `printPdf`.
@@ -111,9 +118,16 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
 
     const modelTypeLine = manifest.type ? `    type: ${JSON.stringify(manifest.type)}` : null;
     const modelSchemaLine = manifest.schema ? `    schema: ${JSON.stringify(manifest.schema)}` : null;
+    const audit = manifest.audit;
+    const modelAuditLine = audit === true
+      ? "    audit: true"
+      : audit && Array.isArray(audit.commands)
+      ? `    audit: { commands: ${JSON.stringify(audit.commands)} }`
+      : null;
     const bodyParts = [
       modelTypeLine,
       modelSchemaLine,
+      modelAuditLine,
       sqlCommandEntries.length ? `    sqlCommands: {\n${sqlCommandEntries.join(",\n")}\n    }` : null,
       accessEntries.length ? `    access: {\n${accessEntries.join(",\n")}\n    }` : null,
     ]

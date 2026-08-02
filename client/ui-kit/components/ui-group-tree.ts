@@ -61,7 +61,7 @@ export class UiGroupTree extends GlobalStyledLitElement {
   // daisyUI-варіант і не залежить від структурних змінних теми (`--border`,
   // `--size-selector` — див. коментар у styles/theme.css).
   static override styles: CSSResultGroup = [tw, css`
-    :host { display: block; background: var(--color-base-100, #ffffff); }
+    :host { display: block; }
     .node {
       display: flex; align-items: center; gap: .35rem;
       padding: .18rem .35rem; border-radius: .25rem;

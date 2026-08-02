@@ -9,8 +9,10 @@
   "models": [
     "@core/base",
     "@core/access",
+    "@core/audit",
     "@core/menu",
     "admin/menu",
+    "admin/audit_log",
     "admin/user_group",
     "@core/attachment",
     "catalog/organization",

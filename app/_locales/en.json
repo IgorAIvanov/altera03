@@ -1,4 +1,13 @@
 {
+  "auditLog.titleMany": "Audit log",
+  "auditLog.occurredAt": "Time",
+  "auditLog.user": "User",
+  "auditLog.model": "Model",
+  "auditLog.command": "Command",
+  "auditLog.recordId": "Record",
+  "auditLog.result": "Result",
+  "auditLog.success": "Success",
+  "auditLog.failure": "Failed",
   "header.currentOrganization": "Current organization",
   "header.chooseOrganization": "Select organization",
   "bank.titleMany": "Banks",

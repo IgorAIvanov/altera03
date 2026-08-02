@@ -2,6 +2,7 @@
 
 export const viewManifest = [
   { route: "report/account_card/list", moduleFile: "app/report/account_card/accountCardReport.ts", titleKey: "accountCard.title" },
+  { route: "admin/audit_log/list", moduleFile: "app/admin/audit_log/auditLogList.ts", titleKey: "auditLog.titleMany" },
   { route: "catalog/bank/list", moduleFile: "app/catalog/bank/bankList.ts", titleKey: "bank.titleMany" },
   { route: "catalog/bank/edit", moduleFile: "app/catalog/bank/bankEdit.ts", titleKey: "bank.titleOne" },
   { route: "catalog/bank/picker", moduleFile: "app/catalog/bank/bankPicker.ts", titleKey: "bank.titleMany" },

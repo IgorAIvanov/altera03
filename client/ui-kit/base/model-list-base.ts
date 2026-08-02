@@ -153,17 +153,21 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   static override styles: CSSResultGroup = [tw, css`
     tr.selected td { background: #cfe0f3 !important; color: var(--color-base-content, #243746) !important; }
     th.sortable { cursor: pointer; user-select: none; }
+    .group-panel { background: var(--app-surface, #f6f8fa); }
+    .group-panel-frame { border: 1px solid var(--app-border-strong, #98a7b4); }
   `];
 
   // ── Обов'язкові для підкласу (`model` успадковано з BaseUI) ────────────────
   protected abstract columns: ListColumn<Row>[];
-  protected abstract editRoute: string;
+  protected abstract editRoute: string | null;
 
   // Список не має незбережених змін: його $root оновлюється кожним load.
   protected override dirtyTracking = false;
 
   // ── Опційні налаштування ──────────────────────────────────────────────────
   protected listCommand = "list";
+  /** Журнал або інший незмінний список: залишає пошук, сортування й Excel. */
+  protected readonly = false;
   /**
    * Ієрархічний довідник (патерн A2v10): основну площу займає плоский список
    * із пагінацією, праворуч — дерево груп із чекбоксами-фільтром, у тулбарі —
@@ -263,7 +267,9 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
     return (row as Record<string, unknown>).name as string ?? row.id;
   }
   /** Дія активації рядка (подвійний клік). За замовчуванням — відкрити edit. */
-  protected onActivate(row: Row) { this.openEdit(row.id); }
+  protected onActivate(row: Row) {
+    if (this.editRoute) this.openEdit(row.id);
+  }
 
   // ── Логіка ──────────────────────────────────────────────────────────────────
   protected async load() {
@@ -358,6 +364,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
   }
 
   protected openEdit(id: string | null) {
+    if (!this.editRoute) return;
     bus.emit({ type: "tab.open", route: this.editRoute, id });
   }
 
@@ -446,17 +453,19 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
 
         <!-- Тулбар -->
         <div class="flex items-center gap-2 p-2 border-b border-base-300 flex-wrap">
-          <button class="btn btn-sm btn-primary" @click=${() => this.openEdit(null)}>
-            ${icon.create} ${t("common.create")}
-          </button>
-          <button class="btn btn-sm" ?disabled=${!this.selectedId}
-            @click=${() => this.openEdit(this.selectedId)}>
-            ${icon.open} ${t("common.open")}
-          </button>
-          <button class="btn btn-sm btn-error btn-outline" ?disabled=${!this.selectedId}
-            @click=${this.deleteSelected}>
-            ${icon.delete} ${t("common.delete")}
-          </button>
+          ${this.readonly ? nothing : html`
+            <button class="btn btn-sm btn-primary" @click=${() => this.openEdit(null)}>
+              ${icon.create} ${t("common.create")}
+            </button>
+            <button class="btn btn-sm" ?disabled=${!this.selectedId}
+              @click=${() => this.openEdit(this.selectedId)}>
+              ${icon.open} ${t("common.open")}
+            </button>
+            <button class="btn btn-sm btn-error btn-outline" ?disabled=${!this.selectedId}
+              @click=${this.deleteSelected}>
+              ${icon.delete} ${t("common.delete")}
+            </button>
+          `}
           ${this.hierarchy
             ? html`
               <button class="btn btn-sm" ?disabled=${!this.selectedId} @click=${this.#openMoveDialog}>
@@ -489,7 +498,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
         ${this.renderHeaderArea()}
 
         <!-- Основна площа: таблиця (+ дерево груп праворуч для ієрархії) -->
-        <div class="flex flex-1 min-h-0">
+        <div class="flex flex-1 min-h-0 ${this.hierarchy ? "pr-3" : ""}">
 
         <!-- Таблиця -->
         <div class="flex-1 overflow-auto px-2">
@@ -515,9 +524,9 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
                   <tbody>
                     ${this.rows.map((row) => html`
                       <tr
-                        class="cursor-pointer hover ${row.id === this.selectedId ? "selected" : ""} ${this.rowClass(row)}"
-                        @click=${() => { this.selectedId = row.id; }}
-                        @dblclick=${() => this.onActivate(row)}
+                        class="${this.readonly ? "" : "cursor-pointer hover"} ${row.id === this.selectedId ? "selected" : ""} ${this.rowClass(row)}"
+                        @click=${() => { if (!this.readonly) this.selectedId = row.id; }}
+                        @dblclick=${() => { if (!this.readonly) this.onActivate(row); }}
                       >
                         ${this.columns.map((col) => html`
                           <td class="${col.muted ? "text-base-content/60" : ""} ${alignClass(col.align)}"
@@ -535,11 +544,13 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
 
         ${this.hierarchy
           ? html`
-            <aside class="w-60 shrink-0 border-l border-base-300 overflow-auto bg-base-100">
-              <ui-group-tree .model=${this.model} mode="filter"
-                @groups-changed=${this.#onGroupsChanged}
-                @groups-mutated=${() => this.load()}>
-              </ui-group-tree>
+            <aside class="group-panel w-60 shrink-0 border-l border-base-300 flex flex-col min-h-0">
+              <div class="group-panel-frame flex-1 min-h-0 overflow-auto">
+                  <ui-group-tree .model=${this.model} mode="filter"
+                    @groups-changed=${this.#onGroupsChanged}
+                    @groups-mutated=${() => this.load()}>
+                  </ui-group-tree>
+                </div>
             </aside>`
           : nothing}
         </div>

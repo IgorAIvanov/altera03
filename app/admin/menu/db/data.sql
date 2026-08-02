@@ -44,7 +44,8 @@ from (values
   ('administration', 'print_template',     'Шаблони друку',                  'print',        'admin/print_template/list',       10),
   ('administration', 'menu',               'Меню',                           'settings',     'admin/menu/list',                 20),
   ('administration', 'user',               'Користувачі',                    'counterparty', 'admin/user/list',                 30),
-  ('administration', 'user_group',         'Групи користувачів',             'counterparty', 'admin/user_group/list',           40)
+  ('administration', 'user_group',         'Групи користувачів',             'counterparty', 'admin/user_group/list',           40),
+  ('administration', 'audit_log',          'Журнал аудиту',                  'settings',     'admin/audit_log/list',            50)
 ) as v(parent_code, code, name, icon_key, route_path, sort_order)
 join app.menu m      on m.code = 'default'
 join app.menu_item p on p.menu_id = m.id and p.parent_id is null and p.code = v.parent_code

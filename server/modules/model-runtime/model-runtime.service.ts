@@ -75,6 +75,30 @@ function toSqlJsonPayload(payload: unknown): JsonValue {
   return toPlainJson(payload ?? {});
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function auditRecordId(payload: Record<string, unknown>, result?: unknown): string | null {
+  const data = asRecord(asRecord(result)?.data);
+  const item = asRecord(data?.item);
+  const extra = asRecord(data?.extra);
+  const payloadItem = asRecord(payload.item);
+  const candidates = [item?.id, extra?.id, payloadItem?.id, payload.id];
+
+  for (const candidate of candidates) {
+    const id = typeof candidate === "string" || typeof candidate === "number" ? String(candidate) : "";
+    if (/^\d+$/.test(id)) return id;
+  }
+  return null;
+}
+
+function shouldAudit(config: ModelBackendConfig | undefined, command: string) {
+  return config?.audit === true || config?.audit?.commands.includes(command) === true;
+}
+
 function assertIdentifier(value: string, label: string) {
   if (!IDENTIFIER_PATTERN.test(value)) {
     throw new Error(`${label} має містити лише lowercase, digits та underscore`);
@@ -197,46 +221,91 @@ export class ModelRuntimeService {
 
     const normalizedPayload = normalizePayload(payload);
     const config = getModelConfig(model);
-    const tsCommand = config?.tsCommands?.[command];
+    let result: unknown;
+    try {
+      const tsCommand = config?.tsCommands?.[command];
 
-    // Перевірки «чи є така модель у реєстрі» тут свідомо немає. Моделі ядра
-    // (attachment) живуть у server/sql і манифеста в застосунку не мають — вони
-    // доходять сюди з `config === undefined` і працюють стандартним маршрутом
-    // `app.<model>_<command>`. Неіснуючу модель відсіє сама база: функції немає,
-    // і нижче це стане зрозумілою 501.
-    const sqlCommand = tsCommand ? null : getSqlCommandConfig(model, command, config);
+      // Перевірки «чи є така модель у реєстрі» тут свідомо немає. Моделі ядра
+      // (attachment) живуть у server/sql і манифеста в застосунку не мають — вони
+      // доходять сюди з `config === undefined` і працюють стандартним маршрутом
+      // `app.<model>_<command>`. Неіснуючу модель відсіє сама база: функції немає,
+      // і нижче це стане зрозумілою 501.
+      const sqlCommand = tsCommand ? null : getSqlCommandConfig(model, command, config);
 
-    // Спершу з'ясовуємо, чи команда взагалі є, і лише потім — чи є право.
-    // Зворотний порядок перетворював би друкарську помилку в імені команди на
-    // «немає доступу», і шукали б її не там.
-    if (!tsCommand && !sqlCommand) {
-      throw ModelCommandError.notConfigured(model, command);
+      // Спершу з'ясовуємо, чи команда взагалі є, і лише потім — чи є право.
+      // Зворотний порядок перетворював би друкарську помилку в імені команди на
+      // «немає доступу», і шукали б її не там.
+      if (!tsCommand && !sqlCommand) {
+        throw ModelCommandError.notConfigured(model, command);
+      }
+
+      const action = resolveRequiredAction(model, command, normalizedPayload, config);
+      if (action === null) {
+        throw ModelCommandError.accessNotDeclared(model, command);
+      }
+
+      const candidate = tsCommand
+        ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand, action)
+        : await this.executeSqlCommand(model, command, normalizedPayload, userId, config, sqlCommand!, action);
+
+      // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
+      // SQL-функція без `return` або з `return null`: клієнт діставав `null`
+      // замість `{ ok, data, messages }`, форма мовчки не наповнювалася, і слідів
+      // не лишалося ніде. Краще голосна помилка тут, ніж порожня форма там.
+      if (!looksLikeEnvelope(candidate)) {
+        console.error(
+          `❌ ${model}/${command}: відповідь не є конвертом:`,
+          candidate === undefined ? "undefined" : JSON.stringify(candidate)?.slice(0, 200),
+        );
+        throw ModelCommandError.badResponse(model, command);
+      }
+      result = candidate;
+    } catch (error) {
+      if (shouldAudit(config, command)) {
+        await this.writeAudit(model, command, normalizedPayload, userId, false);
+      }
+      throw error;
     }
 
-    const action = resolveRequiredAction(model, command, normalizedPayload, config);
-    if (action === null) {
-      throw ModelCommandError.accessNotDeclared(model, command);
-    }
-
-    const result = tsCommand
-      ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand, action)
-      : await this.executeSqlCommand(model, command, normalizedPayload, userId, config, sqlCommand!, action);
-
-    // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
-    // SQL-функція без `return` або з `return null`: клієнт діставав `null`
-    // замість `{ ok, data, messages }`, форма мовчки не наповнювалася, і слідів
-    // не лишалося ніде. Краще голосна помилка тут, ніж порожня форма там.
-    if (!looksLikeEnvelope(result)) {
-      console.error(
-        `❌ ${model}/${command}: відповідь не є конвертом:`,
-        result === undefined ? "undefined" : JSON.stringify(result)?.slice(0, 200),
+    if (shouldAudit(config, command)) {
+      await this.writeAudit(
+        model,
+        command,
+        normalizedPayload,
+        userId,
+        (result as { ok: boolean }).ok,
+        result,
       );
-      throw ModelCommandError.badResponse(model, command);
     }
 
     // Ключі доступу до вкладень (`token`, `<field>Token`) назовні не виходять —
     // рантайм міняє їх на підписані токени. Див. blob-token.ts.
     return await signEnvelopeTokens(result, { userId, sessionId });
+  }
+
+  /** Аудит не може змінювати результат команди, але збій журналу лишає слід у консолі. */
+  private async writeAudit(
+    model: string,
+    command: string,
+    payload: Record<string, unknown>,
+    userId: string,
+    isSuccess: boolean,
+    result?: unknown,
+  ) {
+    try {
+      await this.db.sql`
+        insert into app.audit_log (user_id, model, command, record_id, is_success)
+        values (
+          ${userId}::bigint,
+          ${model},
+          ${command},
+          ${auditRecordId(payload, result)}::bigint,
+          ${isSuccess}
+        )
+      `;
+    } catch (error) {
+      console.error(`❌ audit ${model}/${command}: не вдалося записати подію:`, error);
+    }
   }
 
   /**

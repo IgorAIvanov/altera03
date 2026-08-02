@@ -1,0 +1,12 @@
+{
+  "model": "audit_log",
+  "type": "admin",
+  "schema": "app",
+  "sql": { "generate": false },
+  "views": {
+    "list": {
+      "module": "./auditLogList.ts",
+      "titleKey": "auditLog.titleMany"
+    }
+  }
+}

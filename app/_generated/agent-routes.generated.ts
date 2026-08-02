@@ -5,6 +5,10 @@ export const agentModelRoutes = {
     listPath: "/report/account_card/list",
     type: "report"
   },
+  "audit_log": {
+    listPath: "/admin/audit_log/list",
+    type: "admin"
+  },
   "bank": {
     editPath: "/catalog/bank/edit",
     listPath: "/catalog/bank/list",

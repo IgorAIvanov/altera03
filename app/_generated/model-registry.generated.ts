@@ -14,6 +14,10 @@ export const generatedModelRegistry = {
     "index": "view"
     }
   },
+  "audit_log": {
+    type: "admin",
+    schema: "app"
+  },
   "bank": {
     type: "catalog",
     schema: "app",
@@ -52,6 +56,7 @@ export const generatedModelRegistry = {
   "invoice": {
     type: "document",
     schema: "app",
+    audit: { commands: ["save","delete","post","unpost"] },
     sqlCommands: {
     "printData": "invoice_print_data"
     },

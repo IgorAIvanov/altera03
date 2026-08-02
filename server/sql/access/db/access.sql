@@ -414,8 +414,9 @@ begin
 
   -- На користувача посилаються документи й вкладення (created_by та інші),
   -- тому видалення можливе лише коли слідів немає. Інакше — деактивація.
-  if exists (select 1 from app.document d where v_id in (d.created_by, d.updated_by, d.posted_by))
-     or exists (select 1 from app.attachment a where a.created_by = v_id) then
+    if exists (select 1 from app.document d where v_id in (d.created_by, d.updated_by, d.posted_by))
+      or exists (select 1 from app.attachment a where a.created_by = v_id)
+      or exists (select 1 from app.audit_log l where l.user_id = v_id) then
     update app.users set is_active = false, updated_at = now() where id = v_id;
     return jsonb_build_object(
       'ok', true,

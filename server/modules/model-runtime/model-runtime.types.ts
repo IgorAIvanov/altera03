@@ -26,6 +26,13 @@ export interface TsModelCommandConfig {
 export interface ModelBackendConfig {
   type?: string;
   schema?: string;
+  /**
+   * `true` — усі команди моделі; список — лише вказані команди. Відсутність
+   * політики вимикає аудит, щоб читання не роздували журнал.
+   */
+  audit?: true | {
+    commands: string[];
+  };
   sqlCommands?: Record<string, SqlModelCommandDefinition>;
   tsCommands?: Record<string, TsModelCommandConfig>;
   /**
