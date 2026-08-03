@@ -65,8 +65,8 @@
     "@sinclair/typebox/value": "npm:@sinclair/typebox@^0.34.0/value",
 
 
-    "vite": "npm:vite@^6.3.5",
-    "vite-plugin-static-copy": "npm:vite-plugin-static-copy@^2.3.0",
+    "vite": "npm:vite@^8.2.0",
+    "vite-plugin-static-copy": "npm:vite-plugin-static-copy@^4.1.1",
     "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.3.0",
     "lit": "npm:lit@^3.3.1",
     "@lit-labs/signals": "npm:@lit-labs/signals@^0.1.3",

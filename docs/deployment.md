@@ -33,9 +33,10 @@ cd my-erp
 Що з'явиться: `deno.json` із задачами, `vite.config.ts` на два рядки, `app/` з обома
 composition root і оболонкою, `docker-compose.yml`, `.env.example`, `tsconfig.json`.
 
-**`tsconfig.json` видаляти не можна.** Його читає esbuild усередині Vite (а не `deno.json`),
-і без `experimentalDecorators` застосунок збереться, пройде перевірку типів і відкриється
-**білою сторінкою**: декоратори Lit падають у рантаймі.
+**`tsconfig.json` видаляти не можна.** Його читає транспілятор усередині Vite (з Vite 8 це
+Oxc, до того був esbuild) — `deno.json` для нього не існує. Без `experimentalDecorators`
+застосунок збереться, пройде перевірку типів і відкриється **білою сторінкою**: декоратори
+Lit падають у рантаймі.
 
 ---
 
