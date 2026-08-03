@@ -13,8 +13,49 @@
 //   - `bus.request()` типізований узагальнено, тож `envelope.data` без явного
 //     звуження не компілюється.
 // Обидва видно лише на згенерованому застосунку. Звідси й ця перевірка.
-import { join, relative, resolve, SEPARATOR } from "@std/path";
+import { join, relative, resolve, SEPARATOR, toFileUrl } from "@std/path";
 import { normalizeEol } from "./normalize-eol.ts";
+
+/** Пакети монорепо, на які шаблон посилається через jsr. */
+const LOCAL_PACKAGES = ["client", "server", "tools"];
+
+/**
+ * Перевести залежності згенерованого застосунку на вихідники цього репозиторію.
+ *
+ * Без цього перевірка має сліпу пляму рівно там, де вона найпотрібніша. Шаблон
+ * пінить пакети діапазоном (`jsr:@altera/client@^0.5.0`), тож перевіряється
+ * завжди ОПУБЛІКОВАНА версія — а публікація на jsr незворотна. Поки в шаблоні
+ * стоїть діапазон, якого в реєстрі ще немає, крок `deno install` падає на
+ * нерозв'язному пінові й до збірки не доходить: дефект у самому шаблоні
+ * лишається невидимим, поки його не опублікують назавжди.
+ *
+ * `links` (у Deno < 2.9 — `patch`) підміняє jsr-залежність каталогом на диску,
+ * не чіпаючи карту імпортів: у `deno.json` лишається той самий діапазон, просто
+ * резолвиться він локально.
+ *
+ * Чого цей режим НЕ покриває: пресет визначає каталог фреймворку по власному
+ * `import.meta.url`, і з `links` той файловий — тобто йде монорепо-гілка
+ * `resolveFrameworkDir()`, а не гілка `vendor/jsr.io/...`. Вендорений розклад
+ * перевіряє лише звичайний прогін, уже після публікації.
+ */
+async function linkLocalPackages(appDir: string, repoRoot: string): Promise<string[]> {
+  const configPath = join(appDir, "deno.json");
+  const config = JSON.parse(await Deno.readTextFile(configPath));
+
+  const links: string[] = [];
+  for (const pkg of LOCAL_PACKAGES) {
+    const dir = join(repoRoot, pkg);
+    try {
+      if ((await Deno.stat(dir)).isDirectory) links.push(toFileUrl(dir).href);
+    } catch {
+      // пакета немає — не біда, лінкуємо ті, що є
+    }
+  }
+
+  config.links = links;
+  await Deno.writeTextFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  return links;
+}
 
 async function run(cmd: string[], cwd: string): Promise<{ ok: boolean; output: string }> {
   const command = new Deno.Command(Deno.execPath(), { args: cmd, cwd, stdout: "piped", stderr: "piped" });
@@ -71,7 +112,9 @@ async function checkTemplateFresh(): Promise<string[]> {
   return problems;
 }
 
-export async function verifyScaffold(options: { createEntry: string; keep?: boolean }): Promise<boolean> {
+export async function verifyScaffold(
+  options: { createEntry: string; keep?: boolean; local?: boolean },
+): Promise<boolean> {
   const target = await Deno.makeTempDir({ prefix: "altera-scaffold-" });
   const appDir = join(target, "probe");
   // Абсолютний: кроки виконуються з cwd у тимчасовому каталозі, і відносний
@@ -92,8 +135,22 @@ export async function verifyScaffold(options: { createEntry: string; keep?: bool
   }
   console.log("✓ template.generated.ts свіжий");
 
+  // Scaffold — окремо від решти: між ним і `deno install` вклинюється підміна
+  // залежностей на локальні, а вона працює лише з уже згенерованим deno.json.
+  const scaffold = await run(["run", "-A", createEntry, appDir], target);
+  console.log(`${scaffold.ok ? "✓" : "✗"} scaffold`);
+  if (!scaffold.ok) {
+    console.error(scaffold.output.trimEnd());
+    if (!options.keep) await Deno.remove(target, { recursive: true });
+    return false;
+  }
+
+  if (options.local) {
+    const links = await linkLocalPackages(appDir, Deno.cwd());
+    console.log(`✓ links → ${links.map((l) => l.split("/").at(-1)).join(", ")} (локальні вихідники)`);
+  }
+
   const steps: Array<[string, string[], string]> = [
-    ["scaffold", ["run", "-A", createEntry, appDir], target],
     // Свіжу версію фреймворку інакше не поставити: політика мінімального віку
     // залежності блокує все, опубліковане менш ніж 24 години тому.
     ["deno install", ["install", "--min-dep-age=0"], appDir],
@@ -121,7 +178,8 @@ export async function verifyScaffold(options: { createEntry: string; keep?: bool
 
   // Декоратори Lit ламаються не на збірці, а в браузері — «Unsupported decorator
   // location: field», біла сторінка при зелених типах і робочому API. Причина
-  // завжди одна: esbuild усередині Vite не бачить `experimentalDecorators`, бо
+  // завжди одна: транспілятор усередині Vite (з Vite 8 — Oxc, до того esbuild)
+  // не бачить `experimentalDecorators`, бо
   // читає tsconfig.json, а не deno.json. Тут перевіряємо хоча б наявність.
   if (ok) {
     try {
@@ -133,7 +191,7 @@ export async function verifyScaffold(options: { createEntry: string; keep?: bool
         console.log("✓ tsconfig experimentalDecorators");
       }
     } catch {
-      console.error("✗ у згенерованому застосунку немає tsconfig.json — esbuild не побачить experimentalDecorators");
+      console.error("✗ у згенерованому застосунку немає tsconfig.json — Oxc не побачить experimentalDecorators");
       ok = false;
     }
   }
@@ -149,8 +207,15 @@ export async function verifyScaffold(options: { createEntry: string; keep?: bool
 
 if (import.meta.main) {
   const keep = Deno.args.includes("--keep");
+  const local = Deno.args.includes("--local");
   const entry = Deno.args.find((a) => !a.startsWith("--")) ?? "./create/main.ts";
-  const ok = await verifyScaffold({ createEntry: entry, keep });
-  console.log(ok ? "\n✅ шаблон scaffold цілий" : "\n❌ шаблон scaffold зламаний");
+  const ok = await verifyScaffold({ createEntry: entry, keep, local });
+  console.log(
+    ok
+      ? local
+        ? "\n✅ шаблон scaffold цілий (проти локальних вихідників; вендорений розклад — звичайним прогоном після публікації)"
+        : "\n✅ шаблон scaffold цілий"
+      : "\n❌ шаблон scaffold зламаний",
+  );
   if (!ok) Deno.exit(1);
 }
