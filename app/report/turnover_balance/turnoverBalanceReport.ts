@@ -3,7 +3,7 @@ import { customElement } from "lit/decorators.js";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { ReportBase } from "@client/ui-kit/base/report-base.ts";
-import { dateFormat, formatDate } from "@client/shared/datetime.ts";
+import { periodLabel, periodOf } from "@client/shared/period.ts";
 import { currentOrg } from "@shared/current-organization.ts";
 import {
   TurnoverBalanceRootSchema,
@@ -11,12 +11,12 @@ import {
   type TurnoverBalanceRow,
 } from "./turnover_balance.schema.ts";
 import "@client/ui-kit/components/ui-picker.ts";
-import "@client/ui-kit/components/ui-date.ts";
+import "@client/ui-kit/components/ui-period.ts";
 
 export const tagName = "turnover-balance-report";
 
 type PickEvent = CustomEvent<{ id: string; label: string }>;
-type DateEvent = CustomEvent<{ value: string }>;
+type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
 
 const money = new Intl.NumberFormat("uk-UA", {
   minimumFractionDigits: 2,
@@ -38,10 +38,9 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
 
   override connectedCallback() {
     super.connectedCallback();
-    const now = new Date();
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
-    this.$root.$query.dateFrom ||= iso(new Date(now.getFullYear(), now.getMonth(), 1));
-    this.$root.$query.dateTo ||= iso(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    const month = periodOf("month");
+    this.$root.$query.dateFrom ||= month.dateFrom;
+    this.$root.$query.dateTo ||= month.dateTo;
 
     // Поточна організація за замовчуванням, якщо перехід не приніс своєї.
     const org = currentOrg();
@@ -72,9 +71,8 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
   /** Рядок під назвою звіту на папері та в Excel: організація й період. */
   protected override printSubtitle(): string {
     const q = this.$root.$query;
-    const from = formatDate(q.dateFrom, dateFormat.date);
-    const to = formatDate(q.dateTo, dateFormat.date);
-    return [q.organization?.name, from && to ? `${from} — ${to}` : ""].filter(Boolean).join(" · ");
+    const period = periodLabel({ dateFrom: q.dateFrom, dateTo: q.dateTo });
+    return [q.organization?.name, period].filter(Boolean).join(" · ");
   }
 
   /**
@@ -134,18 +132,15 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
             }}
           ></ui-picker>
 
-          <ui-date
-            .label=${t("accountCard.dateFrom")}
-            .value=${q.dateFrom}
-            format=${dateFormat.date}
-            @value-changed=${(e: DateEvent) => { q.dateFrom = e.detail.value; }}
-          ></ui-date>
-          <ui-date
-            .label=${t("accountCard.dateTo")}
-            .value=${q.dateTo}
-            format=${dateFormat.date}
-            @value-changed=${(e: DateEvent) => { q.dateTo = e.detail.value; }}
-          ></ui-date>
+          <ui-period
+            .label=${t("period.label")}
+            .dateFrom=${q.dateFrom}
+            .dateTo=${q.dateTo}
+            @period-changed=${(e: PeriodEvent) => {
+              q.dateFrom = e.detail.dateFrom;
+              q.dateTo = e.detail.dateTo;
+            }}
+          ></ui-period>
         </div>
     `;
   }

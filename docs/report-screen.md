@@ -38,16 +38,25 @@ export class MyReport extends ReportBase<MyRoot> {
   }
 
   protected override printSubtitle(): string {
-    return `${this.$root.$query.organization?.name} · ${period}`;
+    const q = this.$root.$query;
+    return [q.organization?.name, periodLabel({ dateFrom: q.dateFrom, dateTo: q.dateTo })]
+      .filter(Boolean).join(" · ");
   }
 
-  protected override renderFilters() { return html`…ui-picker, ui-date…`; }
+  protected override renderFilters() { return html`…ui-picker, ui-period…`; }
   protected override renderBody()    { return html`<table class="table table-sm w-full">…</table>`; }
 }
 ```
 
 Кнопки «Сформувати» в тулбарі немає навмисно: «Оновити» — це вона і є. Друк і
 Excel вимикаються, поки `rows` порожні.
+
+Період у фільтрах — одним полем
+[`<ui-period>`](../client/ui-kit/components/ui-period.md), а не парою
+`ui-date`: пресети (місяць/квартал/рік), зсув ◀ ▶ і захист від `dateFrom >
+dateTo` уже в компоненті. Дефолт «поточний місяць» — `periodOf("month")` з
+[`client/shared/period.ts`](../client/shared/period.ts), підпис періоду для
+`printSubtitle()` — `periodLabel()` звідти ж.
 
 ## Друк
 

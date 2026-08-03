@@ -171,8 +171,6 @@
   "manualEntry.description": "Description",
   "accountCard.title": "Account card",
   "accountCard.account": "Account",
-  "accountCard.dateFrom": "Period from",
-  "accountCard.dateTo": "to",
   "accountCard.build": "Run",
   "accountCard.document": "Document",
   "accountCard.analytics": "Analytics",

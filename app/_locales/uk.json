@@ -171,8 +171,6 @@
   "manualEntry.description": "Зміст",
   "accountCard.title": "Картка рахунку",
   "accountCard.account": "Рахунок",
-  "accountCard.dateFrom": "Період з",
-  "accountCard.dateTo": "по",
   "accountCard.build": "Сформувати",
   "accountCard.document": "Документ",
   "accountCard.analytics": "Субконто",

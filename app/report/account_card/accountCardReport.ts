@@ -4,6 +4,7 @@ import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { ReportBase } from "@client/ui-kit/base/report-base.ts";
 import { dateFormat, formatDate } from "@client/shared/datetime.ts";
+import { periodLabel, periodOf } from "@client/shared/period.ts";
 import { viewRoute } from "@shared/view-route.ts";
 import { currentOrg } from "@shared/current-organization.ts";
 import {
@@ -13,12 +14,12 @@ import {
   type ReportAnalytic,
 } from "./account_card.schema.ts";
 import "@client/ui-kit/components/ui-picker.ts";
-import "@client/ui-kit/components/ui-date.ts";
+import "@client/ui-kit/components/ui-period.ts";
 
 export const tagName = "account-card-report";
 
 type PickEvent = CustomEvent<{ id: string; label: string }>;
-type DateEvent = CustomEvent<{ value: string }>;
+type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
 
 const money = new Intl.NumberFormat("uk-UA", {
   minimumFractionDigits: 2,
@@ -43,12 +44,9 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
     super.connectedCallback();
     // Період за замовчуванням — поточний місяць: звіт відкривається вже
     // придатним до запуску, без ручного заповнення дат.
-    const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
-    this.$root.$query.dateFrom ||= iso(first);
-    this.$root.$query.dateTo ||= iso(last);
+    const month = periodOf("month");
+    this.$root.$query.dateFrom ||= month.dateFrom;
+    this.$root.$query.dateTo ||= month.dateTo;
 
     // Поточна організація за замовчуванням — але не перетираємо ту, що вже
     // прийшла параметром переходу (drill-down з ОСВ несе свою організацію).
@@ -89,10 +87,8 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
     const q = this.$root.$query;
     const totals = this.$root.totals;
     const account = [totals.account || q.accountCode, totals.accountName].filter(Boolean).join(" — ");
-    const from = formatDate(q.dateFrom, dateFormat.date);
-    const to = formatDate(q.dateTo, dateFormat.date);
-    return [account, q.organization?.name, from && to ? `${from} — ${to}` : ""]
-      .filter(Boolean).join(" · ");
+    const period = periodLabel({ dateFrom: q.dateFrom, dateTo: q.dateTo });
+    return [account, q.organization?.name, period].filter(Boolean).join(" · ");
   }
 
   /**
@@ -223,18 +219,15 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
             @item-cleared=${() => { q.accountCode = ""; }}
           ></ui-picker>
 
-          <ui-date
-            .label=${t("accountCard.dateFrom")}
-            .value=${q.dateFrom}
-            format=${dateFormat.date}
-            @value-changed=${(e: DateEvent) => { q.dateFrom = e.detail.value; }}
-          ></ui-date>
-          <ui-date
-            .label=${t("accountCard.dateTo")}
-            .value=${q.dateTo}
-            format=${dateFormat.date}
-            @value-changed=${(e: DateEvent) => { q.dateTo = e.detail.value; }}
-          ></ui-date>
+          <ui-period
+            .label=${t("period.label")}
+            .dateFrom=${q.dateFrom}
+            .dateTo=${q.dateTo}
+            @period-changed=${(e: PeriodEvent) => {
+              q.dateFrom = e.detail.dateFrom;
+              q.dateTo = e.detail.dateTo;
+            }}
+          ></ui-period>
         </div>
     `;
   }

@@ -222,6 +222,10 @@ Picker-поля використовують компонент `<ui-picker url=
 шаблон `format` (`DD.MM.YY`, `MM.YYYY`, `DD.MM.YY HH:mm`), у моделі значення завжди ISO. Константи
 й функції — [`client/shared/datetime.ts`](client/shared/datetime.ts), опис —
 [`ui-date.md`](client/ui-kit/components/ui-date.md); у списках той самий шаблон через `ListColumn.format`.  
+Період (звіти, регістри) — одним полем `<ui-period date-from date-to>`, а не парою `ui-date`:
+пресети, зсув ◀ ▶ і людська підпис («Липень 2026») вбудовані; хелпери періодів
+(`periodOf`, `shiftPeriod`, `periodLabel`) — [`client/shared/period.ts`](client/shared/period.ts),
+опис — [`ui-period.md`](client/ui-kit/components/ui-period.md).  
 Локалізація: `t("bank.titleOne")` через сигнальний store + JSON-файли у `app/_locales/`.
 
 **Контракт даних форм (`$root`)** — усі екрани (список, пікер, форма) наслідують `BaseUI`
