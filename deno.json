@@ -25,6 +25,11 @@
     // Генерує застосунок у тимчасовий каталог і перевіряє типи й збірку. На
     // місці шаблон перевірити не можна — він компілюється лише там, де живе.
     "scaffold:verify": "deno run -A ./tools/verify-scaffold.ts ./create/main.ts",
+    // Те саме, але проти вихідників цього репозиторію замість опублікованих.
+    // Потрібно ДО публікації: у шаблоні стоїть діапазон версій, і поки нової в
+    // реєстрі немає, звичайний прогін падає на нерозв'язному пінові, не дійшовши
+    // до збірки. А публікація на jsr незворотна — знайти дефект після неї пізно.
+    "scaffold:verify:local": "deno run -A ./tools/verify-scaffold.ts ./create/main.ts --local",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки
@@ -65,8 +70,8 @@
     "@sinclair/typebox/value": "npm:@sinclair/typebox@^0.34.0/value",
 
 
-    "vite": "npm:vite@^6.3.5",
-    "vite-plugin-static-copy": "npm:vite-plugin-static-copy@^2.3.0",
+    "vite": "npm:vite@^8.2.0",
+    "vite-plugin-static-copy": "npm:vite-plugin-static-copy@^4.1.1",
     "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.3.0",
     "lit": "npm:lit@^3.3.1",
     "@lit-labs/signals": "npm:@lit-labs/signals@^0.1.3",

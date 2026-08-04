@@ -13,10 +13,10 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { defineConfig, type Plugin, type UserConfig } from "npm:vite@^6.3.5";
-import { viteStaticCopy } from "npm:vite-plugin-static-copy@^2.3.0";
+import { defineConfig, type Plugin, type UserConfig } from "npm:vite@^8.2.0";
+import { viteStaticCopy } from "npm:vite-plugin-static-copy@^4.1.1";
 import tailwindcss from "npm:@tailwindcss/vite@^4.3.0";
-import deno from "npm:@deno/vite-plugin@^1";
+import deno from "npm:@deno/vite-plugin@^2";
 
 /**
  * Каталог самого фреймворку (`client/`).
@@ -168,15 +168,31 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
           client: `${toPosix(appDir)}/index.html`,
         },
         output: {
-          // shell-registry — в окремий чанк примусово. Інакше Rollup складає його
-          // в entry-чанк (його статично тягне main.ts застосунку), а
+          // shell-registry — в окремий чанк примусово. Інакше бандлер складає
+          // його в entry-чанк (його статично тягне main.ts застосунку), а
           // `tab-controller`, який main.ts підвантажує динамічно, імпортує звідти
           // `shellTags` — і виникає цикл entry → import(tab-controller) → entry.
           // Разом із верхньорівневим await у main.ts це давало дедлок (біла
           // сторінка за живої сесії). Винесення модуля в лист прибирає й саму
           // можливість циклу.
-          manualChunks(id) {
-            if (id.includes("/client/shell/shell-registry")) return "shell-registry";
+          //
+          // `codeSplitting.groups`, а не `manualChunks`: з Vite 8 бандлер —
+          // Rolldown, і функційна форма `manualChunks` там оголошена застарілою.
+          //
+          // `minSize: 0` записаний явно, хоча зараз і без нього чанк виділяється
+          // (перевірено): сам модуль — 95 байтів, тобто він живий рівно доти,
+          // доки дефолтний поріг групи його не поглинув. Поріг цей — чужий
+          // дефолт, а ціна його зміни тут не «трохи інша розкладка чанків», а
+          // повернення дедлока з білою сторінкою. Тому нуль стоїть у конфізі, а
+          // не мається на увазі.
+          codeSplitting: {
+            groups: [
+              {
+                name: "shell-registry",
+                test: /[\\/]client[\\/]shell[\\/]shell-registry/,
+                minSize: 0,
+              },
+            ],
           },
         },
       },
@@ -201,7 +217,11 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
         },
       },
     },
-    esbuild: {
+    // `oxc`, а не `esbuild`: з Vite 8 транспіляцію робить Oxc, і сумісний шлях
+    // `esbuild` → `oxc` переносить лише jsx/define/jsxInject. `target` він
+    // ВІДКИДАЄ мовчки — без попередження й без помилки, — тож старий запис
+    // виглядав би робочим, нічого не роблячи.
+    oxc: {
       target: "es2022",
     },
     // Явна entry для dep-сканера: інакше оптимізатор бере build.rollupOptions.input

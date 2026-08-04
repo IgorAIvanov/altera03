@@ -35,6 +35,7 @@ html`
 | `label-position` | `top` \| `left` | `top` | Розташування підпису |
 | `required` | boolean | `false` | Малює зірочку біля підпису |
 | `disabled` / `readonly` | boolean | `false` | Блокує зміну значення |
+| `show-clear` | boolean | `false` | Кнопка очищення вибору (для необов'язкових полів); скидає `value` в `""` і шле `value-changed` |
 | `size` | `xs` \| `sm` \| `md` \| `lg` | `""` | Розмір daisyUI select |
 | `width` | string | `""` | CSS-ширина обгортки |
 | `cell` | boolean | `false` | Режим комірки табличної частини |
@@ -42,7 +43,11 @@ html`
 
 ## Подія
 
-`value-changed` виникає при зміні вибору й має `detail.value` з новим кодом.
+`value-changed` виникає при зміні вибору й має `detail.value` з новим кодом;
+очищення кнопкою — те саме з `detail.value === ""`.
+
+З `show-clear` без `placeholder` очищений select показує порожній рядок —
+для полів, де порожньо це осмислений стан, краще задати й `placeholder`.
 
 ```ts
 html`<ui-select cell .value=${line.kind} .options=${lineKinds}

@@ -17,10 +17,11 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      # --allow-scripts: без нього Deno блокує lifecycle-скрипти npm-пакетів,
-      # а збірці фронтенду потрібен бінарник esbuild.
+      # Без --allow-scripts: з Vite 8 у графі не лишилося жодного lifecycle-скрипта.
+      # Прапорець стояв заради бінарника esbuild, а Rolldown і Lightning CSS
+      # привозять готові napi-бінарники окремими пакетами під платформу.
       - name: Install dependencies
-        run: deno install --allow-scripts
+        run: deno install
       - name: Type-check
         run: deno check server/main.ts app/main.ts app/server.ts scripts/smoke_test.ts scripts/api.ts
       - name: Package boundaries (check:deps)
@@ -91,8 +92,18 @@ jobs:
         run: deno task smoke
 
   # Найдорожча перевірка: генерує застосунок у тимчасовий каталог, ставить
-  # опубліковані пакети з JSR і збирає його. Ловить те, чого не видно в
-  # монорепо (експорт-мапи, свіжість template.generated.ts, tsconfig шаблону).
+  # пакети й збирає його. Ловить те, чого не видно в монорепо (експорт-мапи,
+  # свіжість template.generated.ts, tsconfig шаблону).
+  #
+  # Саме `:local` — проти вихідників цього коміту, а не проти опублікованих.
+  # Інакше CI і публікація замикаються одне на одному: `publish.yml` вимагає
+  # зеленого CI цього ж коміту, а бамп версії в шаблоні (`^0.5.0`) до релізу в
+  # реєстрі не резолвиться — CI червоний, публікація заблокована, версія не
+  # з'являється, CI лишається червоним. Причому перевірялася б там усе одно не
+  # та версія, що виїжджає: у монорепо публікують те, що в дереві.
+  #
+  # Вендорений розклад (`vendor/jsr.io/...`) цим режимом не покривається — його
+  # перевіряє post-release крок у publish.yml, уже проти реєстру.
   scaffold:
     runs-on: ubuntu-latest
     steps:
@@ -101,6 +112,6 @@ jobs:
         with:
           deno-version: v2.x
       - name: Install dependencies
-        run: deno install --allow-scripts
-      - name: Scaffold verify
-        run: deno task scaffold:verify
+        run: deno install
+      - name: Scaffold verify (local sources)
+        run: deno task scaffold:verify:local
