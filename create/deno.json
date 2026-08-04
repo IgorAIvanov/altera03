@@ -1,6 +1,6 @@
 {
   "name": "@altera/create",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "//": "Scaffold застосунку: deno run -A jsr:@altera/create my-erp. Дерево шаблону лежить у create/template/ як звичайні файли, а в пакет їде згенерованою мапою (template.generated.ts) — команду запускають без установки, тож віддати пакет може тільки модулі.",
   "exports": "./main.ts",
   "license": "MIT",

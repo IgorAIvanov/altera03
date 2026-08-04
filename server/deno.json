@@ -1,6 +1,6 @@
 {
   "name": "@altera/server",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "exports": {
     ".": "./main.ts",
     "./sql": "./sql/core-sql.ts"
