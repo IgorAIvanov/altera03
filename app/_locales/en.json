@@ -221,6 +221,8 @@
   "user.groupCount": "Groups",
   "user.groups": "Groups",
   "user.password": "Password",
+  "user.passwordNotSet": "No password set - this user cannot sign in",
+  "user.noPassword": "no password",
   "user.setPassword": "Set password",
   "user.passwordPlaceholder": "at least 8 characters",
   "user.passwordAfterSave": "Password can be set after the user is saved",

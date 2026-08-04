@@ -1,5 +1,6 @@
 import { html } from "lit";
 import { customElement } from "lit/decorators.js";
+import { t } from "@client/locale.ts";
 import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
 import type { UserRow } from "./user.schema.ts";
 
@@ -14,6 +15,17 @@ export class UserList extends ModelListBase<UserRow> {
   protected columns: ListColumn<UserRow>[] = [
     { key: "login", title: "user.login", width: "12rem", sortable: true },
     { key: "fullName", title: "user.fullName", sortable: true, overflow: "ellipsis", tooltip: (r) => r.fullName },
+    // Користувач без пароля виглядає у списку як звичайний, а увійти під ним
+    // не можна взагалі — тому позначка, а не тиша. Порожня, коли все гаразд:
+    // окремий значок «пароль є» лише зашумив би список.
+    {
+      key: "hasPassword", title: "user.password", width: "9rem", align: "center",
+      render: (r) =>
+        r.hasPassword === false
+          ? html`<span class="badge badge-warning badge-sm">${t("user.noPassword")}</span>`
+          : "",
+      exportText: (r) => (r.hasPassword === false ? t("user.noPassword") : ""),
+    },
     { key: "groupCount", title: "user.groupCount", width: "6rem", align: "right", muted: true },
     {
       key: "_actions", title: "", width: "3rem", align: "center",

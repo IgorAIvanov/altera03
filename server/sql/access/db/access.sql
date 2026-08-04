@@ -161,6 +161,9 @@ as $$
       u.login                                        as login,
       u.full_name                                    as "fullName",
       u.is_active                                    as "isActive",
+      -- Не сам хеш, а лише факт: чи можна цим користувачем узагалі увійти.
+      -- Перевірка вимагає префікс, тож "сирий" рядок у колонці — це теж "немає".
+      (u.password_hash like 'pbkdf2_sha256$%')       as "hasPassword",
       count(m.id) filter (where m.is_active)::int    as "groupCount"
     from app.users u
     left join app.user_group_member m on m.user_id = u.id
@@ -168,7 +171,7 @@ as $$
     where p.search = ''
        or u.login ilike '%' || p.search || '%'
        or u.full_name ilike '%' || p.search || '%'
-    group by u.id, u.login, u.full_name, u.is_active
+    group by u.id, u.login, u.full_name, u.is_active, u.password_hash
   ),
   paged as (
     select f.*
@@ -246,6 +249,8 @@ as $$
           'login', f.login,
           'fullName', f.full_name,
           'isActive', f.is_active,
+          -- Порожній хеш означає, що увійти неможливо, — форма про це попереджає.
+          'hasPassword', (f.password_hash like 'pbkdf2_sha256$%'),
           'groupIds', coalesce((select jsonb_agg(id) from member_groups where "isActive"), '[]'::jsonb),
           -- Зв'язки із зовнішніми провайдерами. Повний стан, а не дельта:
           -- user_save переписує список цілком, як і членство в групах.

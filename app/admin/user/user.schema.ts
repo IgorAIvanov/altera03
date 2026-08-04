@@ -41,6 +41,12 @@ export const UserItemSchema = Type.Object({
     "x-search": true,
   }),
   isActive: Type.Boolean({ title: "Активний", default: true }),
+  /**
+   * Чи встановлено пароль. Читається з БД (сам хеш назовні не виходить),
+   * назад не пишеться: `user_save` пароля не приймає. Форма попереджає, що без
+   * нього увійти неможливо — інакше про це дізнаються лише з невдалого входу.
+   */
+  hasPassword: Type.Optional(Type.Boolean({ "x-transient": true, default: false })),
   /** Групи користувача. Повний стан, а не дельта. */
   groupIds: Type.Array(Type.String({ "x-db-type": "bigint" }), { default: [] }),
   /**
@@ -60,6 +66,7 @@ export const UserRowSchema = Type.Object({
   login:      Type.String(),
   fullName:   Type.String(),
   isActive:   Type.Boolean(),
+  hasPassword: Type.Optional(Type.Boolean()),
   groupCount: Type.Number(),
 });
 export type UserRow = Static<typeof UserRowSchema>;

@@ -192,10 +192,22 @@ export class UserEdit extends BaseUI<UserEditRoot> {
             <div class="font-semibold mb-1">${this.t("user.password")}</div>
             ${item.id
               ? html`
+                ${item.hasPassword === false
+                  ? html`
+                    <div class="alert alert-warning py-2 text-sm mb-2">
+                      ${this.t("user.passwordNotSet")}
+                    </div>`
+                  : ""}
                 <div class="flex items-end gap-2">
+                  <!-- Коли пароль уже є, у порожньому полі стоять крапки: воно
+                       для НОВОГО пароля, старий показати нізвідки (у базі хеш).
+                       Підказка про довжину доречна лише там, де пароля ще немає —
+                       інакше поле виглядало б незаповненим. -->
                   <input class="input input-bordered w-64" type="password" autocomplete="new-password"
                     .value=${this.password}
-                    placeholder=${this.t("user.passwordPlaceholder")}
+                    placeholder=${item.hasPassword
+                      ? "••••••••"
+                      : this.t("user.passwordPlaceholder")}
                     @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value} />
                   <button class="btn btn-outline" ?disabled=${this.busy || !this.password}
                     @click=${this.setPassword}>

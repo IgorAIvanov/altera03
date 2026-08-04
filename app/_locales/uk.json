@@ -221,6 +221,8 @@
   "user.groupCount": "Груп",
   "user.groups": "Групи",
   "user.password": "Пароль",
+  "user.passwordNotSet": "Пароль не встановлено — увійти під цим користувачем неможливо",
+  "user.noPassword": "без пароля",
   "user.setPassword": "Встановити пароль",
   "user.passwordPlaceholder": "щонайменше 8 символів",
   "user.passwordAfterSave": "Пароль можна встановити після збереження користувача",
