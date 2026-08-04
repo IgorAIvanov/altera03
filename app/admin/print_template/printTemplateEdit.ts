@@ -591,6 +591,10 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     // З БД шаблон приходить «сирим» jsonb — приводимо секції таблиць до форми,
     // з якою працює редактор, інакше рендер спіткнеться на чужому записі.
     this.setBlocks(normalizeLoadedBlocks(this.$root.item.schema?.blocks ?? []));
+    // Нормалізація міняє $root ПІСЛЯ знімка, який зробив loadInto, — і робить це
+    // завжди, бо setBlocks перезбирає item новим об'єктом. Без перезнімка щойно
+    // відкритий шаблон одразу має «*» і питає про незбережені зміни, яких немає.
+    this.markClean();
   }
 
   /**
