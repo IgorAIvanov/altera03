@@ -158,6 +158,34 @@ Follow `<ui-decimal>`; the rules that matter for the tabular section:
   exist — a row may never lose focus before submit;
 - typical precision: quantity 3, money 2, exchange rate 6.
 
+## Required cells and per-cell checks
+
+Declare them **on the column**, next to everything else about that column:
+
+```ts
+{ kind: "picker", key: "bankId", url: "catalog/bank", required: true },
+{ kind: "picker", key: "warehouseId", required: (line) => line.kind === "goods" },
+{ kind: "decimal", key: "qty",
+  // NOT `required` — 0 is a filled value, not an empty one. "must be > 0" is
+  // exactly what `check` is for.
+  check: (v) => dec(v).gt(0) ? null : t("invoice.qtyPositive") },
+```
+
+Then let the form validate the section together with its header fields:
+
+```ts
+protected override sections(): FormSection[] { return [this.lines]; }
+```
+
+Everything else is automatic: the bad cell gets a tint and an inset outline, its
+`title` carries the message, the form banner names row and column, and focus
+lands on the first bad cell. Only **visible** columns are checked — a hidden
+conditional column cannot be highlighted anyway.
+
+Do not hand-write per-row loops in `saveItem()`; do not put the rule in the form
+and the asterisk in the column. Full reference:
+[`docs/ui-form-validation.md`](../../../docs/ui-form-validation.md).
+
 ## Implementation flow
 
 1. Render the section as a real `<table class="table table-sm table-tabular">`.

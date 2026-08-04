@@ -89,6 +89,14 @@ default, so forms that need no conditions keep working untouched.
 Only two sets are validated: fields named in `fieldRules()`, and fields passed to `renderField` as
 `{ field }`. Never the whole schema — `id` is schema-required but empty on a new record.
 
+**Tabular parts** declare their rules on the column (`required` / `check`, see
+[document-tabular-section](../document-tabular-section/SKILL.md)); the form only names its sections
+so `validate()` covers them too:
+
+```ts
+protected override sections(): FormSection[] { return [this.lines]; }
+```
+
 Full reference: [`docs/ui-form-validation.md`](../../../docs/ui-form-validation.md).
 
 ## Gotcha: the schema goes through `super()`

@@ -48,6 +48,27 @@ export type FieldRule = boolean | { required?: boolean; check?: FieldCheck };
 export type FieldRules = Record<string, FieldRule>;
 
 /**
+ * Те, що `BaseUI` вимагає від табличної частини, щоб перевіряти її разом із
+ * полями шапки. Тип **структурний** навмисно: база не імпортує
+ * `TabularSection`, інакше кожен список і пікер тягли б у свій чанк увесь
+ * примітив таблиці. `TabularSection` задовольняє його як є.
+ */
+export interface FormSection {
+  /** Перевірити рядки; повертає кількість помилок і лишає їх у собі. */
+  validate(): number;
+  /** Скільки помилок зараз — база звіряє це при живому перерахунку. */
+  readonly errorCount: number;
+  /** Повідомлення для банера: «Рядок 3, «Кількість»: …». */
+  firstErrorText(): string;
+  /** Перша невалідна комірка — база веде туди фокус. */
+  firstErrorCell(): { row: number; col: number } | null;
+  /** Куди база кладе ціль фокуса (подання споживає її після рендера). */
+  pendingFocus: { row: number; col: number } | null;
+  /** Перемалювати подання — після того, як база проставила `pendingFocus`. */
+  refresh(): void;
+}
+
+/**
  * Чи вважати значення незаповненим. `false` і `0` — заповнені: інакше
  * checkbox «ні» і сума «0» рахувалися б порожніми.
  */
@@ -232,8 +253,10 @@ export abstract class BaseUI<T extends Record<string, unknown>>
       && keys.every((k) => this.fieldErrors[k] === next[k]);
     if (!same) this.fieldErrors = next;
     // Поля виправили — знімаємо і банер, інакше він висів би до наступного
-    // запиту. Чуже повідомлення (відповідь сервера) не чіпаємо.
-    if (keys.length === 0 && this.#bannerShown) {
+    // запиту. Чуже повідомлення (відповідь сервера) не чіпаємо. Рядки секцій
+    // перераховують себе самі (на кожну правку), тож тут лише звіряємо лік.
+    const inSections = this.sections().reduce((n, s) => n + s.errorCount, 0);
+    if (keys.length === 0 && inSections === 0 && this.#bannerShown) {
       this.#bannerShown = false;
       this.messages = [];
     }
@@ -264,6 +287,19 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    */
   protected fieldRules(): FieldRules {
     return {};
+  }
+
+  /**
+   * Табличні частини форми — щоб `validate()` перевіряв і їх. Правила самих
+   * колонок оголошені в конфізі секції (`required` / `check`), тут форма лише
+   * називає секції:
+   *
+   * ```ts
+   * protected override sections() { return [this.lines]; }
+   * ```
+   */
+  protected sections(): FormSection[] {
+    return [];
   }
 
   /**
@@ -358,13 +394,42 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     this.#validationStarted = true;
     const errors = this.#collectErrors();
     this.fieldErrors = errors;
-
     const first = Object.keys(errors)[0];
-    if (!first) return true;
-    this.messages = [{ type: "error", text: t("common.fixFields") }];
+
+    // Секції перевіряємо ЗАВЖДИ, навіть коли шапка вже завалилася: інакше
+    // користувач правив би форму за два заходи — спершу поля, потім рядки.
+    let sectionText = "";
+    let sectionErrors = 0;
+    for (const section of this.sections()) {
+      const count = section.validate();
+      sectionErrors += count;
+      if (count && !sectionText) sectionText = section.firstErrorText();
+    }
+
+    if (!first && !sectionErrors) return true;
+
+    // Поля шапки в пріоритеті: вони вище на екрані, і банер має говорити про
+    // те, куди зараз поїде фокус.
+    this.messages = [{ type: "error", text: first ? t("common.fixFields") : sectionText }];
     this.#bannerShown = true;
-    this.updateComplete.then(() => this.#focusField(first));
+    if (first) this.updateComplete.then(() => this.#focusField(first));
+    else this.#focusSection();
     return false;
+  }
+
+  /**
+   * Навести фокус на першу невалідну комірку табличної частини. Синхронно й
+   * із власним `refresh()`: подання забирає `pendingFocus` у своєму
+   * `updated()`, тож ціль має стояти ДО перемальовування, а не після.
+   */
+  #focusSection() {
+    for (const section of this.sections()) {
+      const cell = section.firstErrorCell();
+      if (!cell) continue;
+      section.pendingFocus = cell;
+      section.refresh();
+      return;
+    }
   }
 
   /** Банер «заповніть поля» поставили ми — значить нам його й прибирати. */

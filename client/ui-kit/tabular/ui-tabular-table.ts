@@ -44,6 +44,16 @@ export const tagName = "ui-tabular-table";
 export class UiTabularTable extends Base {
   static override styles: CSSResultGroup = [tw, css`
     tr.current td { background: #eef4fb; }
+    /* Невалідна комірка. У комірці рамки немає взагалі (.cell-control її
+       знімає — межу малює сама таблиця), тому сигнал інший: заливка й
+       внутрішній контур. Правило нижче за "tr.current td" навмисно — у
+       виділеному рядку помилка має лишатися видимою.
+       Зворотних лапок тут бути не може — це тіло шаблонного рядка css. */
+    tr td.cell-invalid {
+      background: #fdecec;
+      outline: 1px solid var(--color-error);
+      outline-offset: -1px;
+    }
   `];
 
   @property({ attribute: false }) section?: TabularSection<Record<string, unknown>>;
@@ -212,14 +222,25 @@ export class UiTabularTable extends Base {
     }
   }
 
-  #cellClass(col: TabularColumn<Record<string, unknown>>): string {
+  #cellClass(col: TabularColumn<Record<string, unknown>>, index: number): string {
     const align = col.align ?? (col.kind === "decimal" || col.kind === "computed" ? "right" : "left");
     const parts: string[] = [];
     if (col.kind === "computed") parts.push("cell-text", "tabular-nums");
     if (col.kind === "checkbox") parts.push("text-center");
     if (align === "right") parts.push("text-right");
     if (align === "center" && col.kind !== "checkbox") parts.push("text-center");
+    if (this.section?.cellError(index, col)) parts.push("cell-invalid");
     return parts.join(" ");
+  }
+
+  /**
+   * Текст помилки їде в `title` комірки, а не окремим підписом: у щільній
+   * таблиці зайвий рядок під коміркою поламав би сітку, а сама підсвітка
+   * каже, ЩО не так, лише наполовину. Повний текст першої помилки форма
+   * додатково показує банером — див. `TabularSection.firstErrorText()`.
+   */
+  #cellTitle(col: TabularColumn<Record<string, unknown>>, index: number) {
+    return this.section?.cellError(index, col) || nothing;
   }
 
   // ── Рендер ─────────────────────────────────────────────────────────────────
@@ -283,7 +304,8 @@ export class UiTabularTable extends Base {
             </td>`
           : nothing}
         ${grid.map((col) => html`
-          <td data-row=${i} data-col=${columns.indexOf(col)} class=${this.#cellClass(col)}>
+          <td data-row=${i} data-col=${columns.indexOf(col)} class=${this.#cellClass(col, i)}
+            title=${this.#cellTitle(col, i)}>
             ${this.#cellContent(col, line, i)}
           </td>
         `)}
@@ -305,7 +327,7 @@ export class UiTabularTable extends Base {
           <tr class=${cur} @click=${() => section.select(i)}>
             ${subs.map((col) => html`
               <td colspan=${col.span ?? 1} data-row=${i} data-col=${columns.indexOf(col)}
-                class=${this.#cellClass(col)}>
+                class=${this.#cellClass(col, i)} title=${this.#cellTitle(col, i)}>
                 ${this.#cellContent(col, line, i)}
               </td>
             `)}

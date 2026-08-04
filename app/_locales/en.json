@@ -52,6 +52,7 @@
   "invoice.lines": "Lines",
   "invoice.bank": "Bank",
   "invoice.qty": "Qty",
+  "invoice.qtyPositive": "Quantity must be greater than zero",
   "invoice.price": "Price",
   "invoice.amount": "Amount",
   "invoice.addLine": "Add line",

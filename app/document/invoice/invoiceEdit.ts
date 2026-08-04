@@ -1,7 +1,7 @@
 import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { t } from "@client/locale.ts";
-import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { BaseUI, type FormSection } from "@client/ui-kit/base/base-ui.ts";
 import { dec, TabularSection } from "@client/ui-kit/tabular/tabular-section.ts";
 import {
   InvoiceEditRootSchema,
@@ -58,8 +58,17 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
       price: "0.00",
     }),
     columns: [
-      { kind: "picker", key: "bankId", refKey: "bank", title: "invoice.bank", url: "catalog/bank" },
-      { kind: "decimal", key: "qty", title: "invoice.qty", precision: QTY_PRECISION, width: "7rem" },
+      {
+        kind: "picker", key: "bankId", refKey: "bank", title: "invoice.bank",
+        url: "catalog/bank", required: true,
+      },
+      {
+        kind: "decimal", key: "qty", title: "invoice.qty",
+        precision: QTY_PRECISION, width: "7rem",
+        // Не `required`: нуль — заповнене значення, порожнім його не назвеш.
+        // Умова «більше за нуль» — саме той випадок, для якого є `check`.
+        check: (v) => dec(v).gt(0) ? null : t("invoice.qtyPositive"),
+      },
       { kind: "decimal", key: "price", title: "invoice.price", precision: MONEY_PRECISION, width: "7rem" },
       {
         kind: "computed", title: "invoice.amount", width: "7rem", total: true,
@@ -72,6 +81,11 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
   constructor() {
     // $root ← Value.Create(InvoiceEditRootSchema) = { item: <порожня форма>, options: {} }
     super(InvoiceEditRootSchema);
+  }
+
+  /** Рядки перевіряються разом із полями шапки — правила в конфізі колонок. */
+  protected override sections(): FormSection[] {
+    return [this.lines];
   }
 
   override connectedCallback() {

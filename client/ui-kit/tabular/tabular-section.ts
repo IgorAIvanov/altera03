@@ -18,6 +18,7 @@ import type { ReactiveControllerHost, TemplateResult } from "lit";
 import { Decimal } from "decimal.js";
 import { Value } from "@sinclair/typebox/value";
 import type { TObject } from "@sinclair/typebox";
+import { t } from "../../locale.ts";
 
 /** Безпечний розбір значення форми в Decimal (порожнє / сміття → 0). */
 export function dec(raw: unknown): Decimal {
@@ -75,6 +76,20 @@ export interface TabularColumn<Line extends object> {
    * (`{ id, name }`). За замовчуванням — `key` без суфікса Id.
    */
   refKey?: string;
+
+  /**
+   * Обов'язкова комірка. Функція — умовна обов'язковість від самого рядка:
+   * `required: (l) => l.kind === "goods"`. Порожньою вважається `null`,
+   * `undefined` і порожній рядок; `0` і `false` — заповнені, тож «сума має
+   * бути більшою за нуль» пишеться в `check`, а не тут.
+   */
+  required?: boolean | ((line: Line, index: number) => boolean);
+
+  /**
+   * Власна перевірка комірки: `null` — гаразд, рядок — текст помилки (уже
+   * локалізований). Порожнього значення не бачить — це діло `required`.
+   */
+  check?: (value: unknown, line: Line, index: number) => string | null | undefined;
 
   /** computed: значення комірки з рядка (рахуй через dec()). */
   value?: (line: Line) => string;
@@ -197,6 +212,107 @@ export class TabularSection<Line extends object> {
     });
   }
 
+  // ── Перевірка рядків ───────────────────────────────────────────────────────
+
+  /** Помилки комірок: індекс рядка → колонка → текст. */
+  #errors = new Map<number, Map<TabularColumn<Line>, string>>();
+
+  /** Перевірка вже спрацьовувала — далі перераховуємо на кожну правку. */
+  #live = false;
+
+  /** Текст помилки комірки — читає подання таблиці. Порожньо — все гаразд. */
+  cellError(row: number, col: TabularColumn<Line>): string {
+    return this.#errors.get(row)?.get(col) ?? "";
+  }
+
+  /** Скільки комірок не пройшли перевірку. */
+  get errorCount(): number {
+    let count = 0;
+    for (const row of this.#errors.values()) count += row.size;
+    return count;
+  }
+
+  /**
+   * Перевірити всі рядки за правилами колонок (`required` / `check`).
+   * Повертає кількість помилок; самі помилки лишає в собі — подання читає їх
+   * через `cellError()`.
+   *
+   * Перевіряються лише ВИДИМІ колонки: сховану умовну колонку (валюта в
+   * проводках) підсвітити нікуди, та й вимагати від неї нічого не можна.
+   */
+  validate(): number {
+    this.#live = true;
+    this.#recompute();
+    this.#notify();
+    return this.errorCount;
+  }
+
+  /**
+   * Повідомлення для банера форми: рядок і колонка, а не саме лише
+   * «заповніть поля» — у документі на два десятки рядків це різниця між
+   * підказкою і загадкою.
+   */
+  firstErrorText(): string {
+    const rows = [...this.#errors.keys()].sort((a, b) => a - b);
+    for (const row of rows) {
+      for (const [col, text] of this.#errors.get(row)!) {
+        const title = col.title ? `, «${t(col.title)}»` : "";
+        return `${t("tabular.row")} ${row + 1}${title}: ${text}`;
+      }
+    }
+    return "";
+  }
+
+  /** Перша невалідна комірка — форма веде туди фокус. */
+  firstErrorCell(): PendingFocus | null {
+    const rows = [...this.#errors.keys()].sort((a, b) => a - b);
+    const visible = this.visibleColumns();
+    for (const row of rows) {
+      for (const col of this.#errors.get(row)!.keys()) {
+        const index = visible.indexOf(col);
+        if (index >= 0) return { row, col: index };
+      }
+    }
+    return null;
+  }
+
+  #recompute() {
+    this.#errors.clear();
+    const columns = this.visibleColumns();
+    this.rows.forEach((line, index) => {
+      for (const col of columns) {
+        if (!col.required && !col.check) continue;
+        const value = col.key ? (line as Record<string, unknown>)[col.key] : undefined;
+        const empty = value == null || (typeof value === "string" && value.trim() === "");
+
+        let text: string | null | undefined;
+        if (empty) {
+          const required = typeof col.required === "function"
+            ? col.required(line, index)
+            : col.required === true;
+          if (required) text = t("common.fieldRequired");
+        } else {
+          text = col.check?.(value, line, index);
+        }
+        if (!text) continue;
+
+        let row = this.#errors.get(index);
+        if (!row) this.#errors.set(index, row = new Map());
+        row.set(col, text);
+      }
+    });
+  }
+
+  /**
+   * Перерахувати помилки після правки — але лише коли перевірка вже
+   * спрацьовувала: доки користувач не натиснув «Зберегти», порожній новий
+   * рядок не має світитися червоним.
+   */
+  #resync() {
+    if (!this.#live) return;
+    this.#recompute();
+  }
+
   // ── Дії ────────────────────────────────────────────────────────────────────
 
   select(index: number) {
@@ -208,6 +324,9 @@ export class TabularSection<Line extends object> {
   /** Заплатити зміну поля рядка (комірки таблиці кличуть саме це). */
   patch(index: number, patch: Partial<Line>) {
     this.config.setRows(this.rows.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+    // Помилки прив'язані до індексу рядка, тож будь-яка правка (а надто
+    // вставка, видалення й перестановка) вимагає перерахунку з нуля.
+    this.#resync();
   }
 
   addLine() {
@@ -216,6 +335,7 @@ export class TabularSection<Line extends object> {
     this.config.setRows(rows);
     this.currentIndex = rows.length - 1;
     this.pendingFocus = { row: this.currentIndex, col: 0 };
+    this.#resync();
     this.#notify();
   }
 
@@ -233,6 +353,7 @@ export class TabularSection<Line extends object> {
     this.config.setRows(this.#renumber(rows));
     this.currentIndex = index + 1;
     this.pendingFocus = { row: this.currentIndex, col: 0 };
+    this.#resync();
     this.#notify();
   }
 
@@ -241,6 +362,7 @@ export class TabularSection<Line extends object> {
     const rows = this.#renumber(this.rows.filter((_, i) => i !== index));
     this.config.setRows(rows);
     this.currentIndex = Math.min(index, rows.length - 1);
+    this.#resync();
     this.#notify();
   }
 
@@ -252,6 +374,7 @@ export class TabularSection<Line extends object> {
     [rows[index], rows[target]] = [rows[target], rows[index]];
     this.config.setRows(this.#renumber(rows));
     this.currentIndex = target;
+    this.#resync();
     this.#notify();
   }
 
