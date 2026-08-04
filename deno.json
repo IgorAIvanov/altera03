@@ -26,6 +26,10 @@
     // Вбудовує тему й локалі фреймворку в TS-модулі. Запускати після правки
     // client/styles/theme.css або client/_locales/*.json.
     "client:assets": "deno run -A ./tools/generate-client-assets.ts ./client --verbose",
+    // Вбудовує шрифти друку (Roboto з кирилицею) у fonts.generated.ts.
+    // Запускати після зміни версії @fontsource/roboto; у встановленому пакеті
+    // node_modules поряд немає, тож читати woff з диска рендерер не може.
+    "print:fonts": "deno run -A ./tools/generate-print-fonts.ts ./node_modules/@fontsource/roboto/files ./server/modules/print/fonts.generated.ts --verbose",
     // Вбудовує дерево create/template/** у create/template.generated.ts.
     "scaffold:template": "deno run -A ./tools/generate-scaffold-template.ts ./create/template ./create/template.generated.ts --verbose",
     // Вбудовує прикладні скіли (metadata.audience: app) у skills.generated.ts.

@@ -12,6 +12,7 @@ deno task sql:registry # згенерувати app/_generated/* (model-registry
 deno task sql:gen <model>  # перегенерувати CRUD-SQL ОДНІЄЇ моделі: sql:gen catalog/bank
 deno task core:sql     # вбудувати server/sql/**/db/*.sql у core-sql.generated.ts (після правки SQL ядра)
 deno task client:assets    # вбудувати тему й локалі фреймворку (після правки theme.css / client/_locales)
+deno task print:fonts      # вбудувати шрифти друку (після зміни версії @fontsource/roboto)
 deno task scaffold:template # вбудувати create/template/** у create/template.generated.ts
 deno task skills:build      # вбудувати прикладні скіли у skills/skills.generated.ts (після правки skills/src/**)
 deno task scaffold:verify   # згенерувати застосунок у тимчасовий каталог і перевірити типи й збірку
@@ -365,6 +366,13 @@ Esc закрити вкладку (брудна проходить через т
 редагування шаблонів — звичайна admin-модель `app/admin/print_template/`. Skill —
 [`model-print-form`](skills/src/model-print-form/SKILL.md); деталі —
 [`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
+
+**Шрифти друку вбудовані в модуль** (`fonts.generated.ts`, `deno task print:fonts`) — з тієї
+самої причини, що й тема CSS: у встановленому пакеті файлу на диску немає. Рендерер читав
+`../../../node_modules/@fontsource/roboto/...` від власного `import.meta.url` — у монорепо
+такий шлях є, а в застосунку модуль приїжджає або з кеша JSR (тоді `import.meta.url` це
+`https://`, і `Deno.readFile` каже «Must be a file URL»), або з `vendor/`, де node_modules
+поряд немає. Друк падав лише у встановленому застосунку й ніколи в репозиторії.
 
 **Штрих-коди** — блок `barcode` у шаблоні: `code128` (документи), `ean13`
 (номенклатура), `qr`. Значення береться як у комірці таблиці — статичне

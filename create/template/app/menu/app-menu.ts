@@ -5,11 +5,21 @@ import { bus } from "@client/bus/bus.ts";
 
 export const tagName = "app-menu";
 
-interface MenuItem {
-  code: string;
+/**
+ * Рядок відповіді `menu/current`. Список ПЛОСКИЙ: ієрархію задають `id` і
+ * `parentId` (це шляхи-ланцюжки кодів, а не числа), дерево будує клієнт.
+ * `route` — маршрут в'ю (`family/model/view`); null означає теку.
+ */
+interface MenuRow {
+  id: string;
+  parentId: string | null;
   name: string;
-  routePath: string | null;
-  children?: MenuItem[];
+  icon: string | null;
+  route: string | null;
+}
+
+interface MenuNode extends MenuRow {
+  children: MenuNode[];
 }
 
 /**
@@ -19,7 +29,7 @@ interface MenuItem {
  */
 @customElement(tagName)
 export class AppMenu extends GlobalStyledLitElement {
-  @state() private items: MenuItem[] = [];
+  @state() private nodes: MenuNode[] = [];
 
   override async connectedCallback() {
     super.connectedCallback();
@@ -29,29 +39,48 @@ export class AppMenu extends GlobalStyledLitElement {
       model: "menu",
       command: "current",
       payload: {},
-    }) as { data?: { rows?: unknown[] } } | undefined;
+    }) as { data?: { rows?: MenuRow[] } } | undefined;
 
-    this.items = (envelope?.data?.rows ?? []) as MenuItem[];
+    this.nodes = buildTree(envelope?.data?.rows ?? []);
   }
 
   override render(): TemplateResult {
-    return html`<nav class="p-2 w-56 overflow-auto">${this.items.map((item) => this.#renderItem(item))}</nav>`;
+    return html`<nav class="p-2 w-56 overflow-auto">${this.nodes.map((node) => this.#renderNode(node))}</nav>`;
   }
 
-  #renderItem(item: MenuItem): TemplateResult {
-    if (!item.routePath) {
+  #renderNode(node: MenuNode): TemplateResult {
+    // Тека — заголовок розділу, а не посилання.
+    if (!node.route) {
       return html`
-        <div class="mt-3 mb-1 text-xs uppercase opacity-60">${item.name}</div>
-        ${(item.children ?? []).map((child) => this.#renderItem(child))}
+        <div class="mt-3 mb-1 text-xs uppercase opacity-60">${node.name}</div>
+        ${node.children.map((child) => this.#renderNode(child))}
       `;
     }
 
     return html`
       <a class="block px-2 py-1 rounded cursor-pointer hover:bg-base-200"
-         @click=${() => bus.emit({ type: "tab.open", route: item.routePath! })}>
-        ${item.name}
+         @click=${() => bus.emit({ type: "tab.open", route: node.route!, id: null })}>
+        ${node.name}
       </a>
-      ${item.children?.length ? item.children.map((child) => this.#renderItem(child)) : nothing}
+      ${node.children.length ? node.children.map((child) => this.#renderNode(child)) : nothing}
     `;
   }
+}
+
+/** Плоскі рядки → дерево. Порядок рядків зберігається: сервер уже відсортував. */
+function buildTree(rows: MenuRow[]): MenuNode[] {
+  const byId = new Map<string, MenuNode>();
+  for (const row of rows) byId.set(row.id, { ...row, children: [] });
+
+  const roots: MenuNode[] = [];
+  for (const node of byId.values()) {
+    const parent = node.parentId ? byId.get(node.parentId) : undefined;
+    // Пункт, чийого батька не видно (немає права на його модель), піднімається
+    // вгору, а не зникає разом із текою: інакше користувач втратив би доступну
+    // йому дію.
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+
+  return roots;
 }

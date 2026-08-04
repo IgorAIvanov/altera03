@@ -22,7 +22,7 @@
     "sql:publish": "deno run -A --env-file ./scripts/sql-publish.ts ./app --verbose",
 
     "//skills:sync": "Розкладає скіли фреймворку в .claude/skills. Файли комітяться (як згенерований SQL): той, хто склонував репозиторій, має отримати їх без запуску задач. Діапазон версії підіймається РАЗОМ з @altera/client — скіли описують саме його поверхню, і відставши, вони починають радити те, чого в клієнті вже немає. Свій скіл із тим самим іменем задача не чіпає.",
-    "skills:sync": "deno run -A jsr:@altera/skills@^0.1.0 ./",
+    "skills:sync": "deno run -A jsr:@altera/skills@^0.1.1 ./",
 
     "startdb": "docker compose up -d",
     "stopdb": "docker compose down"
@@ -31,8 +31,8 @@
   "imports": {
     "@altera/client": "jsr:@altera/client@^0.6.0",
     "@client/": "jsr:/@altera/client@^0.6.0/",
-    "@altera/server": "jsr:@altera/server@^0.5.0",
-    "@altera/server/sql": "jsr:/@altera/server@^0.5.0/sql",
+    "@altera/server": "jsr:@altera/server@^0.5.1",
+    "@altera/server/sql": "jsr:/@altera/server@^0.5.1/sql",
     "@altera/tools/": "jsr:/@altera/tools@^0.4.1/",
     "@app/": "./app/",
     "@shared/": "./app/shared/",

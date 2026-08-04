@@ -8,6 +8,7 @@
     "jsr:@hono/hono@4.6.3": "4.6.3",
     "jsr:@std/assert@^1.0.15": "1.0.19",
     "jsr:@std/cli@^1.0.31": "1.0.32",
+    "jsr:@std/encoding@1": "1.0.11",
     "jsr:@std/encoding@^1.0.11": "1.0.11",
     "jsr:@std/fmt@0.223.0": "0.223.0",
     "jsr:@std/fmt@^1.0.10": "1.0.10",
@@ -105,7 +106,7 @@
       "integrity": "1c0473590d5e5b75b30b2be4833c08047dd799aeea35624fd34ec58d67fc9240",
       "dependencies": [
         "jsr:@std/cli",
-        "jsr:@std/encoding",
+        "jsr:@std/encoding@^1.0.11",
         "jsr:@std/fmt@^1.0.10",
         "jsr:@std/fs@^1.0.24",
         "jsr:@std/html",
@@ -918,7 +919,7 @@
       },
       "create": {
         "dependencies": [
-          "jsr:@altera/skills@0.1"
+          "jsr:@altera/skills@~0.1.1"
         ]
       },
       "server": {
@@ -945,7 +946,7 @@
       },
       "tools": {
         "dependencies": [
-          "jsr:@altera/server@0.5",
+          "jsr:@altera/server@~0.5.1",
           "jsr:@std/path@^1.1.2",
           "npm:postgres@^3.4.5"
         ]

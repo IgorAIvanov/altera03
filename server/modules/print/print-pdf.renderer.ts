@@ -5,6 +5,7 @@
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { PRINT_FONT_BOLD_BASE64, PRINT_FONT_REGULAR_BASE64 } from "./fonts.generated.ts";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
 import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
 import type {
@@ -35,15 +36,11 @@ const BARCODE_DEFAULT_HEIGHT = 40;
 /** Проміжок між кодом і підписом під ним. */
 const BARCODE_CAPTION_GAP = 3;
 
-// Кирилиці у StandardFonts немає — вантажимо Roboto з node_modules.
-const FONT_REGULAR_URL = new URL(
-  "../../../node_modules/@fontsource/roboto/files/roboto-cyrillic-400-normal.woff",
-  import.meta.url,
-);
-const FONT_BOLD_URL = new URL(
-  "../../../node_modules/@fontsource/roboto/files/roboto-cyrillic-700-normal.woff",
-  import.meta.url,
-);
+// Кирилиці у StandardFonts немає — Roboto їде вбудованим у модуль
+// (`deno task print:fonts`). З диска його читати не можна: у встановленому
+// пакеті node_modules поряд немає, а якщо модуль приїхав із кеша JSR, то
+// `import.meta.url` це взагалі `https://` — Deno.readFile тоді каже
+// «Must be a file URL», і друк падає лише в застосунку, ніколи в репозиторії.
 
 /** Шаблон у формі, придатній для рендеру: реквізити + нормалізовані блоки. */
 export interface PrintTemplateRuntimeItem {
@@ -114,8 +111,8 @@ export async function renderPrintPdf(
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
 
-  const regularFont = await pdf.embedFont(await Deno.readFile(FONT_REGULAR_URL));
-  const boldFont = await pdf.embedFont(await Deno.readFile(FONT_BOLD_URL));
+  const regularFont = await pdf.embedFont(decodeBase64(PRINT_FONT_REGULAR_BASE64));
+  const boldFont = await pdf.embedFont(decodeBase64(PRINT_FONT_BOLD_BASE64));
   const regularAsciiFont = await pdf.embedFont(StandardFonts.Helvetica);
   const boldAsciiFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
