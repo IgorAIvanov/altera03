@@ -64,72 +64,74 @@ export class OrganizationEdit extends BaseUI<OrganizationEditRoot> {
     return html`
       <div class="p-4 max-w-2xl flex flex-col gap-2">
         ${this.renderNotice()}
+        ${this.renderFields(html`
+          <div class="flex gap-2">
+            ${this.renderField(
+              this.t("common.code"),
+              html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
+                @input=${this.bindTo(item, "code")} />`,
+              { class: "w-32", field: "code" },
+            )}
+            ${this.renderField(
+              this.t("common.name"),
+              html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
+                @input=${this.bindTo(item, "name")} />`,
+              { class: "flex-1", field: "name" },
+            )}
+          </div>
 
-        <div class="flex gap-2">
           ${this.renderField(
-            this.t("common.code"),
-            html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
-              @input=${this.bindTo(item, "code")} />`,
-            { class: "w-32", field: "code" },
+            this.t("organization.fullName"),
+            html`<input class="input input-bordered w-full" .value=${item.fullName ?? ""}
+              @input=${this.bindTo(item, "fullName")} />`,
+            { field: "fullName" },
           )}
-          ${this.renderField(
-            this.t("common.name"),
-            html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
-              @input=${this.bindTo(item, "name")} />`,
-            { class: "flex-1", field: "name" },
-          )}
-        </div>
 
-        ${this.renderField(
-          this.t("organization.fullName"),
-          html`<input class="input input-bordered w-full" .value=${item.fullName ?? ""}
-            @input=${this.bindTo(item, "fullName")} />`,
-          { field: "fullName" },
-        )}
+          <div class="flex gap-2">
+            ${this.renderField(
+              this.t("organization.edrpou"),
+              html`<input class="input input-bordered w-full" .value=${item.edrpou ?? ""}
+                @input=${this.bindTo(item, "edrpou")} />`,
+              { class: "w-40", field: "edrpou" },
+            )}
+            ${this.renderField(
+              this.t("organization.prefix"),
+              html`<input class="input input-bordered w-full" maxlength="3" .value=${item.prefix ?? ""}
+                @input=${this.bindTo(item, "prefix")} />`,
+              { class: "w-24", field: "prefix" },
+            )}
+            ${this.renderField(
+              this.t("organization.legalPersonKind"),
+              html`
+                <select class="select select-bordered w-full"
+                  .value=${item.legalPersonKind ?? "legal_entity"}
+                  @change=${this.bindTo(item, "legalPersonKind")}>
+                  <option value="legal_entity">${this.t("organization.legalPersonKind.legalEntity")}</option>
+                  <option value="individual_entrepreneur">${this.t("organization.legalPersonKind.entrepreneur")}</option>
+                </select>`,
+              { class: "flex-1", field: "legalPersonKind" },
+            )}
+          </div>
 
-        <div class="flex gap-2">
-          ${this.renderField(
-            this.t("organization.edrpou"),
-            html`<input class="input input-bordered w-full" .value=${item.edrpou ?? ""}
-              @input=${this.bindTo(item, "edrpou")} />`,
-            { class: "w-40", field: "edrpou" },
-          )}
-          ${this.renderField(
-            this.t("organization.prefix"),
-            html`<input class="input input-bordered w-full" maxlength="3" .value=${item.prefix ?? ""}
-              @input=${this.bindTo(item, "prefix")} />`,
-            { class: "w-24", field: "prefix" },
-          )}
-          ${this.renderField(
-            this.t("organization.legalPersonKind"),
-            html`
-              <select class="select select-bordered w-full"
-                .value=${item.legalPersonKind ?? "legal_entity"}
-                @change=${this.bindTo(item, "legalPersonKind")}>
-                <option value="legal_entity">${this.t("organization.legalPersonKind.legalEntity")}</option>
-                <option value="individual_entrepreneur">${this.t("organization.legalPersonKind.entrepreneur")}</option>
-              </select>`,
-            { class: "flex-1", field: "legalPersonKind" },
-          )}
-        </div>
+          <ui-image
+            ?disabled=${this.readonlyMode}
+            .label=${this.t("organization.logo")}
+            .valueId=${item.logoId ?? ""}
+            .valueToken=${item.logoToken ?? ""}
+            owner-model="organization"
+            .ownerId=${item.id ?? ""}
+            @value-changed=${(e: ImageEvent) => {
+              item.logoId = e.detail.id;
+              item.logoToken = e.detail.token;
+            }}
+          ></ui-image>
 
-        <ui-image
-          .label=${this.t("organization.logo")}
-          .valueId=${item.logoId ?? ""}
-          .valueToken=${item.logoToken ?? ""}
-          owner-model="organization"
-          .ownerId=${item.id ?? ""}
-          @value-changed=${(e: ImageEvent) => {
-            item.logoId = e.detail.id;
-            item.logoToken = e.detail.token;
-          }}
-        ></ui-image>
-
-        <label class="label cursor-pointer justify-start gap-2 mt-1">
-          <input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
-            @change=${(e: Event) => { item.isActive = (e.target as HTMLInputElement).checked; }} />
-          <span class="text-sm">${this.t("organization.isActive")}</span>
-        </label>
+          <label class="label cursor-pointer justify-start gap-2 mt-1">
+            <input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
+              @change=${(e: Event) => { item.isActive = (e.target as HTMLInputElement).checked; }} />
+            <span class="text-sm">${this.t("organization.isActive")}</span>
+          </label>
+        `)}
 
         ${this.renderFormActions()}
       </div>

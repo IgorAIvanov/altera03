@@ -4,8 +4,9 @@
  * Токена тут немає й бути не може — він у httpOnly-cookie, недосяжний для JS.
  * Зберігаємо лише те, що потрібне інтерфейсу: хто увійшов і що йому дозволено.
  *
- * Права беремо один раз при вході (`app.access_effective`) і питаємо локально:
- * інакше кожна кнопка ходила б на сервер.
+ * Права беремо при вході (`app.access_effective`) і питаємо локально: інакше
+ * кожна кнопка ходила б на сервер. Тримаються вони в сигналі, тож перечитування
+ * саме собою перемальовує екрани — окремо повідомляти їх не треба.
  */
 import { Signal } from "signal-polyfill";
 import {
@@ -99,7 +100,19 @@ const _session = new Signal.State<SessionInfo | null>(null);
 export const currentUser = (): SessionUser | null => _user.get();
 export const currentSession = (): SessionInfo | null => _session.get();
 
-let permissions = new Set<string>();
+/**
+ * Права поточного користувача — СИГНАЛ, а не звичайний Set.
+ *
+ * Завдяки цьому будь-який render, що кличе can() (а через нього — may(),
+ * maySave() і кнопки тулбара), автоматично трекає читання: щойно права
+ * перечиталися, екрани перемальовуються самі. Інакше набір, прочитаний один
+ * раз при вході, застигав би до перезавантаження сторінки.
+ */
+const _permissions = new Signal.State<Set<string>>(new Set());
+
+function setPermissions(next: Set<string>) {
+  _permissions.set(next);
+}
 
 function permissionKey(model: string, action: string): string {
   return `${model}:${action}`;
@@ -107,7 +120,8 @@ function permissionKey(model: string, action: string): string {
 
 /** Чи дозволена дія над моделлю. `*` у правах означає «всі моделі». */
 export function can(model: string, action: string): boolean {
-  return permissions.has(permissionKey("*", action)) || permissions.has(permissionKey(model, action));
+  const granted = _permissions.get();
+  return granted.has(permissionKey("*", action)) || granted.has(permissionKey(model, action));
 }
 
 /**
@@ -125,10 +139,10 @@ async function loadPermissions(): Promise<void> {
   try {
     const response = await apiFetch("/api/auth/permissions");
     const envelope = await readEnvelope<never, PermissionRow>(response);
-    permissions = new Set((envelope.data?.rows ?? []).map((row) => permissionKey(row.model, row.action)));
+    setPermissions(new Set((envelope.data?.rows ?? []).map((row) => permissionKey(row.model, row.action))));
   } catch {
     // Права не критичні для входу: без них інтерфейс просто обережніший.
-    permissions = new Set();
+    setPermissions(new Set());
   }
 }
 
@@ -138,7 +152,7 @@ function applySession(item: { user: SessionUser; session: SessionInfo } | null):
   // Транспорт має заявляти серверу, від чийого імені ми діємо. Єдина точка, де
   // сесія міняється, — ця, тож і заявка оновлюється тільки тут.
   setClaimedUserId(item?.user.id ?? null);
-  if (!item) permissions = new Set();
+  if (!item) setPermissions(new Set());
   return !!item;
 }
 

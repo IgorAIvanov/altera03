@@ -87,125 +87,126 @@ export class UserEdit extends BaseUI<UserEditRoot> {
     return html`
       <div class="p-4 max-w-2xl flex flex-col gap-2">
         ${this.renderNotice()}
+        ${this.renderFields(html`
+          <div class="grid grid-cols-2 gap-2">
+            ${this.renderField(
+              this.t("user.login"),
+              html`<input class="input input-bordered w-full" .value=${item.login ?? ""}
+                @input=${this.bindTo(item, "login")} />`,
+              { field: "login" },
+            )}
 
-        <div class="grid grid-cols-2 gap-2">
-          ${this.renderField(
-            this.t("user.login"),
-            html`<input class="input input-bordered w-full" .value=${item.login ?? ""}
-              @input=${this.bindTo(item, "login")} />`,
-            { field: "login" },
-          )}
-
-          ${this.renderField(
-            this.t("user.fullName"),
-            html`<input class="input input-bordered w-full" .value=${item.fullName ?? ""}
-              @input=${this.bindTo(item, "fullName")} />`,
-            { field: "fullName" },
-          )}
-        </div>
-
-        ${this.renderField(
-          this.t("common.active"),
-          html`<input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
-            @change=${(e: Event) => {
-              this.$root.item = { ...item, isActive: (e.target as HTMLInputElement).checked };
-            }} />`,
-        )}
-
-        <div class="mt-2">
-          <div class="font-semibold mb-1">${this.t("user.groups")}</div>
-          ${groups.length === 0
-            ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
-            : html`
-              <div class="flex flex-wrap gap-3">
-                ${groups.map((g) => html`
-                  <label class="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-sm"
-                      .checked=${item.groupIds.includes(g.id)}
-                      @change=${(e: Event) => this.toggleGroup(g.id, (e.target as HTMLInputElement).checked)} />
-                    <span>${g.name}</span>
-                  </label>
-                `)}
-              </div>
-            `}
-        </div>
-
-        <!-- Зовнішні входи. Політика свідомо сувора: провайдер підтверджує
-             особу, але право працювати в системі дає рядок ось тут. Без нього
-             вхід через провайдера відхиляється, навіть якщо він успішний. -->
-        <div class="mt-4">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="font-semibold">${this.t("user.identities")}</div>
-            <button class="btn btn-xs btn-outline" ?disabled=${this.busy} @click=${this.addIdentity}>
-              ${this.t("user.identityAdd")}
-            </button>
+            ${this.renderField(
+              this.t("user.fullName"),
+              html`<input class="input input-bordered w-full" .value=${item.fullName ?? ""}
+                @input=${this.bindTo(item, "fullName")} />`,
+              { field: "fullName" },
+            )}
           </div>
 
-          ${this.$root.item.identities.length === 0
-            ? html`<div class="text-base-content/50">${this.t("user.identitiesEmpty")}</div>`
-            : html`
-              <table class="table table-sm">
-                <thead>
-                  <tr>
-                    <th>${this.t("user.identityProvider")}</th>
-                    <th>${this.t("user.identityExternalId")}</th>
-                    <th>${this.t("user.identityLastLogin")}</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${this.$root.item.identities.map((identity, index) => html`
-                    <tr>
-                      <td>
-                        <input class="input input-bordered input-sm w-32"
-                          .value=${identity.provider ?? ""}
-                          placeholder="google"
-                          @input=${(e: Event) =>
-                            this.patchIdentity(index, { provider: (e.target as HTMLInputElement).value })} />
-                      </td>
-                      <td>
-                        <input class="input input-bordered input-sm w-full"
-                          .value=${identity.externalId ?? ""}
-                          placeholder="sub"
-                          @input=${(e: Event) =>
-                            this.patchIdentity(index, { externalId: (e.target as HTMLInputElement).value })} />
-                      </td>
-                      <td class="text-base-content/60">
-                        ${identity.lastLoginAt ? formatDate(identity.lastLoginAt, dateFormat.dateTime) : "—"}
-                      </td>
-                      <td class="text-right">
-                        <button class="btn btn-xs btn-ghost" ?disabled=${this.busy}
-                          @click=${() => this.removeIdentity(index)}>
-                          ${this.t("common.delete")}
-                        </button>
-                      </td>
-                    </tr>
-                  `)}
-                </tbody>
-              </table>
-            `}
-        </div>
+          ${this.renderField(
+            this.t("common.active"),
+            html`<input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
+              @change=${(e: Event) => {
+                this.$root.item = { ...item, isActive: (e.target as HTMLInputElement).checked };
+              }} />`,
+          )}
 
-        <!-- Пароль. Новий користувач створюється з порожнім хешем і увійти не
-             може, доки пароль не встановлять, — тому підказка, а не тиша. -->
-        <div class="mt-4">
-          <div class="font-semibold mb-1">${this.t("user.password")}</div>
-          ${item.id
-            ? html`
-              <div class="flex items-end gap-2">
-                <input class="input input-bordered w-64" type="password" autocomplete="new-password"
-                  .value=${this.password}
-                  placeholder=${this.t("user.passwordPlaceholder")}
-                  @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value} />
-                <button class="btn btn-outline" ?disabled=${this.busy || !this.password}
-                  @click=${this.setPassword}>
-                  ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                  ${this.t("user.setPassword")}
-                </button>
-              </div>
-            `
-            : html`<div class="text-base-content/50">${this.t("user.passwordAfterSave")}</div>`}
-        </div>
+          <div class="mt-2">
+            <div class="font-semibold mb-1">${this.t("user.groups")}</div>
+            ${groups.length === 0
+              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              : html`
+                <div class="flex flex-wrap gap-3">
+                  ${groups.map((g) => html`
+                    <label class="flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" class="checkbox checkbox-sm"
+                        .checked=${item.groupIds.includes(g.id)}
+                        @change=${(e: Event) => this.toggleGroup(g.id, (e.target as HTMLInputElement).checked)} />
+                      <span>${g.name}</span>
+                    </label>
+                  `)}
+                </div>
+              `}
+          </div>
+
+          <!-- Зовнішні входи. Політика свідомо сувора: провайдер підтверджує
+               особу, але право працювати в системі дає рядок ось тут. Без нього
+               вхід через провайдера відхиляється, навіть якщо він успішний. -->
+          <div class="mt-4">
+            <div class="flex items-center gap-2 mb-1">
+              <div class="font-semibold">${this.t("user.identities")}</div>
+              <button class="btn btn-xs btn-outline" ?disabled=${this.busy} @click=${this.addIdentity}>
+                ${this.t("user.identityAdd")}
+              </button>
+            </div>
+
+            ${this.$root.item.identities.length === 0
+              ? html`<div class="text-base-content/50">${this.t("user.identitiesEmpty")}</div>`
+              : html`
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>${this.t("user.identityProvider")}</th>
+                      <th>${this.t("user.identityExternalId")}</th>
+                      <th>${this.t("user.identityLastLogin")}</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${this.$root.item.identities.map((identity, index) => html`
+                      <tr>
+                        <td>
+                          <input class="input input-bordered input-sm w-32"
+                            .value=${identity.provider ?? ""}
+                            placeholder="google"
+                            @input=${(e: Event) =>
+                              this.patchIdentity(index, { provider: (e.target as HTMLInputElement).value })} />
+                        </td>
+                        <td>
+                          <input class="input input-bordered input-sm w-full"
+                            .value=${identity.externalId ?? ""}
+                            placeholder="sub"
+                            @input=${(e: Event) =>
+                              this.patchIdentity(index, { externalId: (e.target as HTMLInputElement).value })} />
+                        </td>
+                        <td class="text-base-content/60">
+                          ${identity.lastLoginAt ? formatDate(identity.lastLoginAt, dateFormat.dateTime) : "—"}
+                        </td>
+                        <td class="text-right">
+                          <button class="btn btn-xs btn-ghost" ?disabled=${this.busy}
+                            @click=${() => this.removeIdentity(index)}>
+                            ${this.t("common.delete")}
+                          </button>
+                        </td>
+                      </tr>
+                    `)}
+                  </tbody>
+                </table>
+              `}
+          </div>
+
+          <!-- Пароль. Новий користувач створюється з порожнім хешем і увійти не
+               може, доки пароль не встановлять, — тому підказка, а не тиша. -->
+          <div class="mt-4">
+            <div class="font-semibold mb-1">${this.t("user.password")}</div>
+            ${item.id
+              ? html`
+                <div class="flex items-end gap-2">
+                  <input class="input input-bordered w-64" type="password" autocomplete="new-password"
+                    .value=${this.password}
+                    placeholder=${this.t("user.passwordPlaceholder")}
+                    @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value} />
+                  <button class="btn btn-outline" ?disabled=${this.busy || !this.password}
+                    @click=${this.setPassword}>
+                    ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+                    ${this.t("user.setPassword")}
+                  </button>
+                </div>
+              `
+              : html`<div class="text-base-content/50">${this.t("user.passwordAfterSave")}</div>`}
+          </div>
+        `)}
 
         ${this.renderFormActions()}
       </div>

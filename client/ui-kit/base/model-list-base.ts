@@ -3,6 +3,7 @@ import { state } from "lit/decorators.js";
 import { type TArray, type TObject, type TUnknown, Type } from "@sinclair/typebox";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
+import { can } from "@client/auth/session.ts";
 import { tw } from "@client/shared/styles.ts";
 import { formatDate } from "@client/shared/datetime.ts";
 import { BaseUI } from "./base-ui.ts";
@@ -373,7 +374,8 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
    * і з тими самими умовами: є куди відкривати й список не тільки для читання.
    */
   hotkeyCreate(): void {
-    if (this.readonly || !this.editRoute) return;
+    // can — щоб клавіша не робила того, чого кнопки на екрані немає.
+    if (this.readonly || !this.editRoute || !can(this.model, "create")) return;
     this.openEdit(null);
   }
 
@@ -463,19 +465,25 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
         <!-- Тулбар -->
         <div class="flex items-center gap-2 p-2 border-b border-base-300 flex-wrap">
           ${this.readonly ? nothing : html`
-            <button class="btn btn-sm btn-primary" @click=${() => this.openEdit(null)}>
-              ${icon.create} ${t("common.create")}
-            </button>
+            ${can(this.model, "create")
+              ? html`
+                <button class="btn btn-sm btn-primary" @click=${() => this.openEdit(null)}>
+                  ${icon.create} ${t("common.create")}
+                </button>`
+              : nothing}
             <button class="btn btn-sm" ?disabled=${!this.selectedId}
               @click=${() => this.openEdit(this.selectedId)}>
               ${icon.open} ${t("common.open")}
             </button>
-            <button class="btn btn-sm btn-error btn-outline" ?disabled=${!this.selectedId}
-              @click=${this.deleteSelected}>
-              ${icon.delete} ${t("common.delete")}
-            </button>
+            ${can(this.model, "delete")
+              ? html`
+                <button class="btn btn-sm btn-error btn-outline" ?disabled=${!this.selectedId}
+                  @click=${this.deleteSelected}>
+                  ${icon.delete} ${t("common.delete")}
+                </button>`
+              : nothing}
           `}
-          ${this.hierarchy
+          ${this.hierarchy && can(this.model, "edit")
             ? html`
               <button class="btn btn-sm" ?disabled=${!this.selectedId} @click=${this.#openMoveDialog}>
                 ${icon.toGroup} ${t("groups.toGroup")}

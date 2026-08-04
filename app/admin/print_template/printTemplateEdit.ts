@@ -1693,10 +1693,17 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
         <!-- Тулбар -->
         <div class="flex flex-wrap items-center gap-2">
-          <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
-            ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-            ${t("common.save")}
-          </button>
+          <!-- Власний тулбар, тож право перевіряємо тут: renderFormActions цей
+               екран не використовує. Полотно редактора в режимі перегляду поки
+               лишається живим — обгортати його fieldset'ом сенсу мало, воно
+               малює блоки мишею, а не контролами. -->
+          ${this.maySave
+            ? html`
+              <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
+                ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+                ${t("common.save")}
+              </button>`
+            : ""}
           <details class="dropdown">
             <summary class="btn btn-sm">+ ${t("printTemplate.addBlock")}</summary>
             <ul class="menu dropdown-content z-20 w-52 rounded-box bg-base-100 p-2 shadow">

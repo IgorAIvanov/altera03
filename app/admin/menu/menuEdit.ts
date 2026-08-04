@@ -205,149 +205,150 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
     return html`
       <div class="p-4 max-w-5xl flex flex-col gap-2">
         ${this.renderNotice()}
+        ${this.renderFields(html`
+          <div class="grid grid-cols-2 gap-2">
+            ${this.renderField(
+              this.t("common.code"),
+              html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
+                @input=${this.bindTo(item, "code")} />`,
+              { field: "code" },
+            )}
 
-        <div class="grid grid-cols-2 gap-2">
+            ${this.renderField(
+              this.t("common.name"),
+              html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
+                @input=${this.bindTo(item, "name")} />`,
+              { field: "name" },
+            )}
+          </div>
+
           ${this.renderField(
-            this.t("common.code"),
-            html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
-              @input=${this.bindTo(item, "code")} />`,
-            { field: "code" },
+            this.t("menu.isActive"),
+            html`<input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
+              @change=${(e: Event) => {
+                this.$root.item = { ...item, isActive: (e.target as HTMLInputElement).checked };
+              }} />`,
           )}
 
-          ${this.renderField(
-            this.t("common.name"),
-            html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
-              @input=${this.bindTo(item, "name")} />`,
-            { field: "name" },
-          )}
-        </div>
+          <!-- Групи: меню призначається групі, не людині. -->
+          <div class="mt-2">
+            <div class="font-semibold mb-1">${this.t("menu.groups")}</div>
+            ${groups.length === 0
+              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              : html`
+                <div class="flex flex-wrap gap-3">
+                  ${groups.map((g) => html`
+                    <label class="flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" class="checkbox checkbox-sm"
+                        .checked=${item.groupIds.includes(g.id)}
+                        @change=${(e: Event) => this.toggleGroup(g.id, (e.target as HTMLInputElement).checked)} />
+                      <span>${g.name}</span>
+                    </label>
+                  `)}
+                </div>
+              `}
+          </div>
 
-        ${this.renderField(
-          this.t("menu.isActive"),
-          html`<input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
-            @change=${(e: Event) => {
-              this.$root.item = { ...item, isActive: (e.target as HTMLInputElement).checked };
-            }} />`,
-        )}
+          <!-- Пункти. Плоска таблиця з батьком за кодом: дерево тут читається
+               гірше, ніж редагується, а порядок рядків задає menu_get. -->
+          <div class="flex items-center justify-between mt-4 mb-2">
+            <span class="font-semibold">${this.t("menu.items")}</span>
+            <button class="btn btn-sm" @click=${this.addEntry}>+ ${this.t("menu.addItem")}</button>
+          </div>
 
-        <!-- Групи: меню призначається групі, не людині. -->
-        <div class="mt-2">
-          <div class="font-semibold mb-1">${this.t("menu.groups")}</div>
-          ${groups.length === 0
-            ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
-            : html`
-              <div class="flex flex-wrap gap-3">
-                ${groups.map((g) => html`
-                  <label class="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-sm"
-                      .checked=${item.groupIds.includes(g.id)}
-                      @change=${(e: Event) => this.toggleGroup(g.id, (e.target as HTMLInputElement).checked)} />
-                    <span>${g.name}</span>
-                  </label>
-                `)}
-              </div>
-            `}
-        </div>
-
-        <!-- Пункти. Плоска таблиця з батьком за кодом: дерево тут читається
-             гірше, ніж редагується, а порядок рядків задає menu_get. -->
-        <div class="flex items-center justify-between mt-4 mb-2">
-          <span class="font-semibold">${this.t("menu.items")}</span>
-          <button class="btn btn-sm" @click=${this.addEntry}>+ ${this.t("menu.addItem")}</button>
-        </div>
-
-        <table class="table table-sm w-full table-tabular">
-          <thead>
-            <tr>
-              <th class="w-40">${this.t("menu.parent")}</th>
-              <th class="w-40">${this.t("common.code")}</th>
-              <th>${this.t("common.name")}</th>
-              <th class="w-40">${this.t("menu.icon")}</th>
-              <th class="w-64">${this.t("menu.route")}</th>
-              <th class="w-20 text-right">${this.t("menu.sortOrder")}</th>
-              <th class="w-16 text-center">${this.t("menu.isActive")}</th>
-              <th class="w-16"></th>
-              <th class="w-10"></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${item.entries.map((entry, i) => html`
+          <table class="table table-sm w-full table-tabular">
+            <thead>
               <tr>
-                <td>
-                  <select class="select select-sm w-full" .value=${entry.parentCode ?? ""}
-                    @change=${(e: Event) => this.setEntry(i, {
-                      parentCode: (e.target as HTMLSelectElement).value || null,
-                    })}>
-                    <option value="">— ${this.t("menu.root")} —</option>
-                    ${item.entries
-                      .filter((o) => o.code && o.code !== entry.code)
-                      .map((o) => html`
-                        <option value=${o.code} ?selected=${o.code === entry.parentCode}>${o.code}</option>
-                      `)}
-                  </select>
-                </td>
-                <td>
-                  <input class="input input-sm w-full" .value=${entry.code}
-                    @change=${(e: Event) => this.setCode(i, (e.target as HTMLInputElement).value)} />
-                </td>
-                <td>
-                  <input class="input input-sm w-full" .value=${entry.name}
-                    @input=${(e: Event) => this.setEntry(i, { name: (e.target as HTMLInputElement).value })} />
-                </td>
-                <!-- Іконка вибирається сіткою: у option розмітки не буває,
-                     тож select показував би самі лише ключі. -->
-                <td>
-                  <icon-picker
-                    .value=${entry.iconKey}
-                    @icon-selected=${(e: IconPickEvent) => this.setEntry(i, { iconKey: e.detail.key })}
-                  ></icon-picker>
-                </td>
-                <td>
-                  <select class="select select-sm w-full" .value=${entry.routePath ?? ""}
-                    @change=${(e: Event) => this.setEntry(i, {
-                      routePath: (e.target as HTMLSelectElement).value || null,
-                    })}>
-                    <option value="">— ${this.t("menu.folder")} —</option>
-                    ${ROUTE_OPTIONS.map((route) => html`
-                      <option value=${route} ?selected=${route === entry.routePath}>${route}</option>
-                    `)}
-                  </select>
-                </td>
-                <td>
-                  <input type="number" class="input input-sm w-full text-right" .value=${String(entry.sortOrder)}
-                    @input=${(e: Event) => this.setEntry(i, {
-                      sortOrder: Number((e.target as HTMLInputElement).value) || 0,
-                    })} />
-                </td>
-                <td class="text-center">
-                  <input type="checkbox" class="checkbox checkbox-sm" .checked=${entry.isActive}
-                    @change=${(e: Event) => this.setEntry(i, {
-                      isActive: (e.target as HTMLInputElement).checked,
-                    })} />
-                </td>
-                <td class="cell-text text-center whitespace-nowrap">
-                  <button class="btn btn-ghost btn-xs px-0.5" title=${this.t("menu.moveUp")}
-                    ?disabled=${!this.canMove(entry, -1)} @click=${() => this.moveEntry(i, -1)}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-                  </button>
-                  <button class="btn btn-ghost btn-xs px-0.5" title=${this.t("menu.moveDown")}
-                    ?disabled=${!this.canMove(entry, 1)} @click=${() => this.moveEntry(i, 1)}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                </td>
-                <td class="text-center">
-                  <button class="btn btn-ghost btn-xs text-error" title=${this.t("common.delete")}
-                    @click=${() => this.removeEntry(i)}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                  </button>
-                </td>
+                <th class="w-40">${this.t("menu.parent")}</th>
+                <th class="w-40">${this.t("common.code")}</th>
+                <th>${this.t("common.name")}</th>
+                <th class="w-40">${this.t("menu.icon")}</th>
+                <th class="w-64">${this.t("menu.route")}</th>
+                <th class="w-20 text-right">${this.t("menu.sortOrder")}</th>
+                <th class="w-16 text-center">${this.t("menu.isActive")}</th>
+                <th class="w-16"></th>
+                <th class="w-10"></th>
               </tr>
-            `)}
-            ${item.entries.length === 0
-              ? html`<tr><td colspan="9" class="text-center text-base-content/40 py-4">${this.t("common.noData")}</td></tr>`
-              : ""}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              ${item.entries.map((entry, i) => html`
+                <tr>
+                  <td>
+                    <select class="select select-sm w-full" .value=${entry.parentCode ?? ""}
+                      @change=${(e: Event) => this.setEntry(i, {
+                        parentCode: (e.target as HTMLSelectElement).value || null,
+                      })}>
+                      <option value="">— ${this.t("menu.root")} —</option>
+                      ${item.entries
+                        .filter((o) => o.code && o.code !== entry.code)
+                        .map((o) => html`
+                          <option value=${o.code} ?selected=${o.code === entry.parentCode}>${o.code}</option>
+                        `)}
+                    </select>
+                  </td>
+                  <td>
+                    <input class="input input-sm w-full" .value=${entry.code}
+                      @change=${(e: Event) => this.setCode(i, (e.target as HTMLInputElement).value)} />
+                  </td>
+                  <td>
+                    <input class="input input-sm w-full" .value=${entry.name}
+                      @input=${(e: Event) => this.setEntry(i, { name: (e.target as HTMLInputElement).value })} />
+                  </td>
+                  <!-- Іконка вибирається сіткою: у option розмітки не буває,
+                       тож select показував би самі лише ключі. -->
+                  <td>
+                    <icon-picker
+                      .value=${entry.iconKey}
+                      @icon-selected=${(e: IconPickEvent) => this.setEntry(i, { iconKey: e.detail.key })}
+                    ></icon-picker>
+                  </td>
+                  <td>
+                    <select class="select select-sm w-full" .value=${entry.routePath ?? ""}
+                      @change=${(e: Event) => this.setEntry(i, {
+                        routePath: (e.target as HTMLSelectElement).value || null,
+                      })}>
+                      <option value="">— ${this.t("menu.folder")} —</option>
+                      ${ROUTE_OPTIONS.map((route) => html`
+                        <option value=${route} ?selected=${route === entry.routePath}>${route}</option>
+                      `)}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" class="input input-sm w-full text-right" .value=${String(entry.sortOrder)}
+                      @input=${(e: Event) => this.setEntry(i, {
+                        sortOrder: Number((e.target as HTMLInputElement).value) || 0,
+                      })} />
+                  </td>
+                  <td class="text-center">
+                    <input type="checkbox" class="checkbox checkbox-sm" .checked=${entry.isActive}
+                      @change=${(e: Event) => this.setEntry(i, {
+                        isActive: (e.target as HTMLInputElement).checked,
+                      })} />
+                  </td>
+                  <td class="cell-text text-center whitespace-nowrap">
+                    <button class="btn btn-ghost btn-xs px-0.5" title=${this.t("menu.moveUp")}
+                      ?disabled=${!this.canMove(entry, -1)} @click=${() => this.moveEntry(i, -1)}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+                    </button>
+                    <button class="btn btn-ghost btn-xs px-0.5" title=${this.t("menu.moveDown")}
+                      ?disabled=${!this.canMove(entry, 1)} @click=${() => this.moveEntry(i, 1)}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                  </td>
+                  <td class="text-center">
+                    <button class="btn btn-ghost btn-xs text-error" title=${this.t("common.delete")}
+                      @click=${() => this.removeEntry(i)}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                    </button>
+                  </td>
+                </tr>
+              `)}
+              ${item.entries.length === 0
+                ? html`<tr><td colspan="9" class="text-center text-base-content/40 py-4">${this.t("common.noData")}</td></tr>`
+                : ""}
+            </tbody>
+          </table>
+        `)}
 
         ${this.renderFormActions()}
       </div>

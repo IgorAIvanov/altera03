@@ -6,6 +6,7 @@ import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
+import { can } from "@client/auth/session.ts";
 import { GlobalStyledLitElement } from "./gsle.ts";
 
 /** Одне повідомлення з конверта відповіді сервера. */
@@ -623,6 +624,68 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   }
 
   /**
+   * Режим перегляду: запис відкритий, а зберегти його користувач не може.
+   *
+   * Реактивний задарма — `maySave` читає сигнал прав, тож зміна прав
+   * перемальовує форму сама, без підписок і `requestUpdate`.
+   */
+  protected get readonlyMode(): boolean {
+    return this.primaryKey !== null && !this.maySave;
+  }
+
+  /**
+   * Обгортка полів форми. У режимі перегляду гасить усе всередині:
+   *  - нативні `input`/`select`/`textarea`/`button` — каскадом самого
+   *    `fieldset[disabled]`, без жодного JS;
+   *  - компоненти ui-kit — ні: каскад не проходить у shadow DOM, тому їм
+   *    форма передає `?disabled=${this.readonlyMode}` явно.
+   *
+   * `display: contents` — щоб обгортка не з'явилася в розкладці: у fieldset є
+   * власні поля й рамка, а форми покладаються на свої flex/grid. На каскад
+   * `disabled` це не впливає — він семантичний, не візуальний.
+   *
+   * ПІДВАЛ СЮДИ НЕ КЛАДЕМО: disabled гасить і кнопки, тож «Закрити» перестала
+   * б працювати — і переглядач не зміг би вийти з форми.
+   */
+  protected renderFields(content: TemplateResult): TemplateResult {
+    return html`<fieldset class="contents" ?disabled=${this.readonlyMode}>${content}</fieldset>`;
+  }
+
+  /**
+   * Чи має користувач право на дію над ЦІЄЮ моделлю — для кнопок форми:
+   * `${this.may("post") ? … : ""}`.
+   *
+   * Нестандартні команди оголошують своє право в `manifest.commands.access`, і
+   * клієнт цих оголошень НЕ бачить (у `view-manifest` їде тільки маршрут і
+   * заголовок). Тому для власних кнопок дію називає сама форма — тим самим
+   * словом, що в манифесті.
+   */
+  protected may(action: string): boolean {
+    return can(this.model, action);
+  }
+
+  /**
+   * Чи має користувач право зберегти ЦЕЙ запис.
+   *
+   * `save` — це два різні права: новий запис вимагає `create`, наявний —
+   * `edit`. Сервер вирішує так само, за наявністю `item.id`
+   * (`resolveRequiredAction`), тож рахувати треба тим самим способом — інакше
+   * ховали б не ту кнопку.
+   *
+   * Це підказка інтерфейсу, а не захист: відмовляє все одно сервер, і
+   * fail-closed. Тому помилка тут не небезпечна — лише незручна.
+   */
+  protected get maySave(): boolean {
+    if (this.primaryKey === null) return false;
+    const entity = (this.$root as Record<string, unknown>)[this.primaryKey];
+    const id = (entity && typeof entity === "object")
+      ? (entity as Record<string, unknown>).id
+      : undefined;
+    const isNew = id === null || id === undefined || id === "";
+    return can(this.model, isNew ? "create" : "edit");
+  }
+
+  /**
    * Спільний банер: «запис не знайдено» + помилки з конверта.
    * Підключається одним рядком у render підкласу: `${this.renderNotice()}`.
    */
@@ -745,7 +808,8 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * спрацює так само, як по кнопці.
    */
   hotkeySave(): void {
-    if (this.primaryKey === null || !this.canSave) return;
+    // maySave — щоб клавіша не робила того, чого кнопки на екрані немає.
+    if (!this.canSave || !this.maySave) return;
     void this.trySave();
   }
 
@@ -755,7 +819,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * вкладку не закриває: `saveAndClose` закриває лише після успіху.
    */
   hotkeyDefault(): void {
-    if (this.primaryKey === null || !this.canSave) return;
+    if (!this.canSave || !this.maySave) return;
     void this.saveAndClose();
   }
 
@@ -776,13 +840,16 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   protected renderFormActions(extra?: TemplateResult | string): TemplateResult {
     return html`
       <div class="flex gap-2 mt-6">
-        <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.saveAndClose}>
-          ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-          ${t("common.saveAndClose")}
-        </button>
-        <button class="btn btn-outline" ?disabled=${!this.canSave} @click=${this.trySave}>
-          ${t("common.save")}
-        </button>
+        ${this.maySave
+          ? html`
+            <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.saveAndClose}>
+              ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+              ${t("common.saveAndClose")}
+            </button>
+            <button class="btn btn-outline" ?disabled=${!this.canSave} @click=${this.trySave}>
+              ${t("common.save")}
+            </button>`
+          : ""}
         <button class="btn btn-ghost" ?disabled=${this.busy} @click=${this.closeSelf}>
           ${t("common.close")}
         </button>

@@ -77,6 +77,9 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
   private entries = new TabularSection<ManualEntryFormLine>(this, {
     rows: () => this.$root.item.entries,
     setRows: (entries) => { this.$root.item = { ...this.$root.item, entries }; },
+    // Режим перегляду секція бере у форми: каскад fieldset[disabled] у shadow
+    // root таблиці не проходить, а права — сигнал, тож читаємо на кожен рендер.
+    readonly: () => this.readonlyMode,
     createLine: () => ({
       id: null,
       lineNo: 0,
@@ -268,6 +271,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     const code = side === "debit" ? line.debitAccount : line.creditAccount;
     return html`
       <ui-picker
+        ?disabled=${this.readonlyMode}
         cell
         url="catalog/chart_of_account"
         fetch="lookup"
@@ -295,6 +299,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
       <div class="flex flex-col">
         ${slots.map((slot) => html`
           <ui-picker
+            ?disabled=${this.readonlyMode}
             cell
             title=${slot.dimensionName}
             url=${viewPath(slot.modelKey)}
@@ -323,6 +328,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     }
     return html`
       <ui-picker
+        ?disabled=${this.readonlyMode}
         cell
         url="catalog/currency"
         fetch="lookup"
@@ -341,6 +347,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     if (!this.lineNeeds(line, "currency")) return html``;
     return html`
       <ui-decimal
+        ?disabled=${this.readonlyMode}
         cell
         .precision=${MONEY_PRECISION}
         .value=${line.currencyAmount}
@@ -356,6 +363,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     }
     return html`
       <ui-decimal
+        ?disabled=${this.readonlyMode}
         cell
         .precision=${QTY_PRECISION}
         .value=${line.quantity}
@@ -375,66 +383,73 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     return html`
       <div class="p-4 max-w-5xl flex flex-col gap-2">
         ${this.renderNotice()}
+        ${this.renderFields(html`
+          <div class="flex gap-2">
+            ${this.renderField(
+              t("invoice.number"),
+              html`<input class="input input-bordered w-full" placeholder=${t("document.numberAuto")}
+                .value=${item.number ?? ""}
+                @input=${(e: Event) => this.setField("number", (e.target as HTMLInputElement).value)} />`,
+              { class: "w-40", field: "number" },
+            )}
+            <ui-date
+              ?disabled=${this.readonlyMode}
+              .label=${t("invoice.date")}
+              ?required=${this.isRequired("docDate")}
+              .value=${item.docDate ?? ""}
+              format=${dateFormat.dateTime}
+              @value-changed=${(e: DateEvent) => this.setField("docDate", e.detail.value)}
+            ></ui-date>
+            <ui-picker
+              ?disabled=${this.readonlyMode}
+              .label=${t("document.organization")}
+              ?required=${this.isRequired("organizationId")}
+              url="catalog/organization"
+              fetch="lookup"
+              .displayValue=${item.organization?.name ?? ""}
+              .selectedId=${item.organizationId ?? ""}
+              @item-selected=${(e: PickEvent) => {
+                this.setField("organizationId", e.detail.id);
+                this.$root.item = { ...this.$root.item, organization: { id: e.detail.id, name: e.detail.label } };
+              }}
+            ></ui-picker>
+          </div>
 
-        <div class="flex gap-2">
           ${this.renderField(
-            t("invoice.number"),
-            html`<input class="input input-bordered w-full" placeholder=${t("document.numberAuto")}
-              .value=${item.number ?? ""}
-              @input=${(e: Event) => this.setField("number", (e.target as HTMLInputElement).value)} />`,
-            { class: "w-40", field: "number" },
+            t("manualEntry.description"),
+            html`<input class="input input-bordered w-full" .value=${item.description ?? ""}
+              @input=${(e: Event) => this.setField("description", (e.target as HTMLInputElement).value)} />`,
           )}
-          <ui-date
-            .label=${t("invoice.date")}
-            ?required=${this.isRequired("docDate")}
-            .value=${item.docDate ?? ""}
-            format=${dateFormat.dateTime}
-            @value-changed=${(e: DateEvent) => this.setField("docDate", e.detail.value)}
-          ></ui-date>
-          <ui-picker
-            .label=${t("document.organization")}
-            ?required=${this.isRequired("organizationId")}
-            url="catalog/organization"
-            fetch="lookup"
-            .displayValue=${item.organization?.name ?? ""}
-            .selectedId=${item.organizationId ?? ""}
-            @item-selected=${(e: PickEvent) => {
-              this.setField("organizationId", e.detail.id);
-              this.$root.item = { ...this.$root.item, organization: { id: e.detail.id, name: e.detail.label } };
-            }}
-          ></ui-picker>
-        </div>
 
-        ${this.renderField(
-          t("manualEntry.description"),
-          html`<input class="input input-bordered w-full" .value=${item.description ?? ""}
-            @input=${(e: Event) => this.setField("description", (e.target as HTMLInputElement).value)} />`,
-        )}
+          ${item.isPosted
+            ? html`<div class="badge badge-success badge-sm self-start">${t("document.posted")}</div>`
+            : ""}
 
-        ${item.isPosted
-          ? html`<div class="badge badge-success badge-sm self-start">${t("document.posted")}</div>`
-          : ""}
-
-        <!-- Табличная часть: каркас — у примітиві (колонки оголошені в
-             конструкторі секції), рахунки/субконто — custom-комірки вище. -->
-        <div class="flex items-center justify-between mt-2 mb-1">
-          <span class="font-semibold">${t("manualEntry.entries")}</span>
-          <ui-tabular-toolbar .section=${this.entries}></ui-tabular-toolbar>
-        </div>
-        <ui-tabular-table .section=${this.entries}></ui-tabular-table>
+          <!-- Табличная часть: каркас — у примітиві (колонки оголошені в
+               конструкторі секції), рахунки/субконто — custom-комірки вище. -->
+          <div class="flex items-center justify-between mt-2 mb-1">
+            <span class="font-semibold">${t("manualEntry.entries")}</span>
+            <ui-tabular-toolbar .section=${this.entries}></ui-tabular-toolbar>
+          </div>
+          <ui-tabular-table .section=${this.entries}></ui-tabular-table>
+        `)}
 
         ${this.renderFormActions(html`
           ${item.isPosted
+            ? this.may("unpost")
+              ? html`
+                <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
+                  ${this.running === "unpost" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+                  ${t("document.unpost")}
+                </button>`
+              : ""
+            : this.may("post")
             ? html`
-              <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
-                ${this.running === "unpost" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                ${t("document.unpost")}
-              </button>`
-            : html`
               <button class="btn btn-secondary" ?disabled=${this.busy || !item.id} @click=${this.post}>
                 ${this.running === "post" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
                 ${t("document.post")}
-              </button>`}
+              </button>`
+            : ""}
         `)}
       </div>
     `;

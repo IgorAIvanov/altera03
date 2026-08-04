@@ -122,6 +122,10 @@ export class UiTabularTable extends Base {
     const section = this.section;
     if (!section) return;
 
+    // У режимі перегляду клавіатура секції мовчить цілком: рядки не додаються,
+    // не видаляються, і Enter не створює новий у кінці таблиці.
+    if (section.readonly) return;
+
     if (e.key === "Insert") {
       e.preventDefault();
       section.addLine();
@@ -186,20 +190,21 @@ export class UiTabularTable extends Base {
       case "computed":
         return html`${col.value?.(line) ?? ""}`;
       case "text":
-        return html`<input class="cell-control" .value=${String(line[key] ?? "")}
+        return html`<input class="cell-control" ?disabled=${section.readonly}
+          .value=${String(line[key] ?? "")}
           @input=${(e: Event) => section.patch(index, { [key]: (e.target as HTMLInputElement).value })} />`;
       case "checkbox":
-        return html`<input type="checkbox" .checked=${line[key] === true}
+        return html`<input type="checkbox" ?disabled=${section.readonly} .checked=${line[key] === true}
           @change=${(e: Event) => section.patch(index, { [key]: (e.target as HTMLInputElement).checked })} />`;
       case "decimal":
-        return html`<ui-decimal cell
+        return html`<ui-decimal cell ?disabled=${section.readonly}
           .precision=${col.precision ?? 2}
           .value=${String(line[key] ?? "")}
           @value-input=${(e: ValueEvent) => section.patch(index, { [key]: e.detail.value })}
           @value-changed=${(e: ValueEvent) => section.patch(index, { [key]: e.detail.value })}
         ></ui-decimal>`;
       case "date":
-        return html`<ui-date cell
+        return html`<ui-date cell ?disabled=${section.readonly}
           .value=${String(line[key] ?? "")}
           @value-changed=${(e: ValueEvent) => section.patch(index, { [key]: e.detail.value })}
         ></ui-date>`;
@@ -207,7 +212,7 @@ export class UiTabularTable extends Base {
         const refKey = col.refKey ?? (key.endsWith("Id") ? key.slice(0, -2) : key);
         const ref = line[refKey] as { id?: string; name?: string } | null;
         const display = col.displayField ?? "name";
-        return html`<ui-picker cell
+        return html`<ui-picker cell ?disabled=${section.readonly}
           url=${col.url ?? ""}
           fetch=${col.fetchCommand ?? "lookup"}
           display-field=${display}

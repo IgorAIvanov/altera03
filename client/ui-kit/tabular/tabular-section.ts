@@ -115,6 +115,15 @@ export interface TabularConfig<Line extends object> {
   /** Колонка «#» і кнопка видалення в рядку (обидві — за замовчуванням так). */
   showLineNo?: boolean;
   rowDelete?: boolean;
+  /**
+   * Режим перегляду. Функція, а не прапорець: форма віддає сюди свій
+   * `readonlyMode`, який залежить від прав, а права — сигнал; отже значення
+   * має читатися на кожен рендер, а не запам'ятовуватися при створенні секції.
+   *
+   * Потрібен окремо від `fieldset[disabled]` форми: комірки живуть у shadow
+   * root таблиці, куди каскад не проходить.
+   */
+  readonly?: () => boolean;
 }
 
 /** Відкладений фокус: комірка, яку таблиця сфокусує після рендера. */
@@ -177,8 +186,13 @@ export class TabularSection<Line extends object> {
     return this.config.showLineNo !== false && this.lineNoKey !== null;
   }
 
+  /** Режим перегляду: рядки видно, змінювати їх не можна. */
+  get readonly(): boolean {
+    return this.config.readonly?.() ?? false;
+  }
+
   get rowDelete(): boolean {
-    return this.config.rowDelete !== false;
+    return this.config.rowDelete !== false && !this.readonly;
   }
 
   visibleColumns(): Array<TabularColumn<Line>> {
@@ -323,6 +337,7 @@ export class TabularSection<Line extends object> {
 
   /** Заплатити зміну поля рядка (комірки таблиці кличуть саме це). */
   patch(index: number, patch: Partial<Line>) {
+    if (this.readonly) return;
     this.config.setRows(this.rows.map((l, i) => (i === index ? { ...l, ...patch } : l)));
     // Помилки прив'язані до індексу рядка, тож будь-яка правка (а надто
     // вставка, видалення й перестановка) вимагає перерахунку з нуля.
@@ -330,6 +345,7 @@ export class TabularSection<Line extends object> {
   }
 
   addLine() {
+    if (this.readonly) return;
     const line = this.#newLine();
     const rows = this.#renumber([...this.rows, line]);
     this.config.setRows(rows);
@@ -344,6 +360,7 @@ export class TabularSection<Line extends object> {
    * клон з тим самим id перезаписав би оригінал замість створити новий.
    */
   copyLine(index = this.currentIndex) {
+    if (this.readonly) return;
     const source = this.rows[index];
     if (!source) return;
     const clone = JSON.parse(JSON.stringify(source)) as Line;
@@ -358,6 +375,7 @@ export class TabularSection<Line extends object> {
   }
 
   removeLine(index = this.currentIndex) {
+    if (this.readonly) return;
     if (!this.rows[index]) return;
     const rows = this.#renumber(this.rows.filter((_, i) => i !== index));
     this.config.setRows(rows);
@@ -368,6 +386,7 @@ export class TabularSection<Line extends object> {
 
   /** Пересунути поточний рядок на delta позицій (-1 вище / +1 нижче). */
   move(delta: number, index = this.currentIndex) {
+    if (this.readonly) return;
     const target = index + delta;
     if (!this.rows[index] || target < 0 || target >= this.rows.length) return;
     const rows = [...this.rows];

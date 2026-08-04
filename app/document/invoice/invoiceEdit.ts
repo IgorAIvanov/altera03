@@ -49,6 +49,9 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
   private lines = new TabularSection<InvoiceLine>(this, {
     rows: () => this.$root.item.lines,
     setRows: (lines) => { this.$root.item = { ...this.$root.item, lines }; },
+    // Режим перегляду секція бере у форми: каскад fieldset[disabled] у shadow
+    // root таблиці не проходить, а права — сигнал, тож читаємо на кожен рендер.
+    readonly: () => this.readonlyMode,
     createLine: () => ({
       id: null,
       lineNo: 0,
@@ -197,97 +200,107 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     return html`
       <div class="p-4 max-w-3xl">
         ${this.renderNotice()}
-        <!-- Шапка -->
-        <div class="mb-4">
-          <!-- номер + дата — в одній рамці -->
-          <fieldset class="border border-base-700 rounded-lg px-4 pb-3 mb-4 bg-base-100">
-            <legend class="px-2 text-sm text-base-content/60">${t("invoice.titleOne")}</legend>
-            <div class="grid grid-cols-2 gap-4">
-              ${this.renderField(
-                t("invoice.number"),
-                // Порожній номер підставить app.doc_next_number при записі.
-                html`<input class="input input-bordered w-full" placeholder=${t("document.numberAuto")}
-                  .value=${item.number ?? ""}
-                  @input=${(e: Event) => this.setField("number", (e.target as HTMLInputElement).value)} />`,
-                { field: "number" },
-              )}
-              <ui-date
-                .label=${t("invoice.date")}
-                ?required=${this.isRequired("docDate")}
-                .value=${item.docDate ?? ""}
-                format=${dateFormat.dateTime}
-                @value-changed=${(e: DateEvent) => this.setField("docDate", e.detail.value)}
-              ></ui-date>
-            </div>
-            ${item.isPosted
-              ? html`<div class="badge badge-success badge-sm mt-2">${t("document.posted")}</div>`
-              : ""}
-          </fieldset>
+        ${this.renderFields(html`
+          <!-- Шапка -->
+          <div class="mb-4">
+            <!-- номер + дата — в одній рамці -->
+            <fieldset class="border border-base-700 rounded-lg px-4 pb-3 mb-4 bg-base-100">
+              <legend class="px-2 text-sm text-base-content/60">${t("invoice.titleOne")}</legend>
+              <div class="grid grid-cols-2 gap-4">
+                ${this.renderField(
+                  t("invoice.number"),
+                  // Порожній номер підставить app.doc_next_number при записі.
+                  html`<input class="input input-bordered w-full" placeholder=${t("document.numberAuto")}
+                    .value=${item.number ?? ""}
+                    @input=${(e: Event) => this.setField("number", (e.target as HTMLInputElement).value)} />`,
+                  { field: "number" },
+                )}
+                <ui-date
+                  ?disabled=${this.readonlyMode}
+                  .label=${t("invoice.date")}
+                  ?required=${this.isRequired("docDate")}
+                  .value=${item.docDate ?? ""}
+                  format=${dateFormat.dateTime}
+                  @value-changed=${(e: DateEvent) => this.setField("docDate", e.detail.value)}
+                ></ui-date>
+              </div>
+              ${item.isPosted
+                ? html`<div class="badge badge-success badge-sm mt-2">${t("document.posted")}</div>`
+                : ""}
+            </fieldset>
 
-          <ui-picker
-            .label=${t("document.organization")}
-            ?required=${this.isRequired("organizationId")}
-            url="catalog/organization"
-            fetch="lookup"
-            .displayValue=${item.organization?.name ?? ""}
-            .selectedId=${item.organizationId ?? ""}
-            @item-selected=${(e: PickEvent) => {
-              this.setField("organizationId", e.detail.id);
-              this.$root.item = { ...this.$root.item, organization: { id: e.detail.id, name: e.detail.label } };
-            }}
-          ></ui-picker>
+            <ui-picker
+              ?disabled=${this.readonlyMode}
+              .label=${t("document.organization")}
+              ?required=${this.isRequired("organizationId")}
+              url="catalog/organization"
+              fetch="lookup"
+              .displayValue=${item.organization?.name ?? ""}
+              .selectedId=${item.organizationId ?? ""}
+              @item-selected=${(e: PickEvent) => {
+                this.setField("organizationId", e.detail.id);
+                this.$root.item = { ...this.$root.item, organization: { id: e.detail.id, name: e.detail.label } };
+              }}
+            ></ui-picker>
 
-          <ui-picker
-            .label=${t("invoice.counterparty")}
-            ?required=${this.isRequired("counterpartyId")}
-            url="catalog/counterparty"
-            fetch="lookup"
-            .displayValue=${item.counterparty?.name ?? ""}
-            .selectedId=${item.counterpartyId ?? ""}
-            show-clear
-            @item-selected=${(e: PickEvent) => {
-              this.setField("counterpartyId", e.detail.id);
-              this.$root.item = { ...this.$root.item, counterparty: { id: e.detail.id, name: e.detail.label } };
-            }}
-            @item-cleared=${() => {
-              this.setField("counterpartyId", "");
-              this.$root.item = { ...this.$root.item, counterparty: null };
-            }}
-          ></ui-picker>
-        </div>
+            <ui-picker
+              ?disabled=${this.readonlyMode}
+              .label=${t("invoice.counterparty")}
+              ?required=${this.isRequired("counterpartyId")}
+              url="catalog/counterparty"
+              fetch="lookup"
+              .displayValue=${item.counterparty?.name ?? ""}
+              .selectedId=${item.counterpartyId ?? ""}
+              show-clear
+              @item-selected=${(e: PickEvent) => {
+                this.setField("counterpartyId", e.detail.id);
+                this.$root.item = { ...this.$root.item, counterparty: { id: e.detail.id, name: e.detail.label } };
+              }}
+              @item-cleared=${() => {
+                this.setField("counterpartyId", "");
+                this.$root.item = { ...this.$root.item, counterparty: null };
+              }}
+            ></ui-picker>
+          </div>
 
-        <!-- Табличная часть: логіка й розмітка — у примітиві (колонки оголошені
-             в конструкторі секції). Тулбар — окремий компонент, можна замінити
-             своїм або прибрати. -->
-        <div class="flex items-center justify-between mb-2">
-          <span class="font-semibold">${t("invoice.lines")}</span>
-          <ui-tabular-toolbar .section=${this.lines}></ui-tabular-toolbar>
-        </div>
-        <ui-tabular-table .section=${this.lines}></ui-tabular-table>
+          <!-- Табличная часть: логіка й розмітка — у примітиві (колонки оголошені
+               в конструкторі секції). Тулбар — окремий компонент, можна замінити
+               своїм або прибрати. -->
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold">${t("invoice.lines")}</span>
+            <ui-tabular-toolbar .section=${this.lines}></ui-tabular-toolbar>
+          </div>
+          <ui-tabular-table .section=${this.lines}></ui-tabular-table>
 
-        <!-- Вкладення документа: скани, рахунки, листування.
-             Прив'язуються до вже збереженого документа, тому до першого
-             save компонент показує підказку замість кнопки. -->
-        <div class="mt-4">
-          <ui-attachments
-            owner-model="invoice"
-            .ownerId=${item.id ?? ""}
-            .label=${t("invoice.attachments")}
-          ></ui-attachments>
-        </div>
+          <!-- Вкладення документа: скани, рахунки, листування.
+               Прив'язуються до вже збереженого документа, тому до першого
+               save компонент показує підказку замість кнопки. -->
+          <div class="mt-4">
+            <ui-attachments
+              ?disabled=${this.readonlyMode}
+              owner-model="invoice"
+              .ownerId=${item.id ?? ""}
+              .label=${t("invoice.attachments")}
+            ></ui-attachments>
+          </div>
+        `)}
 
         ${this.renderFormActions(html`
           ${item.isPosted
+            ? this.may("unpost")
+              ? html`
+                <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
+                  ${this.running === "unpost" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+                  ${t("document.unpost")}
+                </button>`
+              : ""
+            : this.may("post")
             ? html`
-              <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
-                ${this.running === "unpost" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                ${t("document.unpost")}
-              </button>`
-            : html`
               <button class="btn btn-secondary" ?disabled=${this.busy || !item.id} @click=${this.post}>
                 ${this.running === "post" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
                 ${t("document.post")}
-              </button>`}
+              </button>`
+            : ""}
           <button class="btn btn-outline" ?disabled=${this.busy || !item.id} @click=${this.printPdf}>
             ${this.running === "printPdf" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             ${t("common.print")}

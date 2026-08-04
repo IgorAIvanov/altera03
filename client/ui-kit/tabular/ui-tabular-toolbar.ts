@@ -45,6 +45,10 @@ export class UiTabularToolbar extends GlobalStyledLitElement {
     const section = this.section;
     if (!section) return html``;
 
+    // У режимі перегляду панелі дій немає взагалі: жодна її кнопка не має сенсу,
+    // а вимкнений ряд із п'яти кнопок лише займав би місце над таблицею.
+    if (section.readonly) return html``;
+
     const current = section.currentIndex;
     const hasCurrent = current >= 0 && current < section.rows.length;
 

@@ -120,135 +120,137 @@ export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {
     return html`
       <div class="p-4 max-w-3xl flex flex-col gap-2">
         ${this.renderNotice()}
+        ${this.renderFields(html`
+          <div class="grid grid-cols-2 gap-2">
+            ${this.renderField(
+              this.t("common.code"),
+              html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
+                @input=${this.bindTo(item, "code")} />`,
+              { field: "code" },
+            )}
 
-        <div class="grid grid-cols-2 gap-2">
-          ${this.renderField(
-            this.t("common.code"),
-            html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
-              @input=${this.bindTo(item, "code")} />`,
-            { field: "code" },
-          )}
-
-          ${this.renderField(
-            this.t("common.name"),
-            html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
-              @input=${this.bindTo(item, "name")} />`,
-            { field: "name" },
-          )}
-        </div>
-
-        ${this.renderField(
-          this.t("common.active"),
-          html`<input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
-            @change=${(e: Event) => {
-              this.$root.item = { ...item, isActive: (e.target as HTMLInputElement).checked };
-            }} />`,
-        )}
-
-        <!-- Меню групи. Другий кінець того самого зв'язку, що редагується у
-             формі меню: там чекбокси груп, тут — чекбокси меню. -->
-        <div class="mt-4">
-          <div class="font-semibold mb-1">${this.t("userGroup.menus")}</div>
-          ${menus.length === 0
-            ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
-            : html`
-              <div class="flex flex-wrap gap-3">
-                ${menus.map((m) => html`
-                  <label class="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" class="checkbox checkbox-sm"
-                      .checked=${item.menuIds.includes(m.id)}
-                      @change=${(e: Event) => this.toggleMenu(m.id, (e.target as HTMLInputElement).checked)} />
-                    <span>${m.name}</span>
-                  </label>
-                `)}
-              </div>
-            `}
-        </div>
-
-        <!-- Учасники -->
-        <div class="mt-4">
-          <div class="font-semibold mb-1">${this.t("userGroup.members")}</div>
-
-          <div class="w-80 mb-2">
-            <ui-picker
-              url="admin/user"
-              fetch="lookup"
-              placeholder=${this.t("userGroup.addMember")}
-              .displayValue=${""}
-              .selectedId=${""}
-              @item-selected=${(e: PickEvent) => this.addMember(e.detail.id, e.detail.label)}
-            ></ui-picker>
+            ${this.renderField(
+              this.t("common.name"),
+              html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
+                @input=${this.bindTo(item, "name")} />`,
+              { field: "name" },
+            )}
           </div>
 
-          ${item.members.length === 0
-            ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
-            : html`
-              <div class="flex flex-wrap gap-2">
-                ${item.members.map((m) => html`
-                  <span class="badge badge-outline gap-1 py-3">
-                    ${m.name}
-                    <button class="btn btn-ghost btn-xs px-0 text-error" title=${this.t("common.delete")}
-                      @click=${() => this.removeMember(m.id)}>✕</button>
-                  </span>
-                `)}
-              </div>
-            `}
-        </div>
+          ${this.renderField(
+            this.t("common.active"),
+            html`<input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
+              @change=${(e: Event) => {
+                this.$root.item = { ...item, isActive: (e.target as HTMLInputElement).checked };
+              }} />`,
+          )}
 
-        <div class="flex items-center justify-between mt-4 mb-2">
-          <span class="font-semibold">${this.t("userGroup.permissions")}</span>
-          <button class="btn btn-sm" @click=${this.addPermission}>+ ${this.t("userGroup.addPermission")}</button>
-        </div>
+          <!-- Меню групи. Другий кінець того самого зв'язку, що редагується у
+               формі меню: там чекбокси груп, тут — чекбокси меню. -->
+          <div class="mt-4">
+            <div class="font-semibold mb-1">${this.t("userGroup.menus")}</div>
+            ${menus.length === 0
+              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              : html`
+                <div class="flex flex-wrap gap-3">
+                  ${menus.map((m) => html`
+                    <label class="flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" class="checkbox checkbox-sm"
+                        .checked=${item.menuIds.includes(m.id)}
+                        @change=${(e: Event) => this.toggleMenu(m.id, (e.target as HTMLInputElement).checked)} />
+                      <span>${m.name}</span>
+                    </label>
+                  `)}
+                </div>
+              `}
+          </div>
 
-        <table class="table table-sm w-full table-tabular">
-          <thead>
-            <tr>
-              <th class="w-64">${this.t("userGroup.model")}</th>
-              <th class="w-56">${this.t("userGroup.action")}</th>
-              <th class="w-24 text-center">${this.t("userGroup.allowed")}</th>
-              <th class="w-10"></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${this.$root.rows.map((row, i) => html`
+          <!-- Учасники -->
+          <div class="mt-4">
+            <div class="font-semibold mb-1">${this.t("userGroup.members")}</div>
+
+            <div class="w-80 mb-2">
+              <ui-picker
+                ?disabled=${this.readonlyMode}
+                url="admin/user"
+                fetch="lookup"
+                placeholder=${this.t("userGroup.addMember")}
+                .displayValue=${""}
+                .selectedId=${""}
+                @item-selected=${(e: PickEvent) => this.addMember(e.detail.id, e.detail.label)}
+              ></ui-picker>
+            </div>
+
+            ${item.members.length === 0
+              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              : html`
+                <div class="flex flex-wrap gap-2">
+                  ${item.members.map((m) => html`
+                    <span class="badge badge-outline gap-1 py-3">
+                      ${m.name}
+                      <button class="btn btn-ghost btn-xs px-0 text-error" title=${this.t("common.delete")}
+                        @click=${() => this.removeMember(m.id)}>✕</button>
+                    </span>
+                  `)}
+                </div>
+              `}
+          </div>
+
+          <div class="flex items-center justify-between mt-4 mb-2">
+            <span class="font-semibold">${this.t("userGroup.permissions")}</span>
+            <button class="btn btn-sm" @click=${this.addPermission}>+ ${this.t("userGroup.addPermission")}</button>
+          </div>
+
+          <table class="table table-sm w-full table-tabular">
+            <thead>
               <tr>
-                <td>
-                  <select class="select select-sm w-full" .value=${row.model}
-                    @change=${(e: Event) => this.setPermission(i, { model: (e.target as HTMLSelectElement).value })}>
-                    ${MODEL_OPTIONS.map((model) => html`
-                      <option value=${model} ?selected=${model === row.model}>
-                        ${model === "*" ? `* — ${this.t("userGroup.allModels")}` : model}
-                      </option>
-                    `)}
-                  </select>
-                </td>
-                <td>
-                  <select class="select select-sm w-full" .value=${row.action}
-                    @change=${(e: Event) => this.setPermission(i, { action: (e.target as HTMLSelectElement).value })}>
-                    ${actions.map((a) => html`
-                      <option value=${a.id} ?selected=${a.id === row.action}>${a.name}</option>
-                    `)}
-                  </select>
-                </td>
-                <td class="text-center">
-                  <input type="checkbox" class="checkbox checkbox-sm" .checked=${row.isAllowed}
-                    @change=${(e: Event) => this.setPermission(i, {
-                      isAllowed: (e.target as HTMLInputElement).checked,
-                    })} />
-                </td>
-                <td class="text-center">
-                  <button class="btn btn-ghost btn-xs text-error" title=${this.t("common.delete")}
-                    @click=${() => this.removePermission(i)}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                  </button>
-                </td>
+                <th class="w-64">${this.t("userGroup.model")}</th>
+                <th class="w-56">${this.t("userGroup.action")}</th>
+                <th class="w-24 text-center">${this.t("userGroup.allowed")}</th>
+                <th class="w-10"></th>
               </tr>
-            `)}
-            ${this.$root.rows.length === 0
-              ? html`<tr><td colspan="4" class="text-center text-base-content/40 py-4">${this.t("common.noData")}</td></tr>`
-              : ""}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              ${this.$root.rows.map((row, i) => html`
+                <tr>
+                  <td>
+                    <select class="select select-sm w-full" .value=${row.model}
+                      @change=${(e: Event) => this.setPermission(i, { model: (e.target as HTMLSelectElement).value })}>
+                      ${MODEL_OPTIONS.map((model) => html`
+                        <option value=${model} ?selected=${model === row.model}>
+                          ${model === "*" ? `* — ${this.t("userGroup.allModels")}` : model}
+                        </option>
+                      `)}
+                    </select>
+                  </td>
+                  <td>
+                    <select class="select select-sm w-full" .value=${row.action}
+                      @change=${(e: Event) => this.setPermission(i, { action: (e.target as HTMLSelectElement).value })}>
+                      ${actions.map((a) => html`
+                        <option value=${a.id} ?selected=${a.id === row.action}>${a.name}</option>
+                      `)}
+                    </select>
+                  </td>
+                  <td class="text-center">
+                    <input type="checkbox" class="checkbox checkbox-sm" .checked=${row.isAllowed}
+                      @change=${(e: Event) => this.setPermission(i, {
+                        isAllowed: (e.target as HTMLInputElement).checked,
+                      })} />
+                  </td>
+                  <td class="text-center">
+                    <button class="btn btn-ghost btn-xs text-error" title=${this.t("common.delete")}
+                      @click=${() => this.removePermission(i)}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                    </button>
+                  </td>
+                </tr>
+              `)}
+              ${this.$root.rows.length === 0
+                ? html`<tr><td colspan="4" class="text-center text-base-content/40 py-4">${this.t("common.noData")}</td></tr>`
+                : ""}
+            </tbody>
+          </table>
+        `)}
 
         ${this.renderFormActions()}
       </div>
