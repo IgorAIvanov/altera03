@@ -2,6 +2,8 @@
 name: model-picker-form
 description: Build a model picker dialog (lookup/select-from-list modal) by extending the shared ModelPickerBase class instead of hand-writing search, table, and select/cancel each time.
 argument-hint: Describe the model name and which columns the picker shows (key, title, width, muted).
+metadata:
+  audience: app
 ---
 
 # Model Picker Form Skill
@@ -22,12 +24,13 @@ component. On confirm it emits `picker.select` with `{ id, label }`; on cancel,
 `manifest.json` `views.picker`.
 
 Do not confuse the two:
-- **`<ui-picker>`** (`client/ui-kit/components/ui-picker.ts`) — the inline field with input + dropdown + magnifier. Shared, not per-model.
+- **`<ui-picker>`** (`@client/ui-kit/components/ui-picker.ts`) — the inline field with input + dropdown + magnifier. Shared, not per-model.
 - **`<Model>Picker.ts`** — the per-model modal opened by that magnifier. This skill is about the latter.
 
 ## Base class
 
-`client/ui-kit/base/model-picker-base.ts` → `ModelPickerBase<Row> extends BaseUI<ListRoot<Row>>`
+`@client/ui-kit/base/model-picker-base.ts` → `ModelPickerBase<Row> extends BaseUI<ListRoot<Row>>`
+(`@client/` is the alias for the `@altera/client` package).
 
 It owns: load of the `lookup` command via `run()` / `assign()` on the shared envelope,
 debounced search (250 ms), autofocus on the search input, row selection,
@@ -52,7 +55,7 @@ The `Row` type is the model's `LookupRow` from its TypeBox schema — see
 
 ## Canonical example
 
-`app/catalog/bank/bankPicker.ts` — keep it as the reference:
+A complete picker dialog for a `bank` catalog — this is the entire file:
 
 ```ts
 import { customElement } from "lit/decorators.js";

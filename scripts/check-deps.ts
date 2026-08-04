@@ -171,10 +171,16 @@ await checkNoAppDependency("server", () => false);
 // tools/ читає застосунок лише в рантаймі (аргумент appDir), а не імпортом —
 // статичної залежності від app бути не має.
 await checkNoAppDependency("tools", () => false);
+// skills/ — теж пакет: він розкладає скіли в будь-який застосунок, отриманий
+// аргументом (targetDir), і про цей конкретний знати не має. Заразом перевірка
+// ловить спокусу зчитати skills/src із самого пакета: у встановленому пакета
+// того каталогу немає, він їде мапою (skills.generated.ts).
+await checkNoAppDependency("skills", () => false);
 
 await checkStaysInsidePackage("client");
 await checkStaysInsidePackage("server");
 await checkStaysInsidePackage("tools");
+await checkStaysInsidePackage("skills");
 
 await checkCssIsPlain("client");
 await checkCssIsPlain("server");

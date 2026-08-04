@@ -2,6 +2,8 @@
 name: typebox-model-schema
 description: Define the complete model schema using TypeBox as the single source of truth for backend validation, SQL contract documentation, and frontend form/list/picker generation.
 argument-hint: Describe the model name, its fields with types and UI roles (form, list, lookup), and any extra commands or related rows.
+metadata:
+  audience: app
 ---
 
 # TypeBox Model Schema Skill
@@ -71,11 +73,11 @@ them per model:
 import { type SortDir } from "@client/shared/schema.ts";
 ```
 
-The actual `client/shared/schema.ts` (lives in the `client` package, not the app —
+What that module holds (it lives in the `@altera/client` package, not in the app —
 the app depends on the framework, never the reverse):
 
 ```ts
-// client/shared/schema.ts
+// @client/shared/schema.ts
 import { Type, type Static } from "@sinclair/typebox";
 
 export const SortDirSchema = Type.Union([Type.Literal("asc"), Type.Literal("desc")]);

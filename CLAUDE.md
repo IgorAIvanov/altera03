@@ -13,6 +13,7 @@ deno task sql:gen <model>  # перегенерувати CRUD-SQL ОДНІЄЇ 
 deno task core:sql     # вбудувати server/sql/**/db/*.sql у core-sql.generated.ts (після правки SQL ядра)
 deno task client:assets    # вбудувати тему й локалі фреймворку (після правки theme.css / client/_locales)
 deno task scaffold:template # вбудувати create/template/** у create/template.generated.ts
+deno task skills:build      # вбудувати прикладні скіли у skills/skills.generated.ts (після правки skills/src/**)
 deno task scaffold:verify   # згенерувати застосунок у тимчасовий каталог і перевірити типи й збірку
 deno task scaffold:verify:local  # те саме проти вихідників репо — ДО публікації пакетів
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
@@ -95,6 +96,12 @@ create/                     # scaffold нового застосунку (@alter
   template/                 # дерево шаблону звичайними файлами — джерело
   template.generated.ts     # воно ж мапою: команду запускають без установки,
                             #   тож пакет може віддати лише модулі
+
+skills/                     # скіли агента (@altera/skills)
+  src/<name>/SKILL.md       # ЄДИНЕ джерело; сюди дивляться симлінки .claude/skills
+                            #   і .github/skills цього репозиторію
+  skills.generated.ts       # прикладні скіли мапою — те саме, що з шаблоном scaffold
+  mod.ts                    # syncSkills(): розкласти їх у .claude/skills застосунку
 
 tools/                      # пакет інструментів (@altera/tools): codegen, publish, дев-клієнт
   generate-model-sql.ts           # генерація SQL моделей
@@ -211,7 +218,7 @@ payload і відповіді не зберігаються.
 1. Якщо є TS-handler у реєстрі — викликає його.
 2. Інакше будує ім'я функції `{schema}.{model}_{command}` і викликає PostgreSQL.
 
-Додати нестандартну TS-команду: оголосити її в `manifest.json` моделі в блоці `commands.ts` (поле `module` — шлях до TS-файлу поряд із моделлю, напр. `./db/<model>.commands.ts`), потім `deno task sql:registry`. Хендлер має сигнатуру `(payload, ctx) => Promise<envelope>`, SQL-контекст приходить аргументом `ctx.db`. Деталі — [`docs/ts-model-command.md`](docs/ts-model-command.md); skill — [`db-function-contract`](.github/skills/db-function-contract/SKILL.md).
+Додати нестандартну TS-команду: оголосити її в `manifest.json` моделі в блоці `commands.ts` (поле `module` — шлях до TS-файлу поряд із моделлю, напр. `./db/<model>.commands.ts`), потім `deno task sql:registry`. Хендлер має сигнатуру `(payload, ctx) => Promise<envelope>`, SQL-контекст приходить аргументом `ctx.db`. Деталі — [`docs/ts-model-command.md`](docs/ts-model-command.md); skill — [`db-function-contract`](skills/src/db-function-contract/SKILL.md).
 
 ## Фронтенд-компоненти
 
@@ -234,12 +241,12 @@ Picker-поля використовують компонент `<ui-picker url=
 `{ ok, data, messages }`, засіяне зі схеми через `Value.Create` (жодних рукописних порожніх
 об'єктів). Поля без префікса — дані моделі (`item`, `rows`, `totals`); `$`-префікс — службовий стан,
 що дзеркалиться з БД (`$query`). Транзієнт (`running`, `busy`, `messages`) у `$root` не потрапляє.
-Skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md); еталони —
+Skill — [`model-form-root`](skills/src/model-form-root/SKILL.md); еталони —
 `app/catalog/bank/bankEdit.ts` (проста форма), `app/document/invoice/invoiceEdit.ts` (з табличною частиною).
 
-**Форма списку** — наслідуй `ModelListBase` (`client/ui-kit/base/model-list-base.ts`): підклас задає лише `model`, `editRoute` та `columns`. Тулбар, серверне сортування, пагінація, пошук, вибір рядка — у базі. Кнопка **Excel** теж у базі: вивантажується **весь відбір** (та сама команда `list` з `pageSize` на весь результат, стеля `exportRowLimit` = 10 000), лист будується з оголошених колонок. Колонка без заголовка (кнопки дій) у файл не йде; колонці, чий `render` малює не сире поле (вкладений об'єкт, перекладений код), потрібен `exportText`. Документація для розробника — [`docs/ui-list-form.md`](docs/ui-list-form.md); skill для агента — [`model-list-form`](.github/skills/model-list-form/SKILL.md); еталон — `app/catalog/bank/bankList.ts`.
+**Форма списку** — наслідуй `ModelListBase` (`client/ui-kit/base/model-list-base.ts`): підклас задає лише `model`, `editRoute` та `columns`. Тулбар, серверне сортування, пагінація, пошук, вибір рядка — у базі. Кнопка **Excel** теж у базі: вивантажується **весь відбір** (та сама команда `list` з `pageSize` на весь результат, стеля `exportRowLimit` = 10 000), лист будується з оголошених колонок. Колонка без заголовка (кнопки дій) у файл не йде; колонці, чий `render` малює не сире поле (вкладений об'єкт, перекладений код), потрібен `exportText`. Документація для розробника — [`docs/ui-list-form.md`](docs/ui-list-form.md); skill для агента — [`model-list-form`](skills/src/model-list-form/SKILL.md); еталон — `app/catalog/bank/bankList.ts`.
 
-**Таблична частина документа** — примітив `TabularSection` (`client/ui-kit/tabular/`): форма оголошує типізовані колонки (`picker`/`decimal`/`computed`/`custom`…), а логіка (додати/копіювати/видалити/пересунути рядок, перенумерація, живі підсумки, клавіатурний ввід Enter/↑↓/Insert) — у контролері; подання — два НЕЗАЛЕЖНІ компоненти `<ui-tabular-table>` і `<ui-tabular-toolbar>`, кожен можна замінити своїм. CSS-контракт `.table-tabular` / `.cell-text` / `.cell-control` у `client/styles/theme.css`; контроли підключаються атрибутом `cell` (`<ui-decimal cell>`, `<ui-picker cell>`). Skill — [`document-tabular-section`](.github/skills/document-tabular-section/SKILL.md); еталони — `app/document/invoice/invoiceEdit.ts` (простий) і `app/operation/manual_entry/manualEntryEdit.ts` (custom-комірки субконто, умовні колонки).
+**Таблична частина документа** — примітив `TabularSection` (`client/ui-kit/tabular/`): форма оголошує типізовані колонки (`picker`/`decimal`/`computed`/`custom`…), а логіка (додати/копіювати/видалити/пересунути рядок, перенумерація, живі підсумки, клавіатурний ввід Enter/↑↓/Insert) — у контролері; подання — два НЕЗАЛЕЖНІ компоненти `<ui-tabular-table>` і `<ui-tabular-toolbar>`, кожен можна замінити своїм. CSS-контракт `.table-tabular` / `.cell-text` / `.cell-control` у `client/styles/theme.css`; контроли підключаються атрибутом `cell` (`<ui-decimal cell>`, `<ui-picker cell>`). Skill — [`document-tabular-section`](skills/src/document-tabular-section/SKILL.md); еталони — `app/document/invoice/invoiceEdit.ts` (простий) і `app/operation/manual_entry/manualEntryEdit.ts` (custom-комірки субконто, умовні колонки).
 
 **Розкладка форми редагування** — підпис поля тільки через `BaseUI.renderField(label, control, { field })`,
 підвал тільки через `renderFormActions()` (Зберегти й закрити / Зберегти / Закрити). Класів `form-control` і
@@ -270,9 +277,9 @@ using column`, `column_name` при not-null, ім'я унікального о�
 екрана, а з конверта повідомлення прибирається й до форми не доходить. Саме вікно — `bus.alert()`,
 тобто `bus.choose()` з єдиною кнопкою.
 Деталі — [`docs/ui-form-validation.md`](docs/ui-form-validation.md);
-skill — [`model-form-root`](.github/skills/model-form-root/SKILL.md).
+skill — [`model-form-root`](skills/src/model-form-root/SKILL.md).
 
-> **Стилі:** збірка Tailwind одна і належить застосунку — вхід `app/styles/tailwind.css`. Авто-детекція увімкнена (сканує `app/` і `client/` від кореня репо); фреймворк додатково вказаний явно `@source "../../client"` — бо в пакеті він у `node_modules`, який авто-детекція виключає. `@source` НЕ приймає аліас Vite чи сентинел: сканер Tailwind читає його з диска, повз бандлер — лише реальний шлях. Тема підключається `@import "@client/styles/theme.css"` **останньою** (на відміну від `@source`, `@import` резолвить enhanced-resolve Tailwind, і той аліаси Vite розуміє). Фреймворк Tailwind не компілює — віддає тему плоским активом `client/styles/theme.css`. Inline-SVG іконки задають розмір атрибутами (`width`/`height`), не Tailwind-класами: у shadow DOM вони не мають залежати від того, чи згенеровано `h-4`. **У правилах, що перекривають компонент daisyUI, пиши `background-color`, а не скорочення `background`**: скорочення мовчить, але обнуляє `background-image`, а ним daisyUI малює частину компонента — так зникла стрілка в `.select` (поле вибору стало не відрізнити від інпута). Це той самий клас пастки, що й неоголошені структурні змінні теми (`--border` і чекбокси): тема перебиває компонент сильніше, ніж збиралися. У темі є власний шар (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці. Зібраний CSS потрапляє у shadow root через спільний `CSSStyleSheet` `tw` (`client/shared/styles.ts`), який заповнює `app/styles/app-styles.ts`; сама бібліотека CSS не імпортує — інакше пакет не публікується.
+> **Стилі:** збірка Tailwind одна і належить застосунку — вхід `app/styles/tailwind.css`. Авто-детекція увімкнена (сканує `app/` і `client/` від кореня репо); фреймворк додатково вказаний явно `@source "../../client"` — бо в пакеті він у `node_modules`, який авто-детекція виключає. `@source` НЕ приймає аліас Vite чи сентинел: сканер Tailwind читає його з диска, повз бандлер — лише реальний шлях. Теми у вхідному CSS немає: її дописує `setAppStyles()` — уже після зібраного Tailwind, тобто після шару `utilities`, який вона мусить перебити. Тримати це на тому, що застосунок не забув поставити `@import` останнім рядком, виявилося ненадійно, та й у встановленому застосунку `theme.css` на диску немає взагалі (з JSR приїжджають лише модулі, а Tailwind читає `@import` з диска) — текст теми їде модулем `theme.generated.ts`. Фреймворк Tailwind не компілює — віддає тему плоским CSS. Inline-SVG іконки задають розмір атрибутами (`width`/`height`), не Tailwind-класами: у shadow DOM вони не мають залежати від того, чи згенеровано `h-4`. **У правилах, що перекривають компонент daisyUI, пиши `background-color`, а не скорочення `background`**: скорочення мовчить, але обнуляє `background-image`, а ним daisyUI малює частину компонента — так зникла стрілка в `.select` (поле вибору стало не відрізнити від інпута). Це той самий клас пастки, що й неоголошені структурні змінні теми (`--border` і чекбокси): тема перебиває компонент сильніше, ніж збиралися. У темі є власний шар (`.input`, `.btn`, `.table td`), написаний **поза `@layer`** — він перебиває utility-класи Tailwind незалежно від специфічності. Усе, що має перебити тему, пиши в тому ж файлі нижче за неї, а не класами в розмітці. Зібраний CSS потрапляє у shadow root через спільний `CSSStyleSheet` `tw` (`client/shared/styles.ts`), який заповнює `app/styles/app-styles.ts`; сама бібліотека CSS не імпортує — інакше пакет не публікується.
 
 **Права в інтерфейсі.** Кнопка, якої користувач не має права натиснути, не малюється: «Створити» й
 «Видалити» в тулбарі списку, «До групи…» (це `edit`), підвал форми, «Провести»/«Розпровести».
@@ -330,7 +337,7 @@ Esc закрити вкладку (брудна проходить через т
 > дасть 404. Стереже це крок smoke «посилання на вкладку»; без зібраного `dist/` він друкує, що
 > пропущений, а не мовчить.
 
-**Діалог вибору (picker)** — наслідуй `ModelPickerBase` (`client/ui-kit/base/model-picker-base.ts`): підклас задає лише `model` та `columns`. Пошук, вибір, підтвердження/скасування — у базі. Документація — [`docs/ui-picker-form.md`](docs/ui-picker-form.md); skill — [`model-picker-form`](.github/skills/model-picker-form/SKILL.md); еталон — `app/catalog/bank/bankPicker.ts`.
+**Діалог вибору (picker)** — наслідуй `ModelPickerBase` (`client/ui-kit/base/model-picker-base.ts`): підклас задає лише `model` та `columns`. Пошук, вибір, підтвердження/скасування — у базі. Документація — [`docs/ui-picker-form.md`](docs/ui-picker-form.md); skill — [`model-picker-form`](skills/src/model-picker-form/SKILL.md); еталон — `app/catalog/bank/bankPicker.ts`.
 
 ## Друковані форми
 
@@ -342,7 +349,7 @@ Esc закрити вкладку (брудна проходить через т
 `printPdf` генератор виводить із непорожнього `prints`) і сам файл шаблону в `prints/`.
 Таблиця шаблонів і `print_template_resolve` — у `app/_sqlinit/print_template/`;
 редагування шаблонів — звичайна admin-модель `app/admin/print_template/`. Skill —
-[`model-print-form`](.github/skills/model-print-form/SKILL.md); деталі —
+[`model-print-form`](skills/src/model-print-form/SKILL.md); деталі —
 [`docs/print-subsystem.md`](docs/print-subsystem.md); еталон — `app/document/invoice`.
 
 **Штрих-коди** — блок `barcode` у шаблоні: `code128` (документи), `ean13`
@@ -376,7 +383,7 @@ Excel — справжній `.xlsx`, зібраний **у браузері** �
 табличної частини документа, він обнуляє вертикальні відступи рядків.
 
 Деталі — [`docs/report-screen.md`](docs/report-screen.md); skill —
-[`model-report-form`](.github/skills/model-report-form/SKILL.md); еталони —
+[`model-report-form`](skills/src/model-report-form/SKILL.md); еталони —
 `app/report/turnover_balance` (фільтри, дворівнева шапка) і `app/report/document_movements`
 (звіт без власних фільтрів).
 
@@ -484,7 +491,7 @@ app.access_denied(...) end`. Один round-trip, кешу немає, при в
 тож `DEV_AUTH_USER_ID` має вказувати на реального користувача в потрібній групі.
 
 Деталі, вибір дії та відлагодження — [`docs/access-control.md`](docs/access-control.md);
-skill для агента — [`model-command-access`](.github/skills/model-command-access/SKILL.md).
+skill для агента — [`model-command-access`](skills/src/model-command-access/SKILL.md).
 
 ## Вкладення (бінарні об'єкти)
 
@@ -520,7 +527,7 @@ skill для агента — [`model-command-access`](.github/skills/model-comm
 
 ## TypeBox-схема
 
-> Деталі та шаблон — у skill [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md).
+> Деталі та шаблон — у skill [`typebox-model-schema`](skills/src/typebox-model-schema/SKILL.md).
 
 `app/<family>/<model>/<model>.schema.ts` — єдине джерело типів для frontend і backend:
 - `BankItemSchema` — поля форми + id (`Type.Union([Type.String(), Type.Null()])` для нового запису)
@@ -533,11 +540,11 @@ Primary key: `bigint` у БД, `string` у TypeScript/JSON (щоб уникну�
 
 ## Додати нову модель (чек-лист)
 
-> **Перед створенням моделі застосуй skill [`model-feature-architecture`](.github/skills/model-feature-architecture/SKILL.md)** — він описує структуру feature-папки, manifest-маршрути та контракт SQL-функцій. Цей skill, своєю чергою, посилається на [`typebox-model-schema`](.github/skills/typebox-model-schema/SKILL.md) для визначення `<model>.schema.ts`.
+> **Перед створенням моделі застосуй skill [`model-feature-architecture`](skills/src/model-feature-architecture/SKILL.md)** — він описує структуру feature-папки, manifest-маршрути та контракт SQL-функцій. Цей skill, своєю чергою, посилається на [`typebox-model-schema`](skills/src/typebox-model-schema/SKILL.md) для визначення `<model>.schema.ts`.
 
 1. Створити `app/<family>/<model>/manifest.json`
 2. Створити `<model>.schema.ts` з TypeBox-схемами
-3. Створити UI-компоненти: `<Model>List.ts` (skill [`model-list-form`](.github/skills/model-list-form/SKILL.md) — наслідувати `ModelListBase`, не писати тулбар/таблицю/пагінацію вручну), `<Model>Edit.ts`, `<Model>Picker.ts`
+3. Створити UI-компоненти: `<Model>List.ts` (skill [`model-list-form`](skills/src/model-list-form/SKILL.md) — наслідувати `ModelListBase`, не писати тулбар/таблицю/пагінацію вручну), `<Model>Edit.ts`, `<Model>Picker.ts`
 4. Створити `db/struc.sql`, а CRUD — або згенерувати (`deno task sql:gen <family>/<model>`,
    вихід у `db/_generated/<model>.crud.gen.sql`), або написати руками в `db/<model>.sql`
    і оголосити відмову від генерації (див. нижче). Доробки поверх генерації — у
@@ -567,6 +574,45 @@ Primary key: `bigint` у БД, `string` у TypeScript/JSON (щоб уникну�
 окремим рядком `⚠`, бо модель при цьому виглядає охопленою, хоча не генерується. Моделі з
 `type`, відмінним від `catalog`/`document` (звіт, admin), пропускаються за типом — їм
 оголошення не потрібне.
+
+## Скіли агента
+
+Джерело одне — `skills/src/<name>/SKILL.md`; `.claude/skills` і `.github/skills` — симлінки
+на нього. Другої копії немає навмисно: дві теки з тим самим текстом розходяться мовчки.
+
+Аудиторію оголошує сам скіл, у frontmatter:
+
+```yaml
+metadata:
+  audience: app         # про написання застосунку → їде в пакет @altera/skills
+  # audience: framework # про внутрішнє життя цього репозиторію → лишається тут
+```
+
+Умовчання fail-closed: без оголошення скіл у пакет не їде, `deno task skills:build` друкує
+`⚠`, а проба в `test:unit` падає — інакше забуте оголошення було б видно лише тому, хто читає
+вивід збірки. `daisyui` позначений `framework` не тому, що він внутрішній, а тому, що чужий:
+це офіційний скіл daisyUI (`source:` у його frontmatter), і роздавати його зі свого пакета —
+перепублікація. Застосунок ставить його сам.
+
+Прикладні скіли їдуть у застосунок пакетом `@altera/skills`: збірка вбудовує їх у
+`skills.generated.ts` (JSR віддає лише модулі — та сама причина, що й у шаблоні scaffold), а
+`syncSkills()` розкладає в `.claude/skills` застосунку. Той самий виклик робить і scaffold при
+створенні, і `deno task skills:sync` при оновленні — шлях один.
+
+Три речі, важливі при правці:
+
+- **скіл мусить читатися в застосунку, а не в цьому репо**: там немає ні `docs/`, ні
+  `app/catalog/bank`, ні каталогу `client/` — фреймворк лежить у `vendor/`. Тому приклад
+  вставляється в текст цілком, а не заміняється посиланням на еталон, і шлях у фреймворк
+  пишеться імпортом (`@client/ui-kit/base/model-list-base.ts`), а не шляхом у дерево;
+- **розкладені файли комітяться** в застосунку (як згенерований CRUD-SQL) — той, хто
+  склонував репозиторій, має отримати їх без запуску задач. Звідси шапка «не редагувати»:
+  правка на місці загубилася б при наступному `skills:sync`, і мовчки;
+- **свій скіл із тим самим іменем sync не чіпає** — він упізнає свої файли за тією шапкою.
+  Перейменований або прибраний скіл прибирається, чужий лишається на місці з рядком `⚠`.
+
+Версія `@altera/skills` підіймається разом із `@altera/client`: скіли описують саме його
+поверхню. Публікувати теж у цьому порядку — `@altera/create` на них посилається.
 
 ## Розгортання
 

@@ -2,6 +2,8 @@
 name: model-form-root
 description: Build a model edit form (and understand the shared $root data contract behind every list, picker and form) by extending BaseUI, seeding state from the TypeBox schema with Value.Create instead of hand-written empty objects.
 argument-hint: Describe the model name and which fields the edit form shows; mention whether it has a tabular part.
+metadata:
+  audience: app
 ---
 
 # Model Form / `$root` Contract Skill
@@ -13,7 +15,8 @@ Use this skill when:
 - you are about to hand-write an "empty item" literal, a `loading` flag, or a `bus.request` call in a screen
 
 **Do not hand-write empty-object literals, transport calls, or per-form loading flags.** All of it
-lives in `client/ui-kit/base/base-ui.ts` → `BaseUI<T>`, which every screen base extends.
+lives in `@client/ui-kit/base/base-ui.ts` → `BaseUI<T>`, which every screen base extends
+(`@client/` is the alias for the `@altera/client` package).
 
 ## The one contract
 
@@ -103,7 +106,7 @@ sets it itself on not-null and unique violations; a TS command uses `fieldErr(fi
 to wire in the form — but the field must be one the form actually renders, otherwise the message
 stays in the banner rather than vanishing.
 
-Full reference: [`docs/ui-form-validation.md`](../../../docs/ui-form-validation.md).
+Deep dive (framework repository, not part of an application): `docs/ui-form-validation.md`.
 
 ## Gotcha: the schema goes through `super()`
 
@@ -118,7 +121,7 @@ Not as a declared property the base reads at construction time.
 
 ## Canonical example — simple form
 
-`app/catalog/bank/bankEdit.ts`:
+An edit form for a `bank` catalog (`bankEdit.ts` next to the model's `manifest.json`):
 
 ```ts
 @customElement(tagName)
@@ -155,7 +158,8 @@ export class BankEdit extends BaseUI<BankEditRoot> {
 }
 ```
 
-With a tabular part — `app/document/invoice/invoiceEdit.ts`; for the table markup itself use
+A document form with a tabular part follows the same shape — the section is declared in the form and
+rendered inside `renderFields()`; for the table itself use
 [document-tabular-section](../document-tabular-section/SKILL.md).
 
 ## Root schema per screen

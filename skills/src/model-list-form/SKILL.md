@@ -2,6 +2,8 @@
 name: model-list-form
 description: Build a model list screen (catalog/document table) by extending the shared ModelListBase class instead of hand-writing toolbar, table, server sort, pagination and selection each time.
 argument-hint: Describe the model name, its edit route, and which columns the list shows (key, title, width, sortable, muted).
+metadata:
+  audience: app
 ---
 
 # Model List Form Skill
@@ -15,7 +17,8 @@ Use this skill when:
 
 ## Base class
 
-`client/ui-kit/base/model-list-base.ts` → `ModelListBase<Row> extends BaseUI<ListRoot<Row>>`
+`@client/ui-kit/base/model-list-base.ts` → `ModelListBase<Row> extends BaseUI<ListRoot<Row>>`
+(`@client/` is the alias for the `@altera/client` package — import from it, never copy it into the app).
 
 It owns: data load via `run()` / `assign()` on the shared envelope, server-side `sortBy`/`sortDir`, pagination (`page`/`pageSize` + footer), debounced search (300 ms), row selection, delete with confirm, and re-load on the `model.changed` bus event. The global loading bar (in `tab-controller`) already covers request progress — the list shows its own spinner only on the very first load.
 
@@ -27,7 +30,7 @@ The `Row` type comes from the model's TypeBox schema — see [typebox-model-sche
 
 ## Canonical example
 
-`app/catalog/bank/bankList.ts` — keep it as the reference. A full list screen:
+A complete list screen for a `bank` catalog — this is the entire file, nothing is omitted:
 
 ```ts
 import { customElement } from "lit/decorators.js";
@@ -152,14 +155,14 @@ two-line text. Two helpers from `model-list-base.ts` cover the common needs, and
 ## Variants (build as sibling subclasses)
 
 - **Document list with filters (`отбори`)**: override `renderHeaderArea()` to draw a filter panel, and `extraPayload()` to send the selected filters into the `list` command. Call `this.reload()` when a filter changes.
-- **Hierarchical catalog (A2v10 pattern)**: set `protected override hierarchy = true` in the subclass AND `"hierarchy": true` in the model's `manifest.json`. The flat paginated list stays the main area; a group tree with checkboxes appears on the right (checking a group filters the list by that branch INCLUDING subgroups), and a "To group…" toolbar button moves the selected row (root is just another target — there is no separate "remove from group"). Requirements: `app.{model}_group` table (id, parent_id, name) in `struc.sql`, a `groupId` field in ItemSchema (`x-db-type: bigint`), optional `groupName` in RowSchema (the generator joins it), and `commands.sql`/`commands.access` declarations for `groupTree`/`groupSave`/`groupDelete`/`moveToGroup` in the manifest. `deno task sql:gen` emits all group SQL. Reference: `app/catalog/nomenclature/`.
+- **Hierarchical catalog (A2v10 pattern)**: set `protected override hierarchy = true` in the subclass AND `"hierarchy": true` in the model's `manifest.json`. The flat paginated list stays the main area; a group tree with checkboxes appears on the right (checking a group filters the list by that branch INCLUDING subgroups), and a "To group…" toolbar button moves the selected row (root is just another target — there is no separate "remove from group"). Requirements: `app.{model}_group` table (id, parent_id, name) in `struc.sql`, a `groupId` field in ItemSchema (`x-db-type: bigint`), optional `groupName` in RowSchema (the generator joins it), and `commands.sql`/`commands.access` declarations for `groupTree`/`groupSave`/`groupDelete`/`moveToGroup` in the manifest. `deno task sql:gen` emits all group SQL.
 
 ## Rules
 
 - One subclass per model, named `<Model>List.ts`, exporting `tagName`.
 - The `Row` type is imported from `<model>.schema.ts`, never re-declared.
-- Column `title` should be a localization key; add the key to `client/_locales/*.json` (shared) or `app/_locales/*.json` (model-specific).
-- Do not duplicate toolbar/table/pagination markup into the subclass — if you need a change for all lists, edit `ModelListBase`; if it's model-specific, use the documented hooks.
+- Column `title` should be a localization key; add it to `app/_locales/*.json`. Framework-wide keys (`common.code`, `common.name`, …) already ship inside `@altera/client` — do not redefine them.
+- Do not duplicate toolbar/table/pagination markup into the subclass. Model-specific changes go through the documented hooks; a change every list needs belongs in `ModelListBase` itself, i.e. in the framework — copying the base class into the app is never the answer.
 - Keep `width` as CSS values, never dynamic Tailwind classes.
 
 ## Related

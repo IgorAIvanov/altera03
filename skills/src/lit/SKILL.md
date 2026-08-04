@@ -7,6 +7,8 @@ description: >
   to existing components, or when debugging why an attribute isn't working from HTML.
   Always use this skill before writing any @property decorator — getting the attribute
   name wrong is a silent bug that's very hard to trace.
+metadata:
+  audience: app
 ---
 
 # Lit Web Components — правила цього проекту
@@ -66,19 +68,23 @@ html`<input required>`  // OK — завжди true
 ## Shadow DOM та Tailwind CSS
 
 Компоненти, що наслідують `GlobalStyledLitElement`, отримують зібраний Tailwind через
-спільний `CSSStyleSheet` (`tw` із `client/shared/styles.ts`), який адоптується в кожен
+спільний `CSSStyleSheet` (`tw` із `@client/shared/styles.ts`), який адоптується в кожен
 shadow root. Аркуш порожній, доки застосунок його не заповнить — це робить
 `app/styles/app-styles.ts`.  
 Але Tailwind генерує тільки класи, що використовуються у файлах зі списку `@source`.
 
 Збірка одна, і вона в застосунку: `app/styles/tailwind.css`. Бібліотека Tailwind не
-компілює — вона віддає тему активом (`client/styles/theme.css`, плоский CSS).
+компілює — вона віддає тему плоским CSS, а дописує її `setAppStyles()` сам, уже після
+зібраного Tailwind: правила теми безшарові й мусять перебивати utilities, і код це
+гарантує надійніше за порядок рядків.
 
-Якщо додаєш Tailwind-класи в новий каталог — додай `@source` до `app/styles/tailwind.css`:
+Якщо додаєш Tailwind-класи в новий каталог — додай `@source` до `app/styles/tailwind.css`.
+Шлях там реальний, не аліас і не ім'я пакета: сканер Tailwind читає директиву з диска,
+повз бандлер.
 ```css
-@source "../../app";
-@source "../../client";   /* ← вже додано: класи з шаблонів ui-kit */
+@source "../../vendor/jsr.io/@altera";   /* ← вже додано: класи з шаблонів ui-kit */
 ```
+Авто-детекція сканує сам застосунок, але `vendor/` виключає — звідси цей рядок.
 
 Якщо клас не генерується — перевір `@source` першим чином, до будь-яких інших рішень.
 
@@ -89,7 +95,8 @@ shadow root. Аркуш порожній, доки застосунок його
 | `GlobalStyledLitElement` | Компоненти ui-kit, що потребують Tailwind + daisyUI |
 | `LitElement` | Компоненти зі своїми `static styles = css\`...\`` |
 
-`GlobalStyledLitElement` живе в `client/ui-kit/base/gsle.ts`.
+`GlobalStyledLitElement` живе в `@client/ui-kit/base/gsle.ts` (`@client/` — аліас пакета
+`@altera/client`).
 
 ## Структура нового компонента
 

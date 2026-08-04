@@ -2,6 +2,8 @@
 name: document-tabular-section
 description: Build an editable tabular section (табличну частину) of a document — controls that fill the table cell flush with the grid, decimal columns with live totals — using the shared .table-tabular / .cell-control contract instead of ad-hoc Tailwind utilities.
 argument-hint: Describe the document model, which columns the tabular section has (picker / decimal / text), and whether the section needs live totals.
+metadata:
+  audience: app
 ---
 
 # Document Tabular Section Skill
@@ -13,13 +15,14 @@ Use this skill when:
 - adding decimal columns (quantity, price, amount) with live line/document totals
 - a focus ring inside a cell does not line up with the cell borders
 
-Reference implementation: `app/document/invoice/invoiceEdit.ts`.
-Contract: `client/styles/theme.css`, section «Табличні частини документів».
+The CSS contract lives in the framework theme (`@client/styles/theme.css`, section
+«Табличні частини документів») and ships with `@altera/client` — the application
+never redefines those classes, it only uses them.
 
 ## Default path: the TabularSection primitive
 
 Do NOT hand-write the table markup and row mechanics — use the primitive
-(`client/ui-kit/tabular/`). The form declares a typed section (columns, where
+(`@client/ui-kit/tabular/`). The form declares a typed section (columns, where
 rows live, how a new row looks) and places two INDEPENDENT view components —
 either can be replaced with custom markup, all actions are public on the section:
 
@@ -58,10 +61,10 @@ Multi-row records (1С style): a column with `row: 2` renders as a SECOND `<tr>`
 of the same record, laid left-to-right under the row-1 grid; `span: N` says how
 many grid columns its cell covers (default 1, remainder is padded). The `#` and
 delete cells rowspan the whole record; a sub-row header line appears only if a
-`row: 2` column has a `title`; `total` on sub-row columns is ignored. Reference:
-subconto under its account in `manualEntryEdit.ts`. Dynamic per-line controls (subconto pickers that
-depend on the line's account) stay in `custom` cells — that reference is
-`app/operation/manual_entry/manualEntryEdit.ts`.
+`row: 2` column has a `title`; `total` on sub-row columns is ignored. The typical use
+is subconto printed under its account in a manual journal entry. Dynamic per-line
+controls (subconto pickers whose model depends on the line's account) stay in
+`custom` cells.
 
 The CSS knowledge below still applies to `custom` cells and to fully
 hand-written tables (which remain legal — the primitive is a default, not a
@@ -69,10 +72,11 @@ requirement).
 
 ## The trap: read this before touching any CSS
 
-`client/styles/theme.css` contains a hand-written theme layer — `.input`,
-`.btn`, `.join .join-item`, `.table td` — declared **outside any `@layer`**.
-It is plain CSS shipped with the framework package; the application's build entry
-(`app/styles/tailwind.css`) imports it **last**, after Tailwind and daisyUI.
+The framework theme contains a hand-written layer — `.input`, `.btn`,
+`.join .join-item`, `.table td` — declared **outside any `@layer`**. It is plain CSS
+shipped inside `@altera/client`, and `setAppStyles()` appends it **after** the
+application's compiled Tailwind, so it beats the `utilities` layer regardless of
+specificity. You cannot out-specify it from markup.
 
 Per the CSS cascade, unlayered rules beat **every** cascade layer, including
 Tailwind's `utilities`, regardless of specificity.
@@ -93,7 +97,7 @@ possible across `ui-decimal`, `ui-picker` and the table itself.
 
 ## The contract
 
-Three classes, defined once in `client/styles/theme.css`:
+Three classes, defined once in the framework theme:
 
 | Class | Where | Effect |
 |-------|-------|--------|
@@ -132,8 +136,9 @@ padding. Only text cells get `cell-text`.
 Both shared controls take a boolean `cell` attribute, which switches them to the
 contract (drops the label wrapper and applies `cell-control`):
 
-- `<ui-decimal cell>` — see [`ui-decimal.md`](../../../client/ui-kit/components/ui-decimal.md)
-- `<ui-picker cell>` — see [`ui-picker.md`](../../../client/ui-kit/components/ui-picker.md)
+- `<ui-decimal cell>` — decimal input; `scale` sets the number of decimals
+- `<ui-picker cell url="catalog/bank" fetch="lookup">` — picker field; `url` is the
+  **view route** (`family/model`), not an API path
 
 When adding a **new** control that will be used in tabular sections, give it the
 same `cell` property and let it put `cell-control` on its root element. Do not
@@ -183,8 +188,8 @@ lands on the first bad cell. Only **visible** columns are checked — a hidden
 conditional column cannot be highlighted anyway.
 
 Do not hand-write per-row loops in `saveItem()`; do not put the rule in the form
-and the asterisk in the column. Full reference:
-[`docs/ui-form-validation.md`](../../../docs/ui-form-validation.md).
+and the asterisk in the column. Deep dive (framework repository, not part of an
+application): `docs/ui-form-validation.md`.
 
 ## Implementation flow
 

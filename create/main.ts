@@ -7,6 +7,7 @@
 // сервера, оболонка (шапка, меню, стартова вкладка, вхід), вхід збірки Tailwind
 // і sql.json. Далі моделі додаються в app/<family>/<model>/.
 import { TEMPLATE } from "./template.generated.ts";
+import { syncSkills } from "@altera/skills";
 
 const NAME_PATTERN = /^[a-z][a-z0-9_-]*$/;
 
@@ -55,6 +56,12 @@ export async function scaffold(options: ScaffoldOptions): Promise<string[]> {
     written.push(relativePath);
   }
 
+  // Скіли — тим самим викликом, яким їх потім оновлюють (`deno task skills:sync`),
+  // а не власною копією логіки: шлях оновлення має бути один, інакше застосунок,
+  // створений сьогодні, і застосунок, оновлений завтра, розійдуться в дрібницях.
+  const skills = await syncSkills({ targetDir });
+  written.push(...skills.written.map((skill) => `.claude/skills/${skill}/`));
+
   return written.sort();
 }
 
@@ -93,6 +100,9 @@ async function main() {
   console.log("  deno install              # ОБОВ'ЯЗКОВО до першої збірки: наповнює vendor/");
   console.log("  deno task sql:registry && deno task sql:assemble && deno task sql:publish");
   console.log("  deno task dev");
+  console.log("");
+  console.log("Скіли фреймворку вже лежать у .claude/skills — комітити разом з рештою.");
+  console.log("Оновлювати їх разом з @altera/client: deno task skills:sync");
 }
 
 if (import.meta.main) {

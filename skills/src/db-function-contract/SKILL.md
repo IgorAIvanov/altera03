@@ -2,6 +2,8 @@
 name: db-function-contract
 description: Define PostgreSQL function contracts for models that use List, Get, Save, Delete, and Lookup with JSONB payloads and JSONB results.
 argument-hint: Describe the model and the shape of list, item, options, and save data.
+metadata:
+  audience: app
 ---
 
 # Database Function Contract Skill
@@ -16,9 +18,9 @@ Use this skill when:
 
 Standard `list / get / save / delete / lookup` are produced **deterministically by a
 build script**, not written by hand and not written by the agent. The single source
-of truth is the model's `<model>.schema.ts` (TypeBox) + `manifest.json`. The script
-`scripts/generate-model-sql.ts` (task `sql:gen`) reads the schema and emits
-`db/_generated/<model>.crud.gen.sql`.
+of truth is the model's `<model>.schema.ts` (TypeBox) + `manifest.json`. The generator
+(`deno task sql:gen <family>/<model>`) reads the schema and emits
+`db/_generated/<model>.crud.gen.sql` — a committed source file, not a build product.
 
 So when adding a model, the agent writes **only**:
 - `manifest.json`, `<model>.schema.ts`,
@@ -26,7 +28,12 @@ So when adding a model, the agent writes **only**:
 - UI components,
 - and a `db/<model>.custom.sql` **only** if a command needs non-standard logic.
 
-Then run `deno task model:build` (= `sql:registry → sql:gen → sql:assemble → sql:publish`).
+Then run, in this order:
+
+```bash
+deno task sql:gen <family>/<model>   # only after the schema changed
+deno task sql:registry && deno task sql:assemble && deno task sql:publish
+```
 
 **Schema annotations the generator reads** (in `<model>.schema.ts`):
 - `x-search: true` — field participates in the `ilike` search (fallback: all string fields).
@@ -51,7 +58,8 @@ guard). `post`/`unpost` are emitted as stubs — implement real posting in
 `db/<model>.custom.sql`.
 
 Hand-write a SQL function only as an exception (non-standard logic), and put it in
-`db/<model>.custom.sql`. Full design: [docs/sql-codegen.md](../../../docs/sql-codegen.md).
+`db/<model>.custom.sql`. Deep dive on the generator (framework repository, not part of
+an application): `docs/sql-codegen.md`.
 
 The sections below describe the *contract* every command (generated or custom) must honor.
 
@@ -240,4 +248,4 @@ non-SQL side effects). Otherwise stay on the SQL function contract above.
   definition, and an undeclared command returns 501 instead of running. Details and how to
   pick the action: [`model-command-access`](../model-command-access/SKILL.md).
 
-See [docs/ts-model-command.md](../../../docs/ts-model-command.md) for the full developer guide.
+Deep dive (framework repository, not part of an application): `docs/ts-model-command.md`.

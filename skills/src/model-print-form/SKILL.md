@@ -2,6 +2,8 @@
 name: model-print-form
 description: Add a printed form (PDF) to a model — data command, template file, manifest block and print button — using the core print runtime instead of writing any rendering, template parsing or PDF code.
 argument-hint: Describe the model and what the printed form must show (header fields, table columns, totals, signatures).
+metadata:
+  audience: app
 ---
 
 # Model Print Form Skill
@@ -11,7 +13,7 @@ Use this skill when:
 - an existing printed form must change (new field, new column, new totals row)
 - a second template is added to a model that already prints
 
-**Printing is core.** `server/modules/print/` owns the template format, the render
+**Printing is core.** The `@altera/server` package owns the template format, the render
 plan and the PDF renderer. Never write PDF generation, template parsing, HTML-to-PDF,
 or client-side rendering. The application supplies only **data** and a **template**.
 
@@ -24,7 +26,7 @@ or client-side rendering. The application supplies only **data** and a **templat
 | 3 | `app/<family>/<model>/manifest.json` | `prints` block + `commands.sql.printData` |
 | 4 | `app/<family>/<model>/<Model>Edit.ts` | the print button |
 
-Reference implementation for all four: `app/document/invoice`.
+All four are shown in full below, on an `invoice` document.
 
 ## 1. Manifest
 
@@ -42,9 +44,8 @@ Reference implementation for all four: `app/document/invoice`.
 }
 ```
 
-**Do NOT declare `commands.ts.printPdf`.** The generator derives it from a non-empty
-`prints` block ([`generate-model-runtime-registry.ts`](../../../scripts/generate-model-runtime-registry.ts),
-`renderTsBindings`) and binds the core handler `runtime.printPdf`. Writing it by hand is
+**Do NOT declare `commands.ts.printPdf`.** `deno task sql:registry` derives it from a
+non-empty `prints` block and binds the core handler `runtime.printPdf`. Writing it by hand is
 redundant — it is an override slot, only for a model that needs its own print handler
 instead of the core one.
 
@@ -83,8 +84,60 @@ Rules for the returned `item` — this is a **print projection, not the edit pay
 Keep this structure **stable**: template bindings are dotted paths into it, and templates
 edited by users live in the database, out of reach of a refactor.
 
-Canonical example: `app.invoice_print_data` in
-[`invoice.custom.sql`](../../../app/document/invoice/db/invoice.custom.sql).
+A complete data command (in `db/<model>.custom.sql`, because it is non-standard —
+the generator does not emit it):
+
+```sql
+drop function if exists app.invoice_print_data(bigint, jsonb);
+create function app.invoice_print_data(user_id bigint, payload jsonb)
+returns jsonb
+language sql
+as $$
+  select jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', (
+        select jsonb_build_object(
+          'document', jsonb_build_object(
+            'id',               h.id::text,
+            'number',           coalesce(h.number, ''),
+            'date',             to_char(h.doc_date, 'DD.MM.YYYY'),
+            'counterpartyName', coalesce(c.name, ''),
+            'total',            to_char(coalesce(sum_lines.total, 0), 'FM9999999990.00'),
+            'lines',            coalesce(lines.items, '[]'::jsonb)
+          )
+        )
+        from app.document h
+        join app.invoice t on t.document_id = h.id
+        left join app.counterparty c on c.id = t.counterparty_id
+        left join lateral (
+          select jsonb_agg(jsonb_build_object(
+            'index',    l.line_no,
+            'name',     coalesce(n.name, ''),
+            'quantity', to_char(l.qty, 'FM9999999990.000'),
+            'price',    to_char(l.price, 'FM9999999990.00'),
+            'amount',   to_char(l.qty * l.price, 'FM9999999990.00')
+          ) order by l.line_no) as items
+          from app.invoice_line l
+          left join app.nomenclature n on n.id = l.nomenclature_id
+          where l.document_id = h.id
+        ) lines on true
+        left join lateral (
+          select sum(l.qty * l.price) as total
+          from app.invoice_line l
+          where l.document_id = h.id
+        ) sum_lines on true
+        where h.id = nullif(payload->>'id', '')::bigint
+      ),
+      'rows',    '[]'::jsonb,
+      'options', '{}'::jsonb,
+      'totals',  '{}'::jsonb,
+      'extra',   '{}'::jsonb
+    ),
+    'messages', '[]'::jsonb
+  );
+$$;
+```
 
 ## 3. Template file
 
@@ -133,8 +186,47 @@ Totals are **read from the data** (`document.total`), never summed by the templa
 
 ## 4. Print button
 
-Copy `printPdf()` from [`invoiceEdit.ts`](../../../app/document/invoice/invoiceEdit.ts) —
-it calls `this.run("printPdf", { id })`, takes `data.extra.pdfBase64` and opens a blob.
+The whole button is this method plus a toolbar entry calling it — `printPdf` is a core
+TS command, the form only asks for it and shows the answer:
+
+```ts
+/** `data.extra` of the core printPdf command. */
+interface PrintPdfExtra {
+  fileName?: string;
+  mimeType?: string;
+  pdfBase64?: string;
+}
+
+private async printPdf() {
+  const id = this.$root.item.id;
+  if (!id) {
+    this.messages = [{ type: "error", text: t("invoice.saveBeforePrint") }];
+    return;
+  }
+
+  // Вікно — ДО await: інакше браузер вважає popup не ініційованим користувачем.
+  const preview = globalThis.open("", "_blank");
+
+  const env = await this.run<{ extra?: PrintPdfExtra }>("printPdf", { id });
+  const pdfBase64 = env.data?.extra?.pdfBase64;
+  if (!env.ok || !pdfBase64) {
+    preview?.close();
+    return;
+  }
+
+  const binary = atob(pdfBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: env.data?.extra?.mimeType ?? "application/pdf" }),
+  );
+
+  if (preview) preview.location.href = url;
+  else globalThis.open(url, "_blank");
+
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+```
 
 Two details that are not optional:
 - **open the window before `await`** — otherwise the browser treats the popup as
@@ -174,7 +266,7 @@ from the payload → the row with `is_default` → the newest active one.
 
 ## Related
 
-- [`docs/print-subsystem.md`](../../../docs/print-subsystem.md) — the subsystem in full: file layout, multi-page rules, editor canvas.
+- Framework repository (not part of an application): `docs/print-subsystem.md` — the subsystem in full: file layout, multi-page rules, editor canvas.
 - [db-function-contract](../db-function-contract/SKILL.md) — envelope and signature of the data command.
 - [model-feature-architecture](../model-feature-architecture/SKILL.md) — where `prints/` sits in the model folder.
 - [model-form-root](../model-form-root/SKILL.md) — the `$root` contract of the edit form that hosts the print button.

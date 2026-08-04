@@ -8,6 +8,10 @@
   "publish": {
     "exclude": ["template"]
   },
+  "//imports": "Скіли scaffold не копіює своїми руками, а кличе @altera/skills — той самий виклик, що стоїть у `deno task skills:sync` створеного застосунку. Пакет скілів публікується ПЕРШИМ: поки нової версії немає в реєстрі, ця залежність нерозв'язна.",
+  "imports": {
+    "@altera/skills": "jsr:@altera/skills@^0.1.0"
+  },
   "compilerOptions": {
     "strict": true
   }

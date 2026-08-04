@@ -1,7 +1,9 @@
 ---
 name: model-feature-architecture
-description: Design or refactor a model into a feature-centered structure where frontend UI files and database SQL source live together under frontend/src/app/<model>.
+description: Design or refactor a model into a feature-centered structure where frontend UI files and database SQL source live together under app/<family>/<model>.
 argument-hint: Describe the model name and what screens, dialogs, pickers, and DB functions it needs.
+metadata:
+  audience: app
 ---
 
 # Model Feature Architecture Skill

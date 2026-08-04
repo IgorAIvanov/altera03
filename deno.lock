@@ -905,6 +905,11 @@
           "npm:signal-utils@~0.21.1"
         ]
       },
+      "create": {
+        "dependencies": [
+          "jsr:@altera/skills@0.1"
+        ]
+      },
       "server": {
         "dependencies": [
           "jsr:@danet/core@^2.11.1",
@@ -919,6 +924,12 @@
           "npm:pdf-lib@^1.17.1",
           "npm:postgres@^3.4.5",
           "npm:qrcode-generator@^1.4.4"
+        ]
+      },
+      "skills": {
+        "dependencies": [
+          "jsr:@std/assert@^1.0.15",
+          "jsr:@std/path@^1.1.2"
         ]
       },
       "tools": {

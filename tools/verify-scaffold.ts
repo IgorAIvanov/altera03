@@ -17,7 +17,7 @@ import { join, relative, resolve, SEPARATOR, toFileUrl } from "@std/path";
 import { normalizeEol } from "./normalize-eol.ts";
 
 /** Пакети монорепо, на які шаблон посилається через jsr. */
-const LOCAL_PACKAGES = ["client", "server", "tools"];
+const LOCAL_PACKAGES = ["client", "server", "tools", "skills"];
 
 /**
  * Перевести залежності згенерованого застосунку на вихідники цього репозиторію.
@@ -231,6 +231,36 @@ export async function verifyScaffold(
       }
     } catch (error) {
       console.error(`✗ не вдалося перевірити локалі: ${error instanceof Error ? error.message : error}`);
+      ok = false;
+    }
+  }
+
+  // Скіли — не модулі й не активи збірки, тож ані типи, ані `build:front` про них
+  // не знають: не розклалися — усе зелене, а агент у застосунку працює без них і
+  // пише форми руками. Перевіряємо і сам факт розкладки, і наявність задачі, якою
+  // їх оновлюють: без неї вони застигли б на версії, з якою створили застосунок.
+  if (ok) {
+    try {
+      const skillsDir = join(appDir, ".claude", "skills");
+      const names: string[] = [];
+      for await (const entry of Deno.readDir(skillsDir)) {
+        if (entry.isDirectory) names.push(entry.name);
+      }
+
+      const config = JSON.parse(await Deno.readTextFile(join(appDir, "deno.json")));
+      const hasTask = typeof config.tasks?.["skills:sync"] === "string";
+
+      if (!names.length) {
+        console.error("✗ .claude/skills порожній — застосунок створено без скілів фреймворку");
+        ok = false;
+      } else if (!hasTask) {
+        console.error("✗ у згенерованому deno.json немає задачі skills:sync — скіли нічим оновити");
+        ok = false;
+      } else {
+        console.log(`✓ скіли розкладені (${names.length}) і є задача skills:sync`);
+      }
+    } catch (error) {
+      console.error(`✗ не вдалося перевірити скіли: ${error instanceof Error ? error.message : error}`);
       ok = false;
     }
   }

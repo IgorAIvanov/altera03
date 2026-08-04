@@ -28,6 +28,9 @@
     "client:assets": "deno run -A ./tools/generate-client-assets.ts ./client --verbose",
     // Вбудовує дерево create/template/** у create/template.generated.ts.
     "scaffold:template": "deno run -A ./tools/generate-scaffold-template.ts ./create/template ./create/template.generated.ts --verbose",
+    // Вбудовує прикладні скіли (metadata.audience: app) у skills.generated.ts.
+    // Запускати після правки skills/src/**; розсинхрон ловить проба в test:unit.
+    "skills:build": "deno run -A ./tools/generate-skills.ts ./skills/src ./skills/skills.generated.ts --verbose",
     // Генерує застосунок у тимчасовий каталог і перевіряє типи й збірку. На
     // місці шаблон перевірити не можна — він компілюється лише там, де живе.
     "scaffold:verify": "deno run -A ./tools/verify-scaffold.ts ./create/main.ts",
@@ -40,7 +43,7 @@
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки
     // штрих-кодів, читач таблиці звіту. Димові проби межі — окремо, у `smoke`.
-    "test:unit": "deno test --allow-read ./server/ ./client/",
+    "test:unit": "deno test --allow-read ./server/ ./client/ ./skills/",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
     "sql:assemble": "deno run -A ./tools/assemble-sql-package.ts ./app --verbose",
@@ -53,7 +56,7 @@
     "model:build": "deno task sql:registry && deno task sql:assemble && deno task sql:publish"
   },
 
-  "workspace": ["./server", "./client", "./app", "./tools", "./create"],
+  "workspace": ["./server", "./client", "./app", "./tools", "./create", "./skills"],
   "imports": {
     "@app/": "./app/",
     "@client/": "./client/",

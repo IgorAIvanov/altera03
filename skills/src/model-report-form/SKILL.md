@@ -2,6 +2,8 @@
 name: model-report-form
 description: Build a report screen (turnover sheet, account card, register listing) by extending the shared ReportBase class, which already provides the sticky toolbar with refresh, print and Excel export.
 argument-hint: Describe the report model name, its filters (organization, period, account) and the columns of its table.
+metadata:
+  audience: app
 ---
 
 # Model Report Form Skill
@@ -18,7 +20,8 @@ no column metadata, no manifest block, no server command.
 
 ## Base class
 
-`client/ui-kit/base/report-base.ts` → `ReportBase<Root> extends BaseUI<Root>`
+`@client/ui-kit/base/report-base.ts` → `ReportBase<Root> extends BaseUI<Root>`
+(`@client/` is the alias for the `@altera/client` package).
 
 It owns: the sticky toolbar (**Оновити / Друк / Excel**), the error banner, the
 print-only header (report title + subtitle), `window.print()` wiring and the
@@ -43,10 +46,14 @@ a generic schema.
 
 ## Canonical example
 
-`app/report/turnover_balance/turnoverBalanceReport.ts` — filters, drill-down to
-the account card, two-level header with `colspan`/`rowspan`, totals in `tfoot`.
-`app/report/document_movements/documentMovementsReport.ts` — a report with no
-filters of its own, opened only by navigation.
+Two shapes cover almost everything, and both are just subclasses:
+
+- a **turnover sheet** — own filters (organization, period, account), drill-down to
+  another report on row click, two-level header with `colspan`/`rowspan`, totals in
+  `tfoot`;
+- a **movements listing** — no filters of its own (`renderFilters()` returns
+  nothing), opened only by navigation from a document, so `buildReport()` reads its
+  parameters from the route.
 
 ## Markup rules that the export depends on
 
@@ -82,5 +89,6 @@ loaded by `index`.
 
 ## Details
 
-[`docs/report-screen.md`](../../../docs/report-screen.md) — the three levels of
-print CSS, the sheet model, and how to verify a generated `.xlsx` without Excel.
+Deep dive (framework repository, not part of an application): `docs/report-screen.md`
+— the three levels of print CSS, the sheet model, and how to verify a generated
+`.xlsx` without Excel.

@@ -2,6 +2,8 @@
 name: model-command-access
 description: Declare the permission a model command requires in manifest.json (commands.access) so the runtime can enforce it. Use whenever adding or changing a model command that is not one of list/get/save/delete/lookup (or post/unpost on documents) — including every TS command, report index, print data command and copy/import command.
 argument-hint: Name the model and the command, and say what the command does (reads / creates / modifies / deletes / acts on the caller's own data).
+metadata:
+  audience: app
 ---
 
 # Model Command Access Skill
@@ -12,8 +14,7 @@ Use this skill when:
 - deciding whether a command should be restricted or open to any signed-in user
 - reviewing a manifest that declares `commands.sql` / `commands.ts`
 
-Human-facing documentation: [`docs/access-control.md`](../../../docs/access-control.md).
-Keep both in sync.
+Deep dive (framework repository, not part of an application): `docs/access-control.md`.
 
 ## The rule
 
@@ -99,9 +100,12 @@ is sensitive enough that listing it is privileged, this is the lever.
 
 ```bash
 deno task sql:registry
-deno task api <model> <command> '<payload>'              # as the default user
-deno task api <model> <command> '<payload>' --user <id>  # as someone unprivileged
 ```
+
+Then call the command twice — once as a user who holds the action, once as one who does
+not. Any client will do: the screen itself, `curl` against
+`POST /api/model/<model>/<command>`, or a dev wrapper over the in-process app
+(`@altera/tools/app-client`) if the project has one.
 
 The unprivileged call must come back as an envelope, not an exception:
 
@@ -125,5 +129,5 @@ client.
 ## Related
 
 - [`db-function-contract`](../db-function-contract/SKILL.md) — the SQL side of a command.
-- [`docs/ts-model-command.md`](../../../docs/ts-model-command.md) — TS commands.
-- [`docs/access-control.md`](../../../docs/access-control.md) — the permission model in full.
+- Framework repository (not part of an application): `docs/ts-model-command.md` — TS commands;
+  `docs/access-control.md` — the permission model in full.
