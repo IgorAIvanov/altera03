@@ -53,14 +53,17 @@ jobs:
       # install) — публікації це не стосується, а брудне дерево її валить.
       - name: Restore lockfile
         run: git checkout -- deno.lock
-      # Порядок — за залежностями: server → client → tools → create. Публікація
-      # йде з каталогу пакета: воркспейс із кореня спробував би перевидати все.
+      # Порядок — за залежностями: server → client → tools → skills → create.
+      # skills саме перед create: той на нього посилається (scaffold розкладає
+      # скіли тим самим викликом, що й `deno task skills:sync`), і зворотний
+      # порядок дав би create з нерозв'язною залежністю. Публікація йде з
+      # каталогу пакета: воркспейс із кореня спробував би перевидати все.
       # Взаємні залежності при перевірці резолвляться локально (воркспейс), тож
       # minimum dependency age свіжої версії тут не заважає.
       - name: Publish packages with new versions
         run: |
           set -euo pipefail
-          for pkg in server client tools create; do
+          for pkg in server client tools skills create; do
             # deno.json — це JSONC (у server/ є //-коментарі), jq його не бере;
             # реєстр теж читаємо Deno-скриптом: збій мережі тоді валить крок
             # голосно, а не тихо перетворюється на «публікувати все».

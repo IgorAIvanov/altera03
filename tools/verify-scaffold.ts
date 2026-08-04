@@ -259,6 +259,55 @@ export async function verifyScaffold(
       } else {
         console.log(`✓ скіли розкладені (${names.length}) і є задача skills:sync`);
       }
+
+      // А тепер те саме — З РЕЄСТРУ. Розкладка вище нічого не каже про
+      // опублікований пакет: scaffold запускається з вихідників, і в монорепо
+      // `@altera/skills` резолвиться воркспейсом. Тобто зламаний реліз скілів
+      // проходив би повз усі перевірки, і побачив би його вперше той, хто
+      // виконав `deno task skills:sync` у себе.
+      //
+      // Каталог перед прогоном зносимо: інакше «скіли на місці» довело б лише
+      // те, що їх поклав scaffold хвилину тому.
+      //
+      // У режимі --local кроку немає: `links` підмінює пакет каталогом на
+      // диску, тобто перевірявся б той самий вихідник удруге. Реєстр покриває
+      // лише звичайний прогін — так само, як вендорений розклад.
+      if (ok && !options.local) {
+        const specifier = String(config.tasks["skills:sync"]).match(/jsr:@altera\/skills@\S+/)?.[0];
+
+        if (!specifier) {
+          console.error("✗ у задачі skills:sync немає jsr-специфікатора — нічого перевіряти проти реєстру");
+          ok = false;
+        } else {
+          await Deno.remove(skillsDir, { recursive: true });
+
+          // --min-dep-age=0 — з тієї ж причини, що й у `deno install` вище:
+          // політика мінімального віку блокує щойно опубліковану версію, а
+          // post-release прогін іде саме по ній.
+          const sync = await run(["run", "-A", "--min-dep-age=0", specifier, "./"], appDir);
+
+          const resynced: string[] = [];
+          try {
+            for await (const entry of Deno.readDir(skillsDir)) {
+              if (entry.isDirectory) resynced.push(entry.name);
+            }
+          } catch {
+            // каталог не з'явився — нижче це й буде помилкою
+          }
+
+          const marked = resynced.length > 0 &&
+            (await Deno.readTextFile(join(skillsDir, resynced[0], "SKILL.md")))
+              .includes("@altera/skills@");
+
+          if (!sync.ok || !resynced.length || !marked) {
+            console.error(`✗ skills:sync з реєстру (${specifier}) не розклав скіли`);
+            console.error(sync.output.trimEnd());
+            ok = false;
+          } else {
+            console.log(`✓ skills:sync з реєстру (${resynced.length} скілів)`);
+          }
+        }
+      }
     } catch (error) {
       console.error(`✗ не вдалося перевірити скіли: ${error instanceof Error ? error.message : error}`);
       ok = false;

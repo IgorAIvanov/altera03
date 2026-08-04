@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: deno install
       - name: Type-check
-        run: deno check server/main.ts app/main.ts app/server.ts scripts/smoke_test.ts scripts/api.ts
+        run: deno check server/main.ts app/main.ts app/server.ts scripts/smoke_test.ts scripts/api.ts skills/mod.ts create/main.ts
       - name: Package boundaries (check:deps)
         run: deno task check:deps
       - name: Unit tests
