@@ -1685,7 +1685,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
         <!-- Тулбар -->
         <div class="flex flex-wrap items-center gap-2">
-          <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.saveItem}>
+          <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
             ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             ${t("common.save")}
           </button>

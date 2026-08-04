@@ -25,6 +25,8 @@ export class UiSelect extends GlobalStyledLitElement {
   @property({ type: Array }) options: UiSelectOption[] = [];
   @property({ type: String }) label = "";
   @property({ type: Boolean }) required = false;
+  /** Текст помилки поля; непорожній — рамка червона (див. theme.css, :host([invalid])). */
+  @property({ type: String, reflect: true }) invalid = "";
   @property({ type: String, attribute: "label-position" }) labelPosition: "top" | "left" = "top";
   /** Текст першої порожньої опції. Порожньо — не додавати її. */
   @property({ type: String }) placeholder = "";
@@ -102,9 +104,10 @@ export class UiSelect extends GlobalStyledLitElement {
         </div>
       `
       : html`
-        <div class="flex flex-col gap-1" style=${style}>
+        <div class="flex flex-col gap-1 ${this.invalid ? "field-invalid" : ""}" style=${style}>
           ${this.label ? html`<span class="label text-sm leading-none">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
           ${control}
+          ${this.invalid ? html`<span class="field-error">${this.invalid}</span>` : ""}
         </div>
       `;
   }

@@ -34,6 +34,7 @@ html`
 | `label` | string | `""` | Підпис поля |
 | `label-position` | `top` \| `left` | `top` | Розташування підпису |
 | `required` | boolean | `false` | Малює зірочку біля підпису |
+| `invalid` | string | `""` | Текст помилки: рамка червона + підпис під контролом. Прив'язується як `.invalid=${this.fieldError("kind")}` — див. [ui-form-validation.md](../../../docs/ui-form-validation.md) |
 | `disabled` / `readonly` | boolean | `false` | Блокує зміну значення |
 | `show-clear` | boolean | `false` | Кнопка очищення вибору (для необов'язкових полів); скидає `value` в `""` і шле `value-changed` |
 | `size` | `xs` \| `sm` \| `md` \| `lg` | `""` | Розмір daisyUI select |

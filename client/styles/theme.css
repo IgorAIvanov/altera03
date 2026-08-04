@@ -112,8 +112,28 @@ html, body {
   min-height: 24px;
   padding-inline: 6px;
   border-radius: var(--radius-field);
-  border: 1px solid var(--app-border);
-  background: var(--app-surface-strong);
+  /* Колір рамки — через змінну, щоб її міг перебити предок (.field-invalid).
+     Саме змінною, а не селектором: контроли ui-kit живуть у власних shadow
+     root, куди селектор із форми не дістає, а успадкована CSS-змінна — так. */
+  border: 1px solid var(--field-border, var(--app-border));
+  /* Саме background-COLOR, а не скорочення `background`: скорочення мовчки
+     обнуляє background-image, а ним daisyUI малює стрілку в `.select` — поле
+     вибору ставало не відрізнити від звичайного інпута. */
+  background-color: var(--app-surface-strong);
+}
+
+/* Стрілка поля вибору. Малюнок daisyUI (два градієнти-трикутники) годиться,
+   а от його розкладка розрахована на власну висоту компонента: стрілка
+   стояла б за 20px від краю, а тексту не було б де закінчитись. Тут — під
+   контрол 24px: місце під стрілку в padding, сама вона біля правого краю. */
+.select {
+  padding-inline: 6px 18px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 13px) calc(50% - 1px), calc(100% - 9.1px) calc(50% - 1px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
 }
 .input:focus, .select:focus, .textarea:focus {
   outline: 1px solid var(--color-primary);
@@ -128,6 +148,44 @@ html, body {
 .join .input:focus-within {
   outline: none;
   border-color: var(--color-primary);
+}
+
+/* Невалідне поле форми. Клас ставить BaseUI.renderField() (і компоненти
+   ui-kit на себе, коли їм передали `invalid`); усередині достатньо перевизначити
+   змінну — рамку підхоплять і звичайний .input, і контрол у чужому shadow root. */
+.field-invalid {
+  --field-border: var(--color-error);
+  /* Точка відліку для плаваючого тексту помилки — див. .field-error нижче. */
+  position: relative;
+}
+/* Те саме для компонента з власним підписом (`<ui-picker invalid="...">`):
+   тема адоптована в кожен shadow root, тому :host тут спрацьовує зсередини.
+   Порожнє значення = «помилки немає», а атрибут при цьому присутній.
+   Потрібне окремо від .field-invalid заради режиму комірки (`cell`), де
+   обгортки з класом немає взагалі. */
+:host([invalid]:not([invalid=""])) { --field-border: var(--color-error); }
+
+/* Текст помилки НЕ бере участі в потоці навмисно. Інакше дві біди: поява й
+   зникнення помилки смикали б висоту всієї форми, а довге повідомлення у
+   вузькій колонці (`w-40` під ЄДРПОУ) розповзалося б на три-чотири рядки.
+   Плаваюча підказка натомість росте вбік до max-width і лише потім переносить
+   рядок — від ширини самого поля вона не залежить. */
+.field-error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 2px;
+  min-width: 100%;
+  width: max-content;
+  max-width: 18rem;
+  padding: 1px 6px;
+  font-size: var(--default-font-size);
+  line-height: 1.35;
+  color: var(--color-error);
+  background: var(--app-surface-strong);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-field);
 }
 
 /* Label */
@@ -210,7 +268,9 @@ html, body {
   min-height: 24px;
   border: 0;
   border-radius: 0 !important;
-  background: transparent;
+  /* background-COLOR — з тієї ж причини, що й у `.input, .select`: скорочення
+     стерло б стрілку `.select` у комірці табличної частини. */
+  background-color: transparent;
   box-shadow: none;
 }
 

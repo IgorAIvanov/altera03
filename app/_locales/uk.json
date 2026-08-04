@@ -23,6 +23,8 @@
   "organization.titleOne": "Організація",
   "organization.fullName": "Повна назва",
   "organization.edrpou": "ЄДРПОУ",
+  "organization.edrpouFormat": "ЄДРПОУ — 8 цифр",
+  "organization.rnokppFormat": "РНОКПП — 10 цифр",
   "organization.prefix": "Префікс",
   "organization.legalPersonKind": "Вид особи",
   "organization.legalPersonKind.legalEntity": "Юридична особа",

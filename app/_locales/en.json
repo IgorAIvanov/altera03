@@ -23,6 +23,8 @@
   "organization.titleOne": "Organization",
   "organization.fullName": "Full name",
   "organization.edrpou": "EDRPOU",
+  "organization.edrpouFormat": "EDRPOU must be 8 digits",
+  "organization.rnokppFormat": "RNOKPP must be 10 digits",
   "organization.prefix": "Prefix",
   "organization.legalPersonKind": "Legal person kind",
   "organization.legalPersonKind.legalEntity": "Legal entity",

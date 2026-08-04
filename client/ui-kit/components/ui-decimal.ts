@@ -32,6 +32,9 @@ export class UiDecimal extends GlobalStyledLitElement {
   /** Кількість знаків після коми: сума — 2, кількість — 3, курс — 6. */
   @property({ type: Number }) precision = 2;
   @property({ type: String }) label = "";
+  @property({ type: Boolean }) required = false;
+  /** Текст помилки поля; непорожній — рамка червона (див. theme.css, :host([invalid])). */
+  @property({ type: String, reflect: true }) invalid = "";
   @property({ type: String, attribute: "label-position" }) labelPosition: "top" | "left" = "top";
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
@@ -189,14 +192,15 @@ export class UiDecimal extends GlobalStyledLitElement {
     return this.labelPosition === "left"
       ? html`
         <div class="flex items-center gap-2" style=${style}>
-          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}</span>` : ""}
+          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
           ${input}
         </div>
       `
       : html`
-        <div class="flex flex-col gap-1" style=${style}>
-          ${this.label ? html`<span class="label text-sm">${this.label}</span>` : ""}
+        <div class="flex flex-col gap-1 ${this.invalid ? "field-invalid" : ""}" style=${style}>
+          ${this.label ? html`<span class="label text-sm">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
           ${input}
+          ${this.invalid ? html`<span class="field-error">${this.invalid}</span>` : ""}
         </div>
       `;
   }

@@ -59,7 +59,37 @@ are not filtered.
 | `notFound` | Request succeeded but the entity is missing (deleted or invalid id). |
 | `canSave` | `!busy && !notFound` — use for the Save button. |
 | `renderNotice()` | Shared banner: "record not found" + error messages. Drop in once per form. |
+| `renderField(label, control, opts)` | Field layout: label + control + required asterisk + error text. Pass `{ field: "code" }` to wire it to validation. |
+| `fieldRules()` | Override to declare required / custom checks **in the form**, incl. conditional ones. |
+| `isRequired(f)` / `fieldError(f)` | For components that draw their own label (`<ui-picker>`): `?required=` / `.invalid=`. |
+| `validate()` | Runs the rules, highlights, scrolls to the first invalid field. Called automatically before save. |
+| `trySave()` | `validate()` + `saveItem()`. **Wire custom save buttons here, not to `saveItem`.** |
 | `t` | Localizer. |
+
+## Required fields: declare them in the form
+
+Requiredness often depends on other fields, and a TypeBox schema cannot express that. Override
+`fieldRules()` — it is a **method**, called on every render and before every save, so the condition
+freely reads `$root`:
+
+```ts
+protected override fieldRules(): FieldRules {
+  const item = this.$root.item;
+  return {
+    mfo: item.kind === "bank",                    // conditional
+    prefix: false,                                // drop the schema's requiredness
+    edrpou: { required: true, check: (v) => /^\d{8}$/.test(String(v)) ? null : t("…") },
+  };
+}
+```
+
+Precedence: inline `renderField(…, { required })` → `fieldRules()` → schema. The schema stays the
+default, so forms that need no conditions keep working untouched.
+
+Only two sets are validated: fields named in `fieldRules()`, and fields passed to `renderField` as
+`{ field }`. Never the whole schema — `id` is schema-required but empty on a new record.
+
+Full reference: [`docs/ui-form-validation.md`](../../../docs/ui-form-validation.md).
 
 ## Gotcha: the schema goes through `super()`
 

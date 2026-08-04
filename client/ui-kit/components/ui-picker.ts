@@ -16,6 +16,8 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String }) label = "";
   /** Позначка обов'язковості біля підпису — зірочка, як у renderField() форм. */
   @property({ type: Boolean }) required = false;
+  /** Текст помилки поля; непорожній — рамка червона (див. theme.css, :host([invalid])). */
+  @property({ type: String, reflect: true }) invalid = "";
   @property({ type: String, attribute: "label-position" }) labelPosition: "top" | "left" = "top";
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
@@ -268,9 +270,10 @@ export class UiPicker extends GlobalStyledLitElement {
           ${inputGroup}
         </div>
       ` : html`
-        <div class="flex flex-col gap-1${this.width ? ` w-[${this.width}]` : ""}">
+        <div class="flex flex-col gap-1${this.width ? ` w-[${this.width}]` : ""} ${this.invalid ? "field-invalid" : ""}">
           ${this.label ? html`<span class="label text-sm leading-none">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
           ${inputGroup}
+          ${this.invalid ? html`<span class="field-error">${this.invalid}</span>` : ""}
         </div>
       `}
       ${popover}

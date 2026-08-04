@@ -66,6 +66,8 @@
 | `placeholder`    | string  | = `format`  | підказка в порожньому полі |
 | `disabled`       | boolean | `false`     | |
 | `readonly`       | boolean | `false`     | ховає кнопку календаря |
+| `required`       | boolean | `false`     | зірочка біля підпису: `?required=${this.isRequired("date")}` |
+| `invalid`        | string  | `""`        | текст помилки: червона рамка + підпис під контролом ([ui-form-validation.md](../../../docs/ui-form-validation.md)) |
 | `show-clear`     | boolean | `false`     | кнопка очищення в календарі |
 | `size`           | string  | `""`        | `xs` \| `sm` \| `md` \| `lg` |
 | `width`          | string  | `""`        | CSS-ширина обгортки |

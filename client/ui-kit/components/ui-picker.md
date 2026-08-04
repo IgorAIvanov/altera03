@@ -37,6 +37,8 @@
 | `width` | `width` | `string` | `""` | Ширина компонента, будь-яке CSS-значення (`200px`, `100%`). Без значення — займає доступний простір |
 | `disabled` | `disabled` | `boolean` | `false` | Блокує поле введення та всі кнопки |
 | `visible` | `visible` | `boolean` | `true` | Приховує компонент (`false` → порожній шаблон, місце не займає) |
+| `required` | `required` | `boolean` | `false` | Малює зірочку біля підпису: `?required=${this.isRequired("counterparty")}` |
+| `invalid` | `invalid` | `string` | `""` | Текст помилки: рамка червона + підпис під контролом. `.invalid=${this.fieldError("counterparty")}` — див. [ui-form-validation.md](../../../docs/ui-form-validation.md) |
 
 ## Події
 

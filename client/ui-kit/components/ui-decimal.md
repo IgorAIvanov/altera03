@@ -25,6 +25,8 @@
 | `value` | string | `""` | канонічне значення (рядок, щоб не втрачати точність) |
 | `precision` | number | `2` | знаків після коми: сума — 2, кількість — 3, курс — 6 |
 | `label` | string | `""` | підпис |
+| `required` | boolean | `false` | зірочка біля підпису: `?required=${this.isRequired("amount")}` |
+| `invalid` | string | `""` | текст помилки: червона рамка + підпис під контролом ([ui-form-validation.md](../../../docs/ui-form-validation.md)) |
 | `label-position` | `top`\|`left` | `top` | розташування підпису |
 | `placeholder` | string | `""` | |
 | `disabled` / `readonly` | boolean | `false` | |

@@ -12,6 +12,8 @@
   "common.noData": "No data",
   "common.notFound": "Nothing found",
   "common.recordNotFound": "Record not found or deleted",
+  "common.fieldRequired": "This field is required",
+  "common.fixFields": "Fill in the required fields",
   "common.select": "Select",
   "common.active": "Active",
   "common.pick": "Pick",

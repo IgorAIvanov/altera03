@@ -1,6 +1,6 @@
 import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { BaseUI, type FieldRules } from "@client/ui-kit/base/base-ui.ts";
 import {
   OrganizationEditRootSchema,
   type OrganizationEditRoot,
@@ -30,6 +30,26 @@ export class OrganizationEdit extends BaseUI<OrganizationEditRoot> {
 
   private async load() {
     await this.loadInto("get", { id: this.modelId });
+  }
+
+  /**
+   * Ідентифікаційний код обов'язковий завжди, а от його довжина залежить від
+   * виду особи: ЄДРПОУ юрособи — 8 цифр, РНОКПП підприємця — 10. У схемі поле
+   * `Optional`, бо для БД воно й лишається необов'язковим (стара база), тож це
+   * саме той випадок, заради якого правила живуть у формі, а не в схемі.
+   */
+  protected override fieldRules(): FieldRules {
+    const entrepreneur = this.$root.item.legalPersonKind === "individual_entrepreneur";
+    const length = entrepreneur ? 10 : 8;
+    return {
+      edrpou: {
+        required: true,
+        check: (value) =>
+          new RegExp(`^\\d{${length}}$`).test(String(value).trim())
+            ? null
+            : this.t(entrepreneur ? "organization.rnokppFormat" : "organization.edrpouFormat"),
+      },
+    };
   }
 
   override render() {

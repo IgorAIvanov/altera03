@@ -1,4 +1,4 @@
-import { html, type PropertyValues, type TemplateResult } from "lit";
+import { html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { deep } from "signal-utils/deep";
@@ -25,6 +25,37 @@ export interface Envelope<D = Record<string, unknown>> {
   ok: boolean;
   data?: D;
   messages?: (Message | string)[];
+}
+
+// ── Правила полів форми ──────────────────────────────────────────────────────
+
+/**
+ * Власна перевірка значення поля. `null`/`undefined` — усе гаразд, рядок —
+ * текст помилки (уже локалізований: правило пише сама форма).
+ *
+ * Порожнього значення НЕ бачить: «формат» незаповненого поля перевіряти нічого,
+ * а «має бути заповнене» — це `required`.
+ */
+export type FieldCheck = (value: unknown) => string | null | undefined;
+
+/**
+ * Правило поля. Коротка форма — сама лише обов'язковість:
+ * `{ mfo: item.kind === "bank" }`.
+ */
+export type FieldRule = boolean | { required?: boolean; check?: FieldCheck };
+
+/** Карта правил форми: ім'я поля основної сутності → правило. */
+export type FieldRules = Record<string, FieldRule>;
+
+/**
+ * Чи вважати значення незаповненим. `false` і `0` — заповнені: інакше
+ * checkbox «ні» і сума «0» рахувалися б порожніми.
+ */
+function isEmptyValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
 }
 
 /**
@@ -95,6 +126,9 @@ export abstract class BaseUI<T extends Record<string, unknown>>
 
   /** Повідомлення з останньої відповіді сервера. Транзієнтний UI-стан. */
   @state() protected messages: Message[] = [];
+
+  /** Помилки полів: ім'я поля → текст. Транзієнтний UI-стан. */
+  @state() protected fieldErrors: Record<string, string> = {};
 
   /** Чи є команда в польоті. */
   protected get busy(): boolean {
@@ -172,12 +206,184 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     this.markClean();
   }
 
+  protected override willUpdate(changed: PropertyValues) {
+    super.willUpdate(changed);
+    // Реєстр полів збирається наново кожним render(): поле, якого форма цього
+    // разу не намалювала (схована гілка розмітки), перевірятися не повинно.
+    this.#renderedFields.clear();
+  }
+
   protected override updated(changed: PropertyValues) {
     super.updated(changed);
     // Кожен рендер — нагода звірити dirty-стан: введення користувача міняє
     // $root → SignalWatcher перемальовує → сюди. Подія йде лише на ЗМІНІ
     // стану (див. #notifyDirty), а не на кожен символ.
     if (this.dirtyTracking) this.#notifyDirty();
+    // Реєстр щойно заповнений завершеним render() — саме тут перерахунок
+    // помилок бачить актуальний набір полів. До першої перевірки мовчимо.
+    if (this.#validationStarted) this.#syncErrors();
+  }
+
+  /** Перерахувати помилки після рендеру; @state чіпаємо лише на зміні. */
+  #syncErrors() {
+    const next = this.#collectErrors();
+    const keys = Object.keys(next);
+    const same = keys.length === Object.keys(this.fieldErrors).length
+      && keys.every((k) => this.fieldErrors[k] === next[k]);
+    if (!same) this.fieldErrors = next;
+    // Поля виправили — знімаємо і банер, інакше він висів би до наступного
+    // запиту. Чуже повідомлення (відповідь сервера) не чіпаємо.
+    if (keys.length === 0 && this.#bannerShown) {
+      this.#bannerShown = false;
+      this.messages = [];
+    }
+  }
+
+  // ── Обов'язковість полів і перевірка ───────────────────────────────────────
+
+  /**
+   * Правила полів форми: обов'язковість і власні перевірки.
+   *
+   * Метод, а не константа, навмисно: він викликається на кожен рендер і перед
+   * збереженням, тож умова вільно читає поточні дані — це і є **умовна**
+   * обов'язковість.
+   *
+   * ```ts
+   * protected override fieldRules(): FieldRules {
+   *   const item = this.$root.item;
+   *   return {
+   *     edrpou: item.kind === "legal_entity",              // умовно обов'язкове
+   *     prefix: false,                                     // зняти обов'язковість зі схеми
+   *     iban: { check: (v) => isIban(v) ? null : t("bank.badIban") },
+   *   };
+   * }
+   * ```
+   *
+   * Ключ — ім'я поля основної сутності (`primaryKey`, зазвичай `item`).
+   * Поле, якого тут немає, бере обов'язковість зі схеми — як і раніше.
+   */
+  protected fieldRules(): FieldRules {
+    return {};
+  }
+
+  /**
+   * Поля, віддані в `renderField` у поточному циклі рендеру: ім'я → чи
+   * намальована зірочка. Реєстр і робить інваріант «зірочка == перевірка»
+   * нерозривним: перевіряється рівно те, що бачить користувач.
+   *
+   * Заповнюється під час `render()`, очищується в `willUpdate()` — тому поле
+   * зі схованої гілки розмітки не перевіряється (підсвітити його все одно
+   * нікуди).
+   */
+  #renderedFields = new Map<string, boolean>();
+
+  /**
+   * Перевірка вже спрацьовувала хоч раз. Доти помилок не показуємо взагалі:
+   * порожня нова форма не повинна зустрічати користувача червоним.
+   */
+  #validationStarted = false;
+
+  /** Чи обов'язкове поле за схемою: у TypeBox це все, що не `Type.Optional`. */
+  private schemaRequired(field: string): boolean {
+    const entity = this.rootSchema?.properties?.[this.primaryKey ?? "item"] as
+      | { required?: string[] }
+      | undefined;
+    return entity?.required?.includes(field) ?? false;
+  }
+
+  /**
+   * Чи є поле обов'язковим: правило форми, інакше схема. Публічний для форми —
+   * компоненти з власним підписом (`<ui-picker label>`) малюють зірочку самі:
+   * `?required=${this.isRequired("counterparty")}`.
+   */
+  protected isRequired(field: string): boolean {
+    const rule = this.fieldRules()[field];
+    if (typeof rule === "boolean") return rule;
+    if (rule && rule.required !== undefined) return rule.required;
+    return this.schemaRequired(field);
+  }
+
+  /** Текст помилки поля — для компонентів із власним підписом: `.invalid=`. */
+  protected fieldError(field: string): string {
+    return this.fieldErrors[field] ?? "";
+  }
+
+  /**
+   * Зібрати помилки. Перевіряється об'єднання двох множин:
+   *  - поля, оголошені у `fieldRules()` — хай як їх малює форма;
+   *  - поля, віддані в `renderField` — вони беруть обов'язковість зі схеми.
+   *
+   * Решта схеми не перевіряється свідомо: `id` обов'язковий за TypeBox
+   * (`Union([String, Null])` — не `Optional`), але в новому записі він порожній,
+   * і суцільна перевірка схеми блокувала б збереження завжди.
+   */
+  #collectErrors(): Record<string, string> {
+    const rules = this.fieldRules();
+    const entity = (this.$root as Record<string, unknown>)[this.primaryKey ?? "item"];
+    const item = (entity && typeof entity === "object" ? entity : {}) as Record<string, unknown>;
+
+    const names = new Set<string>([...Object.keys(rules), ...this.#renderedFields.keys()]);
+    const errors: Record<string, string> = {};
+
+    for (const name of names) {
+      const rule = rules[name];
+      const value = item[name];
+
+      // Реєстр рендеру попереду правил навмисно: у ньому вже враховані і
+      // правила, і перекриття прапорцем прямо в renderField, а головне — це
+      // рівно та обов'язковість, яку показала зірочка.
+      const required = this.#renderedFields.get(name)
+        ?? (typeof rule === "boolean" ? rule : rule?.required)
+        ?? this.schemaRequired(name);
+
+      if (isEmptyValue(value)) {
+        if (required) errors[name] = t("common.fieldRequired");
+        continue;
+      }
+      const message = typeof rule === "object" ? rule?.check?.(value) : undefined;
+      if (message) errors[name] = message;
+    }
+    return errors;
+  }
+
+  /**
+   * Перевірити поля форми. Заповнює `fieldErrors`, показує банер і веде до
+   * першого невалідного поля. Далі помилки перераховуються на кожен рендер,
+   * тож зникають щойно поле заповнили — а не з наступним натисканням.
+   *
+   * Викликається автоматично перед збереженням; форма кличе сама, якщо своя
+   * дія теж вимагає заповнених полів (наприклад «Провести»).
+   */
+  protected validate(): boolean {
+    this.#validationStarted = true;
+    const errors = this.#collectErrors();
+    this.fieldErrors = errors;
+
+    const first = Object.keys(errors)[0];
+    if (!first) return true;
+    this.messages = [{ type: "error", text: t("common.fixFields") }];
+    this.#bannerShown = true;
+    this.updateComplete.then(() => this.#focusField(first));
+    return false;
+  }
+
+  /** Банер «заповніть поля» поставили ми — значить нам його й прибирати. */
+  #bannerShown = false;
+
+  /**
+   * Прокрутити до поля й поставити в нього фокус. Працює по `data-field`, який
+   * ставить `renderField`; поле, намальоване формою власноруч, підхопиться так
+   * само, якщо форма проставить цей атрибут на обгортці.
+   */
+  #focusField(field: string) {
+    const host = this.renderRoot.querySelector(`[data-field="${field}"]`);
+    if (!host) return;
+    host.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // Контрол ui-kit живе у власному shadow root — селектор туди не дістає,
+    // але сам компонент має delegatesFocus, тож focus() на ньому спрацює.
+    const control = host.querySelector<HTMLElement>("input, select, textarea")
+      ?? [...host.querySelectorAll<HTMLElement>("*")].find((el) => el.localName.includes("-"));
+    control?.focus();
   }
 
   /**
@@ -310,29 +516,23 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     control: TemplateResult,
     opts: { class?: string; field?: string; required?: boolean } = {},
   ): TemplateResult {
-    // Обов'язковість беремо зі схеми (`field`), а не з окремого прапорця в
-    // розмітці: інакше зірочка й реальна перевірка в БД розходяться при першій
-    // же зміні схеми.
+    // Порядок джерел: прапорець у розмітці → правило форми → схема. Що б не
+    // перемогло, воно ж і піде в перевірку: обов'язковість запам'ятовується в
+    // реєстрі рендеру, тому зірочка й перевірка розійтися не можуть.
     const required = opts.required ?? (opts.field ? this.isRequired(opts.field) : false);
+    if (opts.field) this.#renderedFields.set(opts.field, required);
+
+    const error = opts.field ? this.fieldErrors[opts.field] : undefined;
     return html`
-      <div class="flex flex-col gap-px ${opts.class ?? ""}">
+      <div class="flex flex-col gap-px ${opts.class ?? ""} ${error ? "field-invalid" : ""}"
+        data-field=${opts.field ?? nothing}>
         <span class="label text-sm leading-none">
           ${label}${required ? html`<span class="text-error ml-0.5">*</span>` : ""}
         </span>
         ${control}
+        ${error ? html`<span class="field-error">${error}</span>` : ""}
       </div>
     `;
-  }
-
-  /**
-   * Чи є поле основної сутності обов'язковим за схемою. У TypeBox обов'язкове
-   * все, що не загорнуте в `Type.Optional`, тож окремих анотацій не треба.
-   */
-  protected isRequired(field: string): boolean {
-    const entity = this.rootSchema?.properties?.[this.primaryKey ?? "item"] as
-      | { required?: string[] }
-      | undefined;
-    return entity?.required?.includes(field) ?? false;
   }
 
   /**
@@ -371,12 +571,25 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   }
 
   /**
+   * Збереження з перевіркою полів — саме це вішається на кнопки.
+   *
+   * Перевірка навмисно ЗОВНІ `saveItem()`, а не всередині: `saveItem` — це
+   * «як саме відправити» (форми його перевизначають, і не всі кличуть super),
+   * а перевірити треба незалежно від того, як відправляють.
+   */
+  protected async trySave(): Promise<boolean> {
+    if (!this.validate()) return false;
+    return await this.saveItem();
+  }
+
+  /**
    * Публічний виклик збереження — для оболонки: «Зберегти» у діалозі
-   * закриття брудної вкладки. Проходить через saveItem(), тож перевизначення
-   * форм (нормалізація табличних частин) спрацьовують і тут.
+   * закриття брудної вкладки. Проходить через trySave(), тож і перевірка,
+   * і перевизначення форм (нормалізація табличних частин) працюють і тут:
+   * незаповнене обов'язкове поле лишає вкладку відкритою з підсвіткою.
    */
   async save(): Promise<boolean> {
-    return await this.saveItem();
+    return await this.trySave();
   }
 
   /** Закрити власну вкладку. `tabId` проставляє tab-controller при створенні. */
@@ -385,7 +598,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   }
 
   private async saveAndClose() {
-    if (await this.saveItem()) this.closeSelf();
+    if (await this.trySave()) this.closeSelf();
   }
 
   /**
@@ -400,7 +613,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
           ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
           ${t("common.saveAndClose")}
         </button>
-        <button class="btn btn-outline" ?disabled=${!this.canSave} @click=${this.saveItem}>
+        <button class="btn btn-outline" ?disabled=${!this.canSave} @click=${this.trySave}>
           ${t("common.save")}
         </button>
         <button class="btn btn-ghost" ?disabled=${this.busy} @click=${this.closeSelf}>
