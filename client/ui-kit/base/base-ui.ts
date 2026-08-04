@@ -736,6 +736,29 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     return await this.trySave();
   }
 
+  /**
+   * Ctrl+S від оболонки (`ShortcutTarget`).
+   *
+   * Оголошено тут, а не в кожній формі, але діє лише там, де є що зберігати:
+   * `primaryKey` і є ознака «екран редагує один запис» — у списків, пікерів і
+   * звітів він `null`. Проходить через `trySave()`, тож перевірка полів
+   * спрацює так само, як по кнопці.
+   */
+  hotkeySave(): void {
+    if (this.primaryKey === null || !this.canSave) return;
+    void this.trySave();
+  }
+
+  /**
+   * Ctrl+Enter від оболонки — кнопка за замовчуванням форми, тобто
+   * «Зберегти й закрити» (у підвалі вона `btn-primary`). Невдале збереження
+   * вкладку не закриває: `saveAndClose` закриває лише після успіху.
+   */
+  hotkeyDefault(): void {
+    if (this.primaryKey === null || !this.canSave) return;
+    void this.saveAndClose();
+  }
+
   /** Закрити власну вкладку. `tabId` проставляє tab-controller при створенні. */
   protected closeSelf() {
     if (this.tabId) bus.emit({ type: "tab.close", tabId: this.tabId });

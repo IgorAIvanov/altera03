@@ -166,6 +166,9 @@ export class UiDate extends GlobalStyledLitElement {
       return;
     }
     if (e.key === "Escape") {
+      // Позначаємо клавішу обробленою: Esc в оболонці закриває вкладку, і без
+      // цього відкат чернетки закривав би заразом усю форму.
+      e.preventDefault();
       if (this._open) { this._close(); return; }
       this._draft = formatDate(this._entryValue, this.format);
       this.value = this._entryValue;

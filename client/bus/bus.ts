@@ -27,6 +27,20 @@ class Bus {
   private pendingConfirms = new Map<string, (value: boolean) => void>();
   private pendingChoices = new Map<string, (value: string | null) => void>();
 
+  /**
+   * Чи відкрите модальне вікно шини (пікер, підтвердження, вибір).
+   *
+   * Потрібне гарячим клавішам оболонки: свій Esc діалоги слухають на власному
+   * оверлеї, тобто лише коли фокус усередині них. Без цієї перевірки Esc із
+   * фокусом деінде закрив би вкладку ПІД відкритим вікном.
+   *
+   * Екранні діалоги (наприклад «перемістити до групи») сюди не входять — вони
+   * не через шину; їхній обов'язок — позначити подію обробленою.
+   */
+  get modalOpen(): boolean {
+    return this.pending.size > 0 || this.pendingConfirms.size > 0 || this.pendingChoices.size > 0;
+  }
+
   // --- pub/sub ---
 
   on<T extends BusMessageType>(

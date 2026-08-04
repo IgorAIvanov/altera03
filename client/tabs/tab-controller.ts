@@ -9,6 +9,7 @@ import "@client/ui-kit/confirm-host.ts";
 import { apiFetch, readEnvelope, ServerUnavailableError } from "../data/api.ts";
 import { readUserScoped, writeUserScoped } from "../shared/user-storage.ts";
 import { buildTabUrl, parseTabPath } from "./tab-url.ts";
+import { matchShortcut, type ShortcutTarget } from "../shell/shortcuts.ts";
 
 const MAX_TABS = 30;
 const HOME_TAB_ID = "home";
@@ -494,8 +495,60 @@ export class TabController extends LitElement {
     this.tabMenu = null;
   };
 
+  /**
+   * ЄДИНИЙ канал клавіатури застосунку.
+   *
+   * Слухач тут, а не на екранах, бо панелі ВСІХ відкритих вкладок лежать у DOM
+   * одночасно (схована лише неактивна): слухач на екрані розіслав би Ctrl+S у
+   * всі відкриті форми разом. Оболонка ж знає, яка вкладка активна.
+   *
+   * Порядок перевірок і є вся суть — черга на клавішу:
+   *  1. контекстне меню ярлика (найдрібніше з відкритого);
+   *  2. подія вже оброблена компонентом — не чіпаємо;
+   *  3. відкрите модальне вікно шини — не чіпаємо;
+   *  4. і лише тоді дія оболонки.
+   */
   #onWindowKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") this.#closeTabMenu();
+    if (e.code === "Escape" && this.tabMenu) {
+      e.preventDefault();
+      this.#closeTabMenu();
+      return;
+    }
+
+    // Клавішу вже забрав компонент: список пікера, календар, комірка таблиці.
+    if (e.defaultPrevented) return;
+
+    // Діалоги шини слухають свій Esc на власному оверлеї, тобто лише при
+    // фокусі всередині. Без цієї перевірки Esc із фокусом деінде закрив би
+    // вкладку ПІД відкритим вікном.
+    if (bus.modalOpen) return;
+
+    const command = matchShortcut(e);
+    if (!command) return;
+
+    if (command === "close") {
+      const tab = this.tabs.find(t => t.id === this.activeTabId);
+      // Домашню вкладку не закриваємо — і браузерний Esc їй не заважаємо.
+      if (!tab || tab.permanent) return;
+      e.preventDefault();
+      this.handleClose(tab.id);
+      return;
+    }
+
+    const screen = this.tabs.find(t => t.id === this.activeTabId)?.element as
+      | ShortcutTarget
+      | null
+      | undefined;
+    const handler = command === "save"
+      ? screen?.hotkeySave
+      : command === "create"
+      ? screen?.hotkeyCreate
+      : screen?.hotkeyDefault;
+    // Екран цього не вміє (список не «зберігається», форма не створює) —
+    // не перехоплюємо: хай клавіша дістанеться браузеру.
+    if (!handler) return;
+    e.preventDefault();
+    handler.call(screen);
   };
 
   private async copyTabUrl(tabId: string) {

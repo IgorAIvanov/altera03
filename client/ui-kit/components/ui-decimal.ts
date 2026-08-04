@@ -156,6 +156,9 @@ export class UiDecimal extends GlobalStyledLitElement {
       return;
     }
     if (e.key === "Escape") {
+      // Позначаємо клавішу обробленою: Esc в оболонці закриває вкладку, і без
+      // цього відкат чернетки закривав би заразом усю форму.
+      e.preventDefault();
       this._draft = this._entryValue;
       requestAnimationFrame(() => this._selectAll());
     }

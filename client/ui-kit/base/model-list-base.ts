@@ -368,6 +368,15 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
     bus.emit({ type: "tab.open", route: this.editRoute, id });
   }
 
+  /**
+   * Insert від оболонки (`ShortcutTarget`) — те саме, що кнопка «Створити»,
+   * і з тими самими умовами: є куди відкривати й список не тільки для читання.
+   */
+  hotkeyCreate(): void {
+    if (this.readonly || !this.editRoute) return;
+    this.openEdit(null);
+  }
+
   // ── Ієрархія: фільтр дерева і перенесення до групи ─────────────────────────
 
   #onGroupsChanged(e: CustomEvent<{ ids: string[] }>) {
@@ -558,7 +567,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends BaseUI<L
         ${this.moveOpen
           ? html`
             <div class="app-dialog-overlay"
-              @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") this.moveOpen = false; }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); this.moveOpen = false; } }}
               @click=${(e: Event) => { if (e.target === e.currentTarget) this.moveOpen = false; }}>
               <div class="app-dialog w-96">
                 <div class="app-dialog-title">

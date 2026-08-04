@@ -378,7 +378,12 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
   override connectedCallback() {
     super.connectedCallback();
-    globalThis.addEventListener("keydown", this.onKeyDown);
+    // Саме document, а не window: слухач оболонки (гарячі клавіші) висить на
+    // window і зареєстрований РАНІШЕ — на етапі спливання він отримав би подію
+    // першим, і Esc закрив би вкладку до того, як цей екран її обробить.
+    // Document у ланцюжку спливання стоїть перед window, тож порядок стає
+    // визначеним і не залежить від того, коли створили екран.
+    document.addEventListener("keydown", this.onKeyDown);
     if (this.modelId) {
       this.load();
     } else {
@@ -390,7 +395,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     super.disconnectedCallback();
     clearTimeout(this.#previewTimer);
     this.releasePreviewUrl();
-    globalThis.removeEventListener("keydown", this.onKeyDown);
+    document.removeEventListener("keydown", this.onKeyDown);
   }
 
   // ── Полотно розкладки ───────────────────────────────────────────────────────
@@ -550,6 +555,9 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     if (!this.selectedBlockKey || this.#drag) return;
 
     if (event.key === "Escape") {
+      // Позначаємо клавішу обробленою: Esc в оболонці закриває вкладку, і без
+      // цього зняття виділення блока закривало б заразом увесь редактор.
+      event.preventDefault();
       this.selectedBlockKey = null;
       return;
     }

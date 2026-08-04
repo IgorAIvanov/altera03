@@ -139,7 +139,11 @@ export class UiTabularTable extends Base {
       el instanceof HTMLElement && el.tagName === "UI-PICKER"
     );
 
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Ctrl+Enter — не наш Enter: це кнопка за замовчуванням форми, і секція
+    // мусить його пропустити. Без цієї умови таблиця з'їдала б його разом із
+    // preventDefault, і в документі з табличною частиною — тобто саме там, де
+    // сполучення й потрібне, — воно не працювало б узагалі.
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       // Enter веде вправо (порядок — оголошення колонок, підрядкові після
       // сіткових); ui-decimal свій Enter (канонізація) не гасить — подія
       // долітає сюди вже після його обробки. Спроби по черзі: custom-комірка

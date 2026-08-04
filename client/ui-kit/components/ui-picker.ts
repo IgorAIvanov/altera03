@@ -131,7 +131,9 @@ export class UiPicker extends GlobalStyledLitElement {
       return;
     }
 
-    if (e.key === "Enter" && this._activeIndex >= 0) {
+    // Ctrl+Enter лишаємо формі (кнопка за замовчуванням) — навіть з відкритим
+    // списком: вибір із нього робиться звичайним Enter.
+    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && this._activeIndex >= 0) {
       e.preventDefault();
       e.stopPropagation();
       this._onSelect(this._items[this._activeIndex]);

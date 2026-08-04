@@ -294,7 +294,7 @@ export class UiGroupTree extends GlobalStyledLitElement {
           @input=${(e: Event) => { this.editing = { ...this.editing!, name: (e.target as HTMLInputElement).value }; }}
           @keydown=${(e: KeyboardEvent) => {
             if (e.key === "Enter") this.#commitEdit();
-            if (e.key === "Escape") this.editing = null;
+            if (e.key === "Escape") { e.preventDefault(); this.editing = null; }
           }} />
         <button class="btn btn-primary btn-xs" @click=${this.#commitEdit}>${t("common.save")}</button>
         <button class="btn btn-ghost btn-xs" @click=${() => { this.editing = null; }}>✕</button>
@@ -345,7 +345,7 @@ export class UiGroupTree extends GlobalStyledLitElement {
         ${this.movingGroup
           ? html`
             <div class="app-dialog-overlay"
-              @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") this.movingGroup = false; }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); this.movingGroup = false; } }}
               @click=${(e: Event) => { if (e.target === e.currentTarget) this.movingGroup = false; }}>
               <div class="app-dialog w-96">
                 <div class="app-dialog-title">
