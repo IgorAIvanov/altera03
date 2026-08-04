@@ -1,0 +1,74 @@
+{
+  "//": "ДЕМО-шаблон друку. Це СІД: при публікації SQL він потрапляє в app.print_template, а далі шаблон живе в базі й редагується адміністратором. Числа в placement — рядки навмисно: так поле в редакторі не смикається під час набору.",
+  "name": "Картка контрагента",
+  "paperSize": "A4",
+  "orientation": "portrait",
+  "isDefault": true,
+  "isActive": true,
+  "schema": {
+    "schemaVersion": 2,
+    "blocks": [
+      {
+        "key": "title",
+        "type": "text",
+        "style": "title",
+        "value": "Картка контрагента",
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "0",
+          "widthPercent": "100",
+          "heightPercent": "8"
+        },
+        "text": {
+          "fontSize": "16",
+          "align": "center",
+          "fontWeight": "bold",
+          "color": "#262626"
+        }
+      },
+      {
+        "key": "fields",
+        "type": "field-list",
+        "items": [
+          { "key": "code", "label": "Код", "path": "counterparty.code" },
+          { "key": "name", "label": "Найменування", "path": "counterparty.name" },
+          { "key": "edrpou", "label": "ЄДРПОУ", "path": "counterparty.edrpou" },
+          { "key": "state", "label": "Стан", "path": "counterparty.state" }
+        ],
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "12",
+          "widthPercent": "100",
+          "heightPercent": "20"
+        },
+        "text": {
+          "fontSize": "11",
+          "align": "left",
+          "fontWeight": "normal",
+          "color": "#262626"
+        }
+      },
+      {
+        "key": "printed_at",
+        "type": "text",
+        "value": "",
+        "path": "counterparty.printedAt",
+        "placement": {
+          "mode": "absolute",
+          "xPercent": "0",
+          "yPercent": "90",
+          "widthPercent": "100",
+          "heightPercent": "5"
+        },
+        "text": {
+          "fontSize": "8",
+          "align": "right",
+          "fontWeight": "normal",
+          "color": "#767676"
+        }
+      }
+    ]
+  }
+}

@@ -1,8 +1,8 @@
 -- Склад меню — дані ЦЬОГО застосунку, тому лежить тут, а не в ядрі.
 --
--- Поки моделей немає, меню порожнє: пункт має вказувати на реальний маршрут
--- в'ю (`family/model/view`), інакше користувач упреться в мертве посилання.
--- Коли з'явиться перша модель, розкоментуй і заміни маршрут.
+-- Пункт мусить указувати на реальний маршрут в'ю (`family/model/view`), інакше
+-- користувач упреться в мертве посилання. Нижче — пункт демо-довідника; коли
+-- видалятимеш демо, прибери і його.
 --
 -- `on conflict do nothing` скрізь: сід створює меню на порожній базі й більше
 -- не втручається — публікація SQL не має відкочувати те, що адміністратор
@@ -20,6 +20,17 @@ cross join app.menu m
 where m.code = 'default'
 on conflict (user_group_id, menu_id) do nothing;
 
--- insert into app.menu_item (menu_id, parent_id, code, name, route_path, sort_order)
--- select m.id, null, 'catalog', 'Довідники', null, 10 from app.menu m where m.code = 'default'
--- on conflict do nothing;
+-- Група «Довідники» — пункт без маршруту, лише вузол дерева.
+insert into app.menu_item (menu_id, parent_id, code, name, route_path, sort_order, is_active)
+select m.id, null, 'catalog', 'Довідники', null, 10, true
+from app.menu m
+where m.code = 'default'
+on conflict do nothing;
+
+-- ДЕМО: список контрагентів. Маршрут — це `family/model/view` з manifest.json.
+insert into app.menu_item (menu_id, parent_id, code, name, route_path, sort_order, is_active)
+select m.id, parent.id, 'catalog.counterparty', 'Контрагенти', 'catalog/counterparty/list', 10, true
+from app.menu m
+join app.menu_item parent on parent.menu_id = m.id and parent.code = 'catalog'
+where m.code = 'default'
+on conflict do nothing;

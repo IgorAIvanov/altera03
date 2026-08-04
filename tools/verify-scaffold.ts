@@ -112,6 +112,78 @@ async function checkTemplateFresh(): Promise<string[]> {
   return problems;
 }
 
+/**
+ * Модуль фреймворку, відданий dev-сервером, справді транспільований.
+ *
+ * Порт нестандартний і `--strictPort`: якщо 5173 зайнятий робочим застосунком,
+ * проба має впасти, а не мовчки перевірити чужий сервер.
+ */
+async function checkDevTransform(appDir: string): Promise<boolean> {
+  const port = 51730;
+  const base = `http://127.0.0.1:${port}`;
+
+  const vite = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "npm:vite", "--configLoader", "native", "--port", String(port), "--strictPort"],
+    cwd: appDir,
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+
+  try {
+    let entry: string | null = null;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const response = await fetch(`${base}/main.ts`);
+        if (response.ok) {
+          entry = await response.text();
+          break;
+        }
+        await response.body?.cancel();
+      } catch {
+        // сервер ще не піднявся
+      }
+    }
+
+    if (!entry) {
+      console.error("✗ dev-сервер не відповів за 30 с — перевірити транспіляцію нічим");
+      return false;
+    }
+
+    // Шлях до модуля фреймворку беремо з самого entry: у ньому вже стоять
+    // переписані Vite специфікатори (/@fs/…/vendor/jsr.io/@altera/client/…).
+    const moduleUrl = entry.match(/\/@fs\/[^"']*tabs\/tab-controller\.ts/)?.[0];
+    if (!moduleUrl) {
+      console.error("✗ у main.ts немає імпорту tab-controller — перевірка транспіляції втратила ціль");
+      return false;
+    }
+
+    const code = await (await fetch(`${base}${moduleUrl}`)).text();
+
+    if (/export\s+@/.test(code)) {
+      console.error("✗ dev-сервер віддає незнижений декоратор (`export @…`) — сторінка впаде на Unexpected token 'export'");
+      console.error("    причина завжди одна: tsconfig.json не покриває vendor/, і Oxc транспілює фреймворк без experimentalDecorators");
+      return false;
+    }
+    if (!code.includes("decorate")) {
+      console.error("✗ у модулі фреймворку немає знижченого декоратора — Lit-компоненти не транспільовані");
+      return false;
+    }
+
+    console.log("✓ dev-транспіляція фреймворку (декоратори знижені)");
+    return true;
+  } finally {
+    try {
+      vite.kill();
+    } catch {
+      // уже завершився
+    }
+    await vite.status;
+    await vite.stdout.cancel();
+    await vite.stderr.cancel();
+  }
+}
+
 export async function verifyScaffold(
   options: { createEntry: string; keep?: boolean; local?: boolean },
 ): Promise<boolean> {
@@ -154,7 +226,10 @@ export async function verifyScaffold(
     // Свіжу версію фреймворку інакше не поставити: політика мінімального віку
     // залежності блокує все, опубліковане менш ніж 24 години тому.
     ["deno install", ["install", "--min-dep-age=0"], appDir],
-    ["deno check", ["check", "--min-dep-age=0", "app/server.ts", "app/main.ts"], appDir],
+    // Обидва composition root — і ВСІ файли застосунку. Екрани моделей у граф
+    // від main.ts не входять: їх вантажить рантайм в'ю динамічно, за реєстром.
+    // Тобто зламаний екран моделі раніше проходив перевірку типів наскрізь.
+    ["deno check", ["check", "--min-dep-age=0", "app/server.ts", "app/main.ts", "app/**/*.ts"], appDir],
     ["build:front", ["task", "build:front"], appDir],
   ];
 
@@ -184,17 +259,38 @@ export async function verifyScaffold(
   if (ok) {
     try {
       const tsconfig = JSON.parse(await Deno.readTextFile(join(appDir, "tsconfig.json")));
+      const include: string[] = tsconfig.include ?? [];
+      // Опції беруться з того tsconfig, чий include покриває файл, — а не з
+      // «найближчого вгору». Вихідники фреймворку лежать у vendor/, і поки їх
+      // там не було, вони транспілювалися без experimentalDecorators: застосунок
+      // піднімався, а перший компонент фреймворку валив завантаження.
+      const coversVendor = include.some((pattern) => pattern.startsWith("vendor/"));
+
       if (tsconfig.compilerOptions?.experimentalDecorators !== true) {
         console.error("✗ tsconfig.json без experimentalDecorators — декоратори Lit впадуть у рантаймі");
         ok = false;
+      } else if (!coversVendor) {
+        console.error("✗ tsconfig.json include не покриває vendor/ — фреймворк транспілюється без декораторів");
+        ok = false;
       } else {
-        console.log("✓ tsconfig experimentalDecorators");
+        console.log("✓ tsconfig experimentalDecorators (включно з vendor/)");
       }
     } catch {
       console.error("✗ у згенерованому застосунку немає tsconfig.json — Oxc не побачить experimentalDecorators");
       ok = false;
     }
   }
+
+  // А тепер — сам dev-режим, а не декларація про нього.
+  //
+  // Перевірка `tsconfig` вище каже лише про наміри: файл є, опція стоїть,
+  // vendor/ у include. Чи подіяло це на вендорені вихідники — видно тільки в
+  // тому, що Vite реально віддає браузеру. І перевіряти треба саме DEV: збірка
+  // (Rolldown) знижує декоратори й без tsconfig, а Oxc у dev-сервері — ні. Тому
+  // «✓ build:front» нічого про цю поломку не каже, і вона доїхала до живого
+  // застосунку: `Unexpected token 'export'` на першому ж компоненті фреймворку,
+  // нескінченний повернення на екран входу і жодного сліду в збірці.
+  if (ok) ok = await checkDevTransform(appDir);
 
   // Локалі застосунку — не модулі, а копійовані активи, тож бандлер про них
   // нічого не знає: покладені не туди, вони не валять ні збірку, ні типи.

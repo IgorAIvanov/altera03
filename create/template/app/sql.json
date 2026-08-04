@@ -12,6 +12,8 @@
     "@core/access",
     "@core/menu",
     "admin/menu",
+    "@core/print_template",
+    "catalog/counterparty",
     "@core/attachment"
   ]
 }

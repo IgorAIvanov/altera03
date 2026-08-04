@@ -82,10 +82,18 @@ export class AppLogin extends GlobalStyledLitElement {
             Пароль задано в налаштуваннях сервера, тому працювати з ним не можна.
           </p>
 
-          <input class="input" type="password" placeholder="Поточний пароль" .value=${this.password}
-                 @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value} />
-          <input class="input" type="password" placeholder="Новий пароль" .value=${this.newPassword}
-                 @input=${(e: Event) => this.newPassword = (e.target as HTMLInputElement).value} />
+          <!-- Підпис, а не лише placeholder: той зникає, щойно почали писати, і
+               саме на цьому екрані два поля password візуально не відрізнити. -->
+          <label class="flex flex-col gap-1 text-sm">
+            <span>Поточний пароль</span>
+            <input class="input" type="password" .value=${this.password}
+                   @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value} />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            <span>Новий пароль</span>
+            <input class="input" type="password" .value=${this.newPassword}
+                   @input=${(e: Event) => this.newPassword = (e.target as HTMLInputElement).value} />
+          </label>
 
           ${this.error ? html`<div class="text-error text-sm">${this.error}</div>` : ""}
 

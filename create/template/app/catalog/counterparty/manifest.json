@@ -1,0 +1,36 @@
+{
+  "//": "ДЕМО-МОДЕЛЬ. Показує повний контур довідника: манифест → схема → три екрани → SQL. Видали каталог, коли він більше не потрібен: прибери запис із app/sql.json, пункт меню з app/admin/menu/db/data.sql і перезапусти `deno task sql:registry`.",
+  "model": "counterparty",
+  "type": "catalog",
+  "schema": "app",
+  "//prints": "Файл шаблону — сід: при публікації він потрапляє в app.print_template. Команду printPdf оголошувати НЕ треба — рантайм виводить її з непорожнього prints і прив'язує обробник ядра.",
+  "prints": {
+    "counterparty_card": {
+      "templateFile": "./prints/counterparty_card.template.json",
+      "dataCommand": "printData"
+    }
+  },
+  "//commands": "Нестандартна команда мусить оголосити своє право, інакше рантайм її не виконає (501, fail-closed).",
+  "commands": {
+    "sql": {
+      "printData": "counterparty_print_data"
+    },
+    "access": {
+      "printData": "view"
+    }
+  },
+  "views": {
+    "list": {
+      "module": "./counterpartyList.ts",
+      "titleKey": "counterparty.titleMany"
+    },
+    "edit": {
+      "module": "./counterpartyEdit.ts",
+      "titleKey": "counterparty.titleOne"
+    },
+    "picker": {
+      "module": "./counterpartyPicker.ts",
+      "titleKey": "counterparty.titleMany"
+    }
+  }
+}

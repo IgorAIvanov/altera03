@@ -43,7 +43,9 @@
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки
     // штрих-кодів, читач таблиці звіту. Димові проби межі — окремо, у `smoke`.
-    "test:unit": "deno test --allow-read ./server/ ./client/ ./skills/",
+    // scripts/ додано ОДНИМ файлом, а не каталогом: поряд лежить smoke_test.ts,
+    // якому потрібні база й оточення, і він живе окремою задачею `smoke`.
+    "test:unit": "deno test --allow-read ./server/ ./client/ ./skills/ ./scripts/version-pins_test.ts",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
     // Через обгортки в scripts/, а не прямим викликом інструмента: SQL ядра
