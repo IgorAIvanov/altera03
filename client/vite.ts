@@ -274,11 +274,21 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
       deno(),
       tailwindcss(),
       appModulesPlugin(appRoot),
+      // `rename: { stripBase: true }` в обох таргетах — ПЛОСКА копія.
+      //
+      // З версії 4 плагін завжди зберігає структуру каталогів, а до того
+      // вивалював вміст у `dest`. Тобто `_locales/*` → `locales/app` почав
+      // класти файли в `locales/app/_locales/`, і `locale.ts` за адресою
+      // `/locales/app/<locale>.json` діставав 404. Збірка при цьому зелена,
+      // типи теж, а в застосунку тихо зникають переклади: замість назв
+      // лишаються голі ключі (`bank.titleMany` у заголовках вкладок). Той
+      // самий зсув ховав favicon у `dist/_public/` замість кореня.
       viteStaticCopy({
         targets: [
           {
             src: toPosix(resolve(appRoot, "_public")) + "/*",
             dest: ".",
+            rename: { stripBase: true },
           },
           // Локалей фреймворку тут немає навмисно: вони вбудовані в модуль
           // (`_locales.generated.ts`) — у встановленому застосунку копіювати їх
@@ -286,6 +296,7 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
           {
             src: toPosix(resolve(appRoot, "_locales")) + "/*",
             dest: "locales/app",
+            rename: { stripBase: true },
           },
         ],
       }),

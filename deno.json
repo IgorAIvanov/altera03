@@ -6,10 +6,16 @@
     // збігається з упакованим скриптом. Без кешу файл на диск не лягає, а
     // антивірус лишається на повну. Заміряно: різниці у швидкості немає.
     "dev:server": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./app/server.ts",
-    "dev:front": "deno run -A npm:vite",
+    // --configLoader native: конфіг вантажить Deno, а не бандлер Vite. Інакше
+    // Rolldown бандлить vite.config.ts ДО того, як існують аліаси (їх же цей
+    // конфіг і задає), не резолвить `@client/vite.ts` і друкує UNRESOLVED_IMPORT
+    // на кожній збірці. Працювало й так — імпорт ставав зовнішнім і його
+    // резолвив Deno по карті імпортів, вихід побайтово той самий, — але
+    // попередження замаскувало б справжній неразрішений імпорт у конфізі.
+    "dev:front": "deno run -A npm:vite --configLoader native",
     "dev": "deno task dev:server & deno task dev:front",
-    "build:front": "deno run -A npm:vite build",
-    "preview:front": "deno run -A npm:vite preview",
+    "build:front": "deno run -A npm:vite build --configLoader native",
+    "preview:front": "deno run -A npm:vite preview --configLoader native",
     "startdb": "docker compose up -d",
     "stopdb": "docker compose down",
     "sql:registry": "deno run -A ./tools/generate-model-runtime-registry.ts ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",

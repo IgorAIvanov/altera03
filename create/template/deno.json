@@ -3,6 +3,7 @@
 
   "//@client": "Аліас @client/ — на той самий пакет. Пиши імпорти саме через нього: пресет наводить його на каталог фреймворку у vendor/, тому забутий `deno install` ламає збірку одразу й голосно. Через ім'я пакета модулі прийшли б із кешу, і тихо зламалися б лише стилі. Коментар тут, а не в imports: усередині карти імпортів чужий ключ — це помилка адреси.",
   "//vendor": "ОБОВ'ЯЗКОВО. Пресет Vite і Tailwind читають вихідники фреймворку з диска (аліас @client, @source), а кеш JSR — це файли з іменами-хешами. Вендоринг матеріалізує їх у справжнє дерево. Без нього збірка падає на завантаженні модулів фреймворку.",
+  "//configLoader": "--configLoader native: конфіг вантажить Deno, а не бандлер Vite. Без цього Rolldown бандлить vite.config.ts до того, як існують аліаси (їх задає сам конфіг), не резолвить `@client/vite.ts` і друкує UNRESOLVED_IMPORT на кожній збірці. Збірка при цьому правильна — імпорт стає зовнішнім і його резолвить Deno по карті імпортів, — але попередження маскувало б справжній неразрішений імпорт.",
   "//vite": "Мажорна версія vite прив'язана до версії @altera/client: пресет фреймворку імпортує vite повним npm:-специфікатором, а `deno task dev:front` бере його звідси. Розійдуться — у застосунку буде ДВА екземпляри vite, і той, що виконується, мовчки проігнорує опції, написані для іншого (саме так зникає примусовий чанк shell-registry і повертається дедлок білої сторінки). Оновлювати обидва рядки разом.",
   "vendor": true,
   "nodeModulesDir": "auto",
@@ -10,8 +11,8 @@
   "tasks": {
     "dev": "deno task dev:server & deno task dev:front",
     "dev:server": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./app/server.ts",
-    "dev:front": "deno run -A npm:vite",
-    "build:front": "deno run -A npm:vite build",
+    "dev:front": "deno run -A npm:vite --configLoader native",
+    "build:front": "deno run -A npm:vite build --configLoader native",
 
     "sql:registry": "deno run -A jsr:@altera/tools/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
     "sql:gen": "deno run -A jsr:@altera/tools/generate-model-sql ./app --verbose",

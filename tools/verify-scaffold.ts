@@ -196,6 +196,45 @@ export async function verifyScaffold(
     }
   }
 
+  // Локалі застосунку — не модулі, а копійовані активи, тож бандлер про них
+  // нічого не знає: покладені не туди, вони не валять ні збірку, ні типи.
+  // Ламається лише сам застосунок і лише в браузері — замість назв лишаються
+  // голі ключі (`bank.titleMany` у заголовках вкладок), бо `locale.ts` дістає
+  // 404 і мовчки відкочується на ключ.
+  //
+  // Саме так і сталося на `vite-plugin-static-copy` 4: з цієї версії плагін
+  // зберігає структуру каталогів, і `_locales/*` → `locales/app` почав класти
+  // файли на рівень глибше. Тому перевіряємо не «збірка пройшла», а що файл
+  // лежить рівно за тією адресою, яку запитує рантайм.
+  if (ok) {
+    try {
+      const locales: string[] = [];
+      for await (const entry of Deno.readDir(join(appDir, "app", "_locales"))) {
+        if (entry.isFile && entry.name.endsWith(".json")) locales.push(entry.name);
+      }
+
+      const missing: string[] = [];
+      for (const name of locales) {
+        const path = join(appDir, "dist", "locales", "app", name);
+        if (!(await Deno.stat(path).then(() => true).catch(() => false))) missing.push(name);
+      }
+
+      if (!locales.length) {
+        console.error("✗ у шаблоні немає app/_locales/*.json — перевірити нічого");
+        ok = false;
+      } else if (missing.length) {
+        console.error(`✗ локалі не потрапили в dist/locales/app/: ${missing.join(", ")}`);
+        console.error("    застосунок покаже голі ключі замість назв — див. targets у client/vite.ts");
+        ok = false;
+      } else {
+        console.log(`✓ локалі в dist/locales/app/ (${locales.join(", ")})`);
+      }
+    } catch (error) {
+      console.error(`✗ не вдалося перевірити локалі: ${error instanceof Error ? error.message : error}`);
+      ok = false;
+    }
+  }
+
   if (options.keep) {
     console.log(`\nкаталог лишено: ${appDir}`);
   } else {
