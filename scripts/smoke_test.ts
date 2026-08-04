@@ -22,6 +22,15 @@ function bytes(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Значення cookie сесії з відповіді. Порожній рядок означає, що сервер її
  * **гасить** — саме так виглядає відмова, і з «заголовка немає взагалі» це
@@ -137,6 +146,23 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       assertEquals(body.ok, false);
       assertEquals(body.data.item, null);
       assertEquals(body.messages.length > 0, true);
+    });
+
+    // Посилання на вкладку — звичайний шлях (`/catalog/bank/list`), а не хеш,
+    // тож сервер МУСИТЬ віддавати на нього index.html. Це ж вимога й до
+    // зворотного проксі при розгортанні. Без проби вона ламається мовчки: усе
+    // працює, доки хтось не відкриє чуже посилання й не дістане 404.
+    await t.step("посилання на вкладку: глибокий шлях віддає застосунок", async () => {
+      if (!await pathExists("./dist")) {
+        // Не мовчимо: у CI фронтенд збирає інша джоба, і тут перевіряти нічого.
+        console.log("    ⏭ dist/ немає — фолбек не перевіряється (потрібен build:front)");
+        return;
+      }
+      const response = await client.fetch("/catalog/bank/list");
+      assertEquals(response.status, 200);
+      assertEquals(response.headers.get("content-type")?.includes("text/html"), true);
+      // Статику віддає serveDir, і саме index.html має прийти цілим документом.
+      assertEquals((await response.text()).includes("<!doctype html"), true);
     });
 
     await t.step("модель: невідома команда не вдає успіх", async () => {

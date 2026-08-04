@@ -107,6 +107,12 @@ export interface ModelChangedMessage {
 export interface NoticeMessage {
   type: "notice";
   text: string;
+  /**
+   * Вид сплиття. Без нього — `error` (так було завжди: банер заводився саме
+   * під невдачі й пофарбований у червоне). `info` потрібен для підтверджень
+   * на кшталт «URL скопійовано»: червоне «все добре» читається як помилка.
+   */
+  kind?: "error" | "info";
 }
 
 // --- Індикатор завантаження ---

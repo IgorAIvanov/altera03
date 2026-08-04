@@ -8,6 +8,7 @@ import "@client/ui-kit/picker-host.ts";
 import "@client/ui-kit/confirm-host.ts";
 import { apiFetch, readEnvelope, ServerUnavailableError } from "../data/api.ts";
 import { readUserScoped, writeUserScoped } from "../shared/user-storage.ts";
+import { buildTabUrl, parseTabPath } from "./tab-url.ts";
 
 const MAX_TABS = 30;
 const HOME_TAB_ID = "home";
@@ -268,9 +269,32 @@ export class TabController extends LitElement {
       user-select: none;
     }
     .notice-close:hover { opacity: 1; }
+    /* Підтвердження вдалої дії. Червоне «все добре» читається як помилка. */
+    .notice.info { border-color: #b8d4ec; background: #eef5fb; color: #1d4a70; }
     @media (prefers-color-scheme: dark) {
       .notice { border-color: #7d2b2b; background: #2a1717; color: #f3c9c9; }
+      .notice.info { border-color: #2b4d6b; background: #17222a; color: #c9e0f3; }
     }
+
+    /* Контекстне меню ярлика вкладки. Позиція fixed — координати беремо з
+       події миші, тобто вони у в'юпорті, а не в цьому елементі. */
+    .tab-menu {
+      position: fixed;
+      z-index: 40;
+      min-width: 13rem;
+      padding: 3px;
+      border-radius: 6px;
+      border: 1px solid var(--app-border);
+      background: var(--app-surface-strong, #fff);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+    }
+    .tab-menu-item {
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tab-menu-item:hover { background: #e3eaf3; }
 
     /* Друк: на папір іде тільки активна вкладка.
        Панель на екрані — абсолютна й із власною прокруткою; лишити її такою
@@ -299,6 +323,9 @@ export class TabController extends LitElement {
   @state() private _loadingCount = 0;
   /** Повідомлення про невдале відкриття вкладки; null — показувати нічого. */
   @state() private notice: string | null = null;
+  @state() private noticeKind: "error" | "info" = "error";
+  /** Відкрите контекстне меню ярлика: координати у в'юпорті + чия вкладка. */
+  @state() private tabMenu: { x: number; y: number; tabId: string } | null = null;
 
   // ReturnType, а не number — див. коментар у shell/server-unavailable.ts.
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -364,6 +391,21 @@ export class TabController extends LitElement {
     globalThis.addEventListener("beforeunload", this.#onBeforeUnload);
     this.unsubs.push(() => globalThis.removeEventListener("beforeunload", this.#onBeforeUnload));
 
+    // Контекстне меню ярлика закривається так само, як будь-яке інше: клацнув
+    // повз — зникло. Слухачі на вікні, бо клац може бути й поза цим елементом.
+    globalThis.addEventListener("pointerdown", this.#closeTabMenu, true);
+    globalThis.addEventListener("keydown", this.#onWindowKeyDown);
+    globalThis.addEventListener("resize", this.#closeTabMenu);
+    this.unsubs.push(
+      () => globalThis.removeEventListener("pointerdown", this.#closeTabMenu, true),
+      () => globalThis.removeEventListener("keydown", this.#onWindowKeyDown),
+      () => globalThis.removeEventListener("resize", this.#closeTabMenu),
+    );
+
+    // Адреса з посиланням на вкладку — після відновлення збережених: якщо така
+    // вкладка вже є, handleOpen її просто активує, а не подвоїть.
+    this.openFromUrl();
+
     this.unsubs.push(
       bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params)),
       bus.on("tab.close", (msg) => this.handleClose(msg.tabId)),
@@ -373,7 +415,7 @@ export class TabController extends LitElement {
       // Оболонка — єдине місце, де показуються короткі повідомлення: вона одна
       // на застосунок і завжди на екрані, на відміну від форми, яка могла й не
       // відкритися саме тому, що є про що повідомити.
-      bus.on("notice", (msg) => this.showNotice(msg.text)),
+      bus.on("notice", (msg) => this.showNotice(msg.text, msg.kind ?? "error")),
       // Лічильник зміщуємо в микротаск: loading.start/end часто прилітають синхронно
       // під час коміту апдейта (коли монтується вью й одразу вантажить дані), а пряме
       // присвоєння реактивної властивості в цей момент дає Lit-warning "change-in-update".
@@ -394,9 +436,88 @@ export class TabController extends LitElement {
     this.dismissNotice();
   }
 
+  // ── Посилання на вкладку ───────────────────────────────────────────────────
+
+  /** URL вкладки: `…/catalog/bank/edit/5`. Формат — у `tab-url.ts`. */
+  private tabUrl(tab: Tab): string {
+    return buildTabUrl(globalThis.location.origin, tab.route, tab.modelId);
+  }
+
+  /**
+   * Відкрити вкладку, названу в адресі, і **прибрати хеш**.
+   *
+   * Прибираємо з тієї ж причини, що й `authError` у session.ts: інакше
+   * перезавантаження сторінки знову відкривало б ту вкладку — навіть якщо
+   * користувач її вже закрив.
+   *
+   * Історії тут немає свідомо: адреса не стежить за перемиканням вкладок, тож
+   * ні «Назад», ні застарілого рядка в адресі не з'являється. Посилання —
+   * односторонній вхід, а не двостороння синхронізація.
+   */
+  private openFromUrl() {
+    const location = globalThis.location;
+    const target = parseTabPath(location?.pathname ?? "");
+    if (!target) return;
+    // Повертаємо адресу в корінь, але зберігаємо query: у ньому може лежати
+    // `authError`, який читає екран входу (session.ts → takeAuthError).
+    globalThis.history?.replaceState(null, "", `/${location.search}`);
+    this.handleOpen(target.route, target.modelId);
+  }
+
+  /** Правий клац по ярлику: своє меню замість браузерного. */
+  #onTabContextMenu(e: MouseEvent, tab: Tab) {
+    // Домашня вкладка маршруту не має — посилатися нема на що.
+    if (tab.permanent) return;
+    e.preventDefault();
+    this.activateTab(tab.id);
+    this.tabMenu = { x: e.clientX, y: e.clientY, tabId: tab.id };
+  }
+
+  /**
+   * Закрити меню на клік ПОВЗ нього, Esc чи зміну розміру.
+   *
+   * Перевіряємо шлях події, а не покладаємось на `stopPropagation` у меню:
+   * слухач висить на вікні у фазі ЗАХОПЛЕННЯ, тобто отримує подію ПЕРШИМ —
+   * раніше, ніж вона дійде до меню. Зупиняти там уже нічого, і клац по пункту
+   * закривав меню до того, як спрацює його `click`: пункт зникав із DOM,
+   * обробник не викликався взагалі.
+   *
+   * `composedPath()` потрібен саме тому, що меню живе в shadow root: у
+   * `target` подія приходить ретаргетнутою на host.
+   */
+  #closeTabMenu = (e?: Event) => {
+    if (!this.tabMenu) return;
+    const inMenu = e?.composedPath().some((node) =>
+      node instanceof HTMLElement && node.classList.contains("tab-menu")
+    );
+    if (inMenu) return;
+    this.tabMenu = null;
+  };
+
+  #onWindowKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") this.#closeTabMenu();
+  };
+
+  private async copyTabUrl(tabId: string) {
+    this.tabMenu = null;
+    const tab = this.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    const url = this.tabUrl(tab);
+    try {
+      await navigator.clipboard.writeText(url);
+      this.showNotice(t("tabs.urlCopied"), "info");
+    } catch {
+      // Буфер недоступний (не-secure context, відмова в дозволі) — показуємо
+      // саму адресу, щоб її можна було скопіювати руками. Мовчати тут не можна:
+      // користувач думав би, що скопіювалося.
+      bus.alert(`${t("tabs.copyFailed")}\n\n${url}`, "warning");
+    }
+  }
+
   /** Показати повідомлення. Наступне витісняє попереднє разом із його таймером. */
-  private showNotice(text: string) {
+  private showNotice(text: string, kind: "error" | "info" = "error") {
     this.notice = text;
+    this.noticeKind = kind;
     if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
     this.noticeTimer = setTimeout(() => {
       this.notice = null;
@@ -622,6 +743,21 @@ export class TabController extends LitElement {
     return tab.dirty ? `* ${title}` : title;
   }
 
+  /**
+   * Контекстне меню ярлика. Меню приходить аргументом, а не читається зі стану
+   * в обробнику: до кліку стан міг змінитися, а діяти треба над тією вкладкою,
+   * на якій меню відкрили.
+   */
+  private renderTabMenu(menu: { x: number; y: number; tabId: string }): TemplateResult {
+    return html`
+      <div class="tab-menu" style="left:${menu.x}px; top:${menu.y}px">
+        <div class="tab-menu-item" @click=${() => this.copyTabUrl(menu.tabId)}>
+          ${t("tabs.copyUrl")}
+        </div>
+      </div>
+    `;
+  }
+
   override render(): TemplateResult {
     return html`
       ${this.headerEl}
@@ -630,7 +766,8 @@ export class TabController extends LitElement {
           ? html`<div class="tab home ${tab.id === this.activeTabId ? "active" : ""}"
               @click=${() => this.activateTab(tab.id)} title="Home">${iconHome}</div>`
           : html`<div class="tab ${tab.id === this.activeTabId ? "active" : ""}"
-              @click=${() => this.activateTab(tab.id)}>
+              @click=${() => this.activateTab(tab.id)}
+              @contextmenu=${(e: MouseEvent) => this.#onTabContextMenu(e, tab)}>
               <span>${this.tabTitle(tab)}</span>
               <span class="tab-close"
                 @click=${(e: Event) => { e.stopPropagation(); this.handleClose(tab.id); }}>×</span>
@@ -640,6 +777,7 @@ export class TabController extends LitElement {
       <div class="loading-bar">
         ${this._loadingCount > 0 ? html`<div class="loading-bar-inner"></div>` : ""}
       </div>
+      ${this.tabMenu ? this.renderTabMenu(this.tabMenu) : ""}
       <picker-host></picker-host>
       <confirm-host></confirm-host>
       <div class="workspace">
@@ -658,7 +796,7 @@ export class TabController extends LitElement {
             </div>
           `)}
           ${this.notice
-            ? html`<div class="notice" role="alert">
+            ? html`<div class="notice ${this.noticeKind}" role="alert">
                 <span class="notice-text">${this.notice}</span>
                 <span class="notice-close" title="Закрити"
                   @click=${this.dismissNotice}>×</span>
