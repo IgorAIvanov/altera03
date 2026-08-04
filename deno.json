@@ -46,8 +46,11 @@
     "test:unit": "deno test --allow-read ./server/ ./client/ ./skills/",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
-    "sql:assemble": "deno run -A ./tools/assemble-sql-package.ts ./app --verbose",
-    "sql:publish": "deno run -A --env-file ./tools/publish-sql.ts ./app --verbose",
+    // Через обгортки в scripts/, а не прямим викликом інструмента: SQL ядра
+    // приходить у tools аргументом, і назвати його версію може лише застосунок
+    // (див. коментар у scripts/sql-assemble.ts).
+    "sql:assemble": "deno run -A ./scripts/sql-assemble.ts ./app --verbose",
+    "sql:publish": "deno run -A --env-file ./scripts/sql-publish.ts ./app --verbose",
     // sql:gen тут немає навмисно: згенерований CRUD (app/<model>/db/_generated/
     // *.crud.gen.sql) — закомічений вихідник, а не продукт збірки. Перегенерація
     // робиться свідомо і по одній моделі — `deno task sql:gen catalog/bank`, —

@@ -1,7 +1,35 @@
 import { basename, join, relative, resolve, SEPARATOR } from "@std/path";
-// Тільки SQL ядра, окремим експортом: тягнути сюди весь граф сервера (Danet,
-// postgres, pdf-lib) заради текстових констант ні до чого.
-import { type CoreSqlStep, getCoreSqlPackage } from "@altera/server/sql";
+
+// SQL ядра приходить АРГУМЕНТОМ, а не імпортом `@altera/server/sql`, і це не
+// косметика. Поки імпорт був тут, версію ядра називав інструмент: у пакеті
+// @altera/tools лишався той @altera/server, який стояв у воркспейсі на момент
+// ЙОГО публікації. Застосунок при цьому працює на своєму пінові — і в базу
+// їхала схема однієї версії, а читав її рантайм іншої. Знайшлося це на чистій
+// базі: `column "must_change_password" does not exist` при вході, бо struc
+// приїхав із server@0.3.0, а auth.service — з 0.5.0.
+//
+// Тепер версію ядра називає застосунок: тонка обгортка в його `scripts/`
+// імпортує `getCoreSqlPackage` зі СВОГО `@altera/server/sql` і передає сюди.
+// Тип оголошений структурно, а не імпортом, — інакше залежність від сервера
+// повернулася б через типи, а з нею й та сама версія в lock-файлі.
+
+/** Один файл ядра: шлях (у заголовок секції) і текст. */
+export interface CoreSqlFile {
+  path: string;
+  sql: string;
+}
+
+/** Пакет ядра: назва (як у `@core/<назва>`) і файли по кроках складання. */
+export interface CoreSqlPackage {
+  name: string;
+  files: Partial<Record<CoreSqlStep, CoreSqlFile[]>>;
+}
+
+/** Кроки складання пакета — ті самі, що й у моделей застосунку. */
+export type CoreSqlStep = "structure" | "migrations" | "models" | "data";
+
+/** `getCoreSqlPackage` застосунку: запис `sql.json` → пакет ядра або нічого. */
+export type CoreSqlLookup = (entry: string) => CoreSqlPackage | undefined;
 
 type PackageStep = {
   key: string;
@@ -432,8 +460,12 @@ export async function buildRepoPrintTemplateRepublishSql(appDirArg = "./src/app"
     .join("\n");
 }
 
-export async function assembleSqlPackage(appDirArg = "./src/app", options?: { verbose?: boolean }) {
-  const verboseMode = options?.verbose ?? false;
+export async function assembleSqlPackage(
+  appDirArg: string,
+  options: { coreSql: CoreSqlLookup; verbose?: boolean },
+) {
+  const { coreSql: getCoreSqlPackage } = options;
+  const verboseMode = options.verbose ?? false;
   const appDir = resolve(Deno.cwd(), appDirArg);
   const manifest = await readManifest(appDir);
   const outputDir = join(appDir, "_sqlpackage");
@@ -514,20 +546,8 @@ export async function assembleSqlPackage(appDirArg = "./src/app", options?: { ve
   }
 }
 
-async function main() {
-  const flags = Deno.args.filter((a) => a.startsWith("--"));
-  const appDirArgs = Deno.args.filter((a) => !a.startsWith("--"));
-  const verboseMode = flags.includes("--verbose");
-  const dirs = appDirArgs.length > 0 ? appDirArgs : ["./src/app"];
+// CLI тут немає навмисно. Запустити збірку «просто пакетом» неможливо: SQL ядра
+// мусить прийти з тієї версії @altera/server, на якій працює САМ застосунок, а
+// звідки її взяти, знає лише він. Тому точка входу — тонка обгортка в
+// `scripts/sql-assemble.ts` застосунку (її кладе scaffold).
 
-  for (const appDirArg of dirs) {
-    await assembleSqlPackage(appDirArg, { verbose: verboseMode });
-  }
-}
-
-if (import.meta.main) {
-  main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
-  });
-}

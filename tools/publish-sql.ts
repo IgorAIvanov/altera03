@@ -1,28 +1,24 @@
+// Зібрати SQL-пакет застосунку і накотити його в базу з `.env`.
+//
+// CLI тут немає навмисно — як і в assemble-sql-package.ts: SQL ядра приходить
+// аргументом (`coreSql`), бо його версію мусить називати застосунок, а не
+// інструмент. Точка входу — обгортка `scripts/sql-publish.ts` застосунку.
 import { resolve } from "@std/path";
-import { assembleSqlPackage } from "./assemble-sql-package.ts";
+import { assembleSqlPackage, type CoreSqlLookup } from "./assemble-sql-package.ts";
 import { publishAppSql } from "./publish-app-sql.ts";
 import { assertDevEnvironmentOrExit } from "./dev-guard.ts";
 
-async function main() {
+export async function publishAppSqlPackage(
+  options: { appDir: string; coreSql: CoreSqlLookup; verbose?: boolean },
+) {
   // Публікація йде в БД із .env — це дев-інструмент. Продуктивну базу
   // накочують зібраним _sqlpackage через psql (docs/deployment.md, розділ 8).
   assertDevEnvironmentOrExit("sql:publish");
 
-  const verboseMode = Deno.args.includes("--verbose");
-  const appArg = Deno.args.find((arg) => !arg.startsWith("--"));
-  if (!appArg) {
-    throw new Error("Вкажи каталог застосунку: publish-sql <appDir> [--verbose]");
-  }
-  const appDir = resolve(appArg);
+  const appDir = resolve(options.appDir);
+  const verbose = options.verbose ?? false;
 
-  await assembleSqlPackage(appDir, { verbose: verboseMode });
-  await publishAppSql({ appDir, verbose: verboseMode });
+  await assembleSqlPackage(appDir, { coreSql: options.coreSql, verbose });
+  await publishAppSql({ appDir, verbose });
   console.log("SQL published OK");
-}
-
-if (import.meta.main) {
-  main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
-  });
 }

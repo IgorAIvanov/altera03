@@ -314,6 +314,69 @@ export async function verifyScaffold(
     }
   }
 
+  // Збірка SQL — і версія ядра, з якої вона зроблена.
+  //
+  // Крок з'явився після дефекту, який пройшов повз УСІ попередні перевірки:
+  // типи, збірка фронтенду й розкладка скілів були зелені, а застосунок на
+  // чистій базі падав на вході — `column "must_change_password" does not
+  // exist`. Причина: `@altera/tools` імпортував SQL ядра зі СВОГО
+  // `@altera/server` (у карті імпортів пакета його не було взагалі, тож JSR
+  // зафіксував ту версію, що стояла у воркспейсі при публікації tools), і в
+  // базу їхала схема server@0.3.0, а читав її рантайм 0.5.0.
+  //
+  // Звідси дві перевірки. Перша — що збірка взагалі проходить у згенерованому
+  // застосунку (вона тепер іде через обгортку в його `scripts/`). Друга —
+  // інваріант: у графі застосунку рівно ОДНА версія `@altera/server`. Дві
+  // означають, що хтось у ланцюжку носить власний сервер, — саме та картина,
+  // що дала цей дефект.
+  if (ok) {
+    const assemble = await run(["task", "sql:assemble"], appDir);
+    if (!assemble.ok) {
+      console.error("✗ sql:assemble у згенерованому застосунку впав");
+      console.error(assemble.output.trimEnd());
+      ok = false;
+    } else {
+      try {
+        const packageDir = join(appDir, "app", "_sqlpackage");
+        let coreLanded = false;
+        for await (const entry of Deno.readDir(packageDir)) {
+          if (!entry.isFile || !entry.name.endsWith("struc_app.sql")) continue;
+          coreLanded = (await Deno.readTextFile(join(packageDir, entry.name))).includes("app.users");
+        }
+
+        if (!coreLanded) {
+          console.error("✗ у зібраному struc_app.sql немає таблиць ядра — @core/* не потрапив у пакет");
+          ok = false;
+        } else {
+          console.log("✓ sql:assemble (SQL ядра в пакеті)");
+        }
+      } catch (error) {
+        console.error(`✗ не вдалося прочитати _sqlpackage: ${error instanceof Error ? error.message : error}`);
+        ok = false;
+      }
+    }
+  }
+
+  if (ok) {
+    try {
+      const lock = JSON.parse(await Deno.readTextFile(join(appDir, "deno.lock")));
+      const servers = Object.keys(lock.jsr ?? {}).filter((key) => key.startsWith("@altera/server@"));
+
+      // Нуль — це режим --local: `links` підмінив пакет каталогом, і в графі
+      // його немає. Перевіряти там нічого, а от два — завжди дефект.
+      if (servers.length > 1) {
+        console.error(`✗ у графі застосунку ${servers.length} версії @altera/server: ${servers.join(", ")}`);
+        console.error("    SQL ядра й рантайм розійдуться — оголоси ту саму версію в залежностях інструментів");
+        ok = false;
+      } else if (servers.length === 1) {
+        console.log(`✓ одна версія сервера в графі (${servers[0]})`);
+      }
+    } catch (error) {
+      console.error(`✗ не вдалося прочитати deno.lock: ${error instanceof Error ? error.message : error}`);
+      ok = false;
+    }
+  }
+
   if (options.keep) {
     console.log(`\nкаталог лишено: ${appDir}`);
   } else {

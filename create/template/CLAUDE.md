@@ -54,6 +54,9 @@ app/
   main.ts                   # composition root клієнта
   server.ts                 # composition root бекенду
   sql.json                  # порядок збірки SQL-пакета (важливий: за FK)
+scripts/
+  sql-assemble.ts           # обгортки над @altera/tools: передають усередину SQL ядра
+  sql-publish.ts            #   зі СВОГО @altera/server, щоб схема й рантайм були однієї версії
 ```
 
 ## Чого не чіпати

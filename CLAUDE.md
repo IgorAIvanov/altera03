@@ -106,16 +106,18 @@ skills/                     # скіли агента (@altera/skills)
 tools/                      # пакет інструментів (@altera/tools): codegen, publish, дев-клієнт
   generate-model-sql.ts           # генерація SQL моделей
   generate-model-runtime-registry.ts  # генерація app/_generated (registry/routes/views)
-  assemble-sql-package.ts         # збірка SQL-пакета з db/ файлів моделей + @core
+  assemble-sql-package.ts         # збірка SQL-пакета: db/ моделей + @core (ядро — АРГУМЕНТОМ)
   publish-app-sql.ts / publish-sql.ts  # публікація зібраного SQL у БД
   app-client.ts                   # AppClient: застосунок у процесі; createServer — інжекцією
   dev-guard.ts                    # захист дев-інструментів від продуктивної БД
   set-password.ts                 # встановлення пароля користувача (пряма БД)
   # знання про застосунок приходить ззовні: codegen/publish — аргументом appDir,
-  # AppClient — фабрикою createServer; статичного імпорту app у пакеті немає.
+  # AppClient — фабрикою createServer, SQL ядра — фабрикою getCoreSqlPackage;
+  # статичного імпорту app у пакеті немає.
 
 scripts/                    # репо-локальні обгортки (НЕ пакет): імпортують app + @altera/tools
   api.ts, smoke_test.ts           # дев-обгортки: інжектять createServer з ../app/server.ts
+  sql-assemble.ts, sql-publish.ts # інжектять SQL ядра зі СВОГО @altera/server
   check-deps.ts                   # guardrail меж пакетів (client/server/tools vs app)
 ```
 
@@ -125,6 +127,18 @@ scripts/                    # репо-локальні обгортки (НЕ �
 > `_sqlpackage`, знає про застосунок, але отримує його **аргументом** (`appDir`), не імпортом,
 > тож у пакет це знання не зашите. `deno task check:deps` перевіряє це для `client`, `server`
 > і `tools`: ані залежності від застосунку імпортом, ані виходу відносним імпортом за межі пакета.
+>
+> **Версію фреймворку теж називає застосунок.** `tools/` імпортував SQL ядра з
+> `@altera/server/sql` — і цим вирішував за застосунок, якої версії схема поїде в базу: у
+> пакет була зашита та `@altera/server`, що стояла у воркспейсі на момент публікації самого
+> `tools`. У встановленому застосунку виходили ДВІ версії сервера — схема з однієї, рантайм
+> з іншої. На робочій базі це невидиме (колонку колись домігрували), на чистій — вхід падає
+> з `column "must_change_password" does not exist`. Тепер ядро приходить аргументом
+> (`assembleSqlPackage(appDir, { coreSql })`), а `getCoreSqlPackage` імпортує тонка обгортка
+> в `scripts/` — репозиторію й застосунку однаково. Тримають це три речі: у `tools/deno.json`
+> залежність від сервера **оголошена явно** (не оголошену JSR фіксує сам і мовчки), у задачах
+> шаблону версії інструментів **пінені**, а `scaffold:verify` вимагає, щоб у графі
+> згенерованого застосунку була рівно одна версія `@altera/server`.
 
 ## Конфігурація сервера
 
