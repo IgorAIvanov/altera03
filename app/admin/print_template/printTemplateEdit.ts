@@ -593,8 +593,19 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     this.setBlocks(normalizeLoadedBlocks(this.$root.item.schema?.blocks ?? []));
   }
 
-  private async save() {
-    const item: PrintTemplateItem = {
+  /**
+   * Перед записом обрізаємо пробіли по краях і підставляємо дефолтну команду
+   * даних; самим записом займається база.
+   *
+   * Саме `saveItem`, а не власний `save`: `save()` у `BaseUI` — публічний вхід
+   * для оболонки (кнопка «Зберегти» в діалозі закриття брудної вкладки), і він
+   * повертає ознаку успіху. Тут колись стояв приватний `save()` без неї — він
+   * перекривав базовий, тож оболонка бачила `undefined` і вважала кожен запис
+   * невдалим, а `markClean()` не викликався взагалі: збережена форма лишалася
+   * «брудною» і питала про незбережені зміни на порожньому місці.
+   */
+  protected override async saveItem(): Promise<boolean> {
+    this.$root.item = {
       ...this.$root.item,
       code: this.$root.item.code.trim(),
       name: this.$root.item.name.trim(),
@@ -602,8 +613,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       dataCommand: this.$root.item.dataCommand.trim() || "get",
     };
 
-    const env = await this.run<{ item: PrintTemplateItem | null }>("save", { item }, "save");
-    if (env.ok && env.data?.item) this.$root.item = env.data.item;
+    return await super.saveItem();
   }
 
   // ── Блоки ───────────────────────────────────────────────────────────────────
@@ -1671,7 +1681,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
         <!-- Тулбар -->
         <div class="flex flex-wrap items-center gap-2">
-          <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
+          <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.saveItem}>
             ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
             ${t("common.save")}
           </button>
