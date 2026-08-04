@@ -421,7 +421,13 @@ begin
     return jsonb_build_object(
       'ok', true,
       'data', app.access_empty_data(),
-      'messages', jsonb_build_array('Користувач має пов''язані документи — його деактивовано, а не видалено')
+      -- modal: true — операція пройшла, але не так, як чекав користувач, і
+      -- банер у списку тут не годиться: рядок уже зник з екрана.
+      'messages', jsonb_build_array(jsonb_build_object(
+        'type', 'info',
+        'modal', true,
+        'text', 'Користувач має пов''язані документи — його деактивовано, а не видалено'
+      ))
     );
   end if;
 

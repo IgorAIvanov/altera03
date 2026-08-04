@@ -115,13 +115,13 @@ declare
   v_result jsonb;
 begin
   if nullif(trim(coalesce(v_item->>'code', '')), '') is null then
-    raise exception 'code обов''язковий';
+    raise exception 'code обов''язковий' using column = 'code';
   end if;
   if nullif(trim(coalesce(v_item->>'name', '')), '') is null then
-    raise exception 'name обов''язковий';
+    raise exception 'name обов''язковий' using column = 'name';
   end if;
   if nullif(trim(coalesce(v_item->>'accountType', '')), '') is null then
-    raise exception 'accountType обов''язковий';
+    raise exception 'accountType обов''язковий' using column = 'account_type';
   end if;
 
   merge into app.chart_of_account t

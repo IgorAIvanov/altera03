@@ -12,6 +12,13 @@ import { GlobalStyledLitElement } from "./gsle.ts";
 export interface Message {
   type?: "info" | "warn" | "error";
   text?: string;
+  /**
+   * Поле форми, якого стосується помилка (camelCase, як у схемі). Сервер
+   * ставить його, коли знає: `raise exception … using column`, not-null або
+   * унікальність — див. `postgresErrorField()`. Клієнт підсвічує це поле
+   * замість самого лише банера.
+   */
+  field?: string;
 }
 
 /**
@@ -87,6 +94,14 @@ function normalizeMessages(raw: (Message | string)[] | undefined, ok: boolean): 
   return (raw ?? []).map((m) =>
     typeof m === "string" ? { type: ok ? "info" as const : "error" as const, text: m } : m
   );
+}
+
+/** Значення поля основної сутності — для знімка «на чому сервер спіткнувся». */
+function entityValue(root: unknown, key: string, field: string): unknown {
+  const entity = (root as Record<string, unknown>)?.[key];
+  return entity && typeof entity === "object"
+    ? (entity as Record<string, unknown>)[field]
+    : undefined;
 }
 
 /**
@@ -248,6 +263,19 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   /** Перерахувати помилки після рендеру; @state чіпаємо лише на зміні. */
   #syncErrors() {
     const next = this.#collectErrors();
+
+    // Вердикт сервера гасне, щойно поле змінили: перевірити його наново
+    // клієнт не може, а тримати «код уже зайнятий» на вже іншому коді — гірше,
+    // ніж не показати нічого. Наступне збереження скаже правду.
+    const key = this.primaryKey ?? "item";
+    for (const [field, snapshot] of this.#serverErrors) {
+      if (entityValue(this.$root, key, field) !== snapshot.value) {
+        this.#serverErrors.delete(field);
+        continue;
+      }
+      next[field] = snapshot.text;
+    }
+
     const keys = Object.keys(next);
     const same = keys.length === Object.keys(this.fieldErrors).length
       && keys.every((k) => this.fieldErrors[k] === next[k]);
@@ -436,6 +464,48 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   #bannerShown = false;
 
   /**
+   * Помилки, які назвав сервер: поле → текст і значення, на якому він
+   * спіткнувся. Тримаються ОКРЕМО від локальних правил, бо перерахувати їх
+   * клієнт не може — «код уже зайнятий» знає лише база. Знімок значення й
+   * відповідає на питання «коли гасити»: щойно поле змінили, вердикт застарів.
+   */
+  #serverErrors = new Map<string, { text: string; value: unknown }>();
+
+  /**
+   * Розкласти повідомлення сервера: те, що названо полем, — на саме поле,
+   * решта — в банер.
+   *
+   * Прив'язується лише поле, яке форма справді показує (віддане в `renderField`
+   * або оголошене в `fieldRules`). Інакше повідомлення про поле, якого на
+   * екрані немає, зникло б безслідно — тому таке лишається в банері.
+   */
+  #routeMessages(messages: Message[]): Message[] {
+    const key = this.primaryKey ?? "item";
+    const rules = this.fieldRules();
+    const rest: Message[] = [];
+
+    for (const message of messages) {
+      const field = message.field;
+      const known = !!field && (this.#renderedFields.has(field) || field in rules);
+      if (!field || !known || !message.text) {
+        rest.push(message);
+        continue;
+      }
+      this.#serverErrors.set(field, {
+        text: message.text,
+        value: entityValue(this.$root, key, field),
+      });
+    }
+
+    if (this.#serverErrors.size > 0) {
+      this.#validationStarted = true;
+      const first = [...this.#serverErrors.keys()][0];
+      this.updateComplete.then(() => this.#focusField(first));
+    }
+    return rest;
+  }
+
+  /**
    * Прокрутити до поля й поставити в нього фокус. Працює по `data-field`, який
    * ставить `renderField`; поле, намальоване формою власноруч, підхопиться так
    * само, якщо форма проставить цей атрибут на обгортці.
@@ -462,12 +532,16 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     kind: "load" | "save" = "load",
   ): Promise<Envelope<D>> {
     this.running = command;
+    // Нова команда — попередній вердикт сервера більше не діє.
+    this.#serverErrors.clear();
     try {
       const env = (await bus.request(
         kind === "save" ? "data.save" : "data.load",
         { model: this.model, command, payload },
       )) as Envelope<D> | undefined;
-      this.messages = normalizeMessages(env?.messages, env?.ok ?? false);
+      this.messages = this.#routeMessages(
+        normalizeMessages(env?.messages, env?.ok ?? false),
+      );
       return env ?? { ok: false };
     } catch (error) {
       // Мережа лягла або бекенд віддав не-200: без цього гілка падала німо —
@@ -553,14 +627,19 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * Підключається одним рядком у render підкласу: `${this.renderNotice()}`.
    */
   protected renderNotice(): TemplateResult | string {
-    const errors = this.messages.filter((m) => m.type === "error" || m.type === "warn");
-    if (!this.notFound && errors.length === 0) return "";
+    // Показуємо ВСІ повідомлення, а не лише помилки. Раніше `info` мовчки
+    // відкидалося, і успішна операція, яка мала що сказати («користувача
+    // деактивовано, а не видалено»), виглядала так само, як безсловесна.
+    const shown = this.messages.filter((m) => m.text);
+    if (!this.notFound && shown.length === 0) return "";
+    const style = (m: Message) =>
+      m.type === "error" ? "alert-error" : m.type === "warn" ? "alert-warning" : "alert-info";
     return html`
       <div class="mb-3 flex flex-col gap-2">
         ${this.notFound
           ? html`<div class="alert alert-error py-2 text-sm">${t("common.recordNotFound")}</div>`
           : ""}
-        ${errors.map((m) => html`<div class="alert alert-error py-2 text-sm">${m.text}</div>`)}
+        ${shown.map((m) => html`<div class="alert ${style(m)} py-2 text-sm">${m.text}</div>`)}
       </div>
     `;
   }

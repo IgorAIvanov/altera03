@@ -1,6 +1,38 @@
 import { bus } from "../bus/bus.ts";
-import type { DataLoadMessage, DataSaveMessage } from "../bus/bus.types.ts";
-import { apiFetch, readEnvelope } from "./api.ts";
+import type { DataLoadMessage, DataSaveMessage, DialogIcon } from "../bus/bus.types.ts";
+import { apiFetch, type EnvelopeMessage, readEnvelope } from "./api.ts";
+
+/** Текст повідомлення конверта: воно буває голим рядком і об'єктом. */
+function messageText(message: EnvelopeMessage): string {
+  return typeof message === "string" ? message : String(message.text ?? "");
+}
+
+/**
+ * Повідомлення, помічені `modal: true`, показуємо вікном і прибираємо з
+ * конверта — далі по конвеєру вони не йдуть.
+ *
+ * Перехоплення саме тут, у єдиній точці всіх команд моделей, а не у формі:
+ * таке повідомлення не прив'язане до даних, і екран, який його спричинив, міг
+ * і закритися (видалення зі списку). Форма про нього знати не мусить взагалі.
+ */
+function takeModalMessages<T extends { messages?: EnvelopeMessage[] }>(envelope: T): T {
+  const messages = envelope.messages ?? [];
+  const modal = messages.filter((m) => typeof m !== "string" && m.modal === true);
+  if (modal.length === 0) return envelope;
+
+  for (const message of modal) {
+    // Не чекаємо на закриття: команда вже виконана, вікно живе своїм життям.
+    bus.alert(messageText(message), dialogIcon(message));
+  }
+  return { ...envelope, messages: messages.filter((m) => !modal.includes(m)) };
+}
+
+/** Тип повідомлення як іконка діалогу; `warn` у діалогах зветься `warning`. */
+function dialogIcon(message: EnvelopeMessage): DialogIcon {
+  if (typeof message === "string") return "info";
+  if (message.type === "warn") return "warning";
+  return message.type ?? "info";
+}
 
 async function callApi(model: string, command: string, payload: unknown): Promise<unknown> {
   bus.emit({ type: "loading.start" });
@@ -17,10 +49,15 @@ async function callApi(model: string, command: string, payload: unknown): Promis
     // сервера (сторінку помилки проксі) і піднімає екран «сервера немає».
     const envelope = await readEnvelope(res);
     if (!res.ok && !envelope.ok) {
-      throw new Error(envelope.messages?.[0] ?? `Помилка ${res.status}: ${model}/${command}`);
+      // Саме messageText, а не `messages[0]`: повідомлення буває об'єктом, і
+      // тоді в текст помилки їхало б «[object Object]».
+      const first = envelope.messages?.[0];
+      throw new Error(
+        (first && messageText(first)) || `Помилка ${res.status}: ${model}/${command}`,
+      );
     }
 
-    return envelope;
+    return takeModalMessages(envelope);
   } finally {
     bus.emit({ type: "loading.end" });
   }

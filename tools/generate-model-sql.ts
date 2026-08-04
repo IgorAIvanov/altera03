@@ -637,7 +637,7 @@ declare
   v_result  jsonb;
 begin
   if v_org is null then
-    raise exception 'organizationId обов''язковий';
+    raise exception 'organizationId обов''язковий' using column = 'organization_id';
   end if;
 
   select id into v_type_id from app.document_type where code = '${spec.model}';
@@ -760,10 +760,13 @@ function renderSave(spec: ModelSpec): string {
   const writable = spec.itemFields.filter((f) => f.key !== "id");
   const requiredFields = writable.filter((f) => f.required && f.isString);
 
+  // `using column` — не косметика: рантайм дістає з нього ім'я поля форми
+  // (колонка snake_case → поле camelCase) і клієнт підсвічує саме те поле,
+  // а не показує самий лише банер. Див. postgresErrorField().
   const checks = requiredFields
     .map((f) =>
       `  if nullif(trim(coalesce(v_item->>'${f.key}', '')), '') is null then\n` +
-      `    raise exception '${f.key} обов''язковий';\n  end if;`
+      `    raise exception '${f.key} обов''язковий' using column = '${f.col}';\n  end if;`
     ).join("\n");
 
   const headerSrc = spec.itemFields.map((f) => `      ${srcExpr(f, "v_item")} as ${f.col}`).join(",\n");

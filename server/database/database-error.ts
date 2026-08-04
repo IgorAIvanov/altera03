@@ -114,6 +114,64 @@ export function postgresErrorClientMessage(error: { code: string; message: strin
   return SQLSTATE_CLIENT_MESSAGES[error.code] ?? null;
 }
 
+/** `full_name` → `fullName`: у базі колонки snake_case, у схемі поля camelCase. */
+function snakeToCamel(name: string): string {
+  return name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
+/**
+ * Колонка з імені унікального обмеження. Два написання:
+ * `uq_<таблиця>_<колонка>` — конвенція цього проєкту (`uq_bank_code`), і
+ * `<таблиця>_<колонка>_key` — дефолт PostgreSQL для `unique` на колонці.
+ *
+ * Рядкові операції, а не RegExp: ім'я таблиці підставлялося б у шаблон, і
+ * спецсимвол у ньому міняв би зміст виразу. Складене обмеження
+ * (`uq_user_group_member`) під шаблон не підходить — це і треба.
+ */
+function uniqueConstraintColumn(constraint: string, table: string): string | null {
+  let name = constraint.startsWith("uq_") ? constraint.slice(3) : constraint;
+  const prefix = `${table}_`;
+  if (!name.startsWith(prefix)) return null;
+  name = name.slice(prefix.length);
+  if (name.endsWith("_key")) name = name.slice(0, -"_key".length);
+  return name || null;
+}
+
+/**
+ * Поле форми, якого стосується помилка, — щоб клієнт підсвітив саме його, а не
+ * лише показав банер.
+ *
+ * Три джерела, усі — від самого PostgreSQL:
+ *  - `column_name`, який ставить автор SQL: `raise exception '…' using column = 'code'`
+ *    (так робить згенерований CRUD для обов'язкових полів);
+ *  - `column_name`, який PostgreSQL ставить сам при 23502 (not null violation);
+ *  - ім'я констрейнта при 23505 (унікальність) — колонки там немає взагалі
+ *    (перевірено: драйвер віддає `table_name` і `constraint_name`, `column_name`
+ *    відсутній), але ім'я будується за конвенцією.
+ *
+ * Останнє джерело навмисно вузьке: збіг з шаблоном або нічого. Складений
+ * унікальний індекс (`uq_user_group_member`) поля не дасть, а якщо колись і
+ * дасть неіснуюче — клієнт такого не знайде й лишить повідомлення в банері,
+ * тобто гірше не стане.
+ */
+export function postgresErrorField(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const { column_name, constraint_name, table_name, code } = error as {
+    column_name?: unknown;
+    constraint_name?: unknown;
+    table_name?: unknown;
+    code?: unknown;
+  };
+
+  if (typeof column_name === "string" && column_name) return snakeToCamel(column_name);
+
+  if (code === "23505" && typeof constraint_name === "string" && typeof table_name === "string") {
+    const column = uniqueConstraintColumn(constraint_name, table_name);
+    if (column) return snakeToCamel(column);
+  }
+  return null;
+}
+
 /** Чи означає помилка, що викликаної функції (або її схеми) у базі немає. */
 export function isMissingDatabaseFunction(error: unknown): boolean {
   const code = errorCode(error);

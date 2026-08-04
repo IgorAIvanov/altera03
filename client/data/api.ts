@@ -53,6 +53,19 @@ export class ServerUnavailableError extends Error {
   }
 }
 
+/**
+ * Повідомлення конверта. Голий рядок — найчастіший випадок (так пише
+ * більшість SQL-функцій) і означає помилку. Об'єкт — коли є що додати:
+ * `field` (яке поле форми підсвітити) і `modal` (показати окремим вікном).
+ * Див. `docs/ui-form-validation.md`.
+ */
+export type EnvelopeMessage = string | {
+  type?: "info" | "warn" | "error";
+  text?: string;
+  field?: string;
+  modal?: boolean;
+};
+
 /** Конверт API — один на всі відповіді (server/common/response.ts). */
 export interface ApiEnvelope<TItem = unknown, TRow = unknown> {
   ok: boolean;
@@ -62,7 +75,7 @@ export interface ApiEnvelope<TItem = unknown, TRow = unknown> {
     options: Record<string, unknown>;
     totals: Record<string, unknown>;
   };
-  messages: string[];
+  messages: EnvelopeMessage[];
 }
 
 /**

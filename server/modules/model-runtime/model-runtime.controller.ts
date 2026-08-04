@@ -12,11 +12,18 @@ import {
   isDatabaseUnavailable,
   isPostgresError,
   postgresErrorClientMessage,
+  postgresErrorField,
 } from "../../database/database-error.ts";
 import { ModelCommandError } from "./model-runtime.errors.ts";
 import { ModelRuntimeService } from "./model-runtime.service.ts";
 
-function modelError(message: string) {
+/**
+ * Відмова команди. `field` — ім'я поля форми, якого стосується помилка: коли
+ * воно відоме, повідомлення їде об'єктом, і клієнт підсвічує саме те поле
+ * замість самого лише банера. Без нього форма лишається як була — голим
+ * рядком, який клієнт розуміє так само.
+ */
+function modelError(message: string, field?: string | null) {
   return {
     ok: false,
     data: {
@@ -26,7 +33,7 @@ function modelError(message: string) {
       totals: {},
       extra: {},
     },
-    messages: [message],
+    messages: [field ? { type: "error", text: message, field } : message],
     meta: {},
   };
 }
@@ -87,7 +94,7 @@ export class ModelRuntimeController {
       if (isPostgresError(error)) {
         const message = postgresErrorClientMessage(error);
         if (message !== null) {
-          return modelError(message);
+          return modelError(message, postgresErrorField(error));
         }
         console.error(`❌ ${model}/${command}: PostgreSQL ${error.code}: ${error.message}`);
         return jsonResponse(modelError("Внутрішня помилка сервера"), 500);

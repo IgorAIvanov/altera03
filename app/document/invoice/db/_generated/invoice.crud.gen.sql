@@ -148,7 +148,7 @@ declare
   v_result  jsonb;
 begin
   if v_org is null then
-    raise exception 'organizationId обов''язковий';
+    raise exception 'organizationId обов''язковий' using column = 'organization_id';
   end if;
 
   select id into v_type_id from app.document_type where code = 'invoice';

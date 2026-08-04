@@ -108,10 +108,10 @@ declare
   v_result jsonb;
 begin
   if nullif(trim(coalesce(v_item->>'code', '')), '') is null then
-    raise exception 'code обов''язковий';
+    raise exception 'code обов''язковий' using column = 'code';
   end if;
   if nullif(trim(coalesce(v_item->>'name', '')), '') is null then
-    raise exception 'name обов''язковий';
+    raise exception 'name обов''язковий' using column = 'name';
   end if;
 
   merge into app.currency t

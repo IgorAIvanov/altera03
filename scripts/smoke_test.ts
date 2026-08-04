@@ -216,13 +216,22 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertEquals(duplicate.status, 200);
         assertEquals(duplicate.body.ok, false);
         assertEquals(duplicate.body.messages.length > 0, true);
-        assertEquals(
-          duplicate.body.messages.some((m) => `${m}`.includes("duplicate key")),
-          false,
+
+        // Повідомлення тепер може бути об'єктом (несе поле форми), тож текст
+        // дістаємо явно: `${m}` на об'єкті дав би "[object Object]", і перевірки
+        // нижче проходили б не тому, що сирий текст не витік.
+        const texts = duplicate.body.messages.map((m) =>
+          typeof m === "string" ? m : String((m as { text?: unknown }).text ?? "")
         );
+        assertEquals(texts.some((text) => text.includes("duplicate key")), false);
+        assertEquals(texts.some((text) => text.includes("uq_bank_code")), false);
+
+        // Поле форми поруч із текстом — з нього клієнт підсвічує саме `code`.
         assertEquals(
-          duplicate.body.messages.some((m) => `${m}`.includes("uq_bank_code")),
-          false,
+          duplicate.body.messages.some((m) =>
+            typeof m === "object" && m !== null && (m as { field?: unknown }).field === "code"
+          ),
+          true,
         );
       } finally {
         const removed = await client.model("bank", "delete", { id: bank.id });

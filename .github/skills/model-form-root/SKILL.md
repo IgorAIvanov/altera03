@@ -97,6 +97,12 @@ so `validate()` covers them too:
 protected override sections(): FormSection[] { return [this.lines]; }
 ```
 
+**Server-side rejections** highlight the field too: an envelope message may carry `field`
+(`{ type, text, field }`). SQL sets it via `raise exception … using column = 'code'`; PostgreSQL
+sets it itself on not-null and unique violations; a TS command uses `fieldErr(field, text)`. Nothing
+to wire in the form — but the field must be one the form actually renders, otherwise the message
+stays in the banner rather than vanishing.
+
 Full reference: [`docs/ui-form-validation.md`](../../../docs/ui-form-validation.md).
 
 ## Gotcha: the schema goes through `super()`

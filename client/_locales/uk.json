@@ -24,6 +24,7 @@
   "common.exportExcel": "Excel",
   "common.exportTruncated": "Вивантажено перші {count} рядків",
   "common.yes": "Так",
+  "common.ok": "OK",
   "common.loading": "Завантаження...",
   "common.noOpenTabs": "Немає відкритих вкладок",
   "blob.attachments": "Вкладення",

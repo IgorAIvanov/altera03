@@ -8,7 +8,13 @@
  * інакше кожна кнопка ходила б на сервер.
  */
 import { Signal } from "signal-polyfill";
-import { apiFetch, readEnvelope, setClaimedUserId, setSessionLostHandler } from "../data/api.ts";
+import {
+  apiFetch,
+  type EnvelopeMessage,
+  readEnvelope,
+  setClaimedUserId,
+  setSessionLostHandler,
+} from "../data/api.ts";
 
 export interface SessionUser {
   id: string;
@@ -104,8 +110,15 @@ export function can(model: string, action: string): boolean {
   return permissions.has(permissionKey("*", action)) || permissions.has(permissionKey(model, action));
 }
 
-function firstMessage(messages: string[]): string {
-  return messages[0] ?? "Не вдалося виконати запит";
+/**
+ * Перше повідомлення конверта текстом. Повідомлення буває об'єктом (несе поле
+ * форми або ознаку модального вікна), тож брати `messages[0]` як рядок не
+ * можна — у текст помилки їхало б «[object Object]».
+ */
+function firstMessage(messages: EnvelopeMessage[]): string {
+  const first = messages[0];
+  if (typeof first === "string") return first;
+  return first?.text || "Не вдалося виконати запит";
 }
 
 async function loadPermissions(): Promise<void> {

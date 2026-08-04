@@ -21,6 +21,7 @@
   "common.exportExcel": "Excel",
   "common.exportTruncated": "Exported the first {count} rows",
   "common.yes": "Yes",
+  "common.ok": "OK",
   "common.loading": "Loading...",
   "common.open": "Open",
   "common.search": "Search",
