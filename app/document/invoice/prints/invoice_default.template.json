@@ -133,116 +133,110 @@
           }
         ],
         "sections": {
-          "header": {
-            "rows": [
-              {
-                "cells": [
-                  {
-                    "text": "№",
-                    "rowSpan": 2,
-                    "align": "center",
-                    "fontWeight": "bold",
-                    "fontSize": "9"
-                  },
-                  {
-                    "text": "Номенклатура",
-                    "colSpan": 2,
-                    "align": "center",
-                    "fontWeight": "bold",
-                    "fontSize": "9"
-                  },
-                  {
-                    "text": "Кількість",
-                    "rowSpan": 2,
-                    "align": "right",
-                    "fontWeight": "bold",
-                    "fontSize": "9"
-                  },
-                  {
-                    "text": "Ціна",
-                    "rowSpan": 2,
-                    "align": "right",
-                    "fontWeight": "bold",
-                    "fontSize": "9"
-                  },
-                  {
-                    "text": "Сума",
-                    "rowSpan": 2,
-                    "align": "right",
-                    "fontWeight": "bold",
-                    "fontSize": "9"
-                  }
-                ]
-              },
-              {
-                "cells": [
-                  {
-                    "text": "Код",
-                    "align": "center",
-                    "fontWeight": "bold",
-                    "fontSize": "9"
-                  },
-                  {
-                    "text": "Найменування",
-                    "align": "left",
-                    "fontWeight": "bold",
-                    "fontSize": "9"
-                  }
-                ]
-              }
-            ]
-          },
-          "row": {
-            "rows": [
-              {
-                "cells": [
-                  {
-                    "path": "index",
-                    "align": "center"
-                  },
-                  {
-                    "path": "id",
-                    "align": "center"
-                  },
-                  {
-                    "path": "name",
-                    "align": "left"
-                  },
-                  {
-                    "path": "quantity",
-                    "align": "right"
-                  },
-                  {
-                    "path": "price",
-                    "align": "right"
-                  },
-                  {
-                    "path": "amount",
-                    "align": "right"
-                  }
-                ]
-              }
-            ]
-          },
-          "footer": {
-            "rows": [
-              {
-                "cells": [
-                  {
-                    "text": "Разом",
-                    "colSpan": 5,
-                    "align": "right",
-                    "fontWeight": "bold"
-                  },
-                  {
-                    "path": "document.total",
-                    "align": "right",
-                    "fontWeight": "bold"
-                  }
-                ]
-              }
-            ]
-          }
+          "header": [
+            {
+              "cells": [
+                {
+                  "text": "№",
+                  "rowSpan": 2,
+                  "align": "center",
+                  "fontWeight": "bold",
+                  "fontSize": "9"
+                },
+                {
+                  "text": "Номенклатура",
+                  "colSpan": 2,
+                  "align": "center",
+                  "fontWeight": "bold",
+                  "fontSize": "9"
+                },
+                {
+                  "text": "Кількість",
+                  "rowSpan": 2,
+                  "align": "right",
+                  "fontWeight": "bold",
+                  "fontSize": "9"
+                },
+                {
+                  "text": "Ціна",
+                  "rowSpan": 2,
+                  "align": "right",
+                  "fontWeight": "bold",
+                  "fontSize": "9"
+                },
+                {
+                  "text": "Сума",
+                  "rowSpan": 2,
+                  "align": "right",
+                  "fontWeight": "bold",
+                  "fontSize": "9"
+                }
+              ]
+            },
+            {
+              "cells": [
+                {
+                  "text": "Код",
+                  "align": "center",
+                  "fontWeight": "bold",
+                  "fontSize": "9"
+                },
+                {
+                  "text": "Найменування",
+                  "align": "left",
+                  "fontWeight": "bold",
+                  "fontSize": "9"
+                }
+              ]
+            }
+          ],
+          "row": [
+            {
+              "cells": [
+                {
+                  "path": "index",
+                  "align": "center"
+                },
+                {
+                  "path": "id",
+                  "align": "center"
+                },
+                {
+                  "path": "name",
+                  "align": "left"
+                },
+                {
+                  "path": "quantity",
+                  "align": "right"
+                },
+                {
+                  "path": "price",
+                  "align": "right"
+                },
+                {
+                  "path": "amount",
+                  "align": "right"
+                }
+              ]
+            }
+          ],
+          "footer": [
+            {
+              "cells": [
+                {
+                  "text": "Разом",
+                  "colSpan": 5,
+                  "align": "right",
+                  "fontWeight": "bold"
+                },
+                {
+                  "path": "document.total",
+                  "align": "right",
+                  "fontWeight": "bold"
+                }
+              ]
+            }
+          ]
         },
         "placement": {
           "mode": "absolute",

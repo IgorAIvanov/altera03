@@ -594,15 +594,40 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
   // ── Дані моделі ─────────────────────────────────────────────────────────────
 
+  /**
+   * Нормалізація стоїть тут, на вході даних у `$root`, а не рядком пізніше в
+   * `load()` — і це не косметика.
+   *
+   * `$root` реактивний: щойно `assign()` поклав туди відповідь, Lit планує
+   * рендер мікрозадачею. Нормалізація ж стояла ПІСЛЯ `await loadInto(...)`,
+   * тобто за межею мікрозадачі, — і хто з двох устигне першим, вирішувала
+   * черга. Коли першим ставав рендер, `renderFrameContent` отримував секцію
+   * таблиці у формі `{ rows: [...] }` і падав на `.map is not a function`,
+   * а вкладка лишалася порожньою.
+   *
+   * Видно це було лише на шаблоні, який жодного разу не зберігали з редактора:
+   * сід кладе в базу файл як є, а редактор пише вже масивами. Тобто на робочій
+   * базі помилка ховалася, а на свіжій — з'являлася на першому ж відкритті.
+   *
+   * Тут же нормалізація ще й потрапляє в знімок `markClean()`, який `loadInto`
+   * робить одразу після `assign` — щойно відкритий шаблон більше не виглядає
+   * зміненим.
+   */
+  protected override assign(patch: Partial<PrintTemplateEditRoot>): void {
+    const item = patch.item;
+    if (item?.schema) {
+      patch = {
+        ...patch,
+        item: { ...item, schema: { schemaVersion: 2, blocks: normalizeLoadedBlocks(item.schema.blocks ?? []) } },
+      };
+    }
+
+    super.assign(patch);
+  }
+
   private async load() {
     if (!await this.loadInto("get", { id: this.modelId })) return;
-    // З БД шаблон приходить «сирим» jsonb — приводимо секції таблиць до форми,
-    // з якою працює редактор, інакше рендер спіткнеться на чужому записі.
-    this.setBlocks(normalizeLoadedBlocks(this.$root.item.schema?.blocks ?? []));
-    // Нормалізація міняє $root ПІСЛЯ знімка, який зробив loadInto, — і робить це
-    // завжди, бо setBlocks перезбирає item новим об'єктом. Без перезнімка щойно
-    // відкритий шаблон одразу має «*» і питає про незбережені зміни, яких немає.
-    this.markClean();
+    this.schedulePreview();
   }
 
   /**
