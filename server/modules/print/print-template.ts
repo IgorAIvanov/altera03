@@ -604,7 +604,7 @@ export function resolvePrintTemplatePath(source: unknown, path: string): unknown
   }, source);
 }
 
-export function stringifyPrintTemplateValue(value: unknown) {
+export function stringifyPrintTemplateValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "-";
   }

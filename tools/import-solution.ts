@@ -1,4 +1,3 @@
-/// <reference lib="deno.ns" />
 /**
  * Завантаження прикладного рішення з переносимого пакета.
  *
@@ -185,7 +184,17 @@ export interface ImportOptions {
   verbose?: boolean;
 }
 
-export async function importSolution(archivePathArg: string, targetDirArg: string, options: ImportOptions = {}) {
+export interface ImportResult {
+  manifest: SolutionManifest;
+  /** Скільки файлів записано; `0` для `--check`. */
+  written: number;
+}
+
+export async function importSolution(
+  archivePathArg: string,
+  targetDirArg: string,
+  options: ImportOptions = {},
+): Promise<ImportResult> {
   const archivePath = resolve(Deno.cwd(), archivePathArg);
   const targetRoot = resolve(Deno.cwd(), targetDirArg);
   const appDir = join(targetRoot, "app");

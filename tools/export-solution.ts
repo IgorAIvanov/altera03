@@ -1,4 +1,3 @@
-/// <reference lib="deno.ns" />
 /**
  * Вивантаження прикладного рішення у переносимий пакет.
  *
@@ -269,7 +268,13 @@ export interface ExportOptions {
   verbose?: boolean;
 }
 
-export async function exportSolution(appDirArg: string, options: ExportOptions = {}) {
+export interface ExportResult {
+  manifest: SolutionManifest;
+  /** Абсолютний шлях до записаного пакета. */
+  outPath: string;
+}
+
+export async function exportSolution(appDirArg: string, options: ExportOptions = {}): Promise<ExportResult> {
   const appDir = resolve(Deno.cwd(), appDirArg);
   const root = dirname(appDir);
 
