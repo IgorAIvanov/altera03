@@ -12,6 +12,11 @@ export type { EnvDerivedConfig } from "./config/config-from-env.ts";
 // застосунку розповзалися — тепер усі беруть її звідси.
 export { findProductionMarker, isProductionEnvironment } from "./config/config-from-env.ts";
 
+// Так само з «локальною» базою: список локальних хостів потрібен і тут (дефолт
+// TLS виводиться з розташування бази), і запобіжнику дев-інструментів. Дві копії
+// розійшлися б мовчки — і розходження було б видно аж на чужій базі.
+export { isLocalDatabaseHost } from "./config/config-from-env.ts";
+
 export type {
   AgentConfig,
   AuthConfig,

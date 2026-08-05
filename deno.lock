@@ -946,7 +946,7 @@
       },
       "tools": {
         "dependencies": [
-          "jsr:@altera/server@0.6",
+          "jsr:@altera/server@~0.6.1",
           "jsr:@std/path@^1.1.2",
           "npm:postgres@^3.4.5"
         ]

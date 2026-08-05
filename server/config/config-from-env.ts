@@ -97,16 +97,45 @@ export function parseSslMode(raw: string | null | undefined): DatabaseSslMode {
   );
 }
 
+const LOCAL_DATABASE_HOSTS = ["localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal"];
+
+/**
+ * Чи є хост бази локальним. Одне означення на систему: тут із нього виводиться
+ * дефолт TLS, а запобіжник дев-інструментів (`@altera/tools`) тим самим списком
+ * вирішує, чи можна запускати `smoke`/`api`/`passwd`/`sql:publish`.
+ */
+export function isLocalDatabaseHost(host: string): boolean {
+  return LOCAL_DATABASE_HOSTS.includes(host.trim().toLowerCase());
+}
+
+/**
+ * TLS за замовчуванням — за розташуванням бази.
+ *
+ * Локальний PostgreSQL шифрування не пропонує взагалі, керований без нього не
+ * пустить. Тобто «правильне» значення однозначно виводиться з хоста, а
+ * помилитися можна лише в один бік — забути `PGSSLMODE` й піти в керовану базу
+ * відкритим з'єднанням. Дефолт закриває саме цей випадок; явно задане значення
+ * (включно з `disable`) завжди сильніше.
+ */
+function defaultSslMode(host: string): DatabaseSslMode {
+  return isLocalDatabaseHost(host) ? false : "require";
+}
+
 /**
  * Розбір `DATABASE_URL` (`postgres://user:pass@host:5432/db?sslmode=require`).
  *
- * Керовані бази — Deno Deploy, Neon, Render — віддають підключення однією
- * стрічкою, і зібрати його з `PG*` там нема з чого. Розбір тут, а не в драйвері,
- * щоб `DatabaseConfig` лишався однієї форми: сервіси бачать компоненти, а не
- * «або компоненти, або рядок».
+ * Керовані бази — Neon, Render, Prisma — віддають підключення однією стрічкою,
+ * і зібрати його з `PG*` там нема з чого. Розбір тут, а не в драйвері, щоб
+ * `DatabaseConfig` лишався однієї форми: сервіси бачать компоненти, а не «або
+ * компоненти, або рядок».
  *
  * Логін і пароль декодуються: у згенерованому паролі трапляється `@` чи `/`, і
  * в URL вони приїжджають екранованими.
+ *
+ * **Порожній шлях — не помилка.** `postgres://user:pass@host:5432/?sslmode=require`
+ * видає, зокрема, Prisma Postgres на Deno Deploy: ім'я бази там мається на увазі
+ * обліковкою. За libpq у такому разі базою вважається ім'я користувача — це і
+ * робимо, замість того щоб відмовитися працювати з коректним рядком провайдера.
  */
 export function parseDatabaseUrl(raw: string): Omit<DatabaseConfig, "poolSize"> {
   let url: URL;
@@ -120,42 +149,59 @@ export function parseDatabaseUrl(raw: string): Omit<DatabaseConfig, "poolSize"> 
     throw new Error(`DATABASE_URL: очікувалася схема postgres://, а не ${url.protocol}//`);
   }
 
-  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  const username = decodeURIComponent(url.username);
+  const database = decodeURIComponent(url.pathname.replace(/^\//, "")) || username;
   if (!database) {
-    throw new Error("DATABASE_URL не містить імені бази");
+    throw new Error("DATABASE_URL не містить ані імені бази, ані користувача");
   }
+
+  const sslmode = url.searchParams.get("sslmode");
 
   return {
     host: url.hostname,
     port: url.port ? Number(url.port) : 5432,
     database,
-    username: decodeURIComponent(url.username),
+    username,
     password: decodeURIComponent(url.password),
-    ssl: parseSslMode(url.searchParams.get("sslmode")),
+    ssl: sslmode ? parseSslMode(sslmode) : defaultSslMode(url.hostname),
   };
 }
 
 /**
- * Підключення до бази — з `DATABASE_URL` цілком або з `PG*` цілком.
+ * Підключення до бази — з `PG*` цілком або з `DATABASE_URL` цілком.
  *
  * Джерело вибирається **весь**, а не по полях: інакше хост приїхав би з одного,
  * пароль з іншого, і зрозуміти, куди насправді ходить застосунок, було б ніяк.
  * Імена — libpq (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`,
  * `PGSSLMODE`), тобто ті самі, що розуміють `psql`, `pg_dump` і керовані бази.
  * `DB_POOL_SIZE` лишається своїм: поняття пулу в libpq немає.
+ *
+ * **Компоненти сильніші за рядок**, коли задані обидва. Deno Deploy підставляє
+ * і `PG*`, і `DATABASE_URL` — але в рядку там немає імені бази, а в `PGDATABASE`
+ * воно є. Компоненти повніші за побудовою, тож вони й виграють; `DATABASE_URL`
+ * лишається для провайдерів, які нічого, крім рядка, не дають.
  */
 function readDatabaseConfig(): DatabaseConfig {
+  const poolSize = readPositiveInt("DB_POOL_SIZE", 10);
   const url = readTrimmed("DATABASE_URL");
-  const connection = url ? parseDatabaseUrl(url) : {
-    host: Deno.env.get("PGHOST") || "localhost",
+  const hasComponents = !!(readTrimmed("PGHOST") && readTrimmed("PGDATABASE"));
+
+  if (url && !hasComponents) {
+    return { ...parseDatabaseUrl(url), poolSize };
+  }
+
+  const host = Deno.env.get("PGHOST") || "localhost";
+  const sslmode = readTrimmed("PGSSLMODE");
+
+  return {
+    host,
     port: readPositiveInt("PGPORT", 5432),
     database: Deno.env.get("PGDATABASE") || "altera",
     username: Deno.env.get("PGUSER") || "altera",
     password: Deno.env.get("PGPASSWORD") || "",
-    ssl: parseSslMode(Deno.env.get("PGSSLMODE")),
+    ssl: sslmode ? parseSslMode(sslmode) : defaultSslMode(host),
+    poolSize,
   };
-
-  return { ...connection, poolSize: readPositiveInt("DB_POOL_SIZE", 10) };
 }
 
 function normalizeUserId(value: string | null | undefined): string | null {

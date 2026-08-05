@@ -9,9 +9,7 @@
  * а не вимкнути перевірку. Легальний шлях для продуктивної бази — виконати
  * зібраний `_sqlpackage/*.sql` звичайним `psql` (docs/deployment.md, розділ 8).
  */
-import { findProductionMarker } from "@altera/server";
-
-const LOCAL_HOSTS = ["localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal"];
+import { findProductionMarker, isLocalDatabaseHost } from "@altera/server";
 
 export class UnsafeEnvironmentError extends Error {
   constructor(reason: string) {
@@ -25,14 +23,20 @@ function findRemoteDatabase(): string | null {
   // запобіжник мусить дивитися на ту базу, куди справді піде інструмент.
   // Зіпсований DATABASE_URL тут не діагностують — його розбере сервер;
   // важливо лише, що невідомий хост не рахується локальним.
+  // Ті самі два джерела й у тому самому порядку, що в configFromEnv: компоненти
+  // сильніші за рядок. Запобіжник мусить дивитися на ту базу, куди справді піде
+  // інструмент. Зіпсований DATABASE_URL тут не діагностують — його розбере
+  // сервер; важливо лише, що невідомий хост не рахується локальним.
+  const pgHost = Deno.env.get("PGHOST")?.trim();
   const url = Deno.env.get("DATABASE_URL")?.trim();
-  if (url) {
-    const host = URL.parse(url)?.hostname.toLowerCase() ?? "";
-    return LOCAL_HOSTS.includes(host) ? null : `DATABASE_URL → ${host || "нерозбірливий хост"}`;
+
+  if (url && !(pgHost && Deno.env.get("PGDATABASE")?.trim())) {
+    const host = URL.parse(url)?.hostname ?? "";
+    return isLocalDatabaseHost(host) ? null : `DATABASE_URL → ${host || "нерозбірливий хост"}`;
   }
 
-  const host = (Deno.env.get("PGHOST") || "localhost").trim().toLowerCase();
-  return LOCAL_HOSTS.includes(host) ? null : `PGHOST=${host}`;
+  const host = pgHost || "localhost";
+  return isLocalDatabaseHost(host) ? null : `PGHOST=${host}`;
 }
 
 /**

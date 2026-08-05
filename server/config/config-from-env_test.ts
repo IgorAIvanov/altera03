@@ -49,7 +49,7 @@ Deno.test("parseDatabaseUrl", async (t) => {
     );
   });
 
-  await t.step("порт і sslmode необов'язкові", () => {
+  await t.step("порт необов'язковий; локальний хост без sslmode — без TLS", () => {
     assertEquals(parseDatabaseUrl("postgresql://u:p@localhost/altera"), {
       host: "localhost",
       port: 5432,
@@ -58,6 +58,24 @@ Deno.test("parseDatabaseUrl", async (t) => {
       password: "p",
       ssl: false,
     });
+  });
+
+  // Забути sslmode для керованої бази легко, і наслідок — відкрите з'єднання
+  // за впевненості, що воно шифроване. Дефолт закриває саме цей випадок.
+  await t.step("віддалений хост без sslmode — TLS увімкнено", () => {
+    assertEquals(parseDatabaseUrl("postgres://u:p@db.example.com/altera").ssl, "require");
+  });
+
+  await t.step("явний sslmode сильніший за дефолт", () => {
+    assertEquals(parseDatabaseUrl("postgres://u:p@db.example.com/altera?sslmode=disable").ssl, false);
+  });
+
+  // Так виглядає рядок Prisma Postgres на Deno Deploy: ім'я бази мається на
+  // увазі обліковкою. За libpq базою в такому разі є ім'я користувача.
+  await t.step("порожній шлях — база за іменем користувача", () => {
+    const config = parseDatabaseUrl("postgres://tenant:p@db.prisma.io:5432/?sslmode=require");
+    assertEquals(config.database, "tenant");
+    assertEquals(config.username, "tenant");
   });
 
   // У згенерованому паролі трапляється @ або /, і в URL вони екрануються.
@@ -75,8 +93,12 @@ Deno.test("parseDatabaseUrl", async (t) => {
     );
   });
 
-  await t.step("без імені бази — помилка", () => {
-    assertThrows(() => parseDatabaseUrl("postgres://u:p@localhost:5432/"), Error, "імені бази");
+  await t.step("ані бази, ані користувача — помилка", () => {
+    assertThrows(
+      () => parseDatabaseUrl("postgres://localhost:5432/"),
+      Error,
+      "ані імені бази, ані користувача",
+    );
   });
 
   // «host:port» — теж URL з погляду розбирача (схема `localhost:`), тож ловить
