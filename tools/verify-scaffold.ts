@@ -229,7 +229,14 @@ export async function verifyScaffold(
     // Обидва composition root — і ВСІ файли застосунку. Екрани моделей у граф
     // від main.ts не входять: їх вантажить рантайм в'ю динамічно, за реєстром.
     // Тобто зламаний екран моделі раніше проходив перевірку типів наскрізь.
-    ["deno check", ["check", "--min-dep-age=0", "app/server.ts", "app/main.ts", "app/**/*.ts"], appDir],
+    // scripts/ — теж вихідники застосунку, і саме там ловиться забутий запис у
+    // карті імпортів шаблону: у монорепо ці модулі резолвляться коренем
+    // воркспейсу й мовчать, а в згенерованому застосунку карта своя.
+    [
+      "deno check",
+      ["check", "--min-dep-age=0", "app/server.ts", "app/main.ts", "app/**/*.ts", "scripts/*.ts"],
+      appDir,
+    ],
     ["build:front", ["task", "build:front"], appDir],
   ];
 
