@@ -706,14 +706,17 @@ DB_PORT=5432
 DB_NAME=altera
 DB_USERNAME=altera
 DB_PASSWORD=altera_secret
-PORT=3000                   # читає app/server.ts, не configFromEnv
+DB_CONTAINER_NAME=altera-pg-03  # ім'я контейнера глобальне на демон — див. нижче
+PORT=3000                   # читає app/server.ts і vite.config.ts, не configFromEnv
 BLOB_TOKEN_SECRET=change-me-in-production  # підпис токенів вкладень; JWT_SECRET — legacy-фолбек;
                             # з плейсхолдером у продуктиві сервер не стартує
 AUTH_SESSION_TTL_HOURS=720
+AUTH_COOKIE_NAME=altera_session  # унікальне на машину, якщо екземплярів кілька
 BOOTSTRAP_LOGIN=            # логін+пароль разом → створюється адміністратор на старті
 BOOTSTRAP_PASSWORD=
 DEV_AUTH_BYPASS=0           # у продуктивному оточенні валить старт сервера
 DEV_AUTH_USER_ID=
+VITE_PORT=5173              # порт Vite; читає vite.config.ts, strictPort увімкнено
 VITE_DEV_URL=http://localhost:5173   # непорожній → сервер віддає в'ю через Vite
 OPENAI_API_KEY=             # LLM-агент; без ключа агент просто не працює
 OPENAI_MODEL=gpt-4o-mini
@@ -722,3 +725,13 @@ OPENAI_ROUTER_MODEL=gpt-4o-mini
 
 Решта змінних має дефолти й у `.env` не потрібна — повний список у розділі «Конфігурація
 сервера» вище, єдине джерело істини — `server/config/config-from-env.ts`.
+
+**Кілька екземплярів на одній машині** — кожен у своєму каталозі зі своїм `.env`; окремими
+мусять бути `PORT`, `VITE_PORT`+`VITE_DEV_URL`, `DB_NAME`, `BLOB_TOKEN_SECRET` і — це те, що
+не видно з переліку портів — `AUTH_COOKIE_NAME`. **Cookie не розрізняють порт**: для браузера
+`localhost:3000` і `localhost:3001` — один хост і одна банка, тож зі спільним іменем вхід у
+сусідній застосунок мовчки затирає цю сесію, а виглядає це як випадкові розлогінення. Порти
+фронта й бекенда розійтися не можуть за побудовою: `vite.config.ts` бере той самий `PORT` для
+проксі `/api` (звідси `--env-file` у задачах `*:front`), а зайнятий порт Vite тепер помилка, а
+не тихий переїзд на 5174 при `VITE_DEV_URL`, що вказує на 5173. Деталі —
+[`docs/deployment.md`](docs/deployment.md), розділ 8.

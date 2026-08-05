@@ -11,8 +11,9 @@
   "tasks": {
     "dev": "deno task dev:server & deno task dev:front",
     "dev:server": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file --watch ./app/server.ts",
-    "dev:front": "deno run -A npm:vite --configLoader native",
-    "build:front": "deno run -A npm:vite build --configLoader native",
+    "//env-file": "У задачах фронта --env-file=.env із явним значенням (далі йде позиційний npm:vite, і безаргументний варіант з'їв би його як шлях). vite.config.ts читає звідти PORT і VITE_PORT: порти фронта й бекенда задаються одним файлом і не розходяться між екземплярами застосунку на одній машині.",
+    "dev:front": "deno run -A --env-file=.env npm:vite --configLoader native",
+    "build:front": "deno run -A --env-file=.env npm:vite build --configLoader native",
 
     "//sql:registry": "Версія інструмента вказана явно. Без піна `deno run jsr:@altera/tools/...` бере довільну версію з реєстру — саме так у застосунок приїхав tools@0.3.0 замість 0.3.3.",
     "sql:registry": "deno run -A jsr:@altera/tools@^0.4.1/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
@@ -29,8 +30,8 @@
   },
 
   "imports": {
-    "@altera/client": "jsr:@altera/client@^0.6.0",
-    "@client/": "jsr:/@altera/client@^0.6.0/",
+    "@altera/client": "jsr:@altera/client@^0.6.1",
+    "@client/": "jsr:/@altera/client@^0.6.1/",
     "@altera/server": "jsr:@altera/server@^0.5.1",
     "@altera/server/sql": "jsr:/@altera/server@^0.5.1/sql",
     "@altera/tools/": "jsr:/@altera/tools@^0.4.1/",

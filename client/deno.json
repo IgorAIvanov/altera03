@@ -1,6 +1,6 @@
 {
   "name": "@altera/client",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "//": "Точки входу бібліотеки. main.ts тут немає навмисно: composition root (реєстрація оболонки конкретного застосунку) переїхав у app/main.ts — бібліотека не може знати про app-header чи home-tab.",
   "exports": {
     "./vite": "./vite.ts",

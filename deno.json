@@ -12,10 +12,13 @@
     // на кожній збірці. Працювало й так — імпорт ставав зовнішнім і його
     // резолвив Deno по карті імпортів, вихід побайтово той самий, — але
     // попередження замаскувало б справжній неразрішений імпорт у конфізі.
-    "dev:front": "deno run -A npm:vite --configLoader native",
+    // --env-file=.env (з явним значенням, бо далі йде позиційний `npm:vite`):
+    // vite.config.ts бере з оточення PORT і VITE_PORT, щоб порти фронта й
+    // бекенда задавалися одним файлом і не розходилися між екземплярами.
+    "dev:front": "deno run -A --env-file=.env npm:vite --configLoader native",
     "dev": "deno task dev:server & deno task dev:front",
-    "build:front": "deno run -A npm:vite build --configLoader native",
-    "preview:front": "deno run -A npm:vite preview --configLoader native",
+    "build:front": "deno run -A --env-file=.env npm:vite build --configLoader native",
+    "preview:front": "deno run -A --env-file=.env npm:vite preview --configLoader native",
     "startdb": "docker compose up -d",
     "stopdb": "docker compose down",
     "sql:registry": "deno run -A ./tools/generate-model-runtime-registry.ts ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",

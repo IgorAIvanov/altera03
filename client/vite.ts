@@ -68,6 +68,14 @@ export interface AlteraConfigOptions {
   appDir: string;
   /** Порт бекенду, куди Vite проксює `/api` у dev. Дефолт — 3000. */
   apiPort?: number;
+  /**
+   * Порт самого dev-сервера Vite. Дефолт — 5173.
+   *
+   * Обидва порти винесені в опції заради кількох екземплярів на одній машині:
+   * інакше другий застосунок або не підняв би фронт, або проксював би `/api`
+   * у чужий бекенд. Застосунок бере їх з оточення — див. його `vite.config.ts`.
+   */
+  devPort?: number;
 }
 
 // ── Плагін view-модулів ─────────────────────────────────────────────────────
@@ -149,7 +157,7 @@ function appModulesPlugin(appRoot: string): Plugin {
 // ── Пресет ───────────────────────────────────────────────────────────────────
 
 export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
-  const { appDir, apiPort = 3000 } = options;
+  const { appDir, apiPort = 3000, devPort = 5173 } = options;
   const appRoot = resolve(appDir);
 
   return defineConfig({
@@ -198,7 +206,12 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
       },
     },
     server: {
-      port: 5173,
+      port: devPort,
+      // Зайнятий порт має бути помилкою, а не мовчазним переїздом на наступний.
+      // Дефолт Vite (`strictPort: false`) підняв би другий екземпляр на 5174, а
+      // `VITE_DEV_URL` бекенда й далі вказував би на 5173 — сторінка відкрилася б
+      // з чужого фронта або не відкрилася зовсім, і причина цього ніде не видно.
+      strictPort: true,
       fs: {
         // Vite віддає вихідні модулі застосунку через /@fs; дозволяємо і корінь
         // застосунку, і каталог фреймворку (у пакеті це node_modules).
