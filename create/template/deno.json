@@ -30,8 +30,8 @@
   },
 
   "imports": {
-    "@altera/client": "jsr:@altera/client@^0.6.1",
-    "@client/": "jsr:/@altera/client@^0.6.1/",
+    "@altera/client": "jsr:@altera/client@^0.6.2",
+    "@client/": "jsr:/@altera/client@^0.6.2/",
     "@altera/server": "jsr:@altera/server@^0.6.1",
     "@altera/server/sql": "jsr:/@altera/server@^0.6.1/sql",
     "@altera/tools/": "jsr:/@altera/tools@^0.4.4/",

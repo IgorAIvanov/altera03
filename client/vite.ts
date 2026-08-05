@@ -172,6 +172,17 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
       // es2022; інакше rollup-мініфікація падає з дефолтним es2020-таргетом.
       target: "es2022",
       rollupOptions: {
+        // В'ю вантажаться динамічним `import()` і мусять віддати `tagName` —
+        // саме за ним оболонка створює елемент форми. Для збірки застосунку
+        // Vite ставить `preserveEntrySignatures: false`: входом там вважається
+        // HTML, а експорти JS-входів нікому не потрібні. Наші в'ю — теж входи
+        // (їх додає appModulesPlugin), і під це правило вони потрапляли разом
+        // з усіма: чанк збирався правильний, але без жодного `export`, і
+        // кожна вкладка падала з «модуль не експортує tagName».
+        //
+        // Видно це лише у продуктивній збірці: у деві в'ю приходять з Vite
+        // вихідними модулями, де експорт на місці.
+        preserveEntrySignatures: "exports-only",
         input: {
           client: `${toPosix(appDir)}/index.html`,
         },

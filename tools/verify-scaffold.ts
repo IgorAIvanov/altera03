@@ -331,6 +331,51 @@ export async function verifyScaffold(
     }
   }
 
+  // Чанк в'ю мусить віддавати `tagName` — саме за ним оболонка створює елемент
+  // форми. Це видно ЛИШЕ у продуктивній збірці: у деві в'ю приходять з Vite
+  // вихідними модулями, де експорт на місці, а в зібраному чанку його може не
+  // бути. Так і сталося: Vite для застосунку ставить `preserveEntrySignatures:
+  // false` (входом вважається HTML), і наші в'ю-входи потрапляли під це правило
+  // разом з усіма. Збірка зелена, типи зелені, а в застосунку кожна вкладка
+  // падає з «модуль не експортує tagName» — і дізналися ми про це з живого
+  // розгортання, бо перевіряти було нічим.
+  if (ok) {
+    try {
+      const manifestPath = join(appDir, "dist", ".vite", "manifest.json");
+      const manifest = JSON.parse(await Deno.readTextFile(manifestPath)) as Record<
+        string,
+        { file: string; isEntry?: boolean }
+      >;
+
+      // В'ю — входи, чиє джерело лежить у моделі: <family>/<model>/<View>.ts.
+      // Ключі маніфесту рахуються від кореня Vite (каталог застосунку), тому
+      // без префікса `app/`: поряд тут лише `index.html`.
+      const viewChunks = Object.entries(manifest)
+        .filter(([source, entry]) => entry.isEntry && /^[^/]+\/[^/]+\/[^/]+\.ts$/.test(source))
+        .map(([, entry]) => entry.file);
+
+      const withoutTagName: string[] = [];
+      for (const file of viewChunks) {
+        const text = await Deno.readTextFile(join(appDir, "dist", file));
+        if (!/\bexport\s*\{[^}]*\btagName\b/.test(text)) withoutTagName.push(file);
+      }
+
+      if (!viewChunks.length) {
+        console.error("✗ у dist/.vite/manifest.json немає жодного входу-в'ю — перевірити нічого");
+        ok = false;
+      } else if (withoutTagName.length) {
+        console.error(`✗ чанк в'ю без експорту tagName: ${withoutTagName.join(", ")}`);
+        console.error("    у застосунку кожна вкладка впаде — див. preserveEntrySignatures у client/vite.ts");
+        ok = false;
+      } else {
+        console.log(`✓ чанки в'ю експортують tagName (${viewChunks.length})`);
+      }
+    } catch (error) {
+      console.error(`✗ не вдалося перевірити чанки в'ю: ${error instanceof Error ? error.message : error}`);
+      ok = false;
+    }
+  }
+
   // Скіли — не модулі й не активи збірки, тож ані типи, ані `build:front` про них
   // не знають: не розклалися — усе зелене, а агент у застосунку працює без них і
   // пише форми руками. Перевіряємо і сам факт розкладки, і наявність задачі, якою
