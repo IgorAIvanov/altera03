@@ -1,48 +1,49 @@
 ---
 name: altera-new-app
-description: Розгорнути новий застосунок на фреймворку Altera в порожньому каталозі — від scaffold до працюючого екрана входу — і перевірити, що він справді працює. Застосовуй, коли просять «розгорни застосунок Altera», «створи новий застосунок на Altera» або показують порожню теку з таким наміром.
-argument-hint: Назви ім'я проєкту (латиницею) і скажи, чи піднімати PostgreSQL у Docker, чи є вже свій.
+description: Deploy a new application on the Altera framework into an empty directory — from scaffold to a working login screen — and verify that it actually runs. Use when asked to "deploy an Altera app", "create a new Altera application", or when shown an empty folder with that intent.
+argument-hint: Give the project name (latin letters) and say whether to bring up PostgreSQL in Docker or use an existing one.
 metadata:
   audience: bootstrap
 ---
 
-# Розгортання нового застосунку Altera
+# Deploying a New Altera Application
 
-Скіл для **порожнього каталогу**: застосунку ще немає, і твоє завдання — довести його від
-`jsr:@altera/create` до сторінки входу, у яку справді можна увійти.
+This skill is for an **empty directory**: there is no application yet, and your job is to
+take it from `jsr:@altera/create` to a login screen someone can actually log into.
 
-Не зупиняйся на scaffold. Він кладе файли й друкує шість наступних кроків — саме на них і
-ламається встановлення, причому мовчки: пропущений `deno install` валить збірку не тут, а
-пізніше; забутий `VITE_DEV_URL` дає порожню сторінку без помилок; порожній
-`BLOB_TOKEN_SECRET` не заважає доти, доки застосунок не позначать продуктивним. Проходь усі
-кроки й **перевіряй результат**, а не факт запуску команди.
+Do not stop at the scaffold. It writes the files and prints six next steps — and those steps
+are where installation actually breaks, quietly: a skipped `deno install` fails later rather
+than where it was skipped; a leftover `VITE_DEV_URL` gives a blank page with no error; an
+empty `BLOB_TOKEN_SECRET` does not matter until the app is marked production. Walk every
+step and **verify the result**, not the fact that a command ran.
 
-## 0. Преполіт
+## 0. Preflight
 
-Перевір до того, як щось створювати, — переробляти дорожче:
+Check before creating anything — redoing it costs more:
 
 ```bash
-deno --version          # потрібен 2.9+
-docker --version        # лише якщо базу піднімаємо в контейнері
+deno --version          # 2.9+ required
+docker --version        # only if the database goes into a container
 ```
 
-Запитай користувача, якщо не сказано: **ім'я проєкту** (малі латинські літери, цифри, `-`,
-`_`, перший символ — літера; воно йде в ім'я бази й у `sql.json`) і **звідки PostgreSQL** —
-підняти в Docker чи є свій. Не вигадуй ім'я сам, якщо каталог зветься не за шаблоном.
+Ask the user unless already told: the **project name** (lowercase latin letters, digits,
+`-`, `_`, first character a letter — it becomes the database name and goes into `sql.json`)
+and **where PostgreSQL comes from** — a Docker container or an existing server. Do not
+invent a name if the directory is not named to the pattern.
 
 ## 1. Scaffold
 
-З кореня порожнього каталогу:
+From inside the empty directory:
 
 ```bash
 deno run -A jsr:@altera/create .
 ```
 
-Ім'я проєкту береться з імені каталогу. Якщо воно під шаблон не підходить (пробіли,
-велика літера, кирилиця) — задай явно: `deno run -A jsr:@altera/create . --name myerp`.
+The project name comes from the directory name. If it does not fit the pattern (spaces,
+capitals, non-latin), pass one: `deno run -A jsr:@altera/create . --name myerp`.
 
-У непорожній каталог scaffold не пише. Якщо він відмовився — покажи користувачеві, що в
-каталозі лежить, і спитай; `--force` без спитання не застосовуй.
+The scaffold refuses to write into a non-empty directory. If it does, show the user what is
+in there and ask; do not reach for `--force` on your own.
 
 ## 2. `.env`
 
@@ -50,106 +51,111 @@ deno run -A jsr:@altera/create .
 cp .env.example .env
 ```
 
-Далі відредагуй — це не формальність, три значення мусять змінитися:
+Then edit it — this is not a formality, three values have to change:
 
-- **`PGPASSWORD`** — свій пароль (у прикладі `change-me`). Той самий файл читає
-  `docker-compose.yml`, тож пароль описаний один раз і розійтися не може.
-- **`BLOB_TOKEN_SECRET`** — ним підписуються посилання на вкладення; із плейсхолдером
-  `change-me-in-production` продуктивний сервер не стартує взагалі. Згенеруй:
+- **`PGPASSWORD`** — your own (the example says `change-me`). `docker-compose.yml` reads the
+  same file, so the password is written once and cannot drift apart.
+- **`BLOB_TOKEN_SECRET`** — it signs attachment links, and with the placeholder
+  `change-me-in-production` a production server refuses to start at all. Generate one:
 
   ```bash
   deno eval "console.log(crypto.getRandomValues(new Uint8Array(32)).reduce((s,b)=>s+b.toString(16).padStart(2,'0'),''))"
   ```
 
-- **`BOOTSTRAP_PASSWORD`** — якщо хочеш, щоб адміністратор створився сам. Порожній
-  залишає екран входу в режимі «Перший запуск: створіть адміністратора», де логін і пароль
-  вводить людина. Обидва шляхи робочі; заповнений пароль вважається тимчасовим, і його
-  доведеться змінити при першому вході.
+- **`BOOTSTRAP_PASSWORD`** — set it if the administrator should be created automatically.
+  Left empty, the login screen switches to "first run: create an administrator", where a
+  human types both login and password. Both paths work; a password set here counts as
+  temporary and must be changed on the first login.
 
-**Якщо на машині вже живе інший застосунок Altera**, окремими мають бути `PORT`,
-`VITE_PORT` + `VITE_DEV_URL`, `PGDATABASE`, `BLOB_TOKEN_SECRET` і — це найменш очевидне —
-`AUTH_COOKIE_NAME`. Cookie не розрізняють порт: для браузера `localhost:3000` і
-`localhost:3001` — один хост і одна банка, тож зі спільним іменем вхід у сусідній застосунок
-мовчки затирає цю сесію. У шаблоні там уже стоїть `<ім'я проєкту>_session`, тож достатньо
-не залишати чуже значення.
+**If another Altera application already lives on this machine**, these must differ: `PORT`,
+`VITE_PORT` + `VITE_DEV_URL`, `PGDATABASE`, `BLOB_TOKEN_SECRET`, and — the least obvious one
+— `AUTH_COOKIE_NAME`. Cookies do not distinguish ports: to a browser `localhost:3000` and
+`localhost:3001` are the same host and one cookie jar, so with a shared name, logging into
+the neighbouring app silently overwrites this session. The template already puts
+`<project>_session` there, so it is enough not to leave someone else's value.
 
-## 3. База
+## 3. Database
 
 ```bash
 deno task startdb
 ```
 
-Піднімає PostgreSQL у Docker з обліковими даними з `.env`. Якщо порт 5432 зайнятий — зміни
-`PGPORT`, а не воюй з чужим контейнером. Зі своїм PostgreSQL цей крок пропускається: досить
-створити базу й роль (`create database <ім'я> owner <роль>`) і вписати їх у `.env`.
+Brings up PostgreSQL in Docker with the credentials from `.env`. If port 5432 is taken,
+change `PGPORT` rather than fighting someone else's container. With an existing PostgreSQL
+this step is skipped: create the database and role (`create database <name> owner <role>`)
+and put them into `.env`.
 
-## 4. Залежності — ДО збірки
+## 4. Dependencies — BEFORE the build
 
 ```bash
 deno install
 ```
 
-Це не формальність. У `deno.json` стоїть `"vendor": true`: пресет Vite і Tailwind читають
-вихідники фреймворку **з диска**, а кеш JSR — це файли з іменами-хешами, по яких сканувати
-нічого. Пропустиш — збірка впаде на `Could not load .../vendor/jsr.io/@altera/client/...`.
+Not a formality. `deno.json` carries `"vendor": true`: the Vite preset and Tailwind read the
+framework sources **from disk**, and the JSR cache is a flat list of hash-named files with
+nothing to scan. Skip it and the build fails with
+`Could not load .../vendor/jsr.io/@altera/client/...`.
 
-Якщо реліз фреймворку молодший за добу, Deno його не візьме («A newer matching version was
-found, but it was newer than the specified minimum dependency date») — тоді
+If a framework release is less than a day old, Deno will not take it ("A newer matching
+version was found, but it was newer than the specified minimum dependency date") — then
 `deno install --min-dep-age=0`.
 
-## 5. Схема
+## 5. Schema
 
 ```bash
 deno task sql:registry && deno task sql:assemble && deno task sql:publish
 ```
 
-- `sql:registry` — реєстр моделей, маршрути й манифест в'ю з `manifest.json` моделей;
-- `sql:assemble` — SQL-пакет із ядра та моделей застосунку;
-- `sql:publish` — виконує його в базі: структура → міграції → функції → сіди.
+- `sql:registry` — model registry, routes and the view manifest from the models' `manifest.json`;
+- `sql:assemble` — the SQL package from the core and the application's models;
+- `sql:publish` — runs it against the database: structure → migrations → functions → seeds.
 
-Публікація ідемпотентна. `sql:publish` працює **тільки** з локальною базою; для віддаленої
-є окремий вхід `deno task sql:deploy --yes`.
+Publishing is idempotent. `sql:publish` works **only** against a local database; for a remote
+one there is a separate entry point, `deno task sql:deploy --yes`.
 
-## 6. Запуск і перевірка
+## 6. Run and verify
 
 ```bash
 deno task dev
 ```
 
-Піднімає бекенд (`:3000`) і Vite (`:5173`). **Інтерфейс відкривається на адресі Vite** —
-доки `VITE_DEV_URL` непорожній, порт 3000 віддає лише `/api`. Це найчастіша плутанина на
-першому запуску: на `:3000` буде сторінка, у якій не відкривається жодна вкладка.
+Brings up the backend (`:3000`) and Vite (`:5173`). **Open the interface at the Vite
+address** — while `VITE_DEV_URL` is non-empty, port 3000 serves only `/api`. This is the most
+common confusion on a first run: `:3000` gives a page where no tab ever opens.
 
-Не звітуй про успіх за фактом «команда запустилася». Переконайся:
+Do not report success because a command started. Confirm it:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5173/
 ```
 
-200 і сторінка входу — застосунок живий. Далі увійди (або створи адміністратора) і відкрий
-хоч один пункт меню: демо-модель «Контрагенти» лежить у `app/catalog/counterparty/`.
+200 and a login screen means the app is alive. Then log in (or create the administrator) and
+open at least one menu item: the demo model "Counterparties" sits in
+`app/catalog/counterparty/`.
 
-Якщо є можливість — зроби це в браузері й покажи результат. Якщо ні, скажи користувачеві
-прямо, що перевірив тільки HTTP-відповідь.
+If you can drive a browser, do that and show the result. If you cannot, tell the user plainly
+that only the HTTP response was checked.
 
-## 7. Що сказати наприкінці
+## 7. What to say at the end
 
-- застосунок створено, схему опубліковано, вхід працює;
-- `.env` у `.gitignore` — пароль і секрет нікуди не поїдуть, але й на іншій машині їх
-  доведеться завести знову;
-- `.claude/skills/**` уже розкладені й **комітяться разом з рештою** — оновлювати їх
-  `deno task skills:sync` разом із підняттям `@altera/client`;
-- демо-модель «Контрагенти» видаляється в чотири дії, вони описані в `CLAUDE.md` застосунку;
-- як додати свою модель — скіл `model-feature-architecture`, він уже на місці.
+- the application is created, the schema is published, login works;
+- `.env` is in `.gitignore` — the password and secret go nowhere, but they will have to be
+  set up again on another machine;
+- `.claude/skills/**` are already in place and **are committed with everything else** —
+  refresh them with `deno task skills:sync` whenever `@altera/client` moves;
+- the "Counterparties" demo model is removed in four steps, described in the app's `CLAUDE.md`;
+- to add a model, the `model-feature-architecture` skill is already there.
 
-## Коли щось пішло не так
+## When it goes wrong
 
-| Симптом | Причина |
+Messages below are quoted as the tools print them.
+
+| Symptom | Cause |
 |---|---|
-| `Каталог ... не порожній` | scaffold не пише поверх; показати вміст і спитати |
-| `Ім'я проєкту «.» не годиться` | стара версія `@altera/create` — оновити або задати `--name` |
-| `Could not load .../vendor/...` | пропущено `deno install` перед збіркою |
-| Біла сторінка, у консолі порожньо | немає `tsconfig.json` з `experimentalDecorators` — не видаляти його |
-| Порожня сторінка на `:3000` | інтерфейс відкривають на `:5173`, поки заданий `VITE_DEV_URL` |
-| `Команду «X/list» не реалізовано` | не опубліковано SQL |
-| `password authentication failed` | `.env` правили після `deno task startdb` — контейнер створив базу зі старим паролем; `deno task stopdb` і підняти заново |
+| `Каталог ... не порожній` | the scaffold does not overwrite; show the contents and ask |
+| `Ім'я проєкту «.» не годиться` | old `@altera/create` — update it, or pass `--name` |
+| `Could not load .../vendor/...` | `deno install` was skipped before the build |
+| Blank page, empty console | no `tsconfig.json` with `experimentalDecorators` — do not delete it |
+| Empty page on `:3000` | the interface belongs on `:5173` while `VITE_DEV_URL` is set |
+| `Команду «X/list» не реалізовано` | the SQL was not published |
+| `password authentication failed` | `.env` was edited after `deno task startdb` — the container created the database with the old password; `deno task stopdb` and bring it up again |
