@@ -235,27 +235,37 @@ export async function importSolution(
   if (errors.length) {
     console.error("\n❌ Версії фреймворку розходяться:");
     for (const error of errors) console.error(`   ${error}`);
-    if (!options.force) {
-      throw new Error("Завантаження зупинено. Вирівняй версії або повтори з --force.");
-    }
-    console.error("   → --force: продовжую попри це.");
   }
 
   const existing = await listExistingFiles(appDir);
+
+  // `--check` доповідає ПЕРШИМ, до будь-якої відмови: він для того й потрібен,
+  // щоб побачити наслідки, ще нічого не вирішивши. Відмова замість плану
+  // залишала б без відповіді єдине питання, заради якого його й запускають —
+  // «а що буде?», — і саме в тому випадку, коли app/ непорожній, тобто завжди
+  // при оновленні рішення.
+  if (options.check) {
+    const needsForce = errors.length > 0 || existing.length > 0;
+    console.log(`\nБуде записано: ${manifest.files.length} файлів`);
+    if (existing.length) console.log(`Буде замінено: ${existing.length} наявних записів у app/`);
+    console.log(
+      needsForce
+        ? "\n⚠ Для запису потрібен --force (див. причини вище). Нічого не записано."
+        : "\n✅ Перешкод немає. Нічого не записано.",
+    );
+    return { manifest, written: 0 };
+  }
+
+  if (errors.length && !options.force) {
+    throw new Error("Завантаження зупинено. Вирівняй версії або повтори з --force.");
+  }
+  if (errors.length) console.error("   → --force: продовжую попри це.");
+
   if (existing.length && !options.force) {
     throw new Error(
       `${appDir} не порожній (${existing.length} записів). Прийнято домовленість, що змінене на ` +
         `приймачі рішення не зливається, тому каталог заміняється цілком — повтори з --force.`,
     );
-  }
-
-  if (options.check) {
-    console.log(
-      `\n✅ Перевірка пройдена: ${manifest.files.length} файлів готові до запису` +
-        `${existing.length ? `, ${existing.length} наявних записів у app/ буде замінено` : ""}. ` +
-        `Нічого не записано.`,
-    );
-    return { manifest, written: 0 };
   }
 
   // Заміна цілком, а не поверх: інакше файли моделі, прибраної в новій версії

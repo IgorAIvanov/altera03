@@ -16,8 +16,8 @@
     "build:front": "deno run -A --env-file=.env npm:vite build --configLoader native",
 
     "//sql:registry": "Версія інструмента вказана явно. Без піна `deno run jsr:@altera/tools/...` бере довільну версію з реєстру — саме так у застосунок приїхав tools@0.3.0 замість 0.3.3.",
-    "sql:registry": "deno run -A jsr:@altera/tools@^0.4.7/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
-    "sql:gen": "deno run -A jsr:@altera/tools@^0.4.7/generate-model-sql ./app --verbose",
+    "sql:registry": "deno run -A jsr:@altera/tools@^0.5.0/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
+    "sql:gen": "deno run -A jsr:@altera/tools@^0.5.0/generate-model-sql ./app --verbose",
     "//sql:assemble": "Через обгортку в scripts/, а не прямим викликом jsr:@altera/tools: SQL ядра мусить приїхати з тієї версії @altera/server, на якій працює цей застосунок. Прямий виклик брав версію, зашиту в сам інструмент, — і в базу їхала чужа схема.",
     "sql:assemble": "deno run -A ./scripts/sql-assemble.ts ./app --verbose",
     "sql:publish": "deno run -A --env-file ./scripts/sql-publish.ts ./app --verbose",
@@ -25,8 +25,8 @@
     "sql:deploy": "deno run -A --env-file ./scripts/sql-deploy.ts ./app --verbose",
 
     "//solution": "Перенесення прикладного рішення між установками. Пакет — це каталог `app/` цілком плюс манифест (піни фреймворку й ужиті залежності); каркас (цей deno.json, vite.config.ts, scripts/, tsconfig.json) не їде — його дає scaffold. Завантаження НЕ запускає ні збірки, ні публікації SQL: `sql:publish` пише в базу, і вирішувати, у яку саме й коли, — не справа розпакування. Наступні кроки інструмент друкує сам.",
-    "solution:export": "deno run -A jsr:@altera/tools@^0.4.7/export-solution ./app --verbose",
-    "solution:import": "deno run -A jsr:@altera/tools@^0.4.7/import-solution",
+    "solution:export": "deno run -A jsr:@altera/tools@^0.5.0/export-solution ./app --verbose",
+    "solution:import": "deno run -A jsr:@altera/tools@^0.5.0/import-solution",
 
     "//skills:sync": "Розкладає скіли фреймворку в .claude/skills. Файли комітяться (як згенерований SQL): той, хто склонував репозиторій, має отримати їх без запуску задач. Діапазон версії підіймається РАЗОМ з @altera/client — скіли описують саме його поверхню, і відставши, вони починають радити те, чого в клієнті вже немає. Свій скіл із тим самим іменем задача не чіпає.",
     "skills:sync": "deno run -A jsr:@altera/skills@^0.1.2 ./",
@@ -40,7 +40,7 @@
     "@client/": "jsr:/@altera/client@^0.6.2/",
     "@altera/server": "jsr:@altera/server@^0.6.2",
     "@altera/server/sql": "jsr:/@altera/server@^0.6.2/sql",
-    "@altera/tools/": "jsr:/@altera/tools@^0.4.7/",
+    "@altera/tools/": "jsr:/@altera/tools@^0.5.0/",
     "@std/path": "jsr:@std/path@^1.1.2",
     "@app/": "./app/",
     "@shared/": "./app/shared/",

@@ -327,18 +327,40 @@ export async function generateModelRuntimeRegistry(
   const outputPath = resolve(Deno.cwd(), outputPathArg);
   const agentRoutesPath = resolve(Deno.cwd(), agentRoutesPathArg);
   const viewManifestPath = resolve(Deno.cwd(), viewManifestPathArg);
+  // Шлях виводиться з реєстру, а не приймається аргументом: рядки задач у
+  // застосунках пінені за версією інструмента, і четвертий позиційний аргумент
+  // означав би, що кожен застосунок мусить його дописати, інакше файл мовчки
+  // не з'явиться. Ім'я фіксоване, сусідом реєстру.
+  const tsCommandsPath = join(dirname(outputPath), "ts-commands.generated.ts");
 
   const writeRegistry = async () => {
     const allManifests = (await Promise.all(appDirs.map(collectManifests))).flat();
     allManifests.sort((left, right) => (left.manifest.model ?? "").localeCompare(right.manifest.model ?? ""));
 
-    // Згенеровані файли — чисті дані (живуть в app/, типи належать server-бібліотеці).
-    const tsBindings = renderTsBindings(allManifests, outputPath);
-    const headerImports = tsBindings.imports.join("\n");
-    const source = `${headerImports ? `${headerImports}\n\n` : ""}// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}\n${tsBindings.block}`;
+    // Реєстр — ЧИСТІ ДАНІ, окремо від прив'язок TS-команд, і це не косметика.
+    // Реєстр читає не лише сервер: екран admin/user_group бере з нього перелік
+    // моделей для прав. Поки статичні `import` модулів TS-команд лежали в тому
+    // самому файлі, кожна серверна команда їхала у бандл КЛІЄНТА разом із усім,
+    // що вона імпортує. У монорепо це проявлялося як 23 «Decorators are not
+    // valid here» (через барель @altera/server), а у встановленому застосунку —
+    // як «Rolldown failed to resolve import "@altera/server/password"»:
+    // підшляхи пакета резолвить Deno, але не бандлер. Обидва рази винен був не
+    // імпорт, а те, що дані й код лежали в одному файлі.
+    const tsBindings = renderTsBindings(allManifests, tsCommandsPath);
+    const registrySource = `// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}`;
 
     await Deno.mkdir(dirname(outputPath), { recursive: true });
-    await Deno.writeTextFile(outputPath, `${source}\n`);
+    await Deno.writeTextFile(outputPath, `${registrySource}\n`);
+
+    const headerImports = tsBindings.imports.join("\n");
+    const tsCommandsSource = `${headerImports ? `${headerImports}\n\n` : ""}` +
+      `// Generated from model manifests. Do not edit manually.\n` +
+      `// Серверний бік реєстру: тут статичні import модулів TS-команд, тому цей\n` +
+      `// файл імпортує ТІЛЬКИ app/server.ts. Клієнт бере дані з model-registry.\n\n` +
+      `${tsBindings.block}`;
+
+    await Deno.mkdir(dirname(tsCommandsPath), { recursive: true });
+    await Deno.writeTextFile(tsCommandsPath, `${tsCommandsSource}\n`);
 
     // For agent routes, use the first appDir as base for route path computation
     // Each manifest's route is computed relative to its own source appDir
@@ -353,6 +375,7 @@ export async function generateModelRuntimeRegistry(
 
     if (verboseMode) {
       console.log(`Generated model runtime registry: ${toPosixPath(relative(Deno.cwd(), outputPath))}`);
+      console.log(`Generated TS command bindings: ${toPosixPath(relative(Deno.cwd(), tsCommandsPath))}`);
       console.log(`Generated agent routes: ${toPosixPath(relative(Deno.cwd(), agentRoutesPath))}`);
       console.log(`Generated view manifest: ${toPosixPath(relative(Deno.cwd(), viewManifestPath))}`);
     }

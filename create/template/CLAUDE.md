@@ -86,7 +86,9 @@ app/
       migration.sql         # міграції
       data.sql              # seed-дані
     prints/                 # шаблони друкованих форм
-  _generated/               # реєстр моделей, маршрути агента, маніфест в'ю
+  _generated/               # реєстр моделей, прив'язки TS-команд, маршрути агента, маніфест в'ю
+                            #   model-registry — дані (їх читає й клієнт), ts-commands — статичні
+                            #   import модулів команд, тому його імпортує ТІЛЬКИ app/server.ts
   _locales/                 # локалізація застосунку: en.json, uk.json
   styles/tailwind.css       # ЄДИНИЙ вхід збірки Tailwind
   main.ts                   # composition root клієнта

@@ -58,7 +58,13 @@ app/                        # застосунок: фронтенд-модул�
   # core-sql.generated.ts (deno task core:sql): text-імпорти не приймає JSR.
   # У меню в ядрі тільки структура й функції; сід (склад пунктів — маршрути цього
   # застосунку) лишається в app/admin/menu/db/data.sql, там же й екрани.
-  _generated/               # авто-генерація (deno task sql:registry): model-registry, agent-routes, view-manifest
+  _generated/               # авто-генерація (deno task sql:registry): model-registry, ts-commands,
+                            #   agent-routes, view-manifest
+                            # model-registry — ЧИСТІ ДАНІ, ts-commands — статичні import модулів
+                            #   TS-команд. Розділені навмисно: реєстр читає не лише сервер (екран
+                            #   admin/user_group бере з нього перелік моделей для прав), тож поки
+                            #   вони лежали разом, кожна серверна команда їхала в бандл КЛІЄНТА
+                            #   з усім, що імпортує. ts-commands імпортує тільки app/server.ts.
   server.ts                 # composition root бекенду: реєструє дані з _generated → bootstrap (Danet)
   shared/                   # app-стан: current-organization, view-route
                             #   (TypeBox-контракти фреймворку переїхали в client/shared/schema.ts)

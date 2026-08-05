@@ -7,7 +7,8 @@ import { serveDir } from "jsr:@std/http@^1.0.18/file-server";
 
 import { bootstrap, configFromEnv } from "@altera/server";
 
-import { generatedModelRegistry, generatedTsCommandBindings } from "./_generated/model-registry.generated.ts";
+import { generatedModelRegistry } from "./_generated/model-registry.generated.ts";
+import { generatedTsCommandBindings } from "./_generated/ts-commands.generated.ts";
 import { agentModelRoutes } from "./_generated/agent-routes.generated.ts";
 import { viewManifest } from "./_generated/view-manifest.generated.ts";
 import { devAuthMethods } from "./login/dev-redirect-auth.method.ts";
