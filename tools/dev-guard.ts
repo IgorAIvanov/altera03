@@ -21,8 +21,18 @@ export class UnsafeEnvironmentError extends Error {
 }
 
 function findRemoteDatabase(): string | null {
-  const host = (Deno.env.get("DB_HOST") || "localhost").trim().toLowerCase();
-  return LOCAL_HOSTS.includes(host) ? null : `DB_HOST=${host}`;
+  // Ті самі два джерела, що й у configFromEnv, і в тому самому порядку:
+  // запобіжник мусить дивитися на ту базу, куди справді піде інструмент.
+  // Зіпсований DATABASE_URL тут не діагностують — його розбере сервер;
+  // важливо лише, що невідомий хост не рахується локальним.
+  const url = Deno.env.get("DATABASE_URL")?.trim();
+  if (url) {
+    const host = URL.parse(url)?.hostname.toLowerCase() ?? "";
+    return LOCAL_HOSTS.includes(host) ? null : `DATABASE_URL → ${host || "нерозбірливий хост"}`;
+  }
+
+  const host = (Deno.env.get("PGHOST") || "localhost").trim().toLowerCase();
+  return LOCAL_HOSTS.includes(host) ? null : `PGHOST=${host}`;
 }
 
 /**

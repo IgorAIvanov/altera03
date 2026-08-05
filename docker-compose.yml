@@ -2,18 +2,18 @@ services:
   postgres:
     image: postgres:17-alpine
     # З .env, бо ім'я контейнера глобальне на демон: два клони репозиторію з
-    # однаковим іменем разом не піднімуться навіть на різних DB_PORT. Том
+    # однаковим іменем разом не піднімуться навіть на різних PGPORT. Том
     # (`pgdata`) такого не потребує — його compose і так префіксує іменем проєкту.
     container_name: ${DB_CONTAINER_NAME:-altera-pg-03}
     # Значення беруться з кореневого .env — того самого, що читає застосунок.
     # Дублювати їх тут літералами не можна: розійдуться, і сервер піде до бази
     # з чужим паролем.
     environment:
-      POSTGRES_DB: ${DB_NAME:-altera}
-      POSTGRES_USER: ${DB_USERNAME:-altera}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-altera_secret}
+      POSTGRES_DB: ${PGDATABASE:-altera}
+      POSTGRES_USER: ${PGUSER:-altera}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-altera_secret}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${PGPORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped

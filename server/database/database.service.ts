@@ -20,7 +20,7 @@ export class DatabaseService {
   }
 
   onAppBootstrap() {
-    const { host, port, database, username, password, poolSize } = getServerConfig().database;
+    const { host, port, database, username, password, poolSize, ssl } = getServerConfig().database;
     this._sql = postgres({
       host,
       port,
@@ -29,6 +29,11 @@ export class DatabaseService {
       password,
       max: poolSize,
       connect_timeout: CONNECT_TIMEOUT_SECONDS,
+      // Керований PostgreSQL (Deno Deploy, Neon, RDS) без TLS не пустить, а
+      // локальний контейнер його не пропонує — тому режим приходить з
+      // конфігурації, а не зашитий. `false` за замовчуванням: без цього поля
+      // розклад лишається таким, як був.
+      ssl: ssl ?? false,
     });
     console.log("✅ Database connection pool created");
 
@@ -47,7 +52,7 @@ export class DatabaseService {
       if (isDatabaseUnavailable(error)) {
         console.error(
           `❌ PostgreSQL ${host}:${port}/${database} недоступний. ` +
-            `Перевірте, що сервер БД запущений, а DB_HOST/DB_PORT вказують на нього. ` +
+            `Перевірте, що сервер БД запущений, а PGHOST/PGPORT вказують на нього. ` +
             `Запити до API відповідатимуть 503, доки він не з'явиться.`,
         );
         return;

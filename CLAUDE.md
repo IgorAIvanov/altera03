@@ -163,12 +163,29 @@ const application = await bootstrap({
 бібліотека. Там же перевіряються суперечності: `DEV_AUTH_BYPASS` у продуктивному оточенні
 валить старт сервера, а не спрацьовує на першому запиті.
 
-Змінні оточення (усі — лише через `configFromEnv`): `DB_HOST/PORT/NAME/USERNAME/PASSWORD`,
-`DB_POOL_SIZE`, `AUTH_SESSION_TTL_HOURS`, `BOOTSTRAP_LOGIN/PASSWORD/FULL_NAME`,
+Змінні оточення (усі — лише через `configFromEnv`): `DATABASE_URL` **або**
+`PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE`, `DB_POOL_SIZE`,
+`AUTH_SESSION_TTL_HOURS`, `BOOTSTRAP_LOGIN/PASSWORD/FULL_NAME`,
 `DEV_AUTH_BYPASS`, `DEV_AUTH_USER_ID`, `DEFAULT_USER_ID`, `AUTH_PUBLIC_BASE_URL`,
-`NODE_ENV`/`APP_ENV`/`DENO_ENV`,
+`NODE_ENV`/`APP_ENV`/`DENO_ENV`, `DENO_DEPLOY`,
 `BLOB_TOKEN_SECRET`, `JWT_SECRET`, `BLOB_TOKEN_TTL_HOURS`, `BLOB_MAX_SIZE_MB`,
 `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_ROUTER_MODEL`.
+
+**Підключення до бази — імена libpq**, ті самі, що розуміють `psql`, `pg_dump` і керовані
+бази: свого `DB_*`-словника більше немає. Виграш не в однаковості заради однаковості —
+`psql` без аргументів іде туди ж, куди застосунок, а це рівно те, чим накочують схему на
+продуктив (розділ «Розгортання»). Джерело вибирається **ціле**: заданий `DATABASE_URL`
+перекриває `PG*` повністю, інакше зібралася б химера з хостом з одного джерела й паролем
+з іншого. `DB_POOL_SIZE` лишається своїм — поняття пулу в libpq немає. `PGSSLMODE` доходить
+до драйвера (`DatabaseConfig.ssl`): керована база без TLS не пустить, локальний контейнер
+його не пропонує, тож режим мусить називати оточення, а не код. Незнайоме значення валить
+старт — мовчазний відкат до «без TLS» означав би відкрите з'єднання за впевненості, що воно
+шифроване.
+
+**`DENO_DEPLOY` рахується позначкою продуктиву** нарівні з `NODE_ENV=production`. Платформа
+виставляє її сама, і без цього рядка забутий у панелі `NODE_ENV` означав би cookie без
+`Secure` і дозволений `DEV_AUTH_BYPASS` — причому мовчки. Прев'ю-розгортання рахується так
+само: воно теж публічне і теж не локальна розробка.
 
 ## Модель — основна одиниця
 
@@ -666,7 +683,7 @@ deno task api bank list --raw | jq .data   # чистий JSON під конве
 ```
 
 Обидва спираються на `tools/dev-guard.ts` і відмовляються стартувати, якщо оточення
-позначене як `production`/`prod`/`staging` або `DB_HOST` не локальний — БД береться з `.env`,
+позначене як `production`/`prod`/`staging` або хост БД не локальний — БД береться з `.env`,
 і промах у ньому не має коштувати чужих даних. Обхід не передбачено свідомо.
 
 Нову пробу додавай кроком у `scripts/smoke_test.ts`; запис у БД — тільки свій рядок і тільки
@@ -701,11 +718,14 @@ deno task api bank list --raw | jq .data   # чистий JSON під конве
 пароль БД описаний один раз.
 
 ```
-DB_HOST=localhost           # ці ж значення йдуть у docker compose
-DB_PORT=5432
-DB_NAME=altera
-DB_USERNAME=altera
-DB_PASSWORD=altera_secret
+# DATABASE_URL=postgres://…    # заданий — перекриває PG* цілком
+PGHOST=localhost            # ці ж значення йдуть у docker compose
+PGPORT=5432
+PGDATABASE=altera
+PGUSER=altera
+PGPASSWORD=altera_secret
+PGSSLMODE=disable           # керована база вимагає require/verify-full
+DB_POOL_SIZE=10             # на безсерверному розгортанні 1–3
 DB_CONTAINER_NAME=altera-pg-03  # ім'я контейнера глобальне на демон — див. нижче
 PORT=3000                   # читає app/server.ts і vite.config.ts, не configFromEnv
 BLOB_TOKEN_SECRET=change-me-in-production  # підпис токенів вкладень; JWT_SECRET — legacy-фолбек;
@@ -727,7 +747,7 @@ OPENAI_ROUTER_MODEL=gpt-4o-mini
 сервера» вище, єдине джерело істини — `server/config/config-from-env.ts`.
 
 **Кілька екземплярів на одній машині** — кожен у своєму каталозі зі своїм `.env`; окремими
-мусять бути `PORT`, `VITE_PORT`+`VITE_DEV_URL`, `DB_NAME`, `BLOB_TOKEN_SECRET` і — це те, що
+мусять бути `PORT`, `VITE_PORT`+`VITE_DEV_URL`, `PGDATABASE`, `BLOB_TOKEN_SECRET` і — це те, що
 не видно з переліку портів — `AUTH_COOKIE_NAME`. **Cookie не розрізняють порт**: для браузера
 `localhost:3000` і `localhost:3001` — один хост і одна банка, тож зі спільним іменем вхід у
 сусідній застосунок мовчки затирає цю сесію, а виглядає це як випадкові розлогінення. Порти

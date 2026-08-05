@@ -17,6 +17,12 @@ import type { AgentModelRoute } from "../modules/agent/agent-routes.ts";
 import type { ViewManifestEntry } from "../modules/model-view/model-view.registry.ts";
 import type { AuthMethod } from "../modules/auth/auth.types.ts";
 
+/**
+ * Режим TLS у термінах libpq (`sslmode`). Драйвер окремого `verify-ca` не має,
+ * тому він зводиться до `verify-full` — у бік суворішої перевірки, а не м'якшої.
+ */
+export type DatabaseSslMode = false | "allow" | "prefer" | "require" | "verify-full";
+
 export interface DatabaseConfig {
   host: string;
   port: number;
@@ -25,6 +31,12 @@ export interface DatabaseConfig {
   password: string;
   /** Розмір пулу з'єднань. */
   poolSize: number;
+  /**
+   * TLS до бази. `false` — без шифрування (локальний PostgreSQL); керований
+   * PostgreSQL без цього не пустить. Необов'язкове: застосунок, що збирає
+   * конфігурацію руками, лишається на локальному розкладі без правок.
+   */
+  ssl?: DatabaseSslMode;
 }
 
 /** Перший користувач системи; `null` — не створювати автоматично. */

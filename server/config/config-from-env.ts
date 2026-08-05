@@ -10,6 +10,7 @@ import type {
   AuthConfig,
   BlobConfig,
   DatabaseConfig,
+  DatabaseSslMode,
   DevBypassConfig,
 } from "./server-config.ts";
 
@@ -60,11 +61,101 @@ export function findProductionMarker(): string | null {
       return `${name}=${value}`;
     }
   }
+
+  // Deno Deploy позначає себе сам. Без цього рядка забутий у панелі
+  // `NODE_ENV=production` означав би cookie без `Secure` і дозволений
+  // `DEV_AUTH_BYPASS` — причому мовчки. Прев'ю-розгортання рахується так само:
+  // воно теж публічне, теж по HTTPS і теж не локальна розробка.
+  const deploy = Deno.env.get("DENO_DEPLOY")?.trim();
+  if (deploy) {
+    return `DENO_DEPLOY=${deploy}`;
+  }
+
   return null;
 }
 
 export function isProductionEnvironment(): boolean {
   return findProductionMarker() !== null;
+}
+
+/**
+ * `sslmode` у термінах libpq → опція драйвера.
+ *
+ * Порожнє й `disable` — без TLS: саме так виглядає локальний PostgreSQL у
+ * контейнері. `verify-ca` зводиться до `verify-full`: окремого режиму драйвер
+ * не має, а помилятися тут треба в бік суворішої перевірки. Незнайоме значення
+ * не мовчить — краще впасти на старті, ніж піти в керовану базу відкритим
+ * з'єднанням, вважаючи, що воно шифроване.
+ */
+export function parseSslMode(raw: string | null | undefined): DatabaseSslMode {
+  const mode = raw?.trim().toLowerCase();
+  if (!mode || mode === "disable") return false;
+  if (mode === "allow" || mode === "prefer" || mode === "require") return mode;
+  if (mode === "verify-ca" || mode === "verify-full") return "verify-full";
+  throw new Error(
+    `Невідомий sslmode «${mode}». Припустимі: disable, allow, prefer, require, verify-ca, verify-full`,
+  );
+}
+
+/**
+ * Розбір `DATABASE_URL` (`postgres://user:pass@host:5432/db?sslmode=require`).
+ *
+ * Керовані бази — Deno Deploy, Neon, Render — віддають підключення однією
+ * стрічкою, і зібрати його з `PG*` там нема з чого. Розбір тут, а не в драйвері,
+ * щоб `DatabaseConfig` лишався однієї форми: сервіси бачать компоненти, а не
+ * «або компоненти, або рядок».
+ *
+ * Логін і пароль декодуються: у згенерованому паролі трапляється `@` чи `/`, і
+ * в URL вони приїжджають екранованими.
+ */
+export function parseDatabaseUrl(raw: string): Omit<DatabaseConfig, "poolSize"> {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("DATABASE_URL не є коректним URL");
+  }
+
+  if (!/^postgres(ql)?:$/.test(url.protocol)) {
+    throw new Error(`DATABASE_URL: очікувалася схема postgres://, а не ${url.protocol}//`);
+  }
+
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  if (!database) {
+    throw new Error("DATABASE_URL не містить імені бази");
+  }
+
+  return {
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 5432,
+    database,
+    username: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    ssl: parseSslMode(url.searchParams.get("sslmode")),
+  };
+}
+
+/**
+ * Підключення до бази — з `DATABASE_URL` цілком або з `PG*` цілком.
+ *
+ * Джерело вибирається **весь**, а не по полях: інакше хост приїхав би з одного,
+ * пароль з іншого, і зрозуміти, куди насправді ходить застосунок, було б ніяк.
+ * Імена — libpq (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`,
+ * `PGSSLMODE`), тобто ті самі, що розуміють `psql`, `pg_dump` і керовані бази.
+ * `DB_POOL_SIZE` лишається своїм: поняття пулу в libpq немає.
+ */
+function readDatabaseConfig(): DatabaseConfig {
+  const url = readTrimmed("DATABASE_URL");
+  const connection = url ? parseDatabaseUrl(url) : {
+    host: Deno.env.get("PGHOST") || "localhost",
+    port: readPositiveInt("PGPORT", 5432),
+    database: Deno.env.get("PGDATABASE") || "altera",
+    username: Deno.env.get("PGUSER") || "altera",
+    password: Deno.env.get("PGPASSWORD") || "",
+    ssl: parseSslMode(Deno.env.get("PGSSLMODE")),
+  };
+
+  return { ...connection, poolSize: readPositiveInt("DB_POOL_SIZE", 10) };
 }
 
 function normalizeUserId(value: string | null | undefined): string | null {
@@ -139,14 +230,7 @@ function readBootstrapUser(): AuthConfig["bootstrapUser"] {
  */
 export function configFromEnv(): EnvDerivedConfig {
   return {
-    database: {
-      host: Deno.env.get("DB_HOST") || "localhost",
-      port: readPositiveInt("DB_PORT", 5432),
-      database: Deno.env.get("DB_NAME") || "altera",
-      username: Deno.env.get("DB_USERNAME") || "altera",
-      password: Deno.env.get("DB_PASSWORD") || "",
-      poolSize: readPositiveInt("DB_POOL_SIZE", 10),
-    },
+    database: readDatabaseConfig(),
     auth: {
       sessionTtlHours: readPositiveInt("AUTH_SESSION_TTL_HOURS", 24 * 30),
       cookie: {

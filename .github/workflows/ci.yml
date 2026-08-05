@@ -60,11 +60,11 @@ jobs:
       - name: Create CI .env
         run: |
           cat > .env <<'EOF'
-          DB_HOST=localhost
-          DB_PORT=5432
-          DB_NAME=altera
-          DB_USERNAME=altera
-          DB_PASSWORD=altera_ci
+          PGHOST=localhost
+          PGPORT=5432
+          PGDATABASE=altera
+          PGUSER=altera
+          PGPASSWORD=altera_ci
           PORT=3000
           JWT_SECRET=ci-only-secret
           AUTH_SESSION_TTL_HOURS=720
