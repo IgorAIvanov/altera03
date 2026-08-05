@@ -68,6 +68,22 @@
     "model:build": "deno task sql:registry && deno task sql:assemble && deno task sql:publish"
   },
 
+  // Розгортання на Deno Deploy. Конфігурація тут, а не в панелі: заданий у файлі
+  // блок перекриває панель цілком, тож розклад видно в дифі й він їде разом з
+  // кодом. Схема бази сюди не входить навмисно — publish лишається окремою дією
+  // (див. docs/deno-deploy.md, коли з'явиться): збірка не має права мовчки
+  // накотити DDL на живу базу.
+  "deploy": {
+    "install": "deno install",
+    "build": "deno task build:front",
+    "runtime": {
+      "type": "dynamic",
+      // Той самий вхід, що й локально. Порт не задається: Deno.serve під
+      // import.meta.main бере PORT або 3000, а слухає за нього платформа.
+      "entrypoint": "./app/server.ts"
+    }
+  },
+
   "workspace": ["./server", "./client", "./app", "./tools", "./create", "./skills"],
   "imports": {
     "@app/": "./app/",
