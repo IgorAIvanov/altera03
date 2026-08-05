@@ -16,8 +16,8 @@
     "build:front": "deno run -A --env-file=.env npm:vite build --configLoader native",
 
     "//sql:registry": "Версія інструмента вказана явно. Без піна `deno run jsr:@altera/tools/...` бере довільну версію з реєстру — саме так у застосунок приїхав tools@0.3.0 замість 0.3.3.",
-    "sql:registry": "deno run -A jsr:@altera/tools@^0.4.3/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
-    "sql:gen": "deno run -A jsr:@altera/tools@^0.4.3/generate-model-sql ./app --verbose",
+    "sql:registry": "deno run -A jsr:@altera/tools@^0.4.4/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
+    "sql:gen": "deno run -A jsr:@altera/tools@^0.4.4/generate-model-sql ./app --verbose",
     "//sql:assemble": "Через обгортку в scripts/, а не прямим викликом jsr:@altera/tools: SQL ядра мусить приїхати з тієї версії @altera/server, на якій працює цей застосунок. Прямий виклик брав версію, зашиту в сам інструмент, — і в базу їхала чужа схема.",
     "sql:assemble": "deno run -A ./scripts/sql-assemble.ts ./app --verbose",
     "sql:publish": "deno run -A --env-file ./scripts/sql-publish.ts ./app --verbose",
@@ -34,7 +34,7 @@
     "@client/": "jsr:/@altera/client@^0.6.1/",
     "@altera/server": "jsr:@altera/server@^0.6.1",
     "@altera/server/sql": "jsr:/@altera/server@^0.6.1/sql",
-    "@altera/tools/": "jsr:/@altera/tools@^0.4.3/",
+    "@altera/tools/": "jsr:/@altera/tools@^0.4.4/",
     "@app/": "./app/",
     "@shared/": "./app/shared/",
 

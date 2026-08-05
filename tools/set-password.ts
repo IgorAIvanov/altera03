@@ -49,8 +49,11 @@ assertDevEnvironmentOrExit("passwd");
 const password = providedPassword || generatePassword();
 const passwordHash = await hashPassword(password);
 
-const { host, port, database, username, password: dbPassword } = configFromEnv().database;
-const sql = postgres({ host, port, database, username, password: dbPassword });
+// ssl передається й тут, хоч запобіжник і пускає лише локальну базу: локальний
+// PostgreSQL з увімкненим TLS — рідкість, але не помилка, а третє місце
+// підключення не має відрізнятися від двох інших.
+const { host, port, database, username, password: dbPassword, ssl } = configFromEnv().database;
+const sql = postgres({ host, port, database, username, password: dbPassword, ssl: ssl ?? false });
 
 let exitCode = 0;
 try {

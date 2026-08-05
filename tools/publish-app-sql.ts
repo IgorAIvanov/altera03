@@ -14,10 +14,16 @@ interface SqlManifest {
   outputs?: Record<string, string>;
 }
 
-/** Підключення бере з оточення напряму — рантаймової конфігурації тут немає. */
+/**
+ * Підключення бере з оточення напряму — рантаймової конфігурації тут немає.
+ *
+ * `ssl` передається так само, як у рантаймі: публікація ходить у ту саму базу,
+ * і керована без TLS її просто не пустить. Дефолт (за хостом) рахує вже
+ * `configFromEnv`, тому тут лишається не загубити поле.
+ */
 function createSqlClient() {
-  const { host, port, database, username, password } = configFromEnv().database;
-  return postgres({ host, port, database, username, password });
+  const { host, port, database, username, password, ssl } = configFromEnv().database;
+  return postgres({ host, port, database, username, password, ssl: ssl ?? false });
 }
 
 async function loadManifest(appDir: string): Promise<SqlManifest> {
