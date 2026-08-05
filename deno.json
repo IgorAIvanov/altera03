@@ -60,6 +60,11 @@
     // (див. коментар у scripts/sql-assemble.ts).
     "sql:assemble": "deno run -A ./scripts/sql-assemble.ts ./app --verbose",
     "sql:publish": "deno run -A --env-file ./scripts/sql-publish.ts ./app --verbose",
+    // Те саме, але для НЕлокальної бази (продуктив, Deno Deploy). Окремим
+    // входом, а не прапорцем: запобіжник дев-інструментів стереже те, що
+    // smoke/api/passwd ПИШУТЬ тестові дані, і послаблювати його заради
+    // публікації схеми не можна. Вимагає --yes і друкує ціль — див. сам файл.
+    "sql:deploy": "deno run -A --env-file ./scripts/sql-deploy.ts ./app --verbose",
     // sql:gen тут немає навмисно: згенерований CRUD (app/<model>/db/_generated/
     // *.crud.gen.sql) — закомічений вихідник, а не продукт збірки. Перегенерація
     // робиться свідомо і по одній моделі — `deno task sql:gen catalog/bank`, —
