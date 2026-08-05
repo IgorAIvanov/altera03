@@ -52,8 +52,10 @@ async function readAppSkillsFromDisk(): Promise<{ files: Map<string, string>; un
       // Каталог без SKILL.md — скілом не є.
     }
 
+    // `bootstrap` не їде в пакет із тієї ж причини, що й `framework`, але з
+    // іншим змістом: скіл про створення застосунку в самому застосунку марний.
     if (audience === "app") await collect(join(SRC_DIR, entry.name), files);
-    else if (audience !== "framework") undeclared.push(entry.name);
+    else if (audience !== "framework" && audience !== "bootstrap") undeclared.push(entry.name);
   }
 
   return { files, undeclared };
@@ -66,7 +68,7 @@ Deno.test("skills.generated.ts збігається зі skills/src на дис�
     assertEquals(
       undeclared,
       [],
-      "скіл без metadata.audience у пакет не поїде — додай `audience: app` або `framework`",
+      "скіл без metadata.audience у пакет не поїде — додай `audience: app`, `framework` або `bootstrap`",
     );
   });
 

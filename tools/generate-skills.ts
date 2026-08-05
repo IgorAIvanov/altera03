@@ -9,7 +9,11 @@
 // Що саме їде, вирішує сам скіл — `metadata.audience` у frontmatter:
 //
 //   audience: app         — про написання застосунку на фреймворку → у пакет;
-//   audience: framework   — про внутрішнє життя цього репозиторію → лишається тут.
+//   audience: framework   — про внутрішнє життя цього репозиторію → лишається тут;
+//   audience: bootstrap   — про створення застосунку з нуля → лишається тут, але
+//                           з іншої причини: у згенерованому застосунку такий
+//                           скіл марний (застосунок уже є), а потрібен він у
+//                           порожній теці, куди його кладуть окремо, до scaffold.
 //
 // Умовчання fail-closed: скіл без оголошення НЕ їде і друкується рядком `⚠`.
 // Навпаки було б гірше — чужий або внутрішній скіл поїхав би в чужі застосунки
@@ -56,7 +60,7 @@ async function collect(dir: string, root: string, out: Map<string, string>) {
 export interface SkillsBuildResult {
   /** Імена скілів, що поїхали в пакет. */
   shipped: string[];
-  /** Імена скілів із `audience: framework` — лишаються в репозиторії. */
+  /** Імена скілів із `audience: framework` або `bootstrap` — лишаються тут. */
   kept: string[];
   /** Імена скілів без оголошеної аудиторії — не поїхали. */
   undeclared: string[];
@@ -91,8 +95,8 @@ export async function generateSkills(
     if (audience === "app") {
       shipped.push(name);
       await collect(join(options.srcDir, name), options.srcDir, files);
-    } else if (audience === "framework") {
-      kept.push(name);
+    } else if (audience === "framework" || audience === "bootstrap") {
+      kept.push(`${name} (${audience})`);
     } else {
       undeclared.push(name);
     }
@@ -109,7 +113,7 @@ export async function generateSkills(
 
   if (options.verbose) {
     for (const name of shipped) console.log(`· ${name}`);
-    for (const name of kept) console.log(`— ${name} (framework, лишається в репозиторії)`);
+    for (const name of kept) console.log(`— ${name} — лишається в репозиторії`);
   }
 
   return { shipped, kept, undeclared, files: keys.length };
@@ -131,8 +135,9 @@ async function main() {
   for (const name of result.undeclared) {
     console.warn(
       `⚠ ${name}: не оголошено metadata.audience — скіл НЕ поїде в @altera/skills. ` +
-        `Додай у frontmatter "metadata: { audience: app }" (про написання застосунку) ` +
-        `або "framework" (про внутрішнє життя репозиторію).`,
+        `Додай у frontmatter "metadata: { audience: app }" (про написання застосунку), ` +
+        `"framework" (про внутрішнє життя репозиторію) або "bootstrap" (про створення ` +
+        `застосунку з нуля).`,
     );
   }
 

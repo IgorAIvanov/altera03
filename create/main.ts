@@ -6,6 +6,7 @@
 // лишається тільки те, що належить застосунку — composition root клієнта й
 // сервера, оболонка (шапка, меню, стартова вкладка, вхід), вхід збірки Tailwind
 // і sql.json. Далі моделі додаються в app/<family>/<model>/.
+import { resolve } from "@std/path";
 import { TEMPLATE } from "./template.generated.ts";
 import { syncSkills } from "@altera/skills";
 
@@ -32,7 +33,11 @@ async function isEmptyDir(path: string): Promise<boolean> {
 
 export async function scaffold(options: ScaffoldOptions): Promise<string[]> {
   const { targetDir, force = false } = options;
-  const name = options.name ?? targetDir.split(/[\\/]/).filter(Boolean).pop() ?? "app";
+  // Ім'я виводиться з РОЗГОРНУТОГО шляху, а не з аргументу як він написаний.
+  // Інакше найприродніший виклик для порожньої теки — `create .` — падав би на
+  // перевірці імені: «.» під неї не підходить. А саме так застосунок і
+  // розгортають, коли каталог уже створили (зокрема скілом altera-new-app).
+  const name = options.name ?? resolve(targetDir).split(/[\\/]/).filter(Boolean).pop() ?? "app";
 
   if (!NAME_PATTERN.test(name)) {
     throw new Error(
