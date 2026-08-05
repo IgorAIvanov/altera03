@@ -17,6 +17,8 @@ deno task scaffold:template # вбудувати create/template/** у create/te
 deno task skills:build      # вбудувати прикладні скіли у skills/skills.generated.ts (після правки skills/src/**)
 deno task scaffold:verify   # згенерувати застосунок у тимчасовий каталог і перевірити типи й збірку
 deno task scaffold:verify:local  # те саме проти вихідників репо — ДО публікації пакетів
+deno task solution:export   # вивантажити прикладне рішення (app/) у переносимий пакет
+deno task solution:import -- <пакет.tar.gz> [каталог] [--check] [--force]  # завантажити його
 deno task check:deps   # перевірити напрямок залежностей (client/server не залежать від app)
 deno task smoke        # димові проби HTTP-межі (застосунок у процесі, без порту)
 deno task test:unit    # юніт-проби бібліотек без БД і HTTP (символіки штрих-кодів)
@@ -75,6 +77,12 @@ client/                     # ui-kit та клієнтський runtime — Б�
 
 server/                     # Danet backend-БІБЛІОТЕКА (Deno workspace), не залежить від app
   main.ts                         # public API бібліотеки: bootstrap + configFromEnv + типи (барель)
+  # Плюс два вузьких входи повз барель — `@altera/server/print` (формат шаблону
+  # друку) і `@altera/server/password` (хешування). Барель тягне bootstrap, а з
+  # ним контролери Danet із декораторами; у збірці ФРОНТЕНДУ це фатально, і
+  # фронтенд туди справді дістає: `_generated/model-registry.generated.ts`
+  # статично імпортує всі TS-команди, а реєстр тягне екран admin/user_group.
+  # `import type` безпечний завжди — стирається при збірці.
   sql/                            # SQL ядра + core-sql.ts (окремий експорт "@altera/server/sql")
     access/                       # користувачі, сесії, групи, права (див. нижче)
   config/
@@ -688,6 +696,33 @@ mkdir myerp && cd myerp && curl --create-dirs -o .claude/skills/altera-new-app/S
 
 Версія `@altera/skills` підіймається разом із `@altera/client`: скіли описують саме його
 поверхню. Публікувати теж у цьому порядку — `@altera/create` на них посилається.
+
+## Перенесення прикладного рішення
+
+**Рішення — це `app/` цілком, і більше нічого.** Усе інше в корені (`deno.json`,
+`vite.config.ts`, `tsconfig.json`, `scripts/`, `docker-compose.yml`) — каркас: його
+дає scaffold, і пакет рішення його не везе. Перетин рівно один — карта імпортів, тому
+манифест пакета несе перелік **фактично вжитих** специфікаторів; `deno.json` приймача
+інструмент не редагує, а друкує готові рядки.
+
+Звідси вимога, яку тепер стереже `check:deps`: **`app/` не виходить відносним імпортом
+за свої межі**, у фреймворк ходить лише через `@client/…` і `@altera/server`. У монорепо
+`../../../server/...` компілюється, у встановленому застосунку — ні: там фреймворк у
+`vendor/` і видний тільки через експорт-мапу. Друга перевірка звіряє кожен ужитий шлях
+`@altera/server/...` з `exports` пакета (для `@altera/client` така була й раніше).
+
+```bash
+deno task solution:export                       # → <ім'я>-solution.tar.gz
+deno task solution:import -- ./erp.tar.gz . --check
+deno task solution:import -- ./erp.tar.gz . --force
+```
+
+Завантаження заміняє `app/` **цілком** (непорожній каталог вимагає `--force`) —
+домовленість: змінене на приймачі рішення не зливається. Збірку й публікацію інструмент
+навмисно не запускає: `sql:publish` пише в базу, і вирішувати, у яку саме, не справа
+розпакування — наступні кроки він друкує. Деталі, перевірене виконанням і те, що свідомо
+відкладено (постачальна копія, настроювальні записи з бази, складений пакет) —
+[`docs/solution-transfer-plan.md`](docs/solution-transfer-plan.md).
 
 ## Розгортання
 

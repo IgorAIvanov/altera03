@@ -1,9 +1,12 @@
 {
   "name": "@altera/server",
-  "version": "0.6.1",
+  "version": "0.6.2",
+  "//exports": "Два входи повз головний барель, і обидва — з однієї причини: барель тягне за собою bootstrap, а з ним контролери Danet із декораторами. У ЗБІРЦІ ФРОНТЕНДУ це фатально. `./print` — формат шаблону друку для екрана редактора (там лише типи, тож стерлося б і так, але вхід чесніший за здогад). `./password` — хешування пароля, і воно потрібне ЗНАЧЕННЯМ: TS-команда `user.commands.ts` кличе hashPassword. Ця команда потрапляє у фронтенд-граф не сама — її статично імпортує app/_generated/model-registry.generated.ts, а реєстр тягне екран admin/user_group. Через барель це давало 23 помилки «Decorators are not valid here» у Rolldown.",
   "exports": {
     ".": "./main.ts",
-    "./sql": "./sql/core-sql.ts"
+    "./sql": "./sql/core-sql.ts",
+    "./print": "./modules/print/print-template.ts",
+    "./password": "./modules/auth/password-hash.ts"
   },
   "license": "MIT",
   "//publish": "Проби лишаються в репозиторії: у пакеті вони не потрібні, а @std/assert інакше стає залежністю споживача.",

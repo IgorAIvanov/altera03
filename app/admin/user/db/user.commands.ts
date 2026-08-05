@@ -1,7 +1,7 @@
-import type { ModelCommandContext } from "../../../../server/modules/model-runtime/model-runtime.types.ts";
+import type { ModelCommandContext } from "@altera/server";
 // Довжина береться з фреймворку, а не оголошується тут: інакше екран
 // адміністратора і перший запуск міряли б пароль різними лінійками.
-import { hashPassword, MIN_PASSWORD_LENGTH } from "../../../../server/modules/auth/password-hash.ts";
+import { hashPassword, MIN_PASSWORD_LENGTH } from "@altera/server/password";
 
 function fail(message: string) {
   return {
@@ -19,8 +19,20 @@ function fail(message: string) {
  * не приймає взагалі, тому без цієї команди заведений в UI користувач увійти
  * не може, доки хтось не виконає `deno task passwd`.
  *
- * Імпорт іде прямо з модуля, а не з барелю `@altera/server`: барель тягне за
- * собою весь граф Danet заради однієї функції.
+ * `hashPassword` береться з `@altera/server/password`, а НЕ з барелю
+ * `@altera/server` — і це не косметика. Цей файл потрапляє у збірку фронтенду:
+ * його статично імпортує `app/_generated/model-registry.generated.ts`, а реєстр
+ * тягне екран `admin/user_group`. Барель же тягне `bootstrap`, а з ним
+ * контролери Danet із декораторами — і Rolldown валить збірку двадцятьма трьома
+ * «Decorators are not valid here».
+ *
+ * Раніше тут стояв відносний шлях у модуль сервера. Він рятував від того самого,
+ * але працював лише в цьому репозиторії: у встановленому застосунку фреймворк
+ * лежить у vendor/ і видний тільки через експорт-мапу пакета. Окремий вхід
+ * закриває обидві біди відразу.
+ *
+ * `ModelCommandContext` можна брати з барелю: `import type` стирається при
+ * збірці, тож у граф ніщо не потрапляє.
  */
 export default async function setPassword(
   payload: Record<string, unknown>,

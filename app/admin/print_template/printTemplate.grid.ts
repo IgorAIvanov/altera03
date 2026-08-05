@@ -13,7 +13,7 @@
 import type {
   PrintTemplateTableCell,
   PrintTemplateTableRow,
-} from "../../../server/modules/print/print-template.ts";
+} from "@altera/server/print";
 
 /** Матриця клітинок: у кожній — посилання на комірку або порожньо. */
 export type CellGrid = Array<Array<PrintTemplateTableCell | null>>;

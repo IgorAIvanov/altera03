@@ -1,4 +1,4 @@
-import type { ModelCommandContext } from "../../../../server/modules/model-runtime/model-runtime.types.ts";
+import type { ModelCommandContext } from "@altera/server";
 
 /**
  * Тестова TS-команда моделі bank.

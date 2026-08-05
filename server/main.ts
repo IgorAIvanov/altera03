@@ -58,6 +58,12 @@ export type {
 // Спільний конверт відповіді — один на команди моделей і на авторизацію.
 export type { Envelope, EnvelopeData } from "./common/response.ts";
 
+// Контекст TS-команди моделі: те, що хендлер отримує другим аргументом (зокрема
+// `db` — SQL-контекст). Без цього експорту нестандартна команда не виражається у
+// ВСТАНОВЛЕНОМУ застосунку взагалі: у монорепо тип брали відносним імпортом у
+// server/, а туди застосунок дотягується лише тут, у репозиторії. Шаблон scaffold
+// жодної TS-команди не містив, тому дірка не виявлялася ніде.
+export type { ModelCommandContext } from "./modules/model-runtime/model-runtime.types.ts";
 export type { GeneratedTsCommandBinding } from "./modules/model-runtime/model-registry.ts";
 export type { AgentModelRoute } from "./modules/agent/agent-routes.ts";
 export type { ViewManifestEntry } from "./modules/model-view/model-view.registry.ts";

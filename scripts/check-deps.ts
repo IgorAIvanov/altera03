@@ -162,7 +162,62 @@ async function checkClientExportsCoverUsage() {
   }
 }
 
+/**
+ * Кожен шлях `@altera/server/...`, яким користується застосунок, оголошений в
+ * `exports` пакета сервера.
+ *
+ * Те саме сліпе пятно, що й у клієнта, лише з іншого боку: у монорепо
+ * `@altera/server` резолвиться як член воркспейсу, тож будь-який підшлях
+ * «працює». У встановленому застосунку він іде через експорт-мапу і падає.
+ */
+async function checkServerExportsCoverUsage() {
+  const manifest = JSON.parse(
+    (await Deno.readTextFile("server/deno.json")).replace(/^\s*\/\/.*$/gm, ""),
+  ) as { exports: Record<string, string> };
+  const declared = new Set(Object.keys(manifest.exports));
+  const seen = new Map<string, string>();
+
+  for (const root of ["app", "create/template"]) {
+    for await (const file of walk(root, [".ts"])) {
+      const lines = (await Deno.readTextFile(file)).split("\n");
+      for (const line of lines) {
+        const specifier = importSpecifier(line);
+        if (specifier !== "@altera/server" && !specifier?.startsWith("@altera/server/")) continue;
+        const exportPath = specifier === "@altera/server" ? "." : "." + specifier.slice("@altera/server".length);
+        if (!declared.has(exportPath) && !seen.has(exportPath)) seen.set(exportPath, file);
+      }
+    }
+  }
+
+  for (const [exportPath, file] of seen) {
+    violations.push(
+      `${file}: ${exportPath} не оголошено в exports пакета @altera/server — ` +
+        `у монорепо працює через воркспейс, у встановленому застосунку впаде`,
+    );
+  }
+}
+
+/**
+ * Застосунок не виходить відносним імпортом за межі `app/`.
+ *
+ * Це не питання чистоти, а умова переносимості: `app/` — і є прикладне рішення,
+ * а `deno task solution:export` пакує рівно цей каталог. Файл, що тягне
+ * `../../../server/...`, у монорепо компілюється, а на приймачі не існує:
+ * там фреймворк лежить у vendor/ і видний лише через експорт-мапу пакета.
+ *
+ * Знайшлося саме так: сім таких імпортів у трьох файлах (редактор шаблонів
+ * друку і дві TS-команди), і `ModelCommandContext` при цьому не був
+ * експортований із `@altera/server` взагалі — тобто жодна TS-команда моделі не
+ * була виразна у встановленому застосунку. Шаблон scaffold TS-команд не мав,
+ * тому дірку не показував ніхто.
+ */
+async function checkAppIsPortable() {
+  await checkStaysInsidePackage("app");
+}
+
 await checkClientExportsCoverUsage();
+await checkServerExportsCoverUsage();
+await checkAppIsPortable();
 
 // Винятків більше немає: обидва composition root живуть у застосунку
 // (app/server.ts і app/main.ts), тож бібліотеки про застосунок не знають узагалі.
@@ -198,5 +253,6 @@ if (violations.length > 0) {
 
 console.log(
   "✅ Межі пакетів дотримані: client/server не залежать від app, не виходять за свої каталоги,\n" +
-    "   CSS у них — плоский актив без директив збірки.",
+    "   CSS у них — плоский актив без директив збірки, а app/ переносимий —\n" +
+    "   у фреймворк ходить лише через експорт-мапи @altera/client і @altera/server.",
 );

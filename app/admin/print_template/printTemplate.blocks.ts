@@ -11,7 +11,7 @@ import type {
   PrintTemplateBlockTextOptions,
   PrintTemplateBlockType,
   PrintTemplateTableColumn,
-} from "../../../server/modules/print/print-template.ts";
+} from "@altera/server/print";
 import { createCell, createRow } from "./printTemplate.grid.ts";
 
 export const BLOCK_TYPES: PrintTemplateBlockType[] = [

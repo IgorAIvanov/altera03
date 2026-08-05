@@ -46,6 +46,12 @@
     // реєстрі немає, звичайний прогін падає на нерозв'язному пінові, не дійшовши
     // до збірки. А публікація на jsr незворотна — знайти дефект після неї пізно.
     "scaffold:verify:local": "deno run -A ./tools/verify-scaffold.ts ./create/main.ts --local",
+    // Перенесення прикладного рішення: `app/` цілком + манифест пакета. Каркас
+    // (deno.json, vite.config.ts, scripts/, tsconfig.json) не їде — його дає
+    // scaffold. Після завантаження — штатні sql:registry → sql:assemble →
+    // sql:publish → build:front, які інструмент навмисно не запускає сам.
+    "solution:export": "deno run -A ./tools/export-solution.ts ./app --verbose",
+    "solution:import": "deno run -A ./tools/import-solution.ts",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки

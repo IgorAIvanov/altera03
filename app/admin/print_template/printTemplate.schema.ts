@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { SortDirSchema } from "@client/shared/schema.ts";
-import type { PrintTemplateBlock } from "../../../server/modules/print/print-template.ts";
+import type { PrintTemplateBlock } from "@altera/server/print";
 
 // ── 1. Item — реквізити шаблону + сам блочний документ ────────────────────────
 

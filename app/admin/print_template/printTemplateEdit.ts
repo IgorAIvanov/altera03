@@ -43,7 +43,7 @@ import type {
   PrintTemplateTableCell,
   PrintTemplateTableRow,
   PrintTemplateTableSectionName,
-} from "../../../server/modules/print/print-template.ts";
+} from "@altera/server/print";
 
 export const tagName = "print-template-edit";
 
