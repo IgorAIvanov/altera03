@@ -1,13 +1,38 @@
-import { html, type TemplateResult } from "lit";
-import { customElement, query } from "lit/decorators.js";
+import { html, nothing, type TemplateResult } from "lit";
+import { customElement, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
+import { apiFetch, readEnvelope } from "@client/data/api.ts";
 
 export const tagName = "home-tab";
+
+/** Стан підтримки, як його віддає `GET /api/solution/status`. */
+interface SolutionState {
+  solution: { name: string; version: string; installedAt: string; files: number } | null;
+  /** `null` — манифесту поставки немає, тобто невідомо. */
+  supported: boolean | null;
+  divergent: number;
+}
 
 /** Стартова вкладка. Заміни вміст на щось корисне для свого застосунку. */
 @customElement(tagName)
 export class HomeTab extends GlobalStyledLitElement {
-  @query("dialog") private dialogEl!: HTMLDialogElement;
+  @state() private solutionState: SolutionState | null = null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    void this.loadState();
+  }
+
+  private async loadState(): Promise<void> {
+    try {
+      const response = await apiFetch("/api/solution/status");
+      const envelope = await readEnvelope<SolutionState>(response);
+      this.solutionState = envelope.data?.item ?? null;
+    } catch {
+      // Старіший сервер такого маршруту не має — просто нічого не показуємо.
+      this.solutionState = null;
+    }
+  }
 
   override render(): TemplateResult {
     return html`
@@ -20,28 +45,39 @@ export class HomeTab extends GlobalStyledLitElement {
           </p>
         </div>
 
-        <!-- Заглушка під майбутню установку готового прикладного рішення —
-             моделі, SQL і зібрані чанки в'ю одним пакетом. Поки кнопка лише
-             показує, що така дія передбачена. -->
-        <button class="btn btn-primary" @click=${() => this.dialogEl.showModal()}>
-          Завантажити прикладне рішення
-        </button>
+        ${this.renderSolution()}
+      </div>
+    `;
+  }
 
-        <!-- m-auto тут не косметика: preflight Tailwind обнуляє margin усім
-             елементам, а нативне центрування модального dialog тримається саме
-             на margin: auto з UA-стилів. Без цього вікно прилипає до лівого
-             верхнього кута. (Зворотних лапок у коментарі всередині html-шаблона
-             бути не може — вони обривають сам шаблонний рядок.) -->
-        <dialog class="m-auto p-6 rounded border max-w-sm">
-          <h2 class="text-lg font-medium mb-2">Завантаження прикладного рішення</h2>
-          <p class="opacity-80 mb-4">
-            Функція в стадії реалізації. Тут відкриється вибір пакета рішення —
-            моделі, SQL і форми одним архівом.
-          </p>
-          <form method="dialog" class="flex justify-end">
-            <button class="btn">Зрозуміло</button>
-          </form>
-        </dialog>
+  /**
+   * Стан прикладного рішення — показ, і тільки.
+   *
+   * Кнопки установки тут немає навмисно: оновлює окремий інструмент
+   * (`deno task solution:update`), бо той, кого заміняють, не має заміняти себе
+   * сам — а серверу тоді не потрібні ані `--allow-write`, ані `--allow-run`.
+   */
+  private renderSolution(): TemplateResult | typeof nothing {
+    const state = this.solutionState;
+    if (!state?.solution) return nothing;
+
+    const { name, version } = state.solution;
+
+    return html`
+      <div class="flex flex-col gap-1">
+        <div class="font-medium">Прикладне рішення: ${name}@${version}</div>
+        ${state.supported
+          ? html`<div class="opacity-70">На підтримці — рішення не змінювали після поставки.</div>`
+          : html`
+            <div class="opacity-70">
+              Знято з підтримки: ${state.divergent} файл(ів) розходяться з поставкою.
+              Нова поставка не замінить їх автоматично.
+            </div>
+          `}
+        <div class="opacity-60 text-sm">
+          Стан поіменно — <code>deno task solution:status</code>; оновлення —
+          <code>deno task solution:update -- &lt;пакет.tar.gz&gt;</code>
+        </div>
       </div>
     `;
   }

@@ -10,10 +10,11 @@
  * Не запускає свідомо: `sql:publish` пише в базу, а вирішувати, у яку саме й
  * коли, — не справа розпакування. Наступні кроки друкуються в кінці.
  *
- * **Прийнята домовленість: змінене на приймачі рішення не розглядається.**
- * Тому `app/` заміняється цілком, а не зливається. Непорожній каталог — це
- * помилка, доки не сказано `--force`: мовчазна заміна чужої роботи гірша за
- * зайве питання.
+ * **Що станеться з наявним `app/`, вирішує стан підтримки** (див.
+ * `solution-status.ts`). Дерево збігається з поставкою — заміна автоматична,
+ * без зайвих питань: втрачати нема чого. Розходиться — `app/` не чіпається
+ * взагалі, пакет лягає поруч у `app.incoming/`, і друкується, чого торкнулися
+ * обидві сторони. `--force` затирає правки свідомо.
  *
  * `deno.json` приймача інструмент не редагує. Бракуючі залежності він
  * ПЕРЕЛІЧУЄ готовими рядками — карта імпортів належить каркасу, і правити її
@@ -28,10 +29,194 @@ import { UntarStream } from "@std/tar";
 
 import {
   frameworkPin,
+  type InstalledSolution,
   SOLUTION_FORMAT_VERSION,
+  SOLUTION_MANIFEST_FILE,
   type SolutionManifest,
   stripJsonComments,
 } from "./export-solution.ts";
+import { readSolutionStatus, type SolutionStatus } from "./solution-status.ts";
+
+/** Шляхи в пакеті, які не записуються ніколи (див. коментар у циклі запису). */
+const SKIPPED_PATHS = new Set(["deno.json", "deno.jsonc", "deno.lock"]);
+
+/**
+ * Що робити з наявним `app/`.
+ *
+ * Головна відмінність від попередньої поведінки: **на підтримці заміна
+ * автоматична**. Раніше будь-який непорожній каталог вимагав `--force` — тобто
+ * той, хто нічого не міняв, мусив щоразу підтверджувати «затри мої правки»,
+ * яких у нього немає. Тепер підтвердження потрібне рівно там, де є що втрачати.
+ */
+export type ImportMode =
+  /** Порожній `app/` — перша установка. */
+  | "install"
+  /** Дерево збігається з поставкою (або сказано `--force`) — заміна цілком. */
+  | "replace"
+  /** Знято з підтримки — розкласти поруч, `app/` не чіпати. */
+  | "aside"
+  /** Манифесту немає: звірити нема з чим, тож рішення за людиною. */
+  | "unknown";
+
+function resolveMode(hasExisting: boolean, status: SolutionStatus, force: boolean): ImportMode {
+  if (!hasExisting) return "install";
+  if (force) return "replace";
+  if (!status.installed) return "unknown";
+  return status.supported ? "replace" : "aside";
+}
+
+/** Що змінив постачальник і де це перетинається з правками приймача. */
+interface UpdatePlan {
+  supplierChanged: string[];
+  supplierAdded: string[];
+  supplierRemoved: string[];
+  /** Файли, яких торкнулися ОБИДВІ сторони — саме тут і потрібна людина. */
+  conflicts: string[];
+}
+
+function describeUpdate(status: SolutionStatus, incoming: SolutionManifest): UpdatePlan {
+  const installed = status.installed;
+  if (!installed) {
+    return { supplierChanged: [], supplierAdded: [], supplierRemoved: [], conflicts: [] };
+  }
+
+  const before = new Map(installed.files.map((entry) => [entry.path, entry.sha256]));
+  const after = new Map(incoming.files.map((entry) => [entry.path, entry.sha256]));
+
+  const supplierChanged: string[] = [];
+  const supplierAdded: string[] = [];
+  for (const [path, hash] of after) {
+    const previous = before.get(path);
+    if (previous === undefined) supplierAdded.push(path);
+    else if (previous !== hash) supplierChanged.push(path);
+  }
+  const supplierRemoved = [...before.keys()].filter((path) => !after.has(path));
+
+  const touchedBySupplier = new Set([...supplierChanged, ...supplierAdded, ...supplierRemoved]);
+  const touchedLocally = [...status.changed, ...status.added, ...status.removed];
+  const conflicts = touchedLocally.filter((path) => touchedBySupplier.has(path));
+
+  return {
+    supplierChanged: supplierChanged.sort(),
+    supplierAdded: supplierAdded.sort(),
+    supplierRemoved: supplierRemoved.sort(),
+    conflicts: conflicts.sort(),
+  };
+}
+
+function listSample(title: string, paths: string[]) {
+  if (!paths.length) return;
+  console.log(`  ${title} (${paths.length}):`);
+  for (const path of paths.slice(0, 10)) console.log(`    ${path}`);
+  if (paths.length > 10) console.log(`    … ще ${paths.length - 10}`);
+}
+
+function reportPlan(
+  mode: ImportMode,
+  plan: UpdatePlan,
+  incoming: SolutionManifest,
+  status: SolutionStatus,
+  errors: string[],
+) {
+  console.log(`\nБуде записано: ${incoming.files.length} файлів`);
+
+  if (status.installed) {
+    console.log(`Установлено зараз: ${status.installed.name}@${status.installed.version}`);
+    console.log(
+      status.supported
+        ? "Стан підтримки: НА ПІДТРИМЦІ — рішення не змінювали"
+        : `Стан підтримки: ЗНЯТО З ПІДТРИМКИ — змінено ${status.changed.length}, ` +
+          `додано ${status.added.length}, видалено ${status.removed.length}`,
+    );
+  }
+
+  listSample("постачальник змінив", plan.supplierChanged);
+  listSample("постачальник додав", plan.supplierAdded);
+  listSample("постачальник прибрав", plan.supplierRemoved);
+
+  if (plan.conflicts.length) {
+    console.log("\n⚠ Торкнулися обидві сторони — саме це доведеться зводити вручну:");
+    for (const path of plan.conflicts.slice(0, 20)) console.log(`    ${path}`);
+    if (plan.conflicts.length > 20) console.log(`    … ще ${plan.conflicts.length - 20}`);
+  }
+
+  const verdict = {
+    install: "\n✅ Перешкод немає: app/ порожній, буде перша установка.",
+    replace: "\n✅ Перешкод немає: рішення не змінювали, заміна відбудеться автоматично.",
+    aside: "\n⚠ Рішення знято з підтримки — пакет ляже в app.incoming/, app/ не зміниться.\n" +
+      "   `--force` замінить app/ цілком і затре ваші правки.",
+    unknown: "\n⚠ Манифесту поставки немає — звірити нема з чим. Потрібен --force.",
+  }[mode];
+
+  console.log(errors.length ? `${verdict}\n   Але версії фреймворку розходяться (див. вище).` : verdict);
+}
+
+/** Розкладає файли пакета в каталог. Спільне для `app/` і `app.incoming/`. */
+async function writeFiles(
+  targetDir: string,
+  manifest: SolutionManifest,
+  files: Map<string, Uint8Array>,
+  verbose: boolean,
+) {
+  for (const entry of manifest.files) {
+    // Пакети, зібрані до виправлення (tools ≤ 0.5.0), несуть `app/deno.json` —
+    // конфіг члена воркспейсу з репозиторію фреймворку. У встановленому
+    // застосунку він перекриває кореневий конфіг (Deno шукає найближчий угору
+    // від модуля), а карти імпортів у ньому немає: збірка образу падає з
+    // `Import "@altera/server" not a dependency`. Не записуємо його ніколи —
+    // і кажемо про це вголос, бо це розходження з манифестом.
+    if (SKIPPED_PATHS.has(entry.path)) {
+      console.log(`   ⚠ пропущено ${entry.path} — артефакт монорепо фреймворку, у застосунку шкідливий`);
+      continue;
+    }
+
+    const target = join(targetDir, entry.path);
+    await Deno.mkdir(dirname(target), { recursive: true });
+    await Deno.writeFile(target, files.get(entry.path)!);
+    if (verbose) console.log(`   + ${entry.path}`);
+  }
+}
+
+/**
+ * Манифест поставки — ОСТАННІМ, після всіх файлів: якщо запис обірвався на
+ * середині, краще лишитися без нього (стан «невідомий», автооновлення не
+ * робиться), ніж із ним і збрехати, що дерево відповідає поставці.
+ *
+ * Пишеться і в `app.incoming/` теж: тоді розкладений поруч пакет — повноцінна
+ * установка, і людина може просто перейменувати каталог, не втрачаючи ознаки
+ * підтримки.
+ */
+async function writeInstalledManifest(
+  targetDir: string,
+  manifest: SolutionManifest,
+  config: Record<string, unknown>,
+) {
+  const installed: InstalledSolution = {
+    ...manifest,
+    installedAt: new Date().toISOString(),
+    installedFramework: receiverFrameworkPins(config),
+  };
+  await Deno.writeTextFile(
+    join(targetDir, SOLUTION_MANIFEST_FILE),
+    JSON.stringify(installed, null, 2) + "\n",
+  );
+}
+
+/**
+ * Піни фреймворку ПРИЙМАЧА — ними будуть зібрані `dist/` і `_sqlpackage/`.
+ *
+ * Не ті, що в манифесті пакета: там записано, під чим рішення збирали в
+ * джерелі. Для виявлення застарілих артефактів потрібні саме тутешні.
+ */
+function receiverFrameworkPins(config: Record<string, unknown>): Record<string, string> {
+  const imports = (config.imports ?? {}) as Record<string, string>;
+  const pins: Record<string, string> = {};
+  for (const pkg of ["@altera/client", "@altera/server", "@altera/tools"]) {
+    const pin = frameworkPin(imports, pkg);
+    if (pin) pins[pkg] = pin;
+  }
+  return pins;
+}
 
 interface UnpackedSolution {
   manifest: SolutionManifest;
@@ -188,6 +373,12 @@ export interface ImportResult {
   manifest: SolutionManifest;
   /** Скільки файлів записано; `0` для `--check`. */
   written: number;
+  /**
+   * Що саме зроблено. Потрібне тому, хто йде далі по ланцюжку: після `aside`
+   * каталог `app/` не змінився, тож перебудовувати реєстр і публікувати схему
+   * ні до чого — а `written` там ненульовий, бо файли записані поруч.
+   */
+  mode: ImportMode;
 }
 
 export async function importSolution(
@@ -238,22 +429,17 @@ export async function importSolution(
   }
 
   const existing = await listExistingFiles(appDir);
+  const status = await readSolutionStatus(targetRoot);
+  const mode = resolveMode(existing.length > 0, status, options.force === true);
+  const plan = describeUpdate(status, manifest);
 
   // `--check` доповідає ПЕРШИМ, до будь-якої відмови: він для того й потрібен,
   // щоб побачити наслідки, ще нічого не вирішивши. Відмова замість плану
   // залишала б без відповіді єдине питання, заради якого його й запускають —
-  // «а що буде?», — і саме в тому випадку, коли app/ непорожній, тобто завжди
-  // при оновленні рішення.
+  // «а що буде?».
   if (options.check) {
-    const needsForce = errors.length > 0 || existing.length > 0;
-    console.log(`\nБуде записано: ${manifest.files.length} файлів`);
-    if (existing.length) console.log(`Буде замінено: ${existing.length} наявних записів у app/`);
-    console.log(
-      needsForce
-        ? "\n⚠ Для запису потрібен --force (див. причини вище). Нічого не записано."
-        : "\n✅ Перешкод немає. Нічого не записано.",
-    );
-    return { manifest, written: 0 };
+    reportPlan(mode, plan, manifest, status, errors);
+    return { manifest, written: 0, mode };
   }
 
   if (errors.length && !options.force) {
@@ -261,10 +447,25 @@ export async function importSolution(
   }
   if (errors.length) console.error("   → --force: продовжую попри це.");
 
-  if (existing.length && !options.force) {
+  // Знято з підтримки — рішення на приймачі змінювали, і затирати ці правки
+  // мовчки не можна. Пакет розкладається ПОРУЧ, а `app/` не чіпається взагалі.
+  if (mode === "aside") {
+    const incomingDir = `${appDir}.incoming`;
+    await Deno.remove(incomingDir, { recursive: true }).catch(() => {});
+    await writeFiles(incomingDir, manifest, files, options.verbose === true);
+    await writeInstalledManifest(incomingDir, manifest, config);
+
+    reportPlan(mode, plan, manifest, status, errors);
+    console.log(`\n✅ Пакет розкладено в ${incomingDir}; app/ не змінено.`);
+    console.log("   Порівняйте й перенесіть потрібне; `--force` затирає ваші правки свідомо.");
+    return { manifest, written: manifest.files.length, mode };
+  }
+
+  if (mode === "unknown") {
     throw new Error(
-      `${appDir} не порожній (${existing.length} записів). Прийнято домовленість, що змінене на ` +
-        `приймачі рішення не зливається, тому каталог заміняється цілком — повтори з --force.`,
+      `${appDir} не порожній (${existing.length} записів), а ${SOLUTION_MANIFEST_FILE} немає — ` +
+        `невідомо, чи його змінювали. Звірити нема з чим, тож автоматична заміна не робиться: ` +
+        `повтори з --force, якщо вміст можна затерти.`,
     );
   }
 
@@ -272,12 +473,9 @@ export async function importSolution(
   // рішення, лишилися б у дереві й далі потрапляли б у збірку.
   if (existing.length) await Deno.remove(appDir, { recursive: true });
 
-  for (const entry of manifest.files) {
-    const target = join(appDir, entry.path);
-    await Deno.mkdir(dirname(target), { recursive: true });
-    await Deno.writeFile(target, files.get(entry.path)!);
-    if (options.verbose) console.log(`   + app/${entry.path}`);
-  }
+  await writeFiles(appDir, manifest, files, options.verbose === true);
+
+  await writeInstalledManifest(appDir, manifest, config);
 
   console.log(`\n✅ Записано ${manifest.files.length} файлів у ${appDir}`);
   console.log("\nДалі — штатний ланцюжок:");
@@ -287,7 +485,7 @@ export async function importSolution(
   console.log("   deno task sql:publish");
   console.log("   deno task build:front");
 
-  return { manifest, written: manifest.files.length };
+  return { manifest, written: manifest.files.length, mode };
 }
 
 if (import.meta.main) {

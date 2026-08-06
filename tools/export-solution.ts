@@ -28,6 +28,17 @@ import { TarStream, type TarStreamInput } from "@std/tar";
 export const SOLUTION_FORMAT_VERSION = 1;
 
 /**
+ * Манифест поставки на диску встановленого застосунку — «постачальна копія».
+ *
+ * Лежить усередині `app/`, тобто там само, де рішення, яке описує: так він
+ * переживає розкладку, у якій змонтований лише цей каталог. З нього рахується
+ * ознака підтримки: збіглися суми — рішення не чіпали, розійшлися — чіпали.
+ * Оголошувати цей стан руками не треба, тому його не можна ані забути, ані
+ * збрехати.
+ */
+export const SOLUTION_MANIFEST_FILE = ".solution.json";
+
+/**
  * Пакети фреймворку, чиї піни пакет мусить назвати.
  *
  * `@altera/skills` сюди не входить: він не імпортується кодом узагалі —
@@ -62,6 +73,28 @@ export function frameworkPin(imports: Record<string, string>, pkg: string): stri
  */
 const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".vite", "_sqlpackage"]);
 
+/**
+ * Файли в корені `app/`, які належать РЕПОЗИТОРІЮ фреймворку, а не рішенню.
+ *
+ * `app/deno.json` — конфіг члена воркспейсу: у монорепо він потрібен (без нього
+ * застосунок не член воркспейсу), а у встановленому застосунку його немає й
+ * бути не повинно — шаблон scaffold його свідомо не кладе. Приїхавши в пакеті,
+ * він **перекриває кореневий конфіг**: Deno шукає найближчий угору від модуля,
+ * знаходить цей — а карти імпортів у ньому немає. Наслідок —
+ * `Import "@altera/server" not a dependency` рівно там, де конфіг резолвиться
+ * від точки входу (`deno install --entrypoint`, тобто збірка образу), і мовчазна
+ * робота там, де від CWD. Знайшлося складанням контейнера.
+ */
+const EXCLUDED_ROOT_FILES = new Set([
+  "deno.json",
+  "deno.jsonc",
+  "deno.lock",
+  // Манифест ПОСТАВКИ цієї установки (див. SOLUTION_MANIFEST_FILE). Він описує
+  // те, що сюди завантажили, тож у наступному пакеті означав би позаминулу
+  // поставку — і звірка підтримки на приймачі порівнювала б із чужим станом.
+  SOLUTION_MANIFEST_FILE,
+]);
+
 export interface SolutionFileEntry {
   /** Шлях відносно каталогу застосунку, завжди через `/`. */
   path: string;
@@ -81,9 +114,25 @@ export interface SolutionManifest {
   files: SolutionFileEntry[];
 }
 
+/** Манифест поставки, як він лежить у встановленому застосунку. */
+export interface InstalledSolution extends SolutionManifest {
+  /** Коли пакет розклали в цю установку. */
+  installedAt: string;
+  /**
+   * Піни фреймворку ПРИЙМАЧА на момент установки — не ті, що в `framework`.
+   *
+   * Саме ними зібрані `dist/` і `_sqlpackage/`. Розбіжність із поточними
+   * пінами означає, що артефакти на диску старші за фреймворк, який їх
+   * обслуговує: сервер нової версії, а бандл і схема від попередньої. Видно це
+   * інакше ніяк — обидва каталоги продукти збірки, і жоден із них не
+   * підписаний версією.
+   */
+  installedFramework: Record<string, string>;
+}
+
 // ── Обхід дерева ─────────────────────────────────────────────────────────────
 
-async function* walkFiles(dir: string, base: string): AsyncGenerator<string> {
+export async function* walkSolutionFiles(dir: string, base: string): AsyncGenerator<string> {
   const entries: Deno.DirEntry[] = [];
   for await (const entry of Deno.readDir(dir)) entries.push(entry);
   // Детермінований порядок: пакет, зібраний двічі з того самого дерева, має
@@ -94,14 +143,18 @@ async function* walkFiles(dir: string, base: string): AsyncGenerator<string> {
     const path = join(dir, entry.name);
     if (entry.isDirectory) {
       if (EXCLUDED_DIRS.has(entry.name)) continue;
-      yield* walkFiles(path, base);
+      yield* walkSolutionFiles(path, base);
     } else if (entry.isFile) {
-      yield relative(base, path).replaceAll(SEPARATOR, "/");
+      const relativePath = relative(base, path).replaceAll(SEPARATOR, "/");
+      // Тільки в КОРЕНІ app/: `db/deno.json` (якби модель таке завела) — справа
+      // рішення, а перекриває конфіг лише той, що лежить над точкою входу.
+      if (dir === base && EXCLUDED_ROOT_FILES.has(entry.name)) continue;
+      yield relativePath;
     }
   }
 }
 
-async function sha256(bytes: Uint8Array): Promise<string> {
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -205,7 +258,7 @@ export function resolveImportKey(specifier: string, imports: Record<string, stri
 async function collectDependencies(appDir: string, imports: Record<string, string>) {
   const used = new Set<string>();
 
-  for await (const relPath of walkFiles(appDir, appDir)) {
+  for await (const relPath of walkSolutionFiles(appDir, appDir)) {
     if (!relPath.endsWith(".ts") && !relPath.endsWith(".tsx")) continue;
     const text = await Deno.readTextFile(join(appDir, relPath));
     for (const line of text.split("\n")) {
@@ -290,10 +343,10 @@ export async function exportSolution(appDirArg: string, options: ExportOptions =
   const files: SolutionFileEntry[] = [];
   const contents = new Map<string, Uint8Array>();
 
-  for await (const relPath of walkFiles(appDir, appDir)) {
+  for await (const relPath of walkSolutionFiles(appDir, appDir)) {
     const bytes = await Deno.readFile(join(appDir, relPath));
     contents.set(relPath, bytes);
-    files.push({ path: relPath, size: bytes.byteLength, sha256: await sha256(bytes) });
+    files.push({ path: relPath, size: bytes.byteLength, sha256: await sha256Hex(bytes) });
   }
 
   if (files.length === 0) {

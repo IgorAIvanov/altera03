@@ -478,6 +478,18 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertEquals(removed.body.ok, true);
       }
     });
+
+    // Модуль рішення лишився тільки на читання: установку робить окремий
+    // інструмент. Перевіряємо, що маршрут відповідає й чесно каже «невідомо»
+    // там, де манифесту поставки немає, — а не мовчазне «на підтримці».
+    await t.step("стан рішення: маршрут читається без особливих прав", async () => {
+      const response = await client.json<Envelope>("/api/solution/status");
+
+      assertEquals(response.body.ok, true);
+      const state = response.body.data.item as { supported: boolean | null };
+      // У цьому репозиторії app/ не встановлювали пакетом, тож манифесту немає.
+      assertEquals(state.supported, null);
+    });
   } finally {
     await client.close();
   }

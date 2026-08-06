@@ -10,6 +10,96 @@ services:
       - "${PGPORT}:5432"
     volumes:
       - dbdata:/var/lib/postgresql/data
+    # Потрібен профілю `prod`: без нього `depends_on` лише впорядковує запуск,
+    # а не чекає готовності, і публікація схеми йде в базу, яка ще піднімається.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ── Продуктивний запуск у контейнері ───────────────────────────────────────
+  # Усі три служби під профілем `prod`, тому `deno task startdb` (звичайний
+  # `docker compose up -d`) їх не чіпає: у розробці потрібна лише база.
+  #
+  #   docker compose --profile prod build
+  #   docker compose --profile prod run --rm update ./erp-1.2.0.tar.gz
+  #   docker compose --profile prod up -d app
+  #
+  # Образ несе ФРЕЙМВОРК, рішення живе на томі `./app` (і його збірка — на
+  # `./dist`). Тому оновити рішення можна не чіпаючи образ, а оновити фреймворк —
+  # не чіпаючи рішення. Ціна: **після заміни образу обов'язкова перезбірка**,
+  # інакше на томі лишаться dist/ і _sqlpackage/ від попередньої версії.
+  #
+  # `update` — разова команда, а не крок старту застосунку: DDL при кількох
+  # примірниках гнало б їх наввипередки, та й падіння оновлення не має виглядати
+  # як падіння застосунку. Вона ж єдина, кому потрібні --allow-write і
+  # --allow-run: той, кого заміняють, не має заміняти себе сам.
+  update:
+    profiles: ["prod"]
+    build: .
+    env_file: .env
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGSSLMODE: disable
+    volumes:
+      - ./app:/srv/app
+      - ./dist:/srv/dist
+    depends_on:
+      db: { condition: service_healthy }
+    entrypoint: ["deno", "run", "-A", "--env-file", "jsr:@altera/tools@^0.5.1/update-solution"]
+
+  schema:
+    profiles: ["prod"]
+    build: .
+    env_file: .env
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGSSLMODE: disable
+    volumes:
+      - ./app:/srv/app
+    depends_on:
+      db: { condition: service_healthy }
+    command: ["run", "-A", "./scripts/sql-deploy.ts", "./app", "--yes", "--no-assemble", "--verbose"]
+
+  app:
+    profiles: ["prod"]
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Ім'я служби бази в цій же мережі — перекриває PGHOST з .env, який для
+      # розробки вказує на localhost. PGPORT перекривається ОБОВ'ЯЗКОВО разом із
+      # ним: у .env лежить порт, ОПУБЛІКОВАНИЙ НА ХОСТ (`${PGPORT}:5432`), а
+      # всередині мережі compose база слухає 5432. Без цього рядка застосунок
+      # стукає в `db:15432` і дістає ECONNREFUSED — помилка виглядає як
+      # «база не піднялася», хоча вона працює.
+      PGHOST: db
+      PGPORT: 5432
+      # Без TLS — з тієї ж причини, що й у `schema`: `db` не проходить за
+      # локальний хост, тож фреймворк вимагав би `require`, якого цей контейнер
+      # не пропонує. Для ЗОВНІШНЬОЇ бази рядок прибрати.
+      PGSSLMODE: disable
+      # Та сама пастка, що з PGPORT, тільки з іншого боку: PORT у .env — це
+      # порт, ОПУБЛІКОВАНИЙ НА ХОСТ, а всередині контейнера варіювати його ні
+      # до чого. Без цього рядка сервер слухає порт із .env, а compose публікує
+      # на 3000 — і назовні не відповідає ніхто.
+      PORT: 3000
+      # У продуктиві в'ю віддаються з dist/, зібраного в образ. Непорожній
+      # VITE_DEV_URL змусив би сервер шукати їх у Vite, якого тут немає:
+      # сторінка підніметься, жодна вкладка не відкриється.
+      VITE_DEV_URL: ""
+    volumes:
+      # Рішення й його збірка — на томі, решта в образі. Тільки читання:
+      # застосунок сюди не пише нічого, писати має лише служба `update`.
+      - ./app:/srv/app:ro
+      - ./dist:/srv/dist:ro
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      db: { condition: service_healthy }
 
 volumes:
   dbdata:
