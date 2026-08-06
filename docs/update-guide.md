@@ -125,7 +125,8 @@ deno task sql:deploy --yes` (ядро могло привезти міграці
 
 ```bash
 docker compose --profile prod build
-docker compose --profile prod run --rm update ./erp-1.2.0.tar.gz
+cp ./erp-1.2.0.tar.gz ./packages/
+docker compose --profile prod run --rm update /srv/packages/erp-1.2.0.tar.gz
 docker compose --profile prod restart app
 ```
 
@@ -161,6 +162,14 @@ docker compose --profile prod restart app
 - **`PGSSLMODE: disable` для бази в мережі compose**: TLS виводиться з хоста, і
   `db` під локальні не підпадає — з'єднання рветься на рукостисканні. Для
   **зовнішньої** бази рядок прибрати, там запобіжник має спрацювати.
+
+Ще дві дрібниці, які видно лише в цій розкладці:
+
+- **пакет рішення кладуть у `./packages`** — цей каталог змонтований у службу
+  `update`; шлях, який видно з хоста, зсередини контейнера не існує;
+- **перша установка в свіжий scaffold вимагає `--force`**: демо-застосунок
+  шаблону манифесту поставки не має, тобто стан «невідомо», а мовчки затирати
+  невідоме інструмент не буде.
 
 Свіжий реліз фреймворку: `--build-arg DENO_INSTALL_FLAGS=--min-dep-age=0`.
 

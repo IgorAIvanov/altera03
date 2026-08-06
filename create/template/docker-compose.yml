@@ -23,7 +23,7 @@ services:
   # `docker compose up -d`) їх не чіпає: у розробці потрібна лише база.
   #
   #   docker compose --profile prod build
-  #   docker compose --profile prod run --rm update ./erp-1.2.0.tar.gz
+  #   docker compose --profile prod run --rm update /srv/packages/erp-1.2.0.tar.gz
   #   docker compose --profile prod up -d app
   #
   # Образ несе ФРЕЙМВОРК, рішення живе на томі `./app` (і його збірка — на
@@ -46,6 +46,10 @@ services:
     volumes:
       - ./app:/srv/app
       - ./dist:/srv/dist
+      # Пакет рішення кладуть сюди. Без цього тому шлях, який видно з хоста,
+      # зсередини контейнера не існує — і команда падає на «файл не знайдено»
+      # там, де файл насправді є.
+      - ./packages:/srv/packages
     depends_on:
       db: { condition: service_healthy }
     entrypoint: ["deno", "run", "-A", "--env-file", "jsr:@altera/tools@^0.5.1/update-solution"]

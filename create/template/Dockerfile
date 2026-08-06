@@ -17,7 +17,7 @@
 # несе піни, якими артефакти зібрані.
 #
 #   docker compose --profile prod build
-#   docker compose --profile prod run --rm update ./erp-1.2.0.tar.gz
+#   docker compose --profile prod run --rm update /srv/packages/erp-1.2.0.tar.gz
 #   docker compose --profile prod up -d app
 
 FROM denoland/deno:2.9.4 AS build
@@ -65,7 +65,7 @@ RUN deno install --allow-scripts $DENO_INSTALL_FLAGS --entrypoint ./app/server.t
 # Інструменти — окремо й «як вийде»: оновлення тягне `jsr:@altera/tools@…`, і
 # без кешу перший `solution:update` полізе в мережу. Збірку це валити не має
 # (версія могла ще не з'явитися в реєстрі), але й мовчати не можна.
-RUN deno cache $DENO_INSTALL_FLAGS "jsr:@altera/tools@^0.5.1/update-solution" \
+RUN deno cache $DENO_INSTALL_FLAGS "jsr:@altera/tools@^0.5.2/update-solution" \
  || echo "⚠ інструменти не закешовані — перше оновлення піде в мережу"
 
 # ── Рантайм ──────────────────────────────────────────────────────────────────

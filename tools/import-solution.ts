@@ -151,6 +151,21 @@ function reportPlan(
   console.log(errors.length ? `${verdict}\n   Але версії фреймворку розходяться (див. вище).` : verdict);
 }
 
+/**
+ * Спорожнює каталог, не видаляючи його самого.
+ *
+ * Саме так, а не `Deno.remove(dir, { recursive: true })` — інакше в
+ * контейнерній розкладці нічого не працює: `app/` там **точка монтування**, а
+ * змонтований каталог видалити не можна взагалі (`Device or resource busy`).
+ * Знайшлося запуском оновлення в контейнері; на звичайній файловій системі
+ * різниці немає.
+ */
+async function emptyDir(dir: string) {
+  for await (const entry of Deno.readDir(dir)) {
+    await Deno.remove(join(dir, entry.name), { recursive: true });
+  }
+}
+
 /** Розкладає файли пакета в каталог. Спільне для `app/` і `app.incoming/`. */
 async function writeFiles(
   targetDir: string,
@@ -451,7 +466,7 @@ export async function importSolution(
   // мовчки не можна. Пакет розкладається ПОРУЧ, а `app/` не чіпається взагалі.
   if (mode === "aside") {
     const incomingDir = `${appDir}.incoming`;
-    await Deno.remove(incomingDir, { recursive: true }).catch(() => {});
+    await emptyDir(incomingDir).catch(() => {});
     await writeFiles(incomingDir, manifest, files, options.verbose === true);
     await writeInstalledManifest(incomingDir, manifest, config);
 
@@ -471,7 +486,7 @@ export async function importSolution(
 
   // Заміна цілком, а не поверх: інакше файли моделі, прибраної в новій версії
   // рішення, лишилися б у дереві й далі потрапляли б у збірку.
-  if (existing.length) await Deno.remove(appDir, { recursive: true });
+  if (existing.length) await emptyDir(appDir);
 
   await writeFiles(appDir, manifest, files, options.verbose === true);
 
