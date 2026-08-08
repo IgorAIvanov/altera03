@@ -26,6 +26,10 @@ export const InvoiceItemSchema = Type.Object({
   counterpartyId: Type.String({
     title: "Контрагент",
     "x-db-type": "bigint",
+    // Фільтр списку. Клієнт шле лише id, а `_list` повертає ще й представлення
+    // (`counterparty: {id, name}`) — інакше пікер у панелі фільтрів після
+    // перезавантаження знав би id, але показував порожнє поле.
+    "x-filter": true,
     "x-ref": {
       model: "counterparty",
       display: "name",

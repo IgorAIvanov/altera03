@@ -282,7 +282,7 @@ export class UiTabularTable extends Base {
         <tbody>
           ${section.rows.map((line, i) => this.#renderRecord(line, i, columns, grid, levels))}
           ${section.rows.length === 0
-            ? html`<tr><td colspan=${colCount} class="text-center text-base-content/40 py-4">${t("common.noData")}</td></tr>`
+            ? html`<tr><td colspan=${colCount} class="text-center text-muted py-4">${t("common.noData")}</td></tr>`
             : nothing}
         </tbody>
         ${totals ? this.#renderTotals(grid, section) : nothing}

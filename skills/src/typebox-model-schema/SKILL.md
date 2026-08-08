@@ -110,8 +110,48 @@ Custom UI annotations (prefix `x-`):
 | `x-lookup`   | `true`                          | Include field in picker display/search |
 | `x-picker`   | `{ url, displayField }`         | Field is a reference — render ui-picker |
 | `x-readonly` | `true`                          | Display only, not editable           |
+| `x-filter`   | `true` or `{ op, key }`         | Field can filter the list — generates the SQL (see below) |
 
 Width values: `"xs"` (60px), `"sm"` (100px), `"md"` (160px), `"lg"` (240px), `"full"` (flex-1).
+
+### `x-filter` — list filters
+
+`deno task sql:gen` turns this annotation into parsing, `where` conditions and the
+mirrored answer inside `<model>_list`. You never hand-write filter SQL.
+
+| Form | Payload key(s) | Generated condition |
+|------|----------------|---------------------|
+| `true` | `<field>` | `col = value` |
+| `{ op: "range" }` | `<field>From`, `<field>To` | `col >= from`, `col <= to` |
+| `{ op: "like" }` | `<field>` | `col ilike '%value%'` |
+| `{ op: "range", key: "date" }` | `dateFrom`, `dateTo` | rename the payload keys |
+
+```ts
+counterpartyId: Type.String({
+  "x-db-type": "bigint",
+  "x-filter": true,
+  "x-ref": { model: "counterparty", display: "name", as: "counterparty" },
+}),
+```
+
+Three things the generator handles that are easy to get wrong by hand:
+
+- **Reference fields.** The client sends only the id; the generated `_list` filters on
+  the FK column *and* returns `counterparty: {id, name}` in `$filters`, so the picker in
+  the filter panel can show a label after a reload instead of an empty box.
+- **A date range over a `timestamp` column** becomes `col < to + interval '1 day'`, not
+  `col <= to` — otherwise the whole last day except midnight falls out of the result.
+  It also keeps the index usable, unlike casting the column to `date`.
+- **An unset filter is absent, not empty.** The client deletes empty values, so every
+  condition is `(v is null or …)` and SQL never distinguishes "absent" from "empty".
+
+`docDate` and `isPosted` carry `x-filter` in the shared `DocumentHeaderSchema`, so every
+document list can filter by period and posted state without declaring anything. It is
+only a capability — nothing changes until a screen renders the panel.
+
+The payload key must match what the screen writes into `$root.$filters` — see
+[model-list-form](../model-list-form/SKILL.md). A mismatch is silent: `jsonb` ignores
+unknown keys.
 
 ## Schema file structure
 

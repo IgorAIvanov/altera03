@@ -107,7 +107,7 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
     return html`
       ${this.showCurrency ? html`
         <td class="text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
-        <td class="text-base-content/60">${row.currencyCode ?? ""}</td>` : ""}
+        <td class="text-muted">${row.currencyCode ?? ""}</td>` : ""}
       ${this.showQuantity
         ? html`<td class="text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
     `;
@@ -146,7 +146,7 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
             ${doc.documentTypeName} ${doc.number ?? ""}
             ${doc.isPosted ? html`<span class="badge badge-success badge-xs ml-1"></span>` : ""}
           </span>
-          <span class="text-xs text-base-content/60">
+          <span class="text-xs text-muted">
             ${formatDate(doc.docDate, dateFormat.dateTime)} · ${doc.organizationName}
           </span>
         </div>
@@ -176,7 +176,7 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
           <tbody>
             ${this.$root.rows.map((row) => this.renderRow(row))}
             ${this.$root.rows.length === 0
-              ? html`<tr><td colspan="7" class="text-center text-base-content/40 py-4">${t("common.noData")}</td></tr>`
+              ? html`<tr><td colspan="7" class="text-center text-muted py-4">${t("common.noData")}</td></tr>`
               : ""}
           </tbody>
           <tfoot>

@@ -4,6 +4,7 @@ import type {
   ChoiceButton,
   DialogIcon,
   MessageOfType,
+  PickerSelectMessage,
   PickerValue,
 } from "./bus.types.ts";
 
@@ -17,9 +18,12 @@ class Bus {
   // rpc: один обработчик на тип (data.load, data.save)
   private handlers = new Map<string, RequestHandler<BusMessageType>>();
 
-  // ожидающие ответа picker.select / picker.cancel
+  // очікують picker.select / picker.cancel.
+  // Резолвиться ПОВІДОМЛЕННЯМ, а не готовим значенням: `pick()` бере з нього
+  // одне значення, `pickMany()` — масив. Інакше довелося б тримати дві черги
+  // на один і той самий діалог.
   private pending = new Map<string, {
-    resolve: (value: PickerValue) => void;
+    resolve: (value: Pick<PickerSelectMessage, "value" | "values"> | null) => void;
     reject: (reason?: unknown) => void;
   }>();
 
@@ -57,7 +61,7 @@ class Bus {
   emit(message: BusMessage): void {
     // резолвим pending пиккеры
     if (message.type === "picker.select") {
-      this.pending.get(message.callbackId)?.resolve(message.value);
+      this.pending.get(message.callbackId)?.resolve({ value: message.value, values: message.values });
       this.pending.delete(message.callbackId);
     }
     if (message.type === "picker.cancel") {
@@ -102,11 +106,41 @@ class Bus {
   // --- picker ---
 
   async pick(route: string, params?: Record<string, unknown>): Promise<PickerValue> {
+    const picked = await this.#openPicker(route, params, false);
+    return picked?.value ?? null;
+  }
+
+  /**
+   * Підбір ПАЧКОЮ: діалог показує позначки рядків, повертає всі відмічені.
+   * `null` — відмова. Типовий випадок — додати кілька позицій номенклатури в
+   * табличну частину документа за один захід.
+   *
+   * Множинність задає викликач, а не пікер: той самий довідник підбирають то
+   * одним значенням у поле, то пачкою — і переписувати заради цього екран
+   * пікера не треба.
+   */
+  async pickMany(
+    route: string,
+    params?: Record<string, unknown>,
+  ): Promise<{ id: string; label: string }[] | null> {
+    const picked = await this.#openPicker(route, params, true);
+    if (!picked) return null;
+    // `values` немає лише якщо діалог відповів по-старому — тоді це один рядок.
+    return picked.values ?? [picked.value];
+  }
+
+  #openPicker(
+    route: string,
+    params: Record<string, unknown> | undefined,
+    multiple: boolean,
+  ): Promise<Pick<PickerSelectMessage, "value" | "values"> | null> {
     const callbackId = crypto.randomUUID();
-    const promise = new Promise<PickerValue>((resolve, reject) => {
-      this.pending.set(callbackId, { resolve, reject });
-    });
-    this.emit({ type: "picker.open", route, callbackId, params });
+    const promise = new Promise<Pick<PickerSelectMessage, "value" | "values"> | null>(
+      (resolve, reject) => {
+        this.pending.set(callbackId, { resolve, reject });
+      },
+    );
+    this.emit({ type: "picker.open", route, callbackId, params, multiple });
     return promise;
   }
 

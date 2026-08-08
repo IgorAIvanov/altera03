@@ -293,7 +293,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     const code = side === "debit" ? line.debitAccount : line.creditAccount;
     const values = (side === "debit" ? line.debitAnalytics : line.creditAnalytics) ?? {};
     const slots = this.slots.get(code ?? "")?.analytics ?? [];
-    if (!slots.length) return html`<span class="text-base-content/30 text-xs px-1">—</span>`;
+    if (!slots.length) return html`<span class="text-muted text-xs px-1">—</span>`;
 
     return html`
       <div class="flex flex-col">
@@ -324,7 +324,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
    */
   private renderCurrencyPicker(line: ManualEntryFormLine, index: number): TemplateResult {
     if (!this.lineNeeds(line, "currency")) {
-      return html`<span class="text-base-content/20 px-2">—</span>`;
+      return html`<span class="text-muted px-2">—</span>`;
     }
     return html`
       <ui-picker
@@ -359,7 +359,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
 
   private renderQuantity(line: ManualEntryFormLine, index: number): TemplateResult {
     if (!this.lineNeeds(line, "quantity")) {
-      return html`<span class="text-base-content/20 px-2">—</span>`;
+      return html`<span class="text-muted px-2">—</span>`;
     }
     return html`
       <ui-decimal

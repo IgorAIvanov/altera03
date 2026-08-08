@@ -21,6 +21,8 @@
     "./ui-kit/base/model-list-base.ts": "./ui-kit/base/model-list-base.ts",
     "./ui-kit/base/model-picker-base.ts": "./ui-kit/base/model-picker-base.ts",
     "./ui-kit/base/report-base.ts": "./ui-kit/base/report-base.ts",
+    "./ui-kit/base/query-table-base.ts": "./ui-kit/base/query-table-base.ts",
+    "./ui-kit/base/table-contract.ts": "./ui-kit/base/table-contract.ts",
     "./ui-kit/components/ui-attachments.ts": "./ui-kit/components/ui-attachments.ts",
     "./ui-kit/components/ui-date.ts": "./ui-kit/components/ui-date.ts",
     "./ui-kit/components/ui-decimal.ts": "./ui-kit/components/ui-decimal.ts",

@@ -1,6 +1,6 @@
 import { customElement } from "lit/decorators.js";
 import { ModelPickerBase } from "@client/ui-kit/base/model-picker-base.ts";
-import type { ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+import type { ListColumn } from "@client/ui-kit/base/table-contract.ts";
 import type { ChartOfAccountLookupRow } from "./chart_of_account.schema.ts";
 
 export const tagName = "chart-of-account-picker";

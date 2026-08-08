@@ -205,7 +205,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
           <div class="mb-4">
             <!-- номер + дата — в одній рамці -->
             <fieldset class="border border-base-700 rounded-lg px-4 pb-3 mb-4 bg-base-100">
-              <legend class="px-2 text-sm text-base-content/60">${t("invoice.titleOne")}</legend>
+              <legend class="px-2 text-sm text-muted">${t("invoice.titleOne")}</legend>
               <div class="grid grid-cols-2 gap-4">
                 ${this.renderField(
                   t("invoice.number"),

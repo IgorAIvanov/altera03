@@ -2,6 +2,7 @@ import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { getLocale } from "../../locale.ts";
+import { placePopover } from "../popover.ts";
 import {
   dateFormat,
   daysInMonth,
@@ -207,12 +208,10 @@ export class UiDate extends GlobalStyledLitElement {
     if (!pop) return;
     const shown = pop.matches(":popover-open");
     if (this._open && !shown) {
-      const rect = this._input?.getBoundingClientRect();
-      if (rect) {
-        pop.style.top = `${rect.bottom + 2}px`;
-        pop.style.left = `${rect.left}px`;
-      }
       pop.showPopover();
+      // Розміщуємо ПІСЛЯ показу: у схованого елемента немає ширини, а календар
+      // ширший за поле — без притискання він вилазив за правий край екрана.
+      if (this._input) placePopover(pop, this._input);
     }
     if (!this._open && shown) pop.hidePopover();
   }
@@ -313,7 +312,7 @@ export class UiDate extends GlobalStyledLitElement {
       ${header}
       <div class="grid grid-cols-7 gap-0.5 text-center">
         ${this._weekdays().map((w) => html`
-          <span class="text-[0.65rem] uppercase text-base-content/40 py-1">${w}</span>
+          <span class="text-[0.65rem] uppercase text-muted py-1">${w}</span>
         `)}
         ${this._grid(view.year, view.month).map((d) => {
           if (d === null) return html`<span></span>`;

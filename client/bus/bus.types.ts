@@ -28,11 +28,21 @@ export interface PickerOpenMessage {
   route: string;
   callbackId: string;
   params?: Record<string, unknown>;
+  /**
+   * Множинний вибір: діалог показує позначки рядків і повертає масив.
+   * Вирішує ТОЙ, ХТО ВІДКРИВАЄ (`bus.pickMany`), а не сам пікер: один і той
+   * самий довідник підбирають то одним значенням у поле, то пачкою в табличну
+   * частину.
+   */
+  multiple?: boolean;
 }
 export interface PickerSelectMessage {
   type: "picker.select";
   callbackId: string;
+  /** Один вибір. При множинному — перший із `values`, щоб старі читачі не впали. */
   value: { id: string; label: string };
+  /** Усі позначені. Є лише коли діалог відкривали як множинний. */
+  values?: { id: string; label: string }[];
 }
 export interface PickerCancelMessage {
   type: "picker.cancel";

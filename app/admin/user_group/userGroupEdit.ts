@@ -150,7 +150,7 @@ export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {
           <div class="mt-4">
             <div class="font-semibold mb-1">${this.t("userGroup.menus")}</div>
             ${menus.length === 0
-              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              ? html`<div class="text-muted">${this.t("common.noData")}</div>`
               : html`
                 <div class="flex flex-wrap gap-3">
                   ${menus.map((m) => html`
@@ -182,7 +182,7 @@ export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {
             </div>
 
             ${item.members.length === 0
-              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              ? html`<div class="text-muted">${this.t("common.noData")}</div>`
               : html`
                 <div class="flex flex-wrap gap-2">
                   ${item.members.map((m) => html`
@@ -246,7 +246,7 @@ export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {
                 </tr>
               `)}
               ${this.$root.rows.length === 0
-                ? html`<tr><td colspan="4" class="text-center text-base-content/40 py-4">${this.t("common.noData")}</td></tr>`
+                ? html`<tr><td colspan="4" class="text-center text-muted py-4">${this.t("common.noData")}</td></tr>`
                 : ""}
             </tbody>
           </table>

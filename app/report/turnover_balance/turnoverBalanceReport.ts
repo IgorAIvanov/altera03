@@ -149,7 +149,7 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
     const totals = this.$root.totals;
 
     return html`
-        <div class="text-xs text-base-content/50 no-print">${t("turnoverBalance.drillHint")}</div>
+        <div class="text-xs text-muted no-print">${t("turnoverBalance.drillHint")}</div>
 
         <table class="table table-sm w-full">
           <thead>
@@ -172,7 +172,7 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
           <tbody>
             ${this.$root.rows.map((row) => this.renderRow(row))}
             ${this.$root.rows.length === 0
-              ? html`<tr><td colspan="8" class="text-center text-base-content/40 py-4">${t("common.noData")}</td></tr>`
+              ? html`<tr><td colspan="8" class="text-center text-muted py-4">${t("common.noData")}</td></tr>`
               : ""}
           </tbody>
           <tfoot>

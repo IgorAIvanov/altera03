@@ -34,7 +34,7 @@ export class HomeTab extends LitElement {
         </div>
 
         <div class="card bg-base-200 border border-base-300 p-4 w-80">
-          <h4 class="text-sm font-semibold mb-3 text-base-content/70">Тест ui-picker (bank)</h4>
+          <h4 class="text-sm font-semibold mb-3 text-muted">Тест ui-picker (bank)</h4>
           <ui-picker
             url="catalog/bank"
             fetch="lookup"
@@ -53,7 +53,7 @@ export class HomeTab extends LitElement {
         </div>
 
         <div class="card bg-base-200 border border-base-300 p-4 w-80">
-          <h4 class="text-sm font-semibold mb-3 text-base-content/70">Тест ui-select</h4>
+          <h4 class="text-sm font-semibold mb-3 text-muted">Тест ui-select</h4>
           <ui-select
             .value=${this.selectResult}
             .options=${testSelectOptions}

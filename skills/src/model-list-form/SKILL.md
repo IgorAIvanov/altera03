@@ -17,10 +17,12 @@ Use this skill when:
 
 ## Base class
 
-`@client/ui-kit/base/model-list-base.ts` → `ModelListBase<Row> extends BaseUI<ListRoot<Row>>`
+`@client/ui-kit/base/model-list-base.ts` → `ModelListBase<Row> extends QueryTableBase<Row>`
 (`@client/` is the alias for the `@altera/client` package — import from it, never copy it into the app).
 
-It owns: data load via `run()` / `assign()` on the shared envelope, server-side `sortBy`/`sortDir`, pagination (`page`/`pageSize` + footer), debounced search (300 ms), row selection, delete with confirm, and re-load on the `model.changed` bus event. The global loading bar (in `tab-controller`) already covers request progress — the list shows its own spinner only on the very first load.
+`QueryTableBase` is the shared foundation under both the list and the picker dialog. It owns the table mechanics: data load via `run()` / `assign()` on the shared envelope, server-side `sortBy`/`sortDir`, pagination (`page`/`pageSize` + footer), debounced search (300 ms), the toolbar, row selection, optional row checkboxes, and full keyboard navigation. `ModelListBase` adds what makes it a *screen*: create/open/delete, the group tree for hierarchical catalogues, Excel export, and re-load on the `model.changed` bus event. The global loading bar (in `tab-controller`) already covers request progress — the list shows its own spinner only on the very first load.
+
+**Keyboard.** ↑↓ move the cursor and roll over to the next/previous page at the edges; `PageUp`/`PageDown` page directly; `Home`/`End` jump within the page and `Ctrl+Home`/`Ctrl+End` to the first/last page; `Enter` activates the row; `Space` selects it (or toggles the checkbox when `selectable`), and `Ctrl+A` checks everything on the page. Focus follows the page change, so a keyboard session never needs the mouse to page through a list.
 
 State lives in the shared `$root` container, not in local `@state`: the filter is the service field `$root.$query` (`search/page/pageSize/sortBy/sortDir`) and the data is `$root.rows` / `$root.totals`. The familiar member names (`this.page`, `this.search`, `this.sortBy`, `this.rows`, `this.total`) are kept as getters/setters projecting onto `$root`, so subclass code reads the same as before. `$query` is sent as the `list` payload and mirrors back if the server returns an effective (clamped/normalized) query. See [model-form-root](../model-form-root/SKILL.md) for the full contract.
 
@@ -113,6 +115,133 @@ What this means when declaring columns:
 | `extraPayload()`         | Extra fields merged into the list payload — **the seam for a filter panel**. |
 | `renderToolbarExtra()`   | Extra toolbar buttons between the standard actions and search.|
 | `renderHeaderArea()`     | Full-width zone under the toolbar — **the seam for a filter bar or group breadcrumbs**. |
+| `selectable`             | `true` adds a checkbox column for group actions (see below).  |
+
+## Checking rows for group actions
+
+Set `selectable = true` and the base adds a checkbox column, a check-all-on-page
+box in the header, and a `Checked: N` counter with a clear button in the toolbar.
+Your group-action buttons go in `renderToolbarExtra()`:
+
+```ts
+protected override selectable = true;
+
+protected override renderToolbarExtra() {
+  if (!this.checked.length) return "";
+  return html`
+    <button class="btn btn-sm" @click=${this.#postChecked}>${t("invoice.postChecked")}</button>
+  `;
+}
+
+async #postChecked() {
+  await this.run("postMany", { ids: this.checkedIds }, "save");
+  this.clearChecked();
+}
+```
+
+Two things to know, because both are deliberate:
+
+- **`checked` holds whole rows, not ids**, and survives paging. So `this.checked`
+  gives you labels for a confirm dialog even for rows that are no longer on screen;
+  `this.checkedIds` gives the ids your command needs. The toolbar counter exists
+  precisely because checks outlive the page you made them on.
+- **Checks clear on search and on `reload()`** (filter change) but not on paging or
+  sorting — a different result set makes the old marks meaningless.
+
+Do not confuse this with `selectedId`. That is the *cursor*: one row, driven by
+click and arrow keys, and it is what `Open` and `Delete` act on. Checked rows are
+a *set* for a batch command, and there can be none while the cursor is alive.
+
+## Filters (right-hand panel)
+
+The base gives you **the place, the state and the binding**. The markup and the controls
+are yours — any control, including `<ui-period>`, `<ui-date>` and `<ui-picker>`.
+
+```ts
+// the screen imports what it actually uses:
+import "@client/ui-kit/components/ui-period.ts";
+
+protected override renderFilters() {
+  return html`
+    <ui-period
+      .dateFrom=${this.filterValue("dateFrom") ?? ""}
+      .dateTo=${this.filterValue("dateTo") ?? ""}
+      @value-changed=${(e: CustomEvent) =>
+        this.setFilters({ dateFrom: e.detail.dateFrom, dateTo: e.detail.dateTo })}
+    ></ui-period>
+
+    <label class="flex items-center gap-2">
+      <input type="checkbox" class="checkbox checkbox-xs"
+        .checked=${this.filterValue("isPosted") === true}
+        @change=${this.bindFilter("isPosted")} />
+      <span>${t("document.posted")}</span>
+    </label>
+  `;
+}
+```
+
+The collapsible panel, the `Filters` toolbar button with an active-count badge, `Reset`,
+and remembering the collapsed state per user and per model all come from the base.
+Whether a screen has filters is detected from `renderFilters()` being overridden — there
+is no separate flag to drift out of sync with the markup.
+
+There is deliberately **no declarative filter descriptor**. The most common filters in an
+accounting list are a date and a period, i.e. `<ui-date>` and `<ui-period>`; a built-in
+set of filter kinds would force the base to import those statically, and then every list
+**and every picker dialog** would carry them.
+
+### Binding
+
+| Method | Purpose |
+|---|---|
+| `filterValue<T>(key)` | read; `undefined` means not set |
+| `setFilter(key, value, {debounce})` | write one, reload from page 1 |
+| `setFilters(patch, {debounce})` | write several in **one** request |
+| `bindFilter(key, {debounce})` | ready-made handler for native `input`/`select` |
+| `resetFilters()` | clear everything |
+
+Use `setFilters` for anything that produces several values at once — `<ui-period>` emits
+both bounds together, and two consecutive `setFilter` calls would fire two requests where
+the second cancels the first. `debounce` is for typed input only.
+
+ui-kit components differ in their events (`value-changed`, `item-selected`, their own
+`detail` shape), so the screen wires them itself via `setFilter`; `bindFilter` covers
+native controls only — exactly like `BaseUI.bindTo` for form fields.
+
+### The SQL contract
+
+Values live in `$root.$filters` and go into the payload as a **nested `filters` object**,
+not spread next to `search`/`page` — a filter name would eventually collide with a
+`$query` field. An empty value is **deleted** rather than stored, so "how many filters are
+active" and "what to send" are both just the contents of `$filters`.
+
+**You do not write the SQL.** Annotate the field with `x-filter` in the model schema and
+`deno task sql:gen` generates the parsing, the `where` conditions and the mirrored answer
+inside `<model>_list` — see [typebox-model-schema](../typebox-model-schema/SKILL.md).
+
+```ts
+// invoice.schema.ts
+counterpartyId: Type.String({
+  "x-db-type": "bigint",
+  "x-filter": true,
+  "x-ref": { model: "counterparty", display: "name", as: "counterparty" },
+}),
+```
+
+**Reference filters carry a label back.** The client sends only the id; the generated
+`_list` returns `counterparty: {id, name}` inside `$filters`, and `assign()` mirrors it
+into the panel. Read it in `renderFilters()` for the picker's display value — without it
+the picker would know the id but show an empty box after a reload, and the filter would
+look cleared while still applying.
+
+`docDate` and `isPosted` are annotated in the shared `DocumentHeaderSchema`, so every
+document list already parses `dateFrom`/`dateTo`/`isPosted`.
+
+The payload key must match the key you write in `renderFilters()`. A mismatch is silent:
+`jsonb` ignores unknown keys.
+
+On a hierarchical catalogue the filter panel and the group tree share **one** right-hand
+column — filters on top, tree below.
 
 ## Rich cells
 

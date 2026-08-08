@@ -115,7 +115,7 @@ export class UserEdit extends BaseUI<UserEditRoot> {
           <div class="mt-2">
             <div class="font-semibold mb-1">${this.t("user.groups")}</div>
             ${groups.length === 0
-              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              ? html`<div class="text-muted">${this.t("common.noData")}</div>`
               : html`
                 <div class="flex flex-wrap gap-3">
                   ${groups.map((g) => html`
@@ -142,7 +142,7 @@ export class UserEdit extends BaseUI<UserEditRoot> {
             </div>
 
             ${this.$root.item.identities.length === 0
-              ? html`<div class="text-base-content/50">${this.t("user.identitiesEmpty")}</div>`
+              ? html`<div class="text-muted">${this.t("user.identitiesEmpty")}</div>`
               : html`
                 <table class="table table-sm">
                   <thead>
@@ -170,7 +170,7 @@ export class UserEdit extends BaseUI<UserEditRoot> {
                             @input=${(e: Event) =>
                               this.patchIdentity(index, { externalId: (e.target as HTMLInputElement).value })} />
                         </td>
-                        <td class="text-base-content/60">
+                        <td class="text-muted">
                           ${identity.lastLoginAt ? formatDate(identity.lastLoginAt, dateFormat.dateTime) : "—"}
                         </td>
                         <td class="text-right">
@@ -216,7 +216,7 @@ export class UserEdit extends BaseUI<UserEditRoot> {
                   </button>
                 </div>
               `
-              : html`<div class="text-base-content/50">${this.t("user.passwordAfterSave")}</div>`}
+              : html`<div class="text-muted">${this.t("user.passwordAfterSave")}</div>`}
           </div>
         `)}
 

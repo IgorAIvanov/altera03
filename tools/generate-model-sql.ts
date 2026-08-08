@@ -23,6 +23,17 @@ type XRef = {
   searchable?: boolean;
 };
 type XTable = { table: string; parentFk: string; orderBy?: string };
+/**
+ * Поле бере участь у фільтрі списку (панель фільтрів праворуч).
+ *
+ * `true` — рівність за замовчуванням. Для дат і чисел частіше потрібен діапазон:
+ * `{ op: "range" }` дає ДВА ключі payload — `<key>From` і `<key>To`.
+ *
+ * `key` перейменовує ключ у `payload.filters` (і для діапазону — його основу):
+ * `{ op: "range", key: "date" }` → `dateFrom`/`dateTo`, бо саме такі імена
+ * природно віддає `<ui-period>`.
+ */
+type XFilter = { op?: "eq" | "range" | "like"; key?: string };
 /** Поле-вкладення: у колонці лежить id з app.attachment. */
 type XBlob = { as?: string };
 
@@ -38,6 +49,7 @@ type TSchema = {
   "x-search"?: boolean;
   "x-lookup"?: boolean;
   "x-list"?: { sortable?: boolean };
+  "x-filter"?: boolean | XFilter;
   "x-ref"?: XRef;
   "x-table"?: XTable;
   "x-blob"?: boolean | XBlob;
@@ -105,6 +117,27 @@ type Field = {
    * токен підставляє рантайм, див. server/modules/blob/blob-token.ts.
    */
   blobTokenKey?: string;
+  /** Нормалізований `x-filter`; `undefined` — поле у фільтрі не бере участі. */
+  filter?: XFilter;
+};
+
+/**
+ * Один фільтр у згенерованому `_list`: змінна, розбір, умова і — для ссылки —
+ * чим доповнити відповідь.
+ */
+type FilterSpec = {
+  /** Ключ у `payload.filters`. */
+  key: string;
+  /** Оголошення змінної plpgsql разом із розбором. */
+  decl: string;
+  /** Рядок умови для `where` (без відступу). */
+  cond: string;
+  /**
+   * Ссылочний фільтр: клієнт шле лише id, а панелі потрібне ще й відображуване
+   * значення — інакше після перезавантаження пікер показав би порожньо. Тут
+   * SQL-вираз, який дістає `{id, <display>}` для відповіді.
+   */
+  mirror?: { key: string; expr: string };
 };
 
 type TableSpec = {
@@ -134,6 +167,8 @@ type ModelSpec = {
   tables: TableSpec[];
   listFields: Field[]; // поля шапки у списку (за Row)
   lookupFields: Field[];
+  /** Фільтри панелі (лише `_list`): `x-filter` у схемі моделі. */
+  filters: FilterSpec[];
   searchExprsList: string[];
   searchExprsLookup: string[];
   listSort: SortEntry[];
@@ -233,6 +268,7 @@ function toField(
     isTimestamp,
     isTimestampTz,
     required: requiredKeys.has(key) && key !== "id",
+    filter: normalizeFilter(prop["x-filter"]),
     search: prop["x-search"] === true,
     sortable: prop["x-list"]?.sortable === true,
     boolDefaultSql: prop.default === false ? "false" : "true",
@@ -246,6 +282,126 @@ function toField(
     ref,
     blobTokenKey,
   };
+}
+
+function normalizeFilter(raw: boolean | XFilter | undefined): XFilter | undefined {
+  if (!raw) return undefined;
+  return raw === true ? { op: "eq" } : { op: raw.op ?? "eq", key: raw.key };
+}
+
+/**
+ * Фільтри списку зі схеми моделі.
+ *
+ * Ключ у `payload.filters` — це JSON-ключ поля (або `x-filter.key`), тобто те
+ * саме ім'я, яким його називає панель на клієнті. Розбіжність тут була б
+ * німою: jsonb ігнорує невідомі ключі, і фільтр просто нічого не робив би.
+ */
+function buildFilters(fields: Field[], model: string): FilterSpec[] {
+  const specs: FilterSpec[] = [];
+
+  for (const f of fields) {
+    const conf = f.filter;
+    if (!conf) continue;
+
+    const base = conf.key ?? f.key;
+    const col = `${f.alias}.${f.col}`;
+
+    if (conf.op === "range") {
+      if (!(f.isDate || f.isTimestamp || f.isNumeric || f.isInt)) {
+        throw new Error(
+          `${model}.${f.key}: x-filter op:"range" має сенс лише для дати або числа`,
+        );
+      }
+      const isTime = f.isTimestamp;
+      // Межі періоду приходять датами (їх віддає <ui-period>), а колонка може
+      // бути timestamp. Тому верхня межа — не `<= дата` (це відрізало б увесь
+      // останній день, крім опівночі), а `< дата + 1 день`: і правильно, і
+      // індексу не заважає, на відміну від приведення колонки до date.
+      const sqlType = isTime || f.isDate ? "date" : f.isNumeric ? "numeric" : "int";
+      const cast = (key: string) =>
+        `nullif(v_filters->>'${key}', '')::${sqlType}`;
+      const fromKey = `${base}From`;
+      const toKey = `${base}To`;
+      const fromVar = `v_f_${camelToSnake(fromKey)}`;
+      const toVar = `v_f_${camelToSnake(toKey)}`;
+      specs.push({
+        key: fromKey,
+        decl: `  ${fromVar} ${sqlType} := ${cast(fromKey)};`,
+        cond: `(${fromVar} is null or ${col} >= ${fromVar})`,
+      });
+      specs.push({
+        key: toKey,
+        decl: `  ${toVar} ${sqlType} := ${cast(toKey)};`,
+        cond: isTime
+          ? `(${toVar} is null or ${col} < ${toVar} + interval '1 day')`
+          : `(${toVar} is null or ${col} <= ${toVar})`,
+      });
+      continue;
+    }
+
+    const varName = `v_f_${camelToSnake(base)}`;
+
+    if (conf.op === "like") {
+      if (!f.isString) {
+        throw new Error(`${model}.${f.key}: x-filter op:"like" — лише для рядкового поля`);
+      }
+      specs.push({
+        key: base,
+        decl: `  ${varName} text := nullif(v_filters->>'${base}', '');`,
+        cond: `(${varName} is null or ${col} ilike '%' || ${varName} || '%')`,
+      });
+      continue;
+    }
+
+    // eq. Для ссылки фільтруємо по КОЛОНЦІ-FK: клієнт шле лише id, і це все,
+    // що потрібно для відбору.
+    const sqlType = f.isBigint
+      ? "bigint"
+      : f.isInt
+      ? "int"
+      : f.isNumeric
+      ? "numeric"
+      : f.isBool
+      ? "boolean"
+      : f.isDate
+      ? "date"
+      : f.isTimestamp
+      ? (f.isTimestampTz ? "timestamptz" : "timestamp")
+      : "text";
+    const parse = f.isBool
+      ? `(v_filters->>'${base}')::boolean`
+      : sqlType === "text"
+      ? `nullif(v_filters->>'${base}', '')`
+      : `nullif(v_filters->>'${base}', '')::${sqlType}`;
+
+    const spec: FilterSpec = {
+      key: base,
+      decl: `  ${varName} ${sqlType} := ${parse};`,
+      cond: `(${varName} is null or ${col} = ${varName})`,
+    };
+
+    // Ссылка: назад віддаємо не лише id, а й представлення — рівно тим самим
+    // об'єктом `{id, <display>}`, що й у рядку списку. Інакше після
+    // перезавантаження сторінки пікер у панелі знав би id, але показував порожнє
+    // поле, і фільтр виглядав би скинутим, хоч і діяв.
+    if (f.ref) {
+      const r = f.ref;
+      spec.mirror = {
+        key: r.as,
+        expr: `(select jsonb_build_object('id', x.${r.targetPk}::text, '${r.display}', x.${r.display})
+     from ${r.targetSchema}.${r.targetTable} x where x.${r.targetPk} = ${varName})`,
+      };
+    }
+
+    specs.push(spec);
+  }
+
+  const seen = new Set<string>();
+  for (const s of specs) {
+    if (seen.has(s.key)) throw new Error(`${model}: фільтр '${s.key}' оголошено двічі`);
+    seen.add(s.key);
+  }
+  return specs;
 }
 
 // розбір об'єктної схеми на скалярні поля + табличні частини
@@ -466,6 +622,28 @@ ${indent}  )
 ${indent}  select id from grp
 ${indent}))`
       : "";
+  // Фільтри панелі. Оголошення + умови + повернення ефективного набору назад.
+  const hasFilters = spec.filters.length > 0;
+  const filterDecl = hasFilters
+    ? `  v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);\n` +
+      spec.filters.map((f) => f.decl).join("\n") + "\n" +
+      `  v_filters_out jsonb;\n`
+    : "";
+  const filterCond = (indent: string) =>
+    hasFilters
+      ? "\n" + spec.filters.map((f) => `${indent}and ${f.cond}`).join("\n")
+      : "";
+  // Ссылочні фільтри доповнюємо представленням — id клієнт прислав сам, а
+  // підпис для пікера знає лише база.
+  const mirrors = spec.filters.filter((f) => f.mirror);
+  const filterMirror = hasFilters
+    ? `  v_filters_out := v_filters;\n` +
+      mirrors.map((f) =>
+        `  v_filters_out := v_filters_out || jsonb_strip_nulls(jsonb_build_object(\n` +
+        `    '${f.mirror!.key}',\n    ${f.mirror!.expr}\n  ));\n`
+      ).join("") + "\n"
+    : "";
+
   return `drop function if exists ${spec.table}_list(bigint, jsonb);
 create function ${spec.table}_list(user_id bigint, payload jsonb)
 returns jsonb
@@ -476,14 +654,14 @@ declare
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 20), 1);
   v_sort_by   text := coalesce(payload->>'sortBy', '${defaultSort}');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
-${groupDecl}  v_rows      jsonb;
+${groupDecl}${filterDecl}  v_rows      jsonb;
   v_total     int;
 begin
-${sortGuard}  select count(*)::int into v_total
+${sortGuard}${filterMirror}  select count(*)::int into v_total
   from ${spec.fromClause}${joinsCount}
   where ${baseAnd(spec)}(
 ${searchClause(spec.searchExprsList, "    ")}
-  )${groupCond("  ")};
+  )${groupCond("  ")}${filterCond("  ")};
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
@@ -493,7 +671,7 @@ ${rowCols}
     from ${spec.fromClause}${joins}
     where ${baseAnd(spec)}(
 ${searchClause(spec.searchExprsList, "      ")}
-    )${groupCond("    ")}
+    )${groupCond("    ")}${filterCond("    ")}
     order by
 ${orderLadder(spec.listSort, "      ", spec.pkExpr)}
     limit v_page_size
@@ -506,6 +684,10 @@ ${orderLadder(spec.listSort, "      ", spec.pkExpr)}
       `'item',   null`,
       `'options', '{}'::jsonb`,
       `'totals', jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size)`,
+      // `$filters` дзеркалиться назад так само, як `$query`: assign() на клієнті
+      // зіллє його в `$root.$filters`, і панель побачить ефективний набір —
+      // разом із представленням ссылок, яке вона сама дістати не може.
+      ...(hasFilters ? [`'$filters', v_filters_out`] : []),
       `'extra',  '{}'::jsonb`,
     ])
   };
@@ -1232,6 +1414,8 @@ async function buildSpec(
     rowKeys.has(f.key) || (f.ref && rowKeys.has(f.ref.as))
   );
 
+  const filters = buildFilters(itemFields, model);
+
   // search (list): ref.searchable → display; скаляр з x-search → alias.col; фоллбек — усі строкові
   const searchExprsList: string[] = [];
   for (const f of itemFields) {
@@ -1306,6 +1490,7 @@ async function buildSpec(
     tables,
     listFields,
     lookupFields,
+    filters,
     searchExprsList,
     searchExprsLookup,
     listSort,

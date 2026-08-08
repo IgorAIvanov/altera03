@@ -350,7 +350,8 @@ export class UiGroupTree extends GlobalStyledLitElement {
               <div class="app-dialog w-96">
                 <div class="app-dialog-title">
                   <span>${t("groups.moveTitle")}</span>
-                  <span class="app-dialog-close" @click=${() => { this.movingGroup = false; }}>×</span>
+                  <button type="button" class="app-dialog-close" aria-label=${t("common.close")}
+                    @click=${() => { this.movingGroup = false; }}>×</button>
                 </div>
                 <div class="app-dialog-body">
                   <div class="max-h-72 overflow-auto border border-base-300 rounded">

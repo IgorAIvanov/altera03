@@ -3,6 +3,7 @@ import { html, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { apiFetch } from "../../data/api.ts";
+import { placePopover } from "../popover.ts";
 
 @customElement("ui-picker")
 export class UiPicker extends GlobalStyledLitElement {
@@ -57,8 +58,8 @@ export class UiPicker extends GlobalStyledLitElement {
     if (!this._popover) return;
     const open = this._popover.matches(":popover-open");
     if (this._items.length > 0 && !open) {
-      this._positionPopover();
       this._popover.showPopover();
+      this._positionPopover();
     }
     if (this._items.length === 0 && open) this._popover.hidePopover();
     if (this._activeIndex >= 0) {
@@ -67,22 +68,18 @@ export class UiPicker extends GlobalStyledLitElement {
     }
   }
 
+  /**
+   * Розкладку веде спільний `placePopover` — той самий, що в `ui-date` і
+   * `ui-period`. Своє тут лише бажана висота: вона рахується не з вмісту, а з
+   * кількості знайдених рядків, інакше список спершу розтягнувся б на весь
+   * результат, а вже потім його обрізали б.
+   */
   private _positionPopover() {
     if (!this._popover || !this._input) return;
-    const rect = this._input.getBoundingClientRect();
-    const gap = 2;
-    const desiredHeight = Math.min(this._items.length, this.listSize) * 28 + 8;
-    const below = window.innerHeight - rect.bottom - gap;
-    const above = rect.top - gap;
-    const openAbove = below < desiredHeight && above > below;
-    const availableHeight = Math.max(0, openAbove ? above : below);
-
-    this._popover.style.top = openAbove
-      ? `${Math.max(0, rect.top - gap - Math.min(desiredHeight, availableHeight))}px`
-      : `${rect.bottom + gap}px`;
-    this._popover.style.left   = `${rect.left}px`;
-    this._popover.style.width  = `${rect.width}px`;
-    this._popover.style.maxHeight = `${Math.min(desiredHeight, availableHeight)}px`;
+    placePopover(this._popover, this._input, {
+      matchAnchorWidth: true,
+      desiredHeight: Math.min(this._items.length, this.listSize) * 28 + 8,
+    });
   }
 
   // браузер закрыл popover (Esc или клік ззовні) — очищаємо список

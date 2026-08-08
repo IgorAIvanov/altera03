@@ -27,11 +27,13 @@ interface PendingDialog {
   icon: DialogIcon;
 }
 
-/** Іконки діалогів. Кольори — літералами тієї ж гами, що й у темі. */
+/** Іконки діалогів. Кольори — літералами тієї ж гами, що й у темі.
+    Літерал доводиться звіряти руками: `--color-error` уже раз розійшовся з
+    цим файлом, коли колір помилки підняли до порога контрасту. */
 const icons: Record<DialogIcon, TemplateResult> = {
   question: svg`<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#2f5f8f" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12" y2="17.01" stroke-width="2.4" stroke-linecap="round"/></svg>`,
   warning: svg`<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.6"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="17.01" stroke-width="2.6" stroke-linecap="round"/></svg>`,
-  error: svg`<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="9" x2="15" y2="15" stroke-width="2" stroke-linecap="round"/></svg>`,
+  error: svg`<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="9" x2="15" y2="15" stroke-width="2" stroke-linecap="round"/></svg>`,
   info: svg`<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#2f5f8f" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="16" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="8" x2="12" y2="8.01" stroke-width="2.4" stroke-linecap="round"/></svg>`,
 };
 
@@ -123,7 +125,8 @@ export class ConfirmHost extends GlobalStyledLitElement {
         <div class="app-dialog">
           <div class="app-dialog-title">
             <span>${t("common.confirmTitle")}</span>
-            <span class="app-dialog-close" @click=${() => this.#finish(null)}>×</span>
+            <button type="button" class="app-dialog-close" aria-label=${t("common.close")}
+              @click=${() => this.#finish(null)}>×</button>
           </div>
           <div class="app-dialog-body">
             <div class="flex items-center gap-4 py-1">

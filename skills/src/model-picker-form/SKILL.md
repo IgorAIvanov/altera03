@@ -29,13 +29,17 @@ Do not confuse the two:
 
 ## Base class
 
-`@client/ui-kit/base/model-picker-base.ts` → `ModelPickerBase<Row> extends BaseUI<ListRoot<Row>>`
+`@client/ui-kit/base/model-picker-base.ts` → `ModelPickerBase<Row> extends QueryTableBase<Row>`
 (`@client/` is the alias for the `@altera/client` package).
 
-It owns: load of the `lookup` command via `run()` / `assign()` on the shared envelope,
-debounced search (250 ms), autofocus on the search input, row selection,
-double-click / Enter to confirm, Escape to cancel, and emitting `picker.select` /
-`picker.cancel` on the bus.
+`QueryTableBase` is the shared foundation under both the picker and the list screen. It owns the
+table mechanics: loading, server-side sort, debounced search (300 ms), pagination, row keyboard
+navigation (↑↓, Home/End, Space to select, Enter to activate) and the toolbar. `ModelPickerBase`
+adds only what makes it a *dialog*: autofocus on search, confirm/cancel, and emitting
+`picker.select` / `picker.cancel` on the bus.
+
+This split matters when you extend it: anything about the **table** belongs in `QueryTableBase`
+and changing it affects the list too; anything about **choosing a value** belongs here.
 
 State lives in the shared `$root`, exactly as in the list: the filter is the service field
 `$root.$query`, the data is `$root.rows` / `$root.totals`, and the familiar members
@@ -60,7 +64,7 @@ A complete picker dialog for a `bank` catalog — this is the entire file:
 ```ts
 import { customElement } from "lit/decorators.js";
 import { ModelPickerBase } from "@client/ui-kit/base/model-picker-base.ts";
-import type { ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+import type { ListColumn } from "@client/ui-kit/base/table-contract.ts";
 import type { BankLookupRow } from "./bank.schema.ts";
 
 export const tagName = "bank-picker";
@@ -113,6 +117,57 @@ the `lookup` SQL function must accept `search`, `page`, `pageSize`, `sortBy`,
 
 The caller passes `params` (from `<ui-picker fetch-params=…>`); they are merged
 into the lookup payload automatically — use them to scope results (e.g. only active records).
+
+### Own buttons in the toolbar
+
+The dialog has a toolbar, same as the list screen: extra buttons on the left, search and refresh
+on the right. Add your own with `renderToolbarExtra()` — the one extension point for this, so that
+every picker puts its buttons in the same place:
+
+```ts
+protected override renderToolbarExtra() {
+  return html`
+    <button class="btn btn-sm" @click=${() => { this.showArchived = !this.showArchived; this.reload(); }}>
+      ${t("counterparty.showArchived")}
+    </button>
+  `;
+}
+```
+
+Anything the button changes and the server must see goes through `extraPayload()` — it is merged
+into the lookup payload alongside `params`:
+
+```ts
+protected override extraPayload() {
+  return { showArchived: this.showArchived };
+}
+```
+
+Keep the flag in `@state`, not in `$root`: it is transient UI, not model data.
+
+### Multiple selection
+
+The **caller** decides, not the picker — the same catalogue is picked one value at a
+time into a field, and in batches into a document's tabular section:
+
+```ts
+const rows = await bus.pickMany("catalog/nomenclature");   // → [{id, label}, …] | null
+```
+
+`bus.pickMany()` opens the same dialog with `multiple: true`. The base then shows a
+checkbox column, a check-all-on-page box, a `Checked: N` counter, and `Select (N)` in
+the footer. `bus.pick()` is unchanged and still returns a single value.
+
+Two behaviours worth knowing:
+
+- **Double-click and Enter check the row instead of closing the dialog** when it is
+  multiple. Otherwise picking a batch would end on the first row — exactly when you
+  need it least.
+- **Checks survive paging**, and `checked` holds whole rows, so labels are available
+  for rows no longer on screen. This is why the answer can carry `label` for every id.
+
+Nothing in the picker subclass changes: `multiple` arrives as a property from
+`picker-host`.
 
 ## Rules
 

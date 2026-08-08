@@ -697,12 +697,19 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     if (!this.notFound && shown.length === 0) return "";
     const style = (m: Message) =>
       m.type === "error" ? "alert-error" : m.type === "warn" ? "alert-warning" : "alert-info";
+    // role="alert" на кожному повідомленні, а не на контейнері: контейнер живе
+    // в DOM постійно, і читалка озвучує лише те, що з'явилося ВСЕРЕДИНІ вже
+    // оголошеної живої області — а тут з'являється саме повідомлення. Без цього
+    // відмова сервера після «Зберегти» проходила беззвучно: фокус лишався на
+    // кнопці, а текст падав вище по сторінці.
     return html`
       <div class="mb-3 flex flex-col gap-2">
         ${this.notFound
-          ? html`<div class="alert alert-error py-2 text-sm">${t("common.recordNotFound")}</div>`
+          ? html`<div class="alert alert-error py-2 text-sm" role="alert">${t("common.recordNotFound")}</div>`
           : ""}
-        ${shown.map((m) => html`<div class="alert ${style(m)} py-2 text-sm">${m.text}</div>`)}
+        ${shown.map((m) => html`
+          <div class="alert ${style(m)} py-2 text-sm" role="alert">${m.text}</div>
+        `)}
       </div>
     `;
   }
@@ -717,6 +724,16 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    *
    * Класу `form-control` тут немає свідомо: у daisyUI 5 його не існує (це
    * клас четвертої версії), і саме він ламав вирівнювання підписів.
+   *
+   * Обгортка — `<label>`, а не `<div>`, і це не про доступність «взагалі».
+   * Контрол лежить УСЕРЕДИНІ підпису, тобто зв'язок неявний — жодних `id` і
+   * `for`, які довелося б вигадувати й тримати унікальними. Дає це дві речі
+   * одразу: клік по підпису ставить фокус у поле (ціль натискання росте втричі,
+   * і виграють усі, не лише читалки екрана), а сам підпис нарешті стає ім'ям
+   * поля для допоміжних технологій — доти поле не мало імені взагалі.
+   *
+   * Через це ж контрол сюди передають ГОЛИЙ (`<input>`, `<select>`): вкладений
+   * `<label>` зробив би розмітку невалідною, і клік пішов би не туди.
    */
   protected renderField(
     label: string,
@@ -731,14 +748,14 @@ export abstract class BaseUI<T extends Record<string, unknown>>
 
     const error = opts.field ? this.fieldErrors[opts.field] : undefined;
     return html`
-      <div class="flex flex-col gap-px ${opts.class ?? ""} ${error ? "field-invalid" : ""}"
+      <label class="flex flex-col gap-px ${opts.class ?? ""} ${error ? "field-invalid" : ""}"
         data-field=${opts.field ?? nothing}>
         <span class="label text-sm leading-none">
           ${label}${required ? html`<span class="text-error ml-0.5">*</span>` : ""}
         </span>
         ${control}
-        ${error ? html`<span class="field-error">${error}</span>` : ""}
-      </div>
+        ${error ? html`<span class="field-error" role="alert">${error}</span>` : ""}
+      </label>
     `;
   }
 

@@ -106,11 +106,15 @@ export class PickerHost extends LitElement {
       const el = document.createElement(tagName) as HTMLElement & {
         callbackId?: string;
         params?: Record<string, unknown>;
+        multiple?: boolean;
         dialogWidth?: string;
         dialogHeight?: string;
       };
       el.callbackId = msg.callbackId;
       if (msg.params) el.params = msg.params;
+      // Множинність приходить від того, хто відкривав (`bus.pickMany`), і лише
+      // передається далі: сам пікер про свій режим не вирішує.
+      if (msg.multiple) el.multiple = true;
 
       this._picker = {
         callbackId: msg.callbackId,

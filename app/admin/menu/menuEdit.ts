@@ -234,7 +234,7 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
           <div class="mt-2">
             <div class="font-semibold mb-1">${this.t("menu.groups")}</div>
             ${groups.length === 0
-              ? html`<div class="text-base-content/50">${this.t("common.noData")}</div>`
+              ? html`<div class="text-muted">${this.t("common.noData")}</div>`
               : html`
                 <div class="flex flex-wrap gap-3">
                   ${groups.map((g) => html`
@@ -344,7 +344,7 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
                 </tr>
               `)}
               ${item.entries.length === 0
-                ? html`<tr><td colspan="9" class="text-center text-base-content/40 py-4">${this.t("common.noData")}</td></tr>`
+                ? html`<tr><td colspan="9" class="text-center text-muted py-4">${this.t("common.noData")}</td></tr>`
                 : ""}
             </tbody>
           </table>

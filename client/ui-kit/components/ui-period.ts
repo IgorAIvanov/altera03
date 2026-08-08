@@ -3,6 +3,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { t } from "../../locale.ts";
 import { dateFormat } from "../../shared/datetime.ts";
+import { placePopover } from "../popover.ts";
 import {
   type Period,
   periodLabel,
@@ -86,18 +87,17 @@ export class UiPeriod extends GlobalStyledLitElement {
     this._open = !this._open;
   }
 
-  /** Синхронізує popover із `_open` і тримає його під полем (як в ui-date). */
+  /** Синхронізує popover із `_open` і тримає його під полем. */
   protected override updated() {
     const pop = this._popover;
     if (!pop) return;
     const shown = pop.matches(":popover-open");
     if (this._open && !shown) {
-      const rect = this._anchor?.getBoundingClientRect();
-      if (rect) {
-        pop.style.top = `${rect.bottom + 2}px`;
-        pop.style.left = `${rect.left}px`;
-      }
       pop.showPopover();
+      // Розміщуємо ПІСЛЯ показу: у схованого елемента немає ширини, а без неї
+      // не притиснути вікно до краю екрана. Видимого миготіння немає — до
+      // відмальовування браузер виконує весь синхронний код.
+      if (this._anchor) placePopover(pop, this._anchor);
     }
     if (!this._open && shown) pop.hidePopover();
   }
@@ -154,7 +154,7 @@ export class UiPeriod extends GlobalStyledLitElement {
         })}
       </div>
       <div class="mt-2 pt-2 border-t border-base-300">
-        <div class="text-xs text-base-content/60 mb-1">${t("period.custom")}</div>
+        <div class="text-xs text-muted mb-1">${t("period.custom")}</div>
         <div class="flex items-center gap-1">
           <ui-date
             class="flex-1 min-w-0"
@@ -166,7 +166,7 @@ export class UiPeriod extends GlobalStyledLitElement {
               this._setFrom(e.detail.value);
             }}
           ></ui-date>
-          <span class="text-base-content/40">—</span>
+          <span class="text-muted">—</span>
           <ui-date
             class="flex-1 min-w-0"
             size="sm"
@@ -199,7 +199,7 @@ export class UiPeriod extends GlobalStyledLitElement {
           ?disabled=${this.disabled}
           @click=${this._toggle}>
           ${periodLabel(this._period, this.format) ||
-            html`<span class="text-base-content/40">${t("period.label")}</span>`}
+            html`<span class="text-muted">${t("period.label")}</span>`}
         </button>
         <button type="button" class="btn btn-square join-item ${btn}"
           title=${t("period.next")}

@@ -919,7 +919,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
   private field(label: string, input: TemplateResult) {
     return html`
       <label class="form-control">
-        <span class="label-text text-xs text-base-content/60">${label}</span>
+        <span class="label-text text-xs text-muted">${label}</span>
         ${input}
       </label>
     `;
@@ -983,7 +983,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
   private renderProperties(): TemplateResult {
     const block = this.selectedBlock;
     if (!block) {
-      return html`<div class="p-4 text-center text-sm text-base-content/50">${t("printTemplate.propertiesEmpty")}</div>`;
+      return html`<div class="p-4 text-center text-sm text-muted">${t("printTemplate.propertiesEmpty")}</div>`;
     }
 
     const scalarPaths = sortPaths(collectScalarPaths(this.previewData));
@@ -1109,7 +1109,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               ))} />
           `)}
 
-          <div class="text-xs text-base-content/60">${t(`printTemplate.barcodeHint.${block.symbology}`)}</div>
+          <div class="text-xs text-muted">${t(`printTemplate.barcodeHint.${block.symbology}`)}</div>
         ` : nothing}
 
         ${block.type === "field-list" ? this.renderFieldListProperties(block, scalarPaths) : nothing}
@@ -1134,7 +1134,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         ${block.items.map((fieldItem, index) => html`
           <div class="flex flex-col gap-1 rounded border border-base-300 p-2">
             <div class="flex items-center justify-between">
-              <span class="text-xs text-base-content/50">${index + 1}</span>
+              <span class="text-xs text-muted">${index + 1}</span>
               <span class="flex gap-1">
                 <button class="btn btn-ghost btn-xs" ?disabled=${index === 0}
                   @click=${() => this.moveFieldItem(block.key, index, index - 1)}>↑</button>
@@ -1295,7 +1295,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           </tr>
         `)}
         ${rows.length === 0
-          ? html`<tr><td class="text-center text-base-content/40">${t("printTemplate.sectionEmpty")}</td></tr>`
+          ? html`<tr><td class="text-center text-muted">${t("printTemplate.sectionEmpty")}</td></tr>`
           : nothing}
       </table>
     `;
@@ -1335,7 +1335,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         <div class="flex flex-wrap gap-1">
           ${block.columns.map((column, index) => html`
             <span class="flex items-center gap-1 rounded border border-base-300 px-1">
-              <span class="text-xs text-base-content/50">${index + 1}</span>
+              <span class="text-xs text-muted">${index + 1}</span>
               <input class="input input-xs w-12" .value=${column.widthPercent}
                 @input=${(e: Event) => this.updateGridColumn(block, column.key, (e.target as HTMLInputElement).value)} />
               <button class="btn btn-ghost btn-xs text-error" ?disabled=${block.columns.length <= 1}
@@ -1353,7 +1353,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                 + ${t("printTemplate.addSectionRow")}
               </button>
             </div>
-            <span class="text-xs text-base-content/50">${t(`printTemplate.sectionHint.${section}`)}</span>
+            <span class="text-xs text-muted">${t(`printTemplate.sectionHint.${section}`)}</span>
             ${this.renderSectionGrid(block, section)}
             ${block.sections[section].length
               ? html`
@@ -1382,7 +1382,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
         ${cell && selection ? html`
           <div class="flex flex-col gap-2 rounded border border-base-300 p-2">
-            <span class="text-xs text-base-content/50">
+            <span class="text-xs text-muted">
               ${t(`printTemplate.section.${selection.section}`)} · ${cell.colSpan}×${cell.rowSpan}
             </span>
             ${this.field(t("printTemplate.cellText"), this.textInput(cell.text, (v) => this.updateSelectedCell({ text: v })))}
@@ -1394,7 +1394,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                 (v) => this.updateSelectedCell({ path: v }),
               ),
             )}
-            <span class="text-xs text-base-content/50">${t("printTemplate.cellTextWins")}</span>
+            <span class="text-xs text-muted">${t("printTemplate.cellTextWins")}</span>
             <div class="grid grid-cols-2 gap-2">
               ${this.field(t("printTemplate.fontAlign"), this.alignButtons(cell.align, (align) => this.updateSelectedCell({ align })))}
               ${this.field(t("printTemplate.fontWeight"), html`
@@ -1405,7 +1405,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               ${this.field(t("printTemplate.fontColor"), this.colorInput(cell.color, (v) => this.updateSelectedCell({ color: v })))}
             </div>
           </div>
-        ` : html`<div class="text-xs text-base-content/50">${t("printTemplate.cellSelectHint")}</div>`}
+        ` : html`<div class="text-xs text-muted">${t("printTemplate.cellSelectHint")}</div>`}
       </div>
     `;
   }
@@ -1479,7 +1479,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           </div>
         `)}
         ${this.blocks.length === 0
-          ? html`<div class="p-2 text-center text-xs text-base-content/40">${t("common.noData")}</div>`
+          ? html`<div class="p-2 text-center text-xs text-muted">${t("common.noData")}</div>`
           : ""}
       </div>
     `;
@@ -1691,7 +1691,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
         <!-- Реквізити шаблону -->
         <fieldset class="grid grid-cols-2 gap-3 rounded-lg border border-base-300 px-4 pb-3 md:grid-cols-4">
-          <legend class="px-2 text-sm text-base-content/60">${t("printTemplate.titleOne")}</legend>
+          <legend class="px-2 text-sm text-muted">${t("printTemplate.titleOne")}</legend>
           ${this.field(t("common.code"), this.textInput(item.code, (v) => this.setField("code", v)))}
           ${this.field(t("common.name"), this.textInput(item.name, (v) => this.setField("name", v)))}
           ${this.field(t("printTemplate.targetModel"), this.textInput(item.targetModel, (v) => this.setField("targetModel", v)))}
@@ -1754,7 +1754,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         <!-- Дані прев'ю -->
         ${this.showDataTools ? html`
           <div class="flex flex-col gap-2 rounded-lg border border-base-300 p-3">
-            <span class="text-sm text-base-content/60">${t("printTemplate.previewPayloadHint")}</span>
+            <span class="text-sm text-muted">${t("printTemplate.previewPayloadHint")}</span>
             <textarea class="textarea textarea-sm textarea-bordered font-mono" rows="4" .value=${this.requestPayloadText}
               @input=${(e: Event) => { this.requestPayloadText = (e.target as HTMLTextAreaElement).value; }}></textarea>
             <textarea class="textarea textarea-sm textarea-bordered font-mono" rows="8" .value=${this.previewDataText}
@@ -1793,7 +1793,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                     ${this.running === "preview" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
                     ${t("printTemplate.refreshPreview")}
                   </button>`
-                : html`<span class="text-xs text-base-content/50">${t("printTemplate.layoutHint")}</span>`}
+                : html`<span class="text-xs text-muted">${t("printTemplate.layoutHint")}</span>`}
             </div>
 
             ${this.viewMode === "layout"
@@ -1801,7 +1801,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               : this.previewPdfUrl
                 ? html`<iframe class="h-[42rem] w-full rounded-lg border border-base-300" src=${this.previewPdfUrl}
                     title=${t("printTemplate.preview")}></iframe>`
-                : html`<div class="flex h-[42rem] items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/40">
+                : html`<div class="flex h-[42rem] items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-muted">
                     ${t("printTemplate.previewEmpty")}
                   </div>`}
           </div>

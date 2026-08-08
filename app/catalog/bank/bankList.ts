@@ -26,8 +26,11 @@ export class BankList extends ModelListBase<BankRow> {
     },
   ];
 
-  // приклад кольору рядка: неактивні банки — приглушено
+  // приклад кольору рядка: неактивні банки — приглушено.
+  // #9ca3af давав 2.54:1 до білого й 1.89:1 до виділеного рядка — тобто ознака,
+  // якою рядок і відрізняється, сама була майже не видна. Це значення проходить
+  // поріг AA і на білому, і на зебрі.
   protected override rowStyle(row: BankRow) {
-    return row.isActive === false ? "color:#9ca3af" : "";
+    return row.isActive === false ? "color:#6b7280" : "";
   }
 }

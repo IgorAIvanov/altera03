@@ -151,9 +151,9 @@ export class UiAttachments extends GlobalStyledLitElement {
         </div>
 
         ${!this.ownerId
-          ? html`<div class="text-sm text-base-content/50">${t("blob.saveFirst")}</div>`
+          ? html`<div class="text-sm text-muted">${t("blob.saveFirst")}</div>`
           : this._rows.length === 0
-          ? html`<div class="text-sm text-base-content/40">${t("common.noData")}</div>`
+          ? html`<div class="text-sm text-muted">${t("common.noData")}</div>`
           : html`
             <table class="table table-sm w-full">
               <tbody>
@@ -166,7 +166,7 @@ export class UiAttachments extends GlobalStyledLitElement {
                             alt=${row.name}
                             class="w-8 h-8 object-cover rounded"
                           />`
-                        : html`<span class="text-base-content/40">
+                        : html`<span class="text-muted">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                               stroke="currentColor" stroke-width="2">
                               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -181,7 +181,7 @@ export class UiAttachments extends GlobalStyledLitElement {
                         download=${row.name}
                       >${row.name}</a>
                     </td>
-                    <td class="w-24 text-right tabular-nums text-base-content/60">
+                    <td class="w-24 text-right tabular-nums text-muted">
                       ${formatFileSize(row.size)}
                     </td>
                     <td class="w-10 text-center">

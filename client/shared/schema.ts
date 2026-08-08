@@ -86,13 +86,18 @@ export const DocumentHeaderSchema: TObject<{
     title: "Дата",
     "x-db-type": "timestamp",
     "x-list": { sortable: true },
+    // Період — фільтр номер один у будь-якому журналі документів, тож генератор
+    // розбирає `dateFrom`/`dateTo` в кожному `_list` документа. Саме такі імена
+    // віддає `<ui-period>`. Це лише МОЖЛИВІСТЬ: доки екран не намалює панель,
+    // ключів у payload немає і відбір не змінюється.
+    "x-filter": { op: "range", key: "date" },
   }),
   total: Type.Optional(Type.Number({ title: "Сума", "x-db-type": "numeric", default: 0 })),
   // Рядок для журналу й списків посилань. Заповнює документ при записі;
   // порожній рядок замість null — колонка not null.
   presentation: Type.Optional(Type.String({ title: "Представлення", default: "", "x-search": true })),
   description: Type.Optional(Type.String({ title: "Коментар" })),
-  isPosted: Type.Optional(Type.Boolean({ title: "Проведено", default: false })),
+  isPosted: Type.Optional(Type.Boolean({ title: "Проведено", default: false, "x-filter": true })),
   isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type DocumentHeader = Static<typeof DocumentHeaderSchema>;

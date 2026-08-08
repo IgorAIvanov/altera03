@@ -143,7 +143,7 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
     return html`
       ${this.showCurrency ? html`
         <td class="text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
-        <td class="text-base-content/60">${row.currencyCode ?? ""}</td>` : ""}
+        <td class="text-muted">${row.currencyCode ?? ""}</td>` : ""}
       ${this.showQuantity
         ? html`<td class="text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
     `;
@@ -237,7 +237,7 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
 
     return html`
         ${totals.accountName
-          ? html`<div class="text-sm text-base-content/70 no-print">
+          ? html`<div class="text-sm text-muted no-print">
               ${totals.account} — ${totals.accountName}
             </div>`
           : ""}
@@ -269,7 +269,7 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
             </tr>
             ${this.$root.rows.map((row) => this.renderRow(row))}
             ${this.$root.rows.length === 0
-              ? html`<tr><td colspan="8" class="text-center text-base-content/40 py-4">${t("common.noData")}</td></tr>`
+              ? html`<tr><td colspan="8" class="text-center text-muted py-4">${t("common.noData")}</td></tr>`
               : ""}
           </tbody>
           <tfoot>

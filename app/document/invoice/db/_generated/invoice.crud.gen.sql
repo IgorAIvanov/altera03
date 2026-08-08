@@ -12,12 +12,25 @@ declare
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 20), 1);
   v_sort_by   text := coalesce(payload->>'sortBy', 'number');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
+  v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);
+  v_f_date_from date := nullif(v_filters->>'dateFrom', '')::date;
+  v_f_date_to date := nullif(v_filters->>'dateTo', '')::date;
+  v_f_is_posted boolean := (v_filters->>'isPosted')::boolean;
+  v_f_counterparty_id bigint := nullif(v_filters->>'counterpartyId', '')::bigint;
+  v_filters_out jsonb;
   v_rows      jsonb;
   v_total     int;
 begin
   if v_sort_by not in ('number', 'docDate', 'counterparty') then
     v_sort_by := 'number';
   end if;
+
+  v_filters_out := v_filters;
+  v_filters_out := v_filters_out || jsonb_strip_nulls(jsonb_build_object(
+    'counterparty',
+    (select jsonb_build_object('id', x.id::text, 'name', x.name)
+     from app.counterparty x where x.id = v_f_counterparty_id)
+  ));
 
   select count(*)::int into v_total
   from app.document h
@@ -31,7 +44,11 @@ begin
     or h.number ilike '%' || (payload->>'search') || '%'
     or h.presentation ilike '%' || (payload->>'search') || '%'
     or r_counterparty.name ilike '%' || (payload->>'search') || '%'
-  );
+  )
+  and (v_f_date_from is null or h.doc_date >= v_f_date_from)
+  and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
+  and (v_f_is_posted is null or h.is_posted = v_f_is_posted)
+  and (v_f_counterparty_id is null or t.counterparty_id = v_f_counterparty_id);
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
@@ -56,6 +73,10 @@ begin
       or h.presentation ilike '%' || (payload->>'search') || '%'
       or r_counterparty.name ilike '%' || (payload->>'search') || '%'
     )
+    and (v_f_date_from is null or h.doc_date >= v_f_date_from)
+    and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
+    and (v_f_is_posted is null or h.is_posted = v_f_is_posted)
+    and (v_f_counterparty_id is null or t.counterparty_id = v_f_counterparty_id)
     order by
       case when v_sort_by = 'number' and v_sort_dir = 'asc'  then h.number end asc,
       case when v_sort_by = 'number' and v_sort_dir = 'desc' then h.number end desc,
@@ -74,6 +95,7 @@ begin
         'item',   null,
         'options', '{}'::jsonb,
         'totals', jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size),
+        '$filters', v_filters_out,
         'extra',  '{}'::jsonb
       ),
       'messages', '[]'::jsonb,

@@ -155,7 +155,7 @@ export class UiImage extends GlobalStyledLitElement {
                   alt=${this.label}
                   class="max-w-full max-h-full object-contain"
                 />`
-              : html`<span class="text-xs text-base-content/40 px-2 text-center">
+              : html`<span class="text-xs text-muted px-2 text-center">
                   ${t("blob.noImage")}
                 </span>`}
           </div>
