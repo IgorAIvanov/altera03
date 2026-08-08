@@ -3,7 +3,7 @@ create table if not exists app.bank (
   code       varchar(9)   not null,
   name       varchar(200) not null,
   mfo        varchar(6),
-  is_active  boolean      not null default true,
+  is_deleted boolean      not null default false,
   created_at timestamptz  not null default now(),
   updated_at timestamptz  not null default now()
 );
@@ -11,4 +11,3 @@ create table if not exists app.bank (
 create unique index if not exists uq_bank_code on app.bank (code);
 create index if not exists ix_bank_name      on app.bank (name);
 create index if not exists ix_bank_mfo       on app.bank (mfo);
-create index if not exists ix_bank_is_active on app.bank (is_active);

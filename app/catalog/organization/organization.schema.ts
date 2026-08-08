@@ -48,7 +48,7 @@ export const OrganizationItemSchema = Type.Object({
   logoToken: Type.Optional(Type.Union([Type.String(), Type.Null()], {
     "x-transient": true, default: null,
   })),
-  isActive: Type.Optional(Type.Boolean({ title: "Активна", default: true })),
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type OrganizationItem = Static<typeof OrganizationItemSchema>;
 
@@ -59,7 +59,7 @@ export const OrganizationRowSchema = Type.Object({
   code:     Type.String(),
   name:     Type.String(),
   edrpou:   Type.Optional(Type.String()),
-  isActive: Type.Optional(Type.Boolean()),
+  isDeleted: Type.Optional(Type.Boolean()),
 });
 export type OrganizationRow = Static<typeof OrganizationRowSchema>;
 

@@ -27,6 +27,6 @@ export class OrganizationList extends ModelListBase<OrganizationRow> {
   ];
 
   protected override rowStyle(row: OrganizationRow) {
-    return row.isActive === false ? "color:#9ca3af" : "";
+    return row.isDeleted === true ? "color:#6b7280" : "";
   }
 }

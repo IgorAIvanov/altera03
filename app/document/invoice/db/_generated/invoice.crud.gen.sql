@@ -37,8 +37,7 @@ begin
     join app.invoice t on t.document_id = h.id
   left join app.organization r_organization on r_organization.id = h.organization_id
   left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
-  where not h.is_deleted
-    and (
+  where (
     coalesce(payload->>'search', '') = ''
     or r_organization.name ilike '%' || (payload->>'search') || '%'
     or h.number ilike '%' || (payload->>'search') || '%'
@@ -58,6 +57,7 @@ begin
       'docDate', h.doc_date,
       'total', h.total,
       'isPosted', h.is_posted,
+      'isDeleted', h.is_deleted,
       'counterpartyId', t.counterparty_id::text,
       'counterparty', case when r_counterparty.id is null then null else jsonb_build_object('id', r_counterparty.id::text, 'name', r_counterparty.name) end
     ) as r
@@ -65,8 +65,7 @@ begin
     join app.invoice t on t.document_id = h.id
     left join app.organization r_organization on r_organization.id = h.organization_id
     left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
-    where not h.is_deleted
-    and (
+    where (
       coalesce(payload->>'search', '') = ''
       or r_organization.name ilike '%' || (payload->>'search') || '%'
       or h.number ilike '%' || (payload->>'search') || '%'
@@ -315,7 +314,7 @@ begin
     raise exception 'id обов''язковий';
   end if;
 
-  delete from app.document where id = v_id;
+  update app.document set is_deleted = true where id = v_id;
 
   return jsonb_build_object(
       'ok', true,
@@ -325,6 +324,36 @@ begin
         'options', '{}'::jsonb,
         'totals',  '{}'::jsonb,
         'extra',   jsonb_build_object('deletedId', v_id::text)
+      ),
+      'messages', '[]'::jsonb,
+      'meta', '{}'::jsonb
+    );
+end;
+$$;
+
+drop function if exists app.invoice_undelete(bigint, jsonb);
+create function app.invoice_undelete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint;
+begin
+  v_id := nullif(payload->>'id', '')::bigint;
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  update app.document set is_deleted = false where id = v_id;
+
+  return jsonb_build_object(
+      'ok', true,
+      'data', jsonb_build_object(
+        'item',    null,
+        'rows',    '[]'::jsonb,
+        'options', '{}'::jsonb,
+        'totals',  '{}'::jsonb,
+        'extra',   jsonb_build_object('undeletedId', v_id::text)
       ),
       'messages', '[]'::jsonb,
       'meta', '{}'::jsonb

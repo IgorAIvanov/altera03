@@ -72,7 +72,8 @@ Use these names consistently everywhere: SQL functions, backend command routing,
 | `list`    | Paginated or filtered list of records                |
 | `get`     | Load a single record by id (for form)                |
 | `save`    | Create or update a record (upsert semantics)         |
-| `delete`  | Delete a record by id                                |
+| `delete`  | **Mark** a record for deletion by id (does not destroy it) |
+| `undelete`| Lift the deletion mark                                |
 | `lookup`  | Search records for picker / autocomplete             |
 | `post`    | Post a document (accounting posting)                 |
 | `unpost`  | Reverse the posting of a document                    |
@@ -127,6 +128,7 @@ Pattern: `{schema}.{model}_{command}`
 {schema}.{model}_get
 {schema}.{model}_save
 {schema}.{model}_delete
+{schema}.{model}_undelete
 {schema}.{model}_lookup
 {schema}.{model}_post          -- document models only
 {schema}.{model}_unpost        -- document models only
@@ -249,3 +251,27 @@ non-SQL side effects). Otherwise stay on the SQL function contract above.
   pick the action: [`model-command-access`](../model-command-access/SKILL.md).
 
 Deep dive (framework repository, not part of an application): `docs/ts-model-command.md`.
+
+
+## `delete` marks, it does not destroy
+
+The generated `delete` sets `is_deleted = true`; `undelete` clears it. Nothing is
+removed from the database.
+
+This is not politeness — it is the only thing that makes a mistaken click
+recoverable. A hard delete of a posted document takes its lines and its register
+entries with it, and there is nowhere to get them back from.
+
+Consequences you must keep in mind when writing SQL by hand:
+
+- **`list` shows marked records**, `lookup` hides them. If `list` filtered them out too,
+  the mark would be indistinguishable from disappearance and the user could never lift it.
+- **the row carries `isDeleted`** so the list can draw the status glyph; add it to
+  `<Model>RowSchema`.
+- documents mark `app.document` (the header owns the record), catalogs mark their own
+  table.
+- physical deletion is a **separate** operation that must check references and refuse —
+  it does not exist yet.
+
+`undelete` is a standard command: the runtime knows it and maps it to the `delete`
+permission, so it needs no `commands.access` entry.

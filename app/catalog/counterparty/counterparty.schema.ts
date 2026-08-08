@@ -16,7 +16,7 @@ export const CounterpartyItemSchema = Type.Object({
     "x-lookup": true,
     "x-search": true,
   }),
-  isActive: Type.Optional(Type.Boolean({ title: "Активний", default: true })),
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type CounterpartyItem = Static<typeof CounterpartyItemSchema>;
 
@@ -33,7 +33,7 @@ export const CounterpartyRowSchema = Type.Object({
   id:       Type.String({ "x-db-type": "bigint" }),
   code:     Type.String(),
   name:     Type.String(),
-  isActive: Type.Optional(Type.Boolean()),
+  isDeleted: Type.Optional(Type.Boolean()),
 });
 export type CounterpartyRow = Static<typeof CounterpartyRowSchema>;
 

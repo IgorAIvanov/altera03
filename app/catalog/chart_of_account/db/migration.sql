@@ -1,19 +1,15 @@
--- Логотип організації. Для баз, створених до появи підсистеми вкладень:
--- create table … if not exists у struc.sql існуючу таблицю не змінює.
-alter table app.organization
-  add column if not exists logo_id bigint references app.attachment(id) on delete set null;
 -- Позначка на видалення замість ознаки активності.
 -- Сенс ІНВЕРТУЄТЬСЯ: is_active = true (видимий) → is_deleted = false.
 -- Просте перейменування колонки оголосило б усі активні записи позначеними.
 do $$
 begin
   if exists (select 1 from information_schema.columns
-             where table_schema = 'app' and table_name = 'organization' and column_name = 'is_active')
+             where table_schema = 'app' and table_name = 'chart_of_account' and column_name = 'is_active')
   then
-    alter table app.organization add column if not exists is_deleted boolean not null default false;
-    update app.organization set is_deleted = not is_active;
-    drop index if exists app.ix_organization_is_active;
-    alter table app.organization drop column is_active;
+    alter table app.chart_of_account add column if not exists is_deleted boolean not null default false;
+    update app.chart_of_account set is_deleted = not is_active;
+    drop index if exists app.ix_chart_of_account_is_active;
+    alter table app.chart_of_account drop column is_active;
   end if;
 end $$;
 
@@ -23,4 +19,4 @@ end $$;
 -- якої ще немає («column "is_deleted" does not exist»), і публікація зупинялася б
 -- на першій же таблиці. Тут колонка є в обох випадках — і на новій базі
 -- (створена struc.sql), і на наявній (додана вище).
-create index if not exists ix_organization_is_deleted on app.organization (is_deleted);
+create index if not exists ix_chart_of_account_is_deleted on app.chart_of_account (is_deleted);

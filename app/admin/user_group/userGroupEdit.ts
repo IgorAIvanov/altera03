@@ -117,10 +117,8 @@ export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {
     const actions = this.$root.options.actions ?? [];
     const menus = this.$root.options.menus ?? [];
 
-    return html`
-      <div class="p-4 max-w-3xl flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           <div class="grid grid-cols-2 gap-2">
             ${this.renderField(
               this.t("common.code"),
@@ -250,10 +248,7 @@ export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {
                 : ""}
             </tbody>
           </table>
-        `)}
-
-        ${this.renderFormActions()}
-      </div>
-    `;
+              </div>
+    `);
   }
 }

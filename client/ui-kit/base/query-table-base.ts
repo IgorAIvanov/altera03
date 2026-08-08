@@ -40,6 +40,7 @@ import { tw } from "@client/shared/styles.ts";
 import { formatDate } from "@client/shared/datetime.ts";
 import { readUserScoped, writeUserScoped } from "@client/shared/user-storage.ts";
 import { BaseUI } from "./base-ui.ts";
+import { icons } from "../icons.ts";
 import {
   alignClass,
   cellStyle,
@@ -49,12 +50,6 @@ import {
   type SortDir,
 } from "./table-contract.ts";
 
-/** Іконки, спільні для обох екранів. Розмір — атрибутами SVG, не класами. */
-const icon = {
-  search: html`<svg width="14" height="14" opacity="0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
-  refresh: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
-  filter: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>`,
-};
 
 /** Ключ пам'яті про згорнуту панель — свій на кожну модель. */
 const FILTER_PANEL_KEY = "list-filters-open";
@@ -95,11 +90,14 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
     /* Колонка позначок: рівно під прапорець, по центру. Ширину задаємо тут, а
        не через ListColumn — це колонка службова, її не оголошує застосунок і
        вона не їде у вивантаження. */
-    .check-cell {
+    .check-cell,
+    .status-cell {
       width: 2rem;
       text-align: center;
       padding-inline: 0;
     }
+    /* Значок стану вирівнюється по центру комірки, а не по базовій лінії тексту. */
+    .status-cell svg { vertical-align: middle; }
 
     /* Панель фільтрів. Фон і рамка — семантичними змінними теми, тими самими,
        що в панелі груп: обидві стоять у тій самій колонці праворуч і мусять
@@ -340,6 +338,15 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
   protected renderToolbarExtra(): TemplateResult | string { return ""; }
   /** Стандартні дії тулбара — точка розширення ФРЕЙМВОРКУ (список, пікер). */
   protected renderToolbarActions(): TemplateResult | string { return ""; }
+  /**
+   * Службова колонка стану ліворуч (введений / проведений / позначений на
+   * видалення). Вмикає її нащадок — у діалозі підбору вона зайва: позначені
+   * туди й не потрапляють.
+   */
+  protected get statusColumn(): boolean { return false; }
+  /** Значок стану рядка для цієї колонки. */
+  protected renderRowStatus(_row: Row): TemplateResult | string { return ""; }
+
   /** Додаткові CSS-класи рядка (підсвітка за статусом тощо). */
   protected rowClass(_row: Row): string { return ""; }
   /**
@@ -611,7 +618,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
               aria-pressed=${this.filterPanelOpen ? "true" : "false"}
               title=${t("common.filters")}
               @click=${() => this.toggleFilterPanel()}>
-              ${icon.filter} ${t("common.filters")}
+              ${icons.filter} ${t("common.filters")}
               ${this.activeFilterCount
                 ? html`<span class="badge badge-sm badge-primary">${this.activeFilterCount}</span>`
                 : nothing}
@@ -619,7 +626,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
           : nothing}
         ${this.renderSearch()}
         <button class="btn btn-sm btn-ghost" @click=${() => this.load()}>
-          ${icon.refresh} ${t("common.refresh")}
+          ${icons.refresh} ${t("common.refresh")}
         </button>
       </div>
     `;
@@ -628,7 +635,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
   protected renderSearch(): TemplateResult {
     return html`
       <label class="input input-sm flex items-center gap-2 ${this.searchGrow ? "flex-1" : ""}">
-        ${icon.search}
+        ${icons.search}
         <!-- aria-label, хоч поле й лежить усередині <label>: текстового вмісту
              в тому підписі немає (сама лише іконка), тож імені поле не мало.
              Плейсхолдер ім'ям не рахується — він зникає з першим символом. -->
@@ -724,6 +731,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
                     @change=${() => this.toggleAllOnPage()} />
                 </th>`
               : nothing}
+            ${this.statusColumn ? html`<th class="status-cell"></th>` : nothing}
             ${this.columns.map((col) => html`
               <th
                 class="${col.sortable ? "sortable" : ""} ${alignClass(col.align)}"
@@ -762,6 +770,9 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
                       @click=${(e: Event) => e.stopPropagation()}
                       @change=${() => this.toggleChecked(row)} />
                   </td>`
+                : nothing}
+              ${this.statusColumn
+                ? html`<td class="status-cell">${this.renderRowStatus(row)}</td>`
                 : nothing}
               ${this.columns.map((col) => html`
                 <td class="${col.muted ? "text-muted" : ""} ${alignClass(col.align)}"

@@ -7,6 +7,7 @@ import type { TSchema } from "@sinclair/typebox";
 import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { can } from "@client/auth/session.ts";
+import { icons } from "../icons.ts";
 import { GlobalStyledLitElement } from "./gsle.ts";
 
 /** Одне повідомлення з конверта відповіді сервера. */
@@ -564,10 +565,20 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * сервер повернув по ньому `null` — це «не знайдено»: злиття не робиться,
    * `$root` лишається засіяним зі схеми, вмикається `notFound`. Так
    * «видалений запис» перестає виглядати як «нова порожня форма».
+   *
+   * `kind: "save"` — для команд, які запис МІНЯЮТЬ, а не лише читають
+   * (проведення документа): тоді летить `model.changed`, і список, відкритий
+   * у сусідній вкладці, перемальовує значок стану. Без цього форма показувала
+   * б проведений документ, а журнал поруч — непроведений, доки його не
+   * перезавантажать руками.
    */
-  protected async loadInto(command: string, payload: unknown): Promise<boolean> {
+  protected async loadInto(
+    command: string,
+    payload: unknown,
+    kind: "load" | "save" = "load",
+  ): Promise<boolean> {
     this.notFound = false;
-    const env = await this.run<Partial<T>>(command, payload);
+    const env = await this.run<Partial<T>>(command, payload, kind);
     if (!env.ok || !env.data) return false;
     if (this.primaryKey && (env.data as Record<string, unknown>)[this.primaryKey] == null) {
       this.notFound = true;
@@ -624,13 +635,36 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   }
 
   /**
-   * Режим перегляду: запис відкритий, а зберегти його користувач не може.
+   * Запис замкнений СТАНОМ, а не правами: проведений документ.
    *
-   * Реактивний задарма — `maySave` читає сигнал прав, тож зміна прав
-   * перемальовує форму сама, без підписок і `requestUpdate`.
+   * Окремо від `maySave` навмисно — це різні причини й різні ліки. Прав немає
+   * назавжди (їх дає адміністратор), а замок знімає сам користувач сусідньою
+   * кнопкою («Розпровести»), тож ховати її разом з рештою не можна: кнопки
+   * командної панелі й так живуть поза `fieldset[disabled]`.
+   *
+   * Умовчання — «не замкнений»: довідники такого стану не мають зовсім.
+   */
+  protected get locked(): boolean {
+    return false;
+  }
+
+  /**
+   * Чи можна зараз правити запис: є право на запис і стан не замкнений.
+   * Саме це, а не голе право, вирішує долю кнопок запису й полів форми.
+   */
+  protected get mayEdit(): boolean {
+    return this.maySave && !this.locked;
+  }
+
+  /**
+   * Режим перегляду: запис відкритий, а змінити його не можна — або немає
+   * права, або документ проведений.
+   *
+   * Реактивний задарма — `maySave` читає сигнал прав, а `locked` — `$root`;
+   * обидва перемальовують форму самі, без підписок і `requestUpdate`.
    */
   protected get readonlyMode(): boolean {
-    return this.primaryKey !== null && !this.maySave;
+    return this.primaryKey !== null && !this.mayEdit;
   }
 
   /**
@@ -825,18 +859,24 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * спрацює так само, як по кнопці.
    */
   hotkeySave(): void {
-    // maySave — щоб клавіша не робила того, чого кнопки на екрані немає.
-    if (!this.canSave || !this.maySave) return;
+    // mayEdit — щоб клавіша не робила того, чого кнопки на екрані немає.
+    if (!this.canSave || !this.mayEdit) return;
     void this.trySave();
   }
 
   /**
    * Ctrl+Enter від оболонки — кнопка за замовчуванням форми, тобто
-   * «Зберегти й закрити» (у підвалі вона `btn-primary`). Невдале збереження
-   * вкладку не закриває: `saveAndClose` закриває лише після успіху.
+   * «Зберегти й закрити» (у командній панелі вона `btn-primary`, перша).
+   * Невдале збереження вкладку не закриває: `saveAndClose` закриває лише
+   * після успіху.
+   *
+   * Головною лишається саме запис, а не проведення — попри те, що в 1С головна
+   * кнопка документа «Провести й закрити». Тут інша технологія й інші
+   * очікування, а проведення має побічні дії в регістрах: клавіша, що мовчки
+   * проводить, коштувала б дорожче за звичку.
    */
   hotkeyDefault(): void {
-    if (!this.canSave || !this.maySave) return;
+    if (!this.canSave || !this.mayEdit) return;
     void this.saveAndClose();
   }
 
@@ -850,27 +890,104 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   }
 
   /**
-   * Стандартний підвал форми редагування: «Зберегти й закрити» (основна дія),
-   * «Зберегти», «Закрити». `extra` — місце для дій конкретного документа
-   * (провести, друк).
+   * Свої кнопки ЛІВОРУЧ — одразу за стандартними (запис). Сюди йдуть дії над
+   * самим записом: провести, розпровести, скопіювати.
+   *
+   * Розмітка, а не перелік описів: кнопка не завжди кнопка. У редакторі
+   * шаблонів «Додати блок» — це `<details class="dropdown">`, імпорт —
+   * `<label class="btn">` з файловим полем. Опис виду (`{label, icon, click}`)
+   * усе це огородив би, і довелося б винаходити `kind: "dropdown"` — та сама
+   * помилка, яку вже зробили з фільтрами.
+   *
+   * Порожній рядок означає «нічого немає» — саме за ним панель розуміє, що
+   * лишилася порожньою, і не малюється.
    */
-  protected renderFormActions(extra?: TemplateResult | string): TemplateResult {
+  protected renderActions(): TemplateResult | string { return ""; }
+
+  /**
+   * Кнопки ЗА РОЗДІЛЬНИКОМ: те, що не змінює запис, а видає назовні — друк,
+   * вивантаження, обмін файлами.
+   *
+   * Саме роздільник, а не розпірка на всю ширину. Розпірка відкидала друк до
+   * правого краю, і на широкому екрані його доводилося ШУКАТИ — велика порожнеча
+   * не читається як групування, вона читається як «тут нічого немає».
+   */
+  protected renderAuxActions(): TemplateResult | string { return ""; }
+
+  /**
+   * Командна панель форми — зверху, а не в підвалі.
+   *
+   * Чому зверху: у документі з табличною частиною на 30 рядків підвал їде за
+   * екран, тобто «Зберегти» зникає саме там, де форма найдовша. Списки й звіти
+   * і так тримають тулбар угорі, тож форма стає з ними в один ряд.
+   *
+   * Чому без «Закрити»: вкладка закривається хрестиком на ярлику і по Esc,
+   * причому з діалогом про незбережене. Окрема кнопка дублювала б це втретє.
+   * Через це ж панель, у якій нічого не лишилося (немає права на запис і форма
+   * не додала своїх дій), не малюється зовсім — порожня смуга гірша за її
+   * відсутність.
+   *
+   * `no-print` — панель не належить паперу.
+   */
+  protected renderFormActions(): TemplateResult | string {
+    const main = this.renderActions();
+    const aux = this.renderAuxActions();
+    if (!this.mayEdit && main === "" && aux === "") return "";
+
     return html`
-      <div class="flex gap-2 mt-6">
-        ${this.maySave
+      <div class="form-actions no-print">
+        ${this.mayEdit
           ? html`
-            <button class="btn btn-primary" ?disabled=${!this.canSave} @click=${this.saveAndClose}>
-              ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+            <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.saveAndClose}>
+              ${this.running === "save"
+                ? html`<span class="loading loading-spinner loading-xs"></span>`
+                : icons.saveClose}
               ${t("common.saveAndClose")}
             </button>
-            <button class="btn btn-outline" ?disabled=${!this.canSave} @click=${this.trySave}>
-              ${t("common.save")}
+            <button class="btn btn-sm btn-outline" ?disabled=${!this.canSave} @click=${this.trySave}>
+              ${icons.save} ${t("common.save")}
             </button>`
           : ""}
-        <button class="btn btn-ghost" ?disabled=${this.busy} @click=${this.closeSelf}>
-          ${t("common.close")}
-        </button>
-        ${extra ?? ""}
+        ${main}
+        ${aux === "" ? "" : html`<span class="toolbar-sep"></span>`}
+        ${aux}
+      </div>
+    `;
+  }
+
+  /** Ширина колонки полів. Проста картка — вужча, документ — ширший. */
+  protected formWidth = "max-w-3xl";
+
+  /**
+   * Каркас форми редагування: командна панель, банер, поля.
+   *
+   * Розкладку тримає БАЗА, а не кожна форма. Доти кожна складала `render()`
+   * сама й кликала `renderFormActions()` де хотіла — і саме тому редактор
+   * шаблонів друку поїхав своїм шляхом: ніхто йому не заважав. Домовленість,
+   * яку нема чим підтримати, одного разу вже не втрималася.
+   *
+   * Це УМОВЧАННЯ, а не клітка: форма з незвичайною розкладкою просто не кличе
+   * `renderForm()` і будує свій `render()`, як і раніше.
+   *
+   * Прокручується САМЕ ОБЛАСТЬ ПОЛІВ, а панель стоїть над нею. Тому їй не
+   * потрібен ані `position: sticky`, ані z-index, ані непрозорий фон під
+   * рядками, що проїжджають (порівняй `.report-head`, де прокручується вся
+   * панель вкладки й без липкості не обійтися).
+   *
+   * `renderFields()` навколо полів лишає в силі старий інваріант: панель
+   * НЕ всередині `fieldset[disabled]`, тож у режимі перегляду її кнопки живі.
+   * Тепер це виходить саме собою — панель просто вище за поля.
+   */
+  protected renderForm(fields: TemplateResult): TemplateResult {
+    return html`
+      <div class="flex flex-col h-full">
+        ${this.renderFormActions()}
+        <div class="flex-1 overflow-auto">
+          <div class="px-4 py-3 ${this.formWidth}">
+            ${this.renderNotice()}
+            ${this.renderFields(fields)}
+          </div>
+        </div>
       </div>
     `;
   }

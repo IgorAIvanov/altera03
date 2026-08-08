@@ -38,10 +38,6 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
     },
     { key: "total", title: "invoice.total", width: "8rem", align: "right" },
     {
-      key: "isPosted", title: "document.posted", width: "5rem", align: "center",
-      render: (r) => r.isPosted ? html`<span class="badge badge-success badge-xs"></span>` : "",
-    },
-    {
       key: "_actions", title: "", width: "3rem", align: "center",
       render: (row) => html`
         <button class="btn btn-ghost btn-xs px-1" title=${this.t("common.open")}

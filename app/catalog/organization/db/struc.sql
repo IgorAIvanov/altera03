@@ -14,7 +14,7 @@ create table if not exists app.organization (
   -- Логотип: посилання на вкладення (app.attachment). Видалення вкладення
   -- лишає поле порожнім, а не видаляє організацію.
   logo_id           bigint references app.attachment(id) on delete set null,
-  is_active         boolean      not null default true,
+  is_deleted         boolean      not null default false,
   created_at        timestamptz  not null default now(),
   updated_at        timestamptz  not null default now(),
   constraint ck_organization_legal_person_kind check (

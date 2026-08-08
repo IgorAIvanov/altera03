@@ -87,8 +87,49 @@ Never use `opacity` to show a disabled state on anything containing text.
   they break label alignment. If you see them in an example, the example is stale;
 - the field error floats out of layout flow on purpose: showing and hiding it must not
   make the form jump. Do not wrap it in your own layout;
-- the form footer comes from `renderFormActions()` and must stay **outside** the disabled
-  fieldset, otherwise "Close" stops working in view mode.
+## The form frame comes from the base
+
+Do not compose an edit form's `render()` by hand. Return `this.renderForm(fields)`: it
+places the command panel, the banner and the fields, and it makes the field area — not
+the whole tab — the scrolling region.
+
+```ts
+protected override formWidth = "max-w-md";   // default is max-w-3xl
+
+protected override renderActions() {         // your buttons, left, after Save
+  return html`<button class="btn btn-sm btn-secondary" @click=${this.post}>…</button>`;
+}
+protected override renderAuxActions() {      // after a separator: print, export
+  return html`<button class="btn btn-sm btn-outline" @click=${this.printPdf}>…</button>`;
+}
+
+override render() {
+  return this.renderForm(html` …fields… `);
+}
+```
+
+**The command panel is at the top, not in a footer.** In a document with a 30-line
+tabular section a footer scrolls out of view — "Save" disappears exactly where the form
+is longest. Lists and reports already keep their toolbar on top.
+
+**There is no "Close" button.** The tab closes by the × on its label and by Esc, both
+with the unsaved-changes dialog. A panel left with nothing in it is not rendered at all.
+
+The two groups are parted by a thin **separator**, not by a full-width spacer. A spacer
+throws the second group against the right edge of the screen, and on a wide monitor the
+print button has to be hunted for — a large emptiness does not read as grouping, it reads
+as "nothing here".
+
+**Put an icon on every toolbar button.** Take it from `@client/ui-kit/icons.ts` — one
+glyph set for the whole ui-kit — and never size it with Tailwind classes; the glyphs live
+in shadow DOM and must not depend on whether `h-4` was generated elsewhere.
+
+Slots take **markup, not descriptors**, because a command is not always a button: import
+is a `<label class="btn">` wrapping a hidden file input, "Add block" is a `<details>`
+dropdown.
+
+A screen with a genuinely different layout simply does not call `renderForm()` and builds
+its own `render()` — the base sets a default, it does not forbid.
 
 ## Filters go to the right, not above the table
 

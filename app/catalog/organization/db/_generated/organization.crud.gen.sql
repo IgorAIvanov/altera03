@@ -35,7 +35,7 @@ begin
       'code', t.code,
       'name', t.name,
       'edrpou', t.edrpou,
-      'isActive', t.is_active
+      'isDeleted', t.is_deleted
     ) as r
     from app.organization t
     where (
@@ -89,7 +89,7 @@ as $$
         'legalPersonKind', t.legal_person_kind,
         'logoId', t.logo_id::text,
         'logoToken', (select b.access_key from app.attachment b where b.id = t.logo_id),
-        'isActive', t.is_active
+        'isDeleted', t.is_deleted
       )
           from app.organization t
           where t.id = (payload->>'id')::bigint
@@ -132,7 +132,7 @@ begin
       nullif(trim(coalesce(v_item->>'prefix', '')), '') as prefix,
       nullif(trim(coalesce(v_item->>'legalPersonKind', '')), '') as legal_person_kind,
       nullif(v_item->>'logoId', '')::bigint as logo_id,
-      (v_item->>'isActive')::boolean as is_active
+      (v_item->>'isDeleted')::boolean as is_deleted
   ) s
     on t.id = s.id
   when matched then update set
@@ -143,10 +143,10 @@ begin
     prefix = s.prefix,
     legal_person_kind = coalesce(s.legal_person_kind, t.legal_person_kind),
     logo_id = s.logo_id,
-    is_active = coalesce(s.is_active, t.is_active),
+    is_deleted = coalesce(s.is_deleted, t.is_deleted),
     updated_at = now()
-  when not matched then insert (code, name, full_name, edrpou, prefix, legal_person_kind, logo_id, is_active)
-    values (s.code, s.name, s.full_name, s.edrpou, s.prefix, coalesce(s.legal_person_kind, 'legal_entity'), s.logo_id, coalesce(s.is_active, true))
+  when not matched then insert (code, name, full_name, edrpou, prefix, legal_person_kind, logo_id, is_deleted)
+    values (s.code, s.name, s.full_name, s.edrpou, s.prefix, coalesce(s.legal_person_kind, 'legal_entity'), s.logo_id, coalesce(s.is_deleted, false))
   returning t.id into v_id;
 
   select jsonb_build_object(
@@ -159,7 +159,7 @@ begin
         'legalPersonKind', t.legal_person_kind,
         'logoId', t.logo_id::text,
         'logoToken', (select b.access_key from app.attachment b where b.id = t.logo_id),
-        'isActive', t.is_active
+        'isDeleted', t.is_deleted
       ) into v_result
   from app.organization t
   where t.id = v_id;
@@ -192,7 +192,7 @@ begin
     raise exception 'id обов''язковий';
   end if;
 
-  delete from app.organization where id = v_id;
+  update app.organization set is_deleted = true where id = v_id;
 
   return jsonb_build_object(
       'ok', true,
@@ -202,6 +202,36 @@ begin
         'options', '{}'::jsonb,
         'totals',  '{}'::jsonb,
         'extra',   jsonb_build_object('deletedId', v_id::text)
+      ),
+      'messages', '[]'::jsonb,
+      'meta', '{}'::jsonb
+    );
+end;
+$$;
+
+drop function if exists app.organization_undelete(bigint, jsonb);
+create function app.organization_undelete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint;
+begin
+  v_id := nullif(payload->>'id', '')::bigint;
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  update app.organization set is_deleted = false where id = v_id;
+
+  return jsonb_build_object(
+      'ok', true,
+      'data', jsonb_build_object(
+        'item',    null,
+        'rows',    '[]'::jsonb,
+        'options', '{}'::jsonb,
+        'totals',  '{}'::jsonb,
+        'extra',   jsonb_build_object('undeletedId', v_id::text)
       ),
       'messages', '[]'::jsonb,
       'meta', '{}'::jsonb
@@ -228,7 +258,7 @@ begin
 
   select count(*)::int into v_total
   from app.organization t
-  where t.is_active = true
+  where not t.is_deleted
     and (
     coalesce(payload->>'search', '') = ''
     or t.code ilike '%' || (payload->>'search') || '%'
@@ -244,7 +274,7 @@ begin
       'edrpou', t.edrpou
     ) as r
     from app.organization t
-    where t.is_active = true
+    where not t.is_deleted
       and (
       coalesce(payload->>'search', '') = ''
       or t.code ilike '%' || (payload->>'search') || '%'

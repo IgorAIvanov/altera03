@@ -19,6 +19,7 @@ import "@client/ui-kit/components/ui-decimal.ts";
 import "@client/ui-kit/components/ui-date.ts";
 import "@client/ui-kit/tabular/ui-tabular-table.ts";
 import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
+import { icons } from "@client/ui-kit/icons.ts";
 
 export const tagName = "manual-entry-edit";
 
@@ -183,14 +184,20 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     return ok;
   }
 
+  /** Проведений документ форма показує, але не дає правити — тільки розпровести. */
+  protected override get locked(): boolean {
+    return this.$root.item.isPosted === true;
+  }
+
+  /** `"save"` — щоб журнал у сусідній вкладці перемалював значок стану. */
   private async post() {
-    await this.loadInto("post", { id: this.$root.item.id });
+    await this.loadInto("post", { id: this.$root.item.id }, "save");
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
     this.markClean();
   }
 
   private async unpost() {
-    await this.loadInto("unpost", { id: this.$root.item.id });
+    await this.loadInto("unpost", { id: this.$root.item.id }, "save");
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
     this.markClean();
   }
@@ -373,6 +380,33 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
     `;
   }
 
+  protected override formWidth = "max-w-5xl";
+
+  /** Проведення — ліворуч, одразу за стандартними кнопками запису. */
+  protected override renderActions() {
+    const item = this.$root.item;
+    if (item.isPosted) {
+      return this.may("unpost")
+        ? html`
+          <button class="btn btn-sm btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
+            ${this.running === "unpost"
+              ? html`<span class="loading loading-spinner loading-xs"></span>`
+              : icons.unpost}
+            ${t("document.unpost")}
+          </button>`
+        : "";
+    }
+    return this.may("post")
+      ? html`
+        <button class="btn btn-sm btn-secondary" ?disabled=${this.busy || !item.id} @click=${this.post}>
+          ${this.running === "post"
+            ? html`<span class="loading loading-spinner loading-xs"></span>`
+            : icons.post}
+          ${t("document.post")}
+        </button>`
+      : "";
+  }
+
   override render() {
     if (this.running === "get" || !this.slotsReady) return html`
       <div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>
@@ -380,10 +414,8 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
 
     const item = this.$root.item;
 
-    return html`
-      <div class="p-4 max-w-5xl flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           <div class="flex gap-2">
             ${this.renderField(
               t("invoice.number"),
@@ -421,10 +453,6 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
               @input=${(e: Event) => this.setField("description", (e.target as HTMLInputElement).value)} />`,
           )}
 
-          ${item.isPosted
-            ? html`<div class="badge badge-success badge-sm self-start">${t("document.posted")}</div>`
-            : ""}
-
           <!-- Табличная часть: каркас — у примітиві (колонки оголошені в
                конструкторі секції), рахунки/субконто — custom-комірки вище. -->
           <div class="flex items-center justify-between mt-2 mb-1">
@@ -432,26 +460,7 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
             <ui-tabular-toolbar .section=${this.entries}></ui-tabular-toolbar>
           </div>
           <ui-tabular-table .section=${this.entries}></ui-tabular-table>
-        `)}
-
-        ${this.renderFormActions(html`
-          ${item.isPosted
-            ? this.may("unpost")
-              ? html`
-                <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
-                  ${this.running === "unpost" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                  ${t("document.unpost")}
-                </button>`
-              : ""
-            : this.may("post")
-            ? html`
-              <button class="btn btn-secondary" ?disabled=${this.busy || !item.id} @click=${this.post}>
-                ${this.running === "post" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                ${t("document.post")}
-              </button>`
-            : ""}
-        `)}
       </div>
-    `;
+    `);
   }
 }

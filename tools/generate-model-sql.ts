@@ -161,7 +161,17 @@ type ModelSpec = {
   isDocument: boolean;
   fromClause: string; // "app.invoice t" або "app.document h join app.invoice t on ..."
   pkExpr: string; // "t.id" або "h.id"
-  baseFilter: string; // "" або "not h.is_deleted"
+  /**
+   * Вираз ознаки «позначено на видалення» з аліасом запиту (`h.is_deleted` у
+   * документа, `t.is_deleted` у довідника). Порожній — модель позначки не має.
+   *
+   * Фільтри РІЗНІ навмисно: у списку позначені видно (інакше ознаку не побачити
+   * ніколи й позначка була б рівносильна зникненню), у підборі — ні (пропонувати
+   * до вибору те, що готують до видалення, безглуздо).
+   */
+  deletedExpr: string;
+  /** Куди писати позначку в `delete`/`undelete`; null — жорстке видалення. */
+  softDelete: { table: string; pk: string } | null;
   headerFields: Field[]; // поля app.document (лише для документа)
   itemFields: Field[]; // скалярні поля шапки
   tables: TableSpec[];
@@ -174,7 +184,6 @@ type ModelSpec = {
   listSort: SortEntry[];
   lookupSort: SortEntry[];
   listJoins: string[];
-  hasIsActive: boolean;
   /** Ієрархічний довідник: див. FeatureManifest.hierarchy. */
   hierarchy: boolean;
   groupTable: string; // {schema}.{model}_group
@@ -578,10 +587,9 @@ function updateSet(f: Field, target: string, src = "s"): string {
   return `${f.col} = ${src}.${f.col}`;
 }
 
-/** where-умова: базовий фільтр моделі (для документа — не позначені на видалення). */
-function baseAnd(spec: ModelSpec): string {
-  return spec.baseFilter ? `${spec.baseFilter}\n    and ` : "";
-}
+// Базового фільтра в списку більше немає: позначені на видалення мусять бути
+// ВИДНІ, інакше саму позначку не побачити ніколи — вона була б рівносильна
+// зникненню запису. Ховає їх лише підбір (див. renderLookup).
 
 // ── рендер функцій ─────────────────────────────────────────────────────────────
 
@@ -659,7 +667,7 @@ ${groupDecl}${filterDecl}  v_rows      jsonb;
 begin
 ${sortGuard}${filterMirror}  select count(*)::int into v_total
   from ${spec.fromClause}${joinsCount}
-  where ${baseAnd(spec)}(
+  where (
 ${searchClause(spec.searchExprsList, "    ")}
   )${groupCond("  ")}${filterCond("  ")};
 
@@ -669,7 +677,7 @@ ${searchClause(spec.searchExprsList, "    ")}
 ${rowCols}
     ) as r
     from ${spec.fromClause}${joins}
-    where ${baseAnd(spec)}(
+    where (
 ${searchClause(spec.searchExprsList, "      ")}
     )${groupCond("    ")}${filterCond("    ")}
     order by
@@ -1020,9 +1028,11 @@ begin
   end if;
 
   ${
-    spec.isDocument
-      // Шапка володіє записом: рядки документа й проводки підуть каскадом.
-      ? `delete from app.document where id = v_id;`
+    spec.softDelete
+      // Позначка, а не знищення: помилкове «Видалити» на проведеному документі
+      // забирало б із собою рядки й проводки, і повернути їх не було б звідки.
+      // Фізичне видалення — окрема операція, яка мусить перевіряти посилання.
+      ? `update ${spec.softDelete.table} set is_deleted = true where ${spec.softDelete.pk} = v_id;`
       : `delete from ${spec.table} where ${spec.pk} = v_id;`
   }
 
@@ -1039,10 +1049,41 @@ end;
 $$;`;
 }
 
+/** Зняття позначки. Генерується лише для моделей, що мають `is_deleted`. */
+function renderUndelete(spec: ModelSpec): string {
+  if (!spec.softDelete) return "";
+  return `drop function if exists ${spec.table}_undelete(bigint, jsonb);
+create function ${spec.table}_undelete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint;
+begin
+  v_id := nullif(payload->>'id', '')::bigint;
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  update ${spec.softDelete.table} set is_deleted = false where ${spec.softDelete.pk} = v_id;
+
+  return ${
+    envelope([
+      `'item',    null`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   jsonb_build_object('undeletedId', v_id::text)`,
+    ])
+  };
+end;
+$$;`;
+}
+
 function renderLookup(spec: ModelSpec): string {
   const defaultSort = spec.lookupSort[0]?.token ?? spec.lookupFields[0]?.col ?? spec.pk;
   const cols = fieldEntries(spec.lookupFields).map((e) => `      ${e}`).join(",\n");
-  const filter = spec.hasIsActive ? "t.is_active = true" : spec.baseFilter;
+  const filter = spec.deletedExpr ? `not ${spec.deletedExpr}` : "";
   const activeFilter = filter ? `${filter}\n      and ` : "";
   const activeFilterCount = filter ? `${filter}\n    and ` : "";
   const sortGuard = spec.lookupSort.length
@@ -1280,6 +1321,7 @@ function renderFile(spec: ModelSpec): string {
     renderGet(spec),
     renderSave(spec),
     renderDelete(spec),
+    ...(spec.softDelete ? [renderUndelete(spec)] : []),
     renderLookup(spec),
     ...(spec.isDocument ? [renderPost(spec), renderUnpost(spec)] : []),
     ...(spec.hierarchy
@@ -1458,7 +1500,8 @@ async function buildSpec(
   );
   const listJoins = refJoins(listRefFields);
 
-  const hasIsActive = itemFields.some((f) => f.col === "is_active");
+  // Позначка живе в шапці документа (app.document) або в самій таблиці довідника.
+  const hasDeleted = isDocument || itemFields.some((f) => f.col === "is_deleted");
 
   // Без groupId у схемі save мовчки губив би належність до групи при кожному
   // збереженні форми — краще голосно на генерації.
@@ -1484,7 +1527,10 @@ async function buildSpec(
       ? `app.document h\n    join ${schemaName}.${model} t on t.document_id = h.id`
       : `${schemaName}.${model} t`,
     pkExpr: isDocument ? "h.id" : "t.id",
-    baseFilter: isDocument ? "not h.is_deleted" : "",
+    deletedExpr: hasDeleted ? (isDocument ? "h.is_deleted" : "t.is_deleted") : "",
+    softDelete: hasDeleted
+      ? (isDocument ? { table: "app.document", pk: "id" } : { table: `${schemaName}.${model}`, pk: isDocument ? "document_id" : "id" })
+      : null,
     headerFields,
     itemFields,
     tables,
@@ -1496,7 +1542,6 @@ async function buildSpec(
     listSort,
     lookupSort,
     listJoins,
-    hasIsActive,
     hierarchy,
     groupTable: `${schemaName}.${model}_group`,
     rowHasGroupName: hierarchy && rowKeys.has("groupName"),

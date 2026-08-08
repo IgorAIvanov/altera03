@@ -181,7 +181,9 @@ export const BankItemSchema = Type.Object({
     "x-list": { width: "sm" },
     "x-lookup": true,
   })),
-  isActive: Type.Optional(Type.Boolean({ title: "Активний", default: true })),
+  // Позначка на видалення, а не «активність»: `delete` її ставить, `undelete` знімає.
+  // Оголоси її і в `<Model>RowSchema` — інакше список не намалює значок стану.
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type BankItem = Static<typeof BankItemSchema>;
 

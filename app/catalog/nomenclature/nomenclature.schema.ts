@@ -20,7 +20,7 @@ export const NomenclatureItemSchema = Type.Object({
   // Належність до групи (ієрархія). У формі не редагується — перенесення
   // робиться зі списку командою moveToGroup; поле тут, щоб save її не губив.
   groupId: Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
-  isActive: Type.Optional(Type.Boolean({ title: "Активний", default: true })),
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type NomenclatureItem = Static<typeof NomenclatureItemSchema>;
 
@@ -40,7 +40,7 @@ export const NomenclatureRowSchema = Type.Object({
   unit:      Type.Optional(Type.String()),
   // Заповнює генератор list за конвенцією ієрархії (join таблиці груп).
   groupName: Type.Optional(Type.String()),
-  isActive:  Type.Optional(Type.Boolean()),
+  isDeleted:  Type.Optional(Type.Boolean()),
 });
 export type NomenclatureRow = Static<typeof NomenclatureRowSchema>;
 

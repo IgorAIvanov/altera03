@@ -33,7 +33,7 @@ begin
       'id', t.id::text,
       'code', t.code,
       'name', t.name,
-      'isActive', t.is_active
+      'isDeleted', t.is_deleted
     ) as r
     from app.counterparty t
     where (
@@ -78,7 +78,7 @@ as $$
         'id', t.id::text,
         'code', t.code,
         'name', t.name,
-        'isActive', t.is_active
+        'isDeleted', t.is_deleted
       )
           from app.counterparty t
           where t.id = (payload->>'id')::bigint
@@ -116,23 +116,23 @@ begin
       nullif(v_item->>'id', '')::bigint as id,
       nullif(trim(coalesce(v_item->>'code', '')), '') as code,
       nullif(trim(coalesce(v_item->>'name', '')), '') as name,
-      (v_item->>'isActive')::boolean as is_active
+      (v_item->>'isDeleted')::boolean as is_deleted
   ) s
     on t.id = s.id
   when matched then update set
     code = s.code,
     name = s.name,
-    is_active = coalesce(s.is_active, t.is_active),
+    is_deleted = coalesce(s.is_deleted, t.is_deleted),
     updated_at = now()
-  when not matched then insert (code, name, is_active)
-    values (s.code, s.name, coalesce(s.is_active, true))
+  when not matched then insert (code, name, is_deleted)
+    values (s.code, s.name, coalesce(s.is_deleted, false))
   returning t.id into v_id;
 
   select jsonb_build_object(
         'id', t.id::text,
         'code', t.code,
         'name', t.name,
-        'isActive', t.is_active
+        'isDeleted', t.is_deleted
       ) into v_result
   from app.counterparty t
   where t.id = v_id;
@@ -165,7 +165,7 @@ begin
     raise exception 'id обов''язковий';
   end if;
 
-  delete from app.counterparty where id = v_id;
+  update app.counterparty set is_deleted = true where id = v_id;
 
   return jsonb_build_object(
       'ok', true,
@@ -175,6 +175,36 @@ begin
         'options', '{}'::jsonb,
         'totals',  '{}'::jsonb,
         'extra',   jsonb_build_object('deletedId', v_id::text)
+      ),
+      'messages', '[]'::jsonb,
+      'meta', '{}'::jsonb
+    );
+end;
+$$;
+
+drop function if exists app.counterparty_undelete(bigint, jsonb);
+create function app.counterparty_undelete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint;
+begin
+  v_id := nullif(payload->>'id', '')::bigint;
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  update app.counterparty set is_deleted = false where id = v_id;
+
+  return jsonb_build_object(
+      'ok', true,
+      'data', jsonb_build_object(
+        'item',    null,
+        'rows',    '[]'::jsonb,
+        'options', '{}'::jsonb,
+        'totals',  '{}'::jsonb,
+        'extra',   jsonb_build_object('undeletedId', v_id::text)
       ),
       'messages', '[]'::jsonb,
       'meta', '{}'::jsonb
@@ -201,7 +231,7 @@ begin
 
   select count(*)::int into v_total
   from app.counterparty t
-  where t.is_active = true
+  where not t.is_deleted
     and (
     coalesce(payload->>'search', '') = ''
     or t.code ilike '%' || (payload->>'search') || '%'
@@ -215,7 +245,7 @@ begin
       'name', t.name
     ) as r
     from app.counterparty t
-    where t.is_active = true
+    where not t.is_deleted
       and (
       coalesce(payload->>'search', '') = ''
       or t.code ilike '%' || (payload->>'search') || '%'

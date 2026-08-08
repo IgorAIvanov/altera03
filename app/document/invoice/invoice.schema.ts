@@ -95,6 +95,8 @@ export const InvoiceRowSchema = Type.Object({
   counterparty: Type.Object({ id: Type.String(), name: Type.String() }),
   total:        Type.Optional(Type.Number()),
   isPosted:     Type.Optional(Type.Boolean()),
+  // Потрібне списку: службова колонка стану показує позначку на видалення.
+  isDeleted:     Type.Optional(Type.Boolean()),
 });
 export type InvoiceRow = Static<typeof InvoiceRowSchema>;
 

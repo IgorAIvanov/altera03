@@ -46,7 +46,7 @@ begin
       'code', t.code,
       'name', t.name,
       'unit', t.unit,
-      'isActive', t.is_active,
+      'isDeleted', t.is_deleted,
       'groupName', gr.name
     ) as r
     from app.nomenclature t
@@ -103,7 +103,7 @@ as $$
         'name', t.name,
         'unit', t.unit,
         'groupId', t.group_id::text,
-        'isActive', t.is_active
+        'isDeleted', t.is_deleted
       )
           from app.nomenclature t
           where t.id = (payload->>'id')::bigint
@@ -143,7 +143,7 @@ begin
       nullif(trim(coalesce(v_item->>'name', '')), '') as name,
       nullif(trim(coalesce(v_item->>'unit', '')), '') as unit,
       nullif(v_item->>'groupId', '')::bigint as group_id,
-      (v_item->>'isActive')::boolean as is_active
+      (v_item->>'isDeleted')::boolean as is_deleted
   ) s
     on t.id = s.id
   when matched then update set
@@ -151,10 +151,10 @@ begin
     name = s.name,
     unit = s.unit,
     group_id = s.group_id,
-    is_active = coalesce(s.is_active, t.is_active),
+    is_deleted = coalesce(s.is_deleted, t.is_deleted),
     updated_at = now()
-  when not matched then insert (code, name, unit, group_id, is_active)
-    values (s.code, s.name, s.unit, s.group_id, coalesce(s.is_active, true))
+  when not matched then insert (code, name, unit, group_id, is_deleted)
+    values (s.code, s.name, s.unit, s.group_id, coalesce(s.is_deleted, false))
   returning t.id into v_id;
 
   select jsonb_build_object(
@@ -163,7 +163,7 @@ begin
         'name', t.name,
         'unit', t.unit,
         'groupId', t.group_id::text,
-        'isActive', t.is_active
+        'isDeleted', t.is_deleted
       ) into v_result
   from app.nomenclature t
   where t.id = v_id;
@@ -196,7 +196,7 @@ begin
     raise exception 'id обов''язковий';
   end if;
 
-  delete from app.nomenclature where id = v_id;
+  update app.nomenclature set is_deleted = true where id = v_id;
 
   return jsonb_build_object(
       'ok', true,
@@ -206,6 +206,36 @@ begin
         'options', '{}'::jsonb,
         'totals',  '{}'::jsonb,
         'extra',   jsonb_build_object('deletedId', v_id::text)
+      ),
+      'messages', '[]'::jsonb,
+      'meta', '{}'::jsonb
+    );
+end;
+$$;
+
+drop function if exists app.nomenclature_undelete(bigint, jsonb);
+create function app.nomenclature_undelete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint;
+begin
+  v_id := nullif(payload->>'id', '')::bigint;
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  update app.nomenclature set is_deleted = false where id = v_id;
+
+  return jsonb_build_object(
+      'ok', true,
+      'data', jsonb_build_object(
+        'item',    null,
+        'rows',    '[]'::jsonb,
+        'options', '{}'::jsonb,
+        'totals',  '{}'::jsonb,
+        'extra',   jsonb_build_object('undeletedId', v_id::text)
       ),
       'messages', '[]'::jsonb,
       'meta', '{}'::jsonb
@@ -232,7 +262,7 @@ begin
 
   select count(*)::int into v_total
   from app.nomenclature t
-  where t.is_active = true
+  where not t.is_deleted
     and (
     coalesce(payload->>'search', '') = ''
     or t.code ilike '%' || (payload->>'search') || '%'
@@ -246,7 +276,7 @@ begin
       'name', t.name
     ) as r
     from app.nomenclature t
-    where t.is_active = true
+    where not t.is_deleted
       and (
       coalesce(payload->>'search', '') = ''
       or t.code ilike '%' || (payload->>'search') || '%'

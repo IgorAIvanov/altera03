@@ -25,6 +25,9 @@ export class CurrencyEdit extends BaseUI<CurrencyEditRoot> {
     await this.loadInto("get", { id: this.modelId });
   }
 
+  protected override formWidth = "max-w-lg";
+
+
   override render() {
     if (this.running === "get") return html`
       <div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>
@@ -32,10 +35,8 @@ export class CurrencyEdit extends BaseUI<CurrencyEditRoot> {
 
     const item = this.$root.item;
 
-    return html`
-      <div class="p-4 max-w-lg flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           <div class="flex gap-2">
             ${this.renderField(
               this.t("common.code"),
@@ -66,15 +67,7 @@ export class CurrencyEdit extends BaseUI<CurrencyEditRoot> {
             )}
           </div>
 
-          <label class="label cursor-pointer justify-start gap-2 mt-1">
-            <input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
-              @change=${(e: Event) => { item.isActive = (e.target as HTMLInputElement).checked; }} />
-            <span class="text-sm">${this.t("currency.isActive")}</span>
-          </label>
-        `)}
-
-        ${this.renderFormActions()}
-      </div>
-    `;
+              </div>
+    `);
   }
 }

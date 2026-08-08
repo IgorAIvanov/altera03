@@ -5,6 +5,7 @@ import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { icons } from "@client/ui-kit/icons.ts";
 import {
   PrintTemplateEditRootSchema,
   type PrintTemplateEditRoot,
@@ -1678,6 +1679,40 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     `;
   }
 
+  /** Команди редактора — ліворуч, за стандартними кнопками запису. */
+  protected override renderActions() {
+    return html`
+      <details class="dropdown">
+        <summary class="btn btn-sm">${icons.add} ${t("printTemplate.addBlock")}</summary>
+        <ul class="menu dropdown-content z-20 w-52 rounded-box bg-base-100 p-2 shadow">
+          ${BLOCK_TYPES.map((type) => html`
+            <li><a @click=${() => this.addBlock(type)}>${t(`printTemplate.blockType.${type}`)}</a></li>
+          `)}
+        </ul>
+      </details>
+      <button class="btn btn-sm" @click=${() => { this.showDataTools = !this.showDataTools; }}>
+        ${icons.data} ${t("printTemplate.previewDataTools")}
+      </button>
+    `;
+  }
+
+  /**
+   * Обмін файлами — праворуч: він не змінює запис, а переносить його назовні й
+   * назад. Саме тут видно, чому слоти приймають РОЗМІТКУ: імпорт — це не кнопка,
+   * а `<label class="btn">` із схованим файловим полем, і жоден опис виду
+   * `{ label, icon, click }` його б не описав.
+   */
+  protected override renderAuxActions() {
+    return html`
+      <label class="btn btn-sm">
+        ${icons.import} ${t("printTemplate.importFromFile")}
+        <input type="file" accept="application/json,.json" class="hidden"
+          @change=${(e: Event) => void this.importFromFile(e)} />
+      </label>
+      <button class="btn btn-sm" @click=${this.exportToFile}>${icons.export} ${t("printTemplate.exportToFile")}</button>
+    `;
+  }
+
   override render() {
     if (this.running === "get") {
       return html`<div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>`;
@@ -1685,8 +1720,15 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
     const item = this.$root.item;
 
+    // `renderForm()` цей екран НЕ використовує — і це передбачений запасний
+    // вихід, а не відступ від правила. Він не малює полів через `renderField`
+    // (у нього свій `field()`), а полотно редактора має власну розкладку.
+    // Спільною лишається саме командна панель — те, заради чого все й робилося:
+    // «Зберегти» тепер стандартна кнопка, а не самописна.
     return html`
-      <div class="flex flex-col gap-4 p-4">
+      <div class="flex flex-col h-full">
+        ${this.renderFormActions()}
+        <div class="flex flex-col gap-4 p-4 flex-1 overflow-auto">
         ${this.renderNotice()}
 
         <!-- Реквізити шаблону -->
@@ -1715,39 +1757,6 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
             <span class="label-text">${t("common.active")}</span>
           </label>
         </fieldset>
-
-        <!-- Тулбар -->
-        <div class="flex flex-wrap items-center gap-2">
-          <!-- Власний тулбар, тож право перевіряємо тут: renderFormActions цей
-               екран не використовує. Полотно редактора в режимі перегляду поки
-               лишається живим — обгортати його fieldset'ом сенсу мало, воно
-               малює блоки мишею, а не контролами. -->
-          ${this.maySave
-            ? html`
-              <button class="btn btn-sm btn-primary" ?disabled=${!this.canSave} @click=${this.save}>
-                ${this.running === "save" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                ${t("common.save")}
-              </button>`
-            : ""}
-          <details class="dropdown">
-            <summary class="btn btn-sm">+ ${t("printTemplate.addBlock")}</summary>
-            <ul class="menu dropdown-content z-20 w-52 rounded-box bg-base-100 p-2 shadow">
-              ${BLOCK_TYPES.map((type) => html`
-                <li><a @click=${() => this.addBlock(type)}>${t(`printTemplate.blockType.${type}`)}</a></li>
-              `)}
-            </ul>
-          </details>
-          <button class="btn btn-sm" @click=${() => { this.showDataTools = !this.showDataTools; }}>
-            ${t("printTemplate.previewDataTools")}
-          </button>
-          <div class="flex-1"></div>
-          <label class="btn btn-sm">
-            ${t("printTemplate.importFromFile")}
-            <input type="file" accept="application/json,.json" class="hidden"
-              @change=${(e: Event) => void this.importFromFile(e)} />
-          </label>
-          <button class="btn btn-sm" @click=${this.exportToFile}>${t("printTemplate.exportToFile")}</button>
-        </div>
 
         ${this.previewError ? html`<div class="alert alert-error py-2 text-sm">${this.previewError}</div>` : ""}
 
@@ -1805,6 +1814,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                     ${t("printTemplate.previewEmpty")}
                   </div>`}
           </div>
+        </div>
         </div>
       </div>
     `;

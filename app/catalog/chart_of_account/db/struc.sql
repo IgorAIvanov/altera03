@@ -13,7 +13,7 @@ create table if not exists app.chart_of_account (
   is_off_balance  boolean not null default false,  -- позабалансовий
   is_currency     boolean not null default false,  -- валютний облік
   is_quantitative boolean not null default false,  -- кількісний облік
-  is_active       boolean not null default true,
+  is_deleted       boolean not null default false,
   sort_order      int     not null default 0,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),

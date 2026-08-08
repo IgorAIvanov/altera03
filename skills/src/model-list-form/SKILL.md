@@ -243,6 +243,28 @@ The payload key must match the key you write in `renderFilters()`. A mismatch is
 On a hierarchical catalogue the filter panel and the group tree share **one** right-hand
 column — filters on top, tree below.
 
+
+## Deletion mark and the status column
+
+`delete` **marks** a record instead of destroying it. The base handles the whole story:
+
+- the toolbar button flips with the cursor — `Mark for deletion` ↔ `Unmark`, the same
+  way `Post`/`Unpost` do in a document form;
+- a **status column** appears on the left as soon as the rows carry `isDeleted` or
+  `isPosted`: a plain sheet (entered), a green tick (posted), a red cross (marked).
+  Nothing to declare — the base looks at the data, so the column cannot drift out of
+  sync with a flag someone forgot to set;
+- marked rows **stay in the list**. If they vanished, the mark would be
+  indistinguishable from deletion and could never be lifted. Pickers do hide them.
+
+Two things to do on your side:
+
+1. **Put `isDeleted` in `<Model>RowSchema`** (and `isPosted` for documents) — the column
+   draws from the row, and SQL only returns declared fields.
+2. **Do not add your own «Posted» column.** The status glyph already says it; a separate
+   badge column is a duplicate. Dimming the row via `rowStyle` is fine as *reinforcement*
+   — `row.isDeleted === true ? "color:#6b7280" : ""` — but never as the only sign.
+
 ## Rich cells
 
 A column's `render` returns arbitrary Lit content — buttons, badges, marks,

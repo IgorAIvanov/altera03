@@ -74,6 +74,9 @@ export class UserEdit extends BaseUI<UserEditRoot> {
     if (env.ok) this.password = "";
   }
 
+  protected override formWidth = "max-w-2xl";
+
+
   override render() {
     if (this.running === "get") return html`
       <div class="flex justify-center p-8">
@@ -84,10 +87,8 @@ export class UserEdit extends BaseUI<UserEditRoot> {
     const item = this.$root.item;
     const groups = this.$root.options.groups ?? [];
 
-    return html`
-      <div class="p-4 max-w-2xl flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           <div class="grid grid-cols-2 gap-2">
             ${this.renderField(
               this.t("user.login"),
@@ -218,10 +219,7 @@ export class UserEdit extends BaseUI<UserEditRoot> {
               `
               : html`<div class="text-muted">${this.t("user.passwordAfterSave")}</div>`}
           </div>
-        `)}
-
-        ${this.renderFormActions()}
-      </div>
-    `;
+              </div>
+    `);
   }
 }

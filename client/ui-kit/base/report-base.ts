@@ -5,14 +5,10 @@ import { BaseUI } from "./base-ui.ts";
 import { NO_EXPORT_CLASS, readReportTable, withTitleRows } from "../report/table-model.ts";
 import { buildXlsx, downloadFile, safeFileName, XLSX_MIME } from "../report/xlsx.ts";
 import { printCurrentView } from "../report/print.ts";
+import { icons } from "../icons.ts";
 
 // Розмір і прозорість — атрибутами SVG, а не класами Tailwind: у shadow DOM
 // іконка не має залежати від того, чи згенеровано `h-4` (див. тему).
-const icon = {
-  refresh: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
-  print: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`,
-  excel: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="19"/><line x1="15" y1="13" x2="9" y2="19"/></svg>`,
-};
 
 /**
  * Базовий клас екрана звіту.
@@ -121,14 +117,14 @@ export abstract class ReportBase<Root extends Record<string, unknown>> extends B
           <button class="btn btn-sm btn-primary" ?disabled=${!this.canRun} @click=${this.buildReport}>
             ${this.running === this.indexCommand
               ? html`<span class="loading loading-spinner loading-xs"></span>`
-              : icon.refresh}
+              : icons.refresh}
             ${t("common.refresh")}
           </button>
           <button class="btn btn-sm" ?disabled=${!this.hasData} @click=${this.print}>
-            ${icon.print} ${t("common.print")}
+            ${icons.print} ${t("common.print")}
           </button>
           <button class="btn btn-sm" ?disabled=${!this.hasData} @click=${this.exportExcel}>
-            ${icon.excel} ${t("common.exportExcel")}
+            ${icons.excel} ${t("common.exportExcel")}
           </button>
           ${this.renderToolbarExtra()}
         </div>

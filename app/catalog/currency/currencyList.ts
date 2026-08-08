@@ -28,6 +28,6 @@ export class CurrencyList extends ModelListBase<CurrencyRow> {
   ];
 
   protected override rowStyle(row: CurrencyRow) {
-    return row.isActive === false ? "color:#9ca3af" : "";
+    return row.isDeleted === true ? "color:#6b7280" : "";
   }
 }

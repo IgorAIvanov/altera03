@@ -26,7 +26,7 @@ export const CurrencyItemSchema = Type.Object({
     "x-form": { order: 4, width: "sm" },
     "x-list": { width: "5rem" },
   })),
-  isActive: Type.Optional(Type.Boolean({ title: "Активна", default: true })),
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type CurrencyItem = Static<typeof CurrencyItemSchema>;
 
@@ -42,7 +42,7 @@ export const CurrencyRowSchema = Type.Object({
   name:        Type.String(),
   numericCode: Type.Optional(Type.String()),
   symbol:      Type.Optional(Type.String()),
-  isActive:    Type.Optional(Type.Boolean()),
+  isDeleted:    Type.Optional(Type.Boolean()),
 });
 export type CurrencyRow = Static<typeof CurrencyRowSchema>;
 

@@ -12,7 +12,9 @@ import type {
   TsModelCommandConfig,
 } from "./model-runtime.types.ts";
 
-const STANDARD_COMMANDS = new Set(["list", "get", "save", "delete", "lookup"]);
+// `undelete` тут разом із `delete`: генератор видає обидві функції одній і тій
+// самій моделі, тож знати про одну й не знати про другу рантайм не може.
+const STANDARD_COMMANDS = new Set(["list", "get", "save", "delete", "undelete", "lookup"]);
 const STANDARD_DOCUMENT_COMMANDS = new Set(["post", "unpost"]);
 
 /**
@@ -24,6 +26,15 @@ const STANDARD_COMMAND_ACTIONS: Record<string, string> = {
   get: "view",
   lookup: "view",
   delete: "delete",
+  // Зняття позначки — те саме право, що й її встановлення: обидві команди
+  // керують однією ознакою `is_deleted`, і розділяти їх правами означало б, що
+  // хтось може позначити запис, але не може передумати.
+  //
+  // Тут, а не в `manifest.commands.access` кожної моделі: команду видає
+  // ГЕНЕРАТОР усім моделям одразу, і вимагати оголошення в дванадцяти
+  // манифестах — гарантовано забути в тринадцятому. Fail-closed від цього не
+  // страждає: нове ім'я в цьому переліку додають свідомо.
+  undelete: "delete",
   post: "post",
   unpost: "unpost",
 };
@@ -112,7 +123,7 @@ function assertCommandIdentifier(value: string) {
 }
 
 function validateStandardCommand(command: string, payload: Record<string, unknown>) {
-  if (command === "delete") {
+  if (command === "delete" || command === "undelete") {
     if (typeof payload.id !== "string" || payload.id.trim() === "") {
       return `id обов'язковий для ${command}`;
     }

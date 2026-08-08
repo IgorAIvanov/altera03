@@ -22,7 +22,7 @@ begin
 
   select count(*)::int into v_total
   from app.chart_of_account t
-  where t.is_active = true
+  where not t.is_deleted
     and t.is_group = false
     and (
       coalesce(payload->>'search', '') = ''
@@ -38,7 +38,7 @@ begin
       'name', t.name
     ) as r
     from app.chart_of_account t
-    where t.is_active = true
+    where not t.is_deleted
       and t.is_group = false
       and (
         coalesce(payload->>'search', '') = ''

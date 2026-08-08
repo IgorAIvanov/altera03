@@ -7,7 +7,7 @@ create table if not exists app.currency (
   name         varchar(100) not null,
   numeric_code varchar(3),
   symbol       varchar(8),
-  is_active    boolean not null default true,
+  is_deleted    boolean not null default false,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );

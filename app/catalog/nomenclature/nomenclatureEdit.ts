@@ -28,6 +28,9 @@ export class NomenclatureEdit extends BaseUI<NomenclatureEditRoot> {
     await this.loadInto("get", { id: this.modelId });
   }
 
+  protected override formWidth = "max-w-md";
+
+
   override render() {
     if (this.running === "get") return html`
       <div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>
@@ -35,10 +38,8 @@ export class NomenclatureEdit extends BaseUI<NomenclatureEditRoot> {
 
     const item = this.$root.item;
 
-    return html`
-      <div class="p-4 max-w-md flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           ${this.renderField(
             this.t("common.code"),
             html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
@@ -60,15 +61,7 @@ export class NomenclatureEdit extends BaseUI<NomenclatureEditRoot> {
             { field: "unit" },
           )}
 
-          <label class="label cursor-pointer justify-start gap-2 mt-1">
-            <input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
-              @change=${(e: Event) => { item.isActive = (e.target as HTMLInputElement).checked; }} />
-            <span class="text-sm">${this.t("common.active")}</span>
-          </label>
-        `)}
-
-        ${this.renderFormActions()}
-      </div>
-    `;
+              </div>
+    `);
   }
 }

@@ -192,6 +192,9 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
 
   // ── Рендер ────────────────────────────────────────────────────────────────
 
+  protected override formWidth = "max-w-5xl";
+
+
   override render() {
     if (this.running === "get") return html`
       <div class="flex justify-center p-8">
@@ -202,10 +205,8 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
     const item = this.$root.item;
     const groups = this.$root.options.groups ?? [];
 
-    return html`
-      <div class="p-4 max-w-5xl flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           <div class="grid grid-cols-2 gap-2">
             ${this.renderField(
               this.t("common.code"),
@@ -348,10 +349,7 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
                 : ""}
             </tbody>
           </table>
-        `)}
-
-        ${this.renderFormActions()}
-      </div>
-    `;
+              </div>
+    `);
   }
 }

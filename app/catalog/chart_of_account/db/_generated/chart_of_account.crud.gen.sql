@@ -37,7 +37,7 @@ begin
       'parentCode', t.parent_code,
       'isGroup', t.is_group,
       'isCurrency', t.is_currency,
-      'isActive', t.is_active
+      'isDeleted', t.is_deleted
     ) as r
     from app.chart_of_account t
     where (
@@ -88,7 +88,7 @@ as $$
         'isOffBalance', t.is_off_balance,
         'isCurrency', t.is_currency,
         'isQuantitative', t.is_quantitative,
-        'isActive', t.is_active,
+        'isDeleted', t.is_deleted,
         'sortOrder', t.sort_order
       )
           from app.chart_of_account t
@@ -136,7 +136,7 @@ begin
       (v_item->>'isOffBalance')::boolean as is_off_balance,
       (v_item->>'isCurrency')::boolean as is_currency,
       (v_item->>'isQuantitative')::boolean as is_quantitative,
-      (v_item->>'isActive')::boolean as is_active,
+      (v_item->>'isDeleted')::boolean as is_deleted,
       nullif(v_item->>'sortOrder', '')::int as sort_order
   ) s
     on t.id = s.id
@@ -149,11 +149,11 @@ begin
     is_off_balance = coalesce(s.is_off_balance, t.is_off_balance),
     is_currency = coalesce(s.is_currency, t.is_currency),
     is_quantitative = coalesce(s.is_quantitative, t.is_quantitative),
-    is_active = coalesce(s.is_active, t.is_active),
+    is_deleted = coalesce(s.is_deleted, t.is_deleted),
     sort_order = coalesce(s.sort_order, t.sort_order),
     updated_at = now()
-  when not matched then insert (code, name, account_type, parent_code, is_group, is_off_balance, is_currency, is_quantitative, is_active, sort_order)
-    values (s.code, s.name, coalesce(s.account_type, 'active'), s.parent_code, coalesce(s.is_group, false), coalesce(s.is_off_balance, false), coalesce(s.is_currency, false), coalesce(s.is_quantitative, false), coalesce(s.is_active, true), coalesce(s.sort_order, 0))
+  when not matched then insert (code, name, account_type, parent_code, is_group, is_off_balance, is_currency, is_quantitative, is_deleted, sort_order)
+    values (s.code, s.name, coalesce(s.account_type, 'active'), s.parent_code, coalesce(s.is_group, false), coalesce(s.is_off_balance, false), coalesce(s.is_currency, false), coalesce(s.is_quantitative, false), coalesce(s.is_deleted, false), coalesce(s.sort_order, 0))
   returning t.id into v_id;
 
   select jsonb_build_object(
@@ -166,7 +166,7 @@ begin
         'isOffBalance', t.is_off_balance,
         'isCurrency', t.is_currency,
         'isQuantitative', t.is_quantitative,
-        'isActive', t.is_active,
+        'isDeleted', t.is_deleted,
         'sortOrder', t.sort_order
       ) into v_result
   from app.chart_of_account t
@@ -200,7 +200,7 @@ begin
     raise exception 'id обов''язковий';
   end if;
 
-  delete from app.chart_of_account where id = v_id;
+  update app.chart_of_account set is_deleted = true where id = v_id;
 
   return jsonb_build_object(
       'ok', true,
@@ -210,6 +210,36 @@ begin
         'options', '{}'::jsonb,
         'totals',  '{}'::jsonb,
         'extra',   jsonb_build_object('deletedId', v_id::text)
+      ),
+      'messages', '[]'::jsonb,
+      'meta', '{}'::jsonb
+    );
+end;
+$$;
+
+drop function if exists app.chart_of_account_undelete(bigint, jsonb);
+create function app.chart_of_account_undelete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint;
+begin
+  v_id := nullif(payload->>'id', '')::bigint;
+  if v_id is null then
+    raise exception 'id обов''язковий';
+  end if;
+
+  update app.chart_of_account set is_deleted = false where id = v_id;
+
+  return jsonb_build_object(
+      'ok', true,
+      'data', jsonb_build_object(
+        'item',    null,
+        'rows',    '[]'::jsonb,
+        'options', '{}'::jsonb,
+        'totals',  '{}'::jsonb,
+        'extra',   jsonb_build_object('undeletedId', v_id::text)
       ),
       'messages', '[]'::jsonb,
       'meta', '{}'::jsonb
@@ -236,7 +266,7 @@ begin
 
   select count(*)::int into v_total
   from app.chart_of_account t
-  where t.is_active = true
+  where not t.is_deleted
     and (
     coalesce(payload->>'search', '') = ''
     or t.code ilike '%' || (payload->>'search') || '%'
@@ -251,7 +281,7 @@ begin
       'name', t.name
     ) as r
     from app.chart_of_account t
-    where t.is_active = true
+    where not t.is_deleted
       and (
       coalesce(payload->>'search', '') = ''
       or t.code ilike '%' || (payload->>'search') || '%'

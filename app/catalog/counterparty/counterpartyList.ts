@@ -26,6 +26,6 @@ export class CounterpartyList extends ModelListBase<CounterpartyRow> {
   ];
 
   protected override rowStyle(row: CounterpartyRow) {
-    return row.isActive === false ? "color:#9ca3af" : "";
+    return row.isDeleted === true ? "color:#6b7280" : "";
   }
 }

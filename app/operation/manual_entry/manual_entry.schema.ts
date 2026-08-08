@@ -94,6 +94,8 @@ export const ManualEntryRowSchema = Type.Object({
   docDate:  Type.String(),
   total:    Type.Optional(Type.Number()),
   isPosted: Type.Optional(Type.Boolean()),
+  // Потрібне списку: службова колонка стану показує позначку на видалення.
+  isDeleted: Type.Optional(Type.Boolean()),
   description: Type.Optional(Type.String()),
 });
 export type ManualEntryRow = Static<typeof ManualEntryRowSchema>;

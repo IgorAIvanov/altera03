@@ -20,7 +20,7 @@ create table if not exists app.nomenclature (
   -- null — корінь. Видалення групи заборонено, поки в ній є елементи
   -- (перевіряє nomenclature_group_delete), тож каскад тут не потрібен.
   group_id   bigint references app.nomenclature_group (id),
-  is_active  boolean      not null default true,
+  is_deleted boolean      not null default false,
   created_at timestamptz  not null default now(),
   updated_at timestamptz  not null default now()
 );

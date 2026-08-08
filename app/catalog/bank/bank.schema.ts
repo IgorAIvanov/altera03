@@ -25,7 +25,7 @@ export const BankItemSchema = Type.Object({
     "x-lookup": true,
     "x-search": true,
   })),
-  isActive: Type.Optional(Type.Boolean({ title: "Активний", default: true })),
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type BankItem = Static<typeof BankItemSchema>;
 
@@ -36,7 +36,7 @@ export const BankRowSchema = Type.Object({
   code:     Type.String(),
   name:     Type.String(),
   mfo:      Type.Optional(Type.String()),
-  isActive: Type.Optional(Type.Boolean()),
+  isDeleted: Type.Optional(Type.Boolean()),
 });
 export type BankRow = Static<typeof BankRowSchema>;
 

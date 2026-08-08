@@ -10,6 +10,7 @@ import { buildRowsSheet, type ExportColumn } from "../report/rows-sheet.ts";
 import { buildXlsx, downloadFile, safeFileName, XLSX_MIME } from "../report/xlsx.ts";
 // Побічний імпорт — реєструє <ui-group-tree> для ієрархічних довідників.
 import "../components/ui-group-tree.ts";
+import { icons } from "../icons.ts";
 
 /**
  * Контракт таблиці переїхав у `table-contract.ts` — щоб діалог підбору не тягнув
@@ -22,16 +23,6 @@ import "../components/ui-group-tree.ts";
  */
 export { alignClass, cellStyle, listRootSchema, stopRow, twoLine } from "./table-contract.ts";
 export type { ListColumn, ListRoot, ListTotals, SortDir } from "./table-contract.ts";
-
-// Іконки дій списку. Пошук і оновлення — у `QueryTableBase`: вони є на обох
-// екранах, тож і малюються там же, де тулбар.
-const icon = {
-  create: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-  open: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
-  delete: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
-  excel: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="19"/><line x1="15" y1="13" x2="9" y2="19"/></svg>`,
-  toGroup: html`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 17v-5"/><path d="m9 14.5 3-3 3 3"/></svg>`,
-};
 
 /**
  * Базовий клас для типової форми списку моделі.
@@ -255,20 +246,70 @@ export abstract class ModelListBase<Row extends { id: string }> extends QueryTab
     }, "save");
   }
 
+  // ── Позначка на видалення ─────────────────────────────────────────────────
+
+  /** Рядок під курсором — потрібен, щоб знати, позначений він чи ні. */
+  protected get selectedRow(): Row | undefined {
+    return this.rows.find((r) => r.id === this.selectedId);
+  }
+
+  /** Чи має модель позначку взагалі: SQL віддає `isDeleted` лише таким. */
+  protected get hasDeletionMark(): boolean {
+    return this.rows.some((r) => "isDeleted" in (r as Record<string, unknown>));
+  }
+
+  /** Курсор стоїть на позначеному записі — тоді кнопка знімає позначку. */
+  protected get selectedIsDeleted(): boolean {
+    return (this.selectedRow as { isDeleted?: boolean } | undefined)?.isDeleted === true;
+  }
+
+  /**
+   * Позначити на видалення. Запис НЕ зникає: він лишається в списку зі значком,
+   * інакше «видалив не те» не мало б вороття, а саме заради цього позначка й
+   * існує. Фізичне видалення — окрема операція, і вона мусить перевіряти
+   * посилання.
+   */
   protected async deleteSelected() {
     if (!this.selectedId) return;
-    const row = this.rows.find((r) => r.id === this.selectedId);
+    const row = this.selectedRow;
     // bus.confirm, а не нативний confirm(): той блокує вкладку й показує
-    // адресу сайту. Кнопка підтвердження — «Видалити», не абстрактне «Так».
+    // адресу сайту. Кнопка підтвердження називає дію, а не абстрактне «Так».
     const confirmed = await bus.confirm(
-      `${t("common.confirmDelete")} "${row ? this.rowLabel(row) : ""}"?`,
-      "common.delete",
+      `${t("common.confirmMarkDeleted")} "${row ? this.rowLabel(row) : ""}"?`,
+      "common.markDeleted",
       "warning",
     );
     if (!confirmed) return;
     // kind:"save" → data-service емітить model.changed → підписка вище перезавантажує.
     await this.run("delete", { id: this.selectedId }, "save");
-    this.selectedId = "";
+  }
+
+  /** Зняти позначку. Підтвердження не питаємо: дія неруйнівна. */
+  protected async undeleteSelected() {
+    if (!this.selectedId) return;
+    await this.run("undelete", { id: this.selectedId }, "save");
+  }
+
+  // ── Стан рядка у службовій колонці ────────────────────────────────────────
+
+  protected override get statusColumn(): boolean {
+    return this.rows.some((r) => {
+      const rec = r as Record<string, unknown>;
+      return "isDeleted" in rec || "isPosted" in rec;
+    });
+  }
+
+  protected override renderRowStatus(row: Row): TemplateResult {
+    const rec = row as { isDeleted?: boolean; isPosted?: boolean };
+    // Порядок перевірок = порядок важливості: позначка на видалення перекриває
+    // проведення, бо вона про долю запису, а не про його стан в обліку.
+    if (rec.isDeleted) {
+      return html`<span title=${t("common.statusDeleted")}>${icons.recordDeleted}</span>`;
+    }
+    if (rec.isPosted) {
+      return html`<span title=${t("common.statusPosted")}>${icons.recordPosted}</span>`;
+    }
+    return html`<span title=${t("common.statusNew")}>${icons.recordNew}</span>`;
   }
 
   // ── Рендер ──────────────────────────────────────────────────────────────────
@@ -280,32 +321,51 @@ export abstract class ModelListBase<Row extends { id: string }> extends QueryTab
         ${can(this.model, "create")
           ? html`
             <button class="btn btn-sm btn-primary" @click=${() => this.openEdit(null)}>
-              ${icon.create} ${t("common.create")}
+              ${icons.create} ${t("common.create")}
             </button>`
           : nothing}
         <button class="btn btn-sm" ?disabled=${!this.selectedId}
           @click=${() => this.openEdit(this.selectedId)}>
-          ${icon.open} ${t("common.open")}
+          ${icons.open} ${t("common.open")}
         </button>
+        <!-- Позначка на видалення — сама лише іконка: дія не з тих, заради яких
+             тримають підпис, а «Позначити на видалення» — найдовший рядок у
+             тулбарі й з'їдає місце в потрібніших кнопок. Кнопка міняється за
+             станом курсора (кошик ↔ перекреслений кошик), як
+             «Провести»/«Розпровести» у формі документа: одна дія, два напрямки.
+
+             Без підпису ім'я кнопці дає aria-label, а title показує його мишею —
+             правило для будь-якої кнопки-іконки. Зворотних лапок у цьому
+             коментарі бути не може: він усередині html-шаблону, і перша ж
+             лапка закриє шаблонний рядок. -->
         ${can(this.model, "delete")
-          ? html`
-            <button class="btn btn-sm btn-error btn-outline" ?disabled=${!this.selectedId}
-              @click=${this.deleteSelected}>
-              ${icon.delete} ${t("common.delete")}
-            </button>`
+          ? this.hasDeletionMark && this.selectedIsDeleted
+            ? html`
+              <button class="btn btn-sm btn-outline btn-square" ?disabled=${!this.selectedId}
+                title=${t("common.unmarkDeleted")} aria-label=${t("common.unmarkDeleted")}
+                @click=${this.undeleteSelected}>
+                ${icons.undelete}
+              </button>`
+            : html`
+              <button class="btn btn-sm btn-error btn-outline btn-square" ?disabled=${!this.selectedId}
+                title=${this.hasDeletionMark ? t("common.markDeleted") : t("common.delete")}
+                aria-label=${this.hasDeletionMark ? t("common.markDeleted") : t("common.delete")}
+                @click=${this.deleteSelected}>
+                ${icons.delete}
+              </button>`
           : nothing}
       `}
       ${this.hierarchy && can(this.model, "edit")
         ? html`
           <button class="btn btn-sm" ?disabled=${!this.selectedId} @click=${this.#openMoveDialog}>
-            ${icon.toGroup} ${t("groups.toGroup")}
+            ${icons.toGroup} ${t("groups.toGroup")}
           </button>`
         : nothing}
       <button class="btn btn-sm" ?disabled=${this.exporting || this.total === 0}
         @click=${this.exportExcel}>
         ${this.exporting
           ? html`<span class="loading loading-spinner loading-xs"></span>`
-          : icon.excel}
+          : icons.excel}
         ${t("common.exportExcel")}
       </button>
     `;

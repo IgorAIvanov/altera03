@@ -50,7 +50,7 @@ export const ChartOfAccountItemSchema = Type.Object({
     title: "Кількісний облік", default: false,
     "x-form": { order: 8 },
   })),
-  isActive: Type.Optional(Type.Boolean({ title: "Активний", default: true })),
+  isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
   sortOrder: Type.Optional(Type.Number({ title: "Порядок", "x-db-type": "int", default: 0 })),
 });
 export type ChartOfAccountItem = Static<typeof ChartOfAccountItemSchema>;
@@ -65,7 +65,7 @@ export const ChartOfAccountRowSchema = Type.Object({
   parentCode:  Type.Optional(Type.String()),
   isGroup:     Type.Optional(Type.Boolean()),
   isCurrency:  Type.Optional(Type.Boolean()),
-  isActive:    Type.Optional(Type.Boolean()),
+  isDeleted:    Type.Optional(Type.Boolean()),
 });
 export type ChartOfAccountRow = Static<typeof ChartOfAccountRowSchema>;
 

@@ -15,6 +15,7 @@ import "@client/ui-kit/components/ui-date.ts";
 import "@client/ui-kit/components/ui-attachments.ts";
 import "@client/ui-kit/tabular/ui-tabular-table.ts";
 import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
+import { icons } from "@client/ui-kit/icons.ts";
 
 export const tagName = "invoice-edit";
 
@@ -131,18 +132,25 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     return ok;
   }
 
+  /** Проведений документ форма показує, але не дає правити — тільки розпровести. */
+  protected override get locked(): boolean {
+    return this.$root.item.isPosted === true;
+  }
+
   /**
    * Проведення. Команда повертає оновлений item (уже з isPosted і денормалізо-
    * ваною шапкою), тому форму не перечитуємо окремим get.
+   *
+   * `"save"` — щоб журнал у сусідній вкладці перемалював значок стану.
    */
   private async post() {
-    await this.loadInto("post", { id: this.$root.item.id });
+    await this.loadInto("post", { id: this.$root.item.id }, "save");
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
     this.markClean();
   }
 
   private async unpost() {
-    await this.loadInto("unpost", { id: this.$root.item.id });
+    await this.loadInto("unpost", { id: this.$root.item.id }, "save");
     this.$root.item = { ...this.$root.item, lines: this.normalizedLines() };
     this.markClean();
   }
@@ -190,6 +198,44 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
+  /** Дії над самим документом — ліворуч, за стандартними кнопками запису. */
+  protected override renderActions() {
+    const item = this.$root.item;
+    if (item.isPosted) {
+      return this.may("unpost")
+        ? html`
+          <button class="btn btn-sm btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
+            ${this.running === "unpost"
+              ? html`<span class="loading loading-spinner loading-xs"></span>`
+              : icons.unpost}
+            ${t("document.unpost")}
+          </button>`
+        : "";
+    }
+    return this.may("post")
+      ? html`
+        <button class="btn btn-sm btn-secondary" ?disabled=${this.busy || !item.id} @click=${this.post}>
+          ${this.running === "post"
+            ? html`<span class="loading loading-spinner loading-xs"></span>`
+            : icons.post}
+          ${t("document.post")}
+        </button>`
+      : "";
+  }
+
+  /** Друк — за роздільником: він нічого не змінює в записі, а видає назовні. */
+  protected override renderAuxActions() {
+    return html`
+      <button class="btn btn-sm btn-outline" ?disabled=${this.busy || !this.$root.item.id}
+        @click=${this.printPdf}>
+        ${this.running === "printPdf"
+          ? html`<span class="loading loading-spinner loading-xs"></span>`
+          : icons.print}
+        ${t("common.print")}
+      </button>
+    `;
+  }
+
   override render() {
     if (this.running === "get") return html`
       <div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>
@@ -197,10 +243,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
 
     const item = this.$root.item;
 
-    return html`
-      <div class="p-4 max-w-3xl">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
           <!-- Шапка -->
           <div class="mb-4">
             <!-- номер + дата — в одній рамці -->
@@ -224,9 +267,6 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
                   @value-changed=${(e: DateEvent) => this.setField("docDate", e.detail.value)}
                 ></ui-date>
               </div>
-              ${item.isPosted
-                ? html`<div class="badge badge-success badge-sm mt-2">${t("document.posted")}</div>`
-                : ""}
             </fieldset>
 
             <ui-picker
@@ -283,30 +323,6 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
               .label=${t("invoice.attachments")}
             ></ui-attachments>
           </div>
-        `)}
-
-        ${this.renderFormActions(html`
-          ${item.isPosted
-            ? this.may("unpost")
-              ? html`
-                <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.unpost}>
-                  ${this.running === "unpost" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                  ${t("document.unpost")}
-                </button>`
-              : ""
-            : this.may("post")
-            ? html`
-              <button class="btn btn-secondary" ?disabled=${this.busy || !item.id} @click=${this.post}>
-                ${this.running === "post" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-                ${t("document.post")}
-              </button>`
-            : ""}
-          <button class="btn btn-outline" ?disabled=${this.busy || !item.id} @click=${this.printPdf}>
-            ${this.running === "printPdf" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-            ${t("common.print")}
-          </button>
-        `)}
-      </div>
-    `;
+    `);
   }
 }

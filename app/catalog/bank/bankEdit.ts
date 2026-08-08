@@ -24,7 +24,7 @@ export class BankEdit extends BaseUI<BankEditRoot> {
 
   constructor() {
     // $root ← Value.Create(BankEditRootSchema)
-    //   = { item: { id: null, code: "", name: "", isActive: true }, options: {} }
+    //   = { item: { id: null, code: "", name: "", isDeleted: false }, options: {} }
     super(BankEditRootSchema);
   }
 
@@ -45,6 +45,19 @@ export class BankEdit extends BaseUI<BankEditRoot> {
     this.requestUpdate();
   }
 
+  /** Проста картка — вузька колонка; ширші форми лишають типове `max-w-3xl`. */
+  protected override formWidth = "max-w-md";
+
+  /** Своя дія над записом — ліворуч, одразу за стандартними кнопками. */
+  protected override renderActions() {
+    return html`
+      <button class="btn btn-sm btn-outline" ?disabled=${this.busy} @click=${this.ping}>
+        ${this.running === "ping" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
+        TS-команда (ping)
+      </button>
+    `;
+  }
+
   override render() {
     if (this.running === "get") return html`
       <div class="flex justify-center p-8">
@@ -54,10 +67,8 @@ export class BankEdit extends BaseUI<BankEditRoot> {
 
     const item = this.$root.item;
 
-    return html`
-      <div class="p-4 max-w-md flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           ${this.renderField(
             this.t("common.code"),
             html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
@@ -78,19 +89,11 @@ export class BankEdit extends BaseUI<BankEditRoot> {
               @input=${this.bindTo(item, "mfo")} />`,
             { field: "mfo" },
           )}
-        `)}
-
-        ${this.renderFormActions(html`
-          <button class="btn btn-outline" ?disabled=${this.busy} @click=${this.ping}>
-            ${this.running === "ping" ? html`<span class="loading loading-spinner loading-xs"></span>` : ""}
-            TS-команда (ping)
-          </button>
-        `)}
 
         ${this.pingResult
           ? html`<pre class="mt-4 p-3 rounded bg-base-200 text-xs whitespace-pre-wrap">${this.pingResult}</pre>`
           : ""}
       </div>
-    `;
+    `);
   }
 }

@@ -36,6 +36,9 @@ export class ChartOfAccountEdit extends BaseUI<ChartOfAccountEditRoot> {
     };
   }
 
+  protected override formWidth = "max-w-2xl";
+
+
   override render() {
     if (this.running === "get") return html`
       <div class="flex justify-center p-8">
@@ -45,10 +48,8 @@ export class ChartOfAccountEdit extends BaseUI<ChartOfAccountEditRoot> {
 
     const item = this.$root.item;
 
-    return html`
-      <div class="p-4 max-w-2xl flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           <div class="flex gap-2">
             ${this.renderField(
               this.t("chartOfAccount.code"),
@@ -105,16 +106,8 @@ export class ChartOfAccountEdit extends BaseUI<ChartOfAccountEditRoot> {
                 @change=${this.flag(item, "isQuantitative")} />
               <span class="text-sm">${this.t("chartOfAccount.isQuantitative")}</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-2">
-              <input type="checkbox" class="checkbox checkbox-sm" .checked=${item.isActive !== false}
-                @change=${this.flag(item, "isActive")} />
-              <span class="text-sm">${this.t("chartOfAccount.isActive")}</span>
-            </label>
           </div>
-        `)}
-
-        ${this.renderFormActions()}
-      </div>
-    `;
+              </div>
+    `);
   }
 }

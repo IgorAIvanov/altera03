@@ -16,7 +16,7 @@ export default async function bankPing(
   >`
     select
       count(*)::int                              as total,
-      count(*) filter (where is_active)::int     as active,
+      count(*) filter (where not is_deleted)::int as active,
       to_char(now(), 'YYYY-MM-DD HH24:MI:SS')    as server_time
     from app.bank
   `;

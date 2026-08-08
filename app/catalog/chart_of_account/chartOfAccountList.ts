@@ -45,6 +45,6 @@ export class ChartOfAccountList extends ModelListBase<ChartOfAccountRow> {
   ];
 
   protected override rowStyle(row: ChartOfAccountRow) {
-    return row.isActive === false ? "color:#9ca3af" : "";
+    return row.isDeleted === true ? "color:#6b7280" : "";
   }
 }
