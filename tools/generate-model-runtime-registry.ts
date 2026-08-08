@@ -119,8 +119,12 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
     const modelTypeLine = manifest.type ? `    type: ${JSON.stringify(manifest.type)}` : null;
     const modelSchemaLine = manifest.schema ? `    schema: ${JSON.stringify(manifest.schema)}` : null;
     const audit = manifest.audit;
-    const modelAuditLine = audit === true
-      ? "    audit: true"
+    // `false` теж переноситься, а не відкидається як «нічого не оголошено»:
+    // умовчання рантайму — писати змінювальні команди, тож проковтнутий `false`
+    // означав би журнал там, де його свідомо вимкнули. Мовчазна відмова
+    // виконати оголошене — найгірший з можливих наслідків.
+    const modelAuditLine = typeof audit === "boolean"
+      ? `    audit: ${audit}`
       : audit && Array.isArray(audit.commands)
       ? `    audit: { commands: ${JSON.stringify(audit.commands)} }`
       : null;

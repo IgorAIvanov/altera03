@@ -39,6 +39,24 @@ const STANDARD_COMMAND_ACTIONS: Record<string, string> = {
   unpost: "unpost",
 };
 
+/**
+ * Стандартні команди, які МІНЯЮТЬ запис, — журнал пише їх за замовчуванням,
+ * без оголошення в манифесті.
+ *
+ * Доти аудит вмикався тільки поіменним списком, і з дванадцяти моделей його
+ * оголосила рівно одна. Позначка на видалення нікуди не потрапляла — тобто
+ * найпотрібніша для журналу подія («хто прибрав запис») не лишала сліду саме
+ * там, де слід і шукають. Це та сама пастка, що з правом `undelete` вище:
+ * команду видає ГЕНЕРАТОР усім моделям одразу, а оголошувати її треба руками
+ * в кожному манифесті — тож забути можна лише в один бік, і саме мовчки.
+ *
+ * Читання (`list`, `get`, `lookup`) сюди не входить: воно роздуло б журнал
+ * так, що змін у ньому не знайти. Нестандартна команда (`copy`, `moveToGroup`,
+ * TS-команда) теж — вона мусить назвати себе в манифесті сама: журнал змін не
+ * знає, чи щось змінює команда з довільним іменем.
+ */
+const AUDITED_BY_DEFAULT = new Set(["save", "delete", "undelete", "post", "unpost"]);
+
 /** Оголошення «досить бути авторизованим»: право моделі не перевіряється. */
 const AUTHENTICATED = "authenticated";
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -106,8 +124,17 @@ function auditRecordId(payload: Record<string, unknown>, result?: unknown): stri
   return null;
 }
 
+/**
+ * Чи писати цю команду в журнал. Оголошення в манифесті СИЛЬНІШЕ за умовчання
+ * в обидва боки: список звужує (і може додати свою команду), `false` вимикає
+ * журнал моделі цілком.
+ */
 function shouldAudit(config: ModelBackendConfig | undefined, command: string) {
-  return config?.audit === true || config?.audit?.commands.includes(command) === true;
+  const declared = config?.audit;
+  if (declared === true) return true;
+  if (declared === false) return false;
+  if (declared) return declared.commands.includes(command);
+  return AUDITED_BY_DEFAULT.has(command);
 }
 
 function assertIdentifier(value: string, label: string) {

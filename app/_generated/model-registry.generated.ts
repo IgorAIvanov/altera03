@@ -53,7 +53,6 @@ export const generatedModelRegistry = {
   "invoice": {
     type: "document",
     schema: "app",
-    audit: { commands: ["save","delete","post","unpost"] },
     sqlCommands: {
     "printData": "invoice_print_data"
     },

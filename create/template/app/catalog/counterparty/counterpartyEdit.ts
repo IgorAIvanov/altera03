@@ -19,8 +19,9 @@ interface PrintPdfExtra {
  * Форма демо-довідника.
  *
  * `$root` засівається зі схеми через `super(...)` — рукописного «порожнього
- * об'єкта» тут немає навмисно. Підпис поля малює лише `renderField`, підвал —
- * `renderFormActions`: обидва знають про обов'язковість і режим перегляду.
+ * об'єкта» тут немає навмисно. Підпис поля малює лише `renderField`, а весь
+ * каркас — `renderForm()`: командна панель угорі, банер, поля. Обидва знають
+ * про обов'язковість і режим перегляду, тож писати їх руками не треба.
  */
 @customElement(tagName)
 export class CounterpartyEdit extends BaseUI<CounterpartyEditRoot> {
@@ -94,6 +95,23 @@ export class CounterpartyEdit extends BaseUI<CounterpartyEditRoot> {
     };
   }
 
+  /**
+   * Друк — за роздільником командної панелі: він нічого не змінює в записі, а
+   * видає його назовні. Дії НАД записом (провести, скопіювати) йшли б у
+   * `renderActions()`, ліворуч, одразу за кнопками запису.
+   */
+  protected override renderAuxActions() {
+    return html`
+      <button class="btn btn-sm btn-outline" ?disabled=${this.busy || !this.$root.item.id}
+        @click=${this.printPdf}>
+        ${this.running === "printPdf"
+          ? html`<span class="loading loading-spinner loading-xs"></span>`
+          : ""}
+        ${this.t("counterparty.print")}
+      </button>
+    `;
+  }
+
   override render() {
     if (this.running === "get") {
       return html`<div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>`;
@@ -101,10 +119,10 @@ export class CounterpartyEdit extends BaseUI<CounterpartyEditRoot> {
 
     const item = this.$root.item;
 
-    return html`
-      <div class="p-4 max-w-md flex flex-col gap-2">
-        ${this.renderNotice()}
-        ${this.renderFields(html`
+    // Каркас малює база: командна панель угорі, банер, поля в `renderFields()`.
+    // Своє тут — самі поля.
+    return this.renderForm(html`
+      <div class="flex flex-col gap-2">
           ${this.renderField(
             this.t("common.code"),
             html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
@@ -125,17 +143,7 @@ export class CounterpartyEdit extends BaseUI<CounterpartyEditRoot> {
               @input=${this.bindTo(item, "edrpou")} />`,
             { field: "edrpou" },
           )}
-        `)}
-
-        ${this.renderFormActions(html`
-          <button class="btn btn-outline" ?disabled=${this.busy || !item.id} @click=${this.printPdf}>
-            ${this.running === "printPdf"
-              ? html`<span class="loading loading-spinner loading-xs"></span>`
-              : ""}
-            ${this.t("counterparty.print")}
-          </button>
-        `)}
       </div>
-    `;
+    `);
   }
 }
