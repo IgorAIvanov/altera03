@@ -191,7 +191,7 @@ export class UiAttachments extends GlobalStyledLitElement {
                         ?disabled=${this.disabled || this._busy}
                         @click=${() => this._remove(row)}
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                           stroke="currentColor" stroke-width="2">
                           <polyline points="3 6 5 6 21 6"/>
                           <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>

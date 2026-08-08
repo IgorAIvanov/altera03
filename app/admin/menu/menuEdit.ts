@@ -329,17 +329,17 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
                   <td class="cell-text text-center whitespace-nowrap">
                     <button class="btn btn-ghost btn-xs px-0.5" title=${this.t("menu.moveUp")}
                       ?disabled=${!this.canMove(entry, -1)} @click=${() => this.moveEntry(i, -1)}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
                     <button class="btn btn-ghost btn-xs px-0.5" title=${this.t("menu.moveDown")}
                       ?disabled=${!this.canMove(entry, 1)} @click=${() => this.moveEntry(i, 1)}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                   </td>
                   <td class="text-center">
                     <button class="btn btn-ghost btn-xs text-error" title=${this.t("common.delete")}
                       @click=${() => this.removeEntry(i)}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                     </button>
                   </td>
                 </tr>

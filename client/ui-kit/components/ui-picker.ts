@@ -218,7 +218,7 @@ export class UiPicker extends GlobalStyledLitElement {
         ${this.showClear ? html`
           <button class="btn btn-square btn-sm join-item"
             title="Очистити" ?disabled=${this.disabled || !this.displayValue} @click=${this._onClear}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
@@ -227,7 +227,7 @@ export class UiPicker extends GlobalStyledLitElement {
           <button class="btn btn-square btn-sm join-item"
             title="Підібрати" ?disabled=${this.disabled || !this.url}
             @click=${this._onBrowse}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
           </button>

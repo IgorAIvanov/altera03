@@ -22,12 +22,22 @@
  * Розмір задається АТРИБУТАМИ `width`/`height`, а не класами Tailwind: гліфи
  * живуть у shadow DOM і не мусять залежати від того, чи згенеровано `h-4`
  * десь в іншому місці застосунку.
+ *
+ * Але всередині контрола вирішує не атрибут, а тема: `.btn > svg` і
+ * `.input > svg` задають `width`/`height` з токена `--icon-size`, а звичайна
+ * CSS-декларація сильніша за презентаційний атрибут завжди. Так «зробити
+ * іконки більшими» стало однією правкою замість двох десятків файлів. `ICON`
+ * нижче тримає ТЕ САМЕ число — воно діє там, куди тема не дістає (значок стану
+ * запису в колонці списку), і слугує запасним, якщо гліф поставлять голим.
  */
 import { html, svg, type SVGTemplateResult, type TemplateResult } from "lit";
 
+/** Розмір гліфа за замовчуванням; парна величина до `--icon-size` у темі. */
+const ICON = 16;
+
 const glyph = (
   body: SVGTemplateResult,
-  { size = 13, width = 2, opacity = 1 }: { size?: number; width?: number; opacity?: number } = {},
+  { size = ICON, width = 2, opacity = 1 }: { size?: number; width?: number; opacity?: number } = {},
 ): TemplateResult =>
   html`
     <svg width=${size} height=${size} viewBox="0 0 24 24" fill="none"
@@ -43,9 +53,12 @@ const glyph = (
  *
  * Колір мітки — з токенів теми, тож він рухається разом із рештою палітри й
  * лишається перевіреним на контраст.
+ *
+ * Розмір тут задає САМЕ атрибут: значок стоїть у комірці таблиці, а не в
+ * кнопці чи полі, тобто правила теми до нього не дотягуються.
  */
 const record = (badge: SVGTemplateResult): TemplateResult => html`
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+  <svg width=${ICON} height=${ICON} viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="1.8">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" opacity="0.5"/>
     <polyline points="14 2 14 8 20 8" opacity="0.5"/>
@@ -104,7 +117,10 @@ export const icons: Record<string, TemplateResult> = {
   excel: glyph(svg`<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="19"/><line x1="15" y1="13" x2="9" y2="19"/>`),
   refresh: glyph(svg`<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>`),
   filter: glyph(svg`<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>`),
-  search: glyph(svg`<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>`, { size: 14, opacity: 0.5 }),
+  // Лупа в полі пошуку — не кнопка, а прикраса поля, тому приглушена. Розмір
+  // однаково прийде з теми (`.input > svg`), опція `size` лишається для гліфа,
+  // поставленого поза контролом.
+  search: glyph(svg`<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>`, { opacity: 0.5 }),
   import: glyph(svg`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`),
   export: glyph(svg`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>`),
   add: glyph(svg`<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>`, { width: 2.5 }),

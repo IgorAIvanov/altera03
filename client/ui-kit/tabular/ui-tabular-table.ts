@@ -325,7 +325,7 @@ export class UiTabularTable extends Base {
                    секції: дія прибирає рядок, а не позначає запис на видалення. -->
               <button class="btn btn-ghost btn-xs" title=${t("tabular.delete")}
                 @click=${(e: Event) => { e.stopPropagation(); section.removeLine(i); }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </td>`
           : nothing}
