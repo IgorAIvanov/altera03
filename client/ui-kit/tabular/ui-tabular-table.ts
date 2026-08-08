@@ -321,9 +321,11 @@ export class UiTabularTable extends Base {
         ${section.rowDelete
           ? html`
             <td class="text-center" rowspan=${recordSpan}>
-              <button class="btn btn-ghost btn-xs text-error" title=${t("tabular.delete")}
+              <!-- Хрестик і колір шрифту — той самий значок, що в панелі дій
+                   секції: дія прибирає рядок, а не позначає запис на видалення. -->
+              <button class="btn btn-ghost btn-xs" title=${t("tabular.delete")}
                 @click=${(e: Event) => { e.stopPropagation(); section.removeLine(i); }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </td>`
           : nothing}

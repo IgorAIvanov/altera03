@@ -14,7 +14,10 @@ import type { TabularSection } from "./tabular-section.ts";
 const icon = {
   add: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
   copy: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
-  del: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`,
+  // Хрестик, а не кошик: у табличній частині дія прибирає РЯДОК зі списку, а не
+  // відправляє запис у небуття — кошик тут обіцяє більше, ніж робить, і надто
+  // схожий на «позначити на видалення» в тулбарі списку, де він саме кошик.
+  del: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
   up: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>`,
   down: html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`,
 };
@@ -52,24 +55,28 @@ export class UiTabularToolbar extends GlobalStyledLitElement {
     const current = section.currentIndex;
     const hasCurrent = current >= 0 && current < section.rows.length;
 
+    // Панель уся `btn-ghost`: це смуга дій над таблицею, а не форма з кнопками.
+    // Рамки тут малювали сітку поверх сітки, а іконки все одно несуть значення
+    // самі — підпис лишився тільки в «Додати», бо це єдина дія, яку шукають
+    // очима, а не після вибору рядка.
     return html`
       <div class="flex items-center gap-1">
-        <button class="btn btn-sm" @click=${() => section.addLine()}>
+        <button class="btn btn-sm btn-ghost" @click=${() => section.addLine()}>
           ${icon.add} ${t("tabular.add")}
         </button>
-        <button class="btn btn-sm" ?disabled=${!hasCurrent} title=${t("tabular.copy")}
+        <button class="btn btn-sm btn-ghost" ?disabled=${!hasCurrent} title=${t("tabular.copy")}
           @click=${() => section.copyLine()}>
           ${icon.copy}
         </button>
-        <button class="btn btn-sm text-error" ?disabled=${!hasCurrent} title=${t("tabular.delete")}
+        <button class="btn btn-sm btn-ghost" ?disabled=${!hasCurrent} title=${t("tabular.delete")}
           @click=${() => section.removeLine()}>
           ${icon.del}
         </button>
-        <button class="btn btn-sm" ?disabled=${!hasCurrent || current === 0} title=${t("tabular.up")}
+        <button class="btn btn-sm btn-ghost" ?disabled=${!hasCurrent || current === 0} title=${t("tabular.up")}
           @click=${() => section.move(-1)}>
           ${icon.up}
         </button>
-        <button class="btn btn-sm" ?disabled=${!hasCurrent || current === section.rows.length - 1}
+        <button class="btn btn-sm btn-ghost" ?disabled=${!hasCurrent || current === section.rows.length - 1}
           title=${t("tabular.down")} @click=${() => section.move(1)}>
           ${icon.down}
         </button>
