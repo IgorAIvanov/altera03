@@ -2,7 +2,9 @@ import { html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
+import { movementsButton } from "@shared/document-movements.ts";
 import type { ManualEntryRow } from "./manual_entry.schema.ts";
+import { icons } from "@client/ui-kit/icons.ts";
 
 export const tagName = "manual-entry-list";
 
@@ -28,9 +30,15 @@ export class ManualEntryList extends ModelListBase<ManualEntryRow> {
       render: (row) => html`
         <button class="btn btn-ghost btn-xs px-1" title=${this.t("common.open")}
           @click=${stopRow(() => this.openEdit(row.id))}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          ${icons.open}
         </button>
       `,
     },
   ];
+
+  /** Рух документа — над виділеним рядком, як «Відкрити» й «Видалити». */
+  protected override renderToolbarExtra() {
+    const row = this.selectedRow;
+    return movementsButton(row?.id, row?.isPosted);
+  }
 }

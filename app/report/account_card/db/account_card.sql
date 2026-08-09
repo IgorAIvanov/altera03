@@ -17,10 +17,12 @@ language sql
 as $$
   with params as (
     select
-      nullif(payload->>'organizationId', '')::bigint                as org_id,
-      nullif(trim(coalesce(payload->>'accountCode', '')), '')       as account,
-      nullif(payload->>'dateFrom', '')::date                        as date_from,
-      nullif(payload->>'dateTo', '')::date                          as date_to
+      -- Фільтри вкладеним об'єктом `filters`; ссылка — один ключ з об'єктом.
+      nullif(f->'organization'->>'id', '')::bigint                  as org_id,
+      nullif(trim(coalesce(f->>'accountCode', '')), '')             as account,
+      nullif(f->>'dateFrom', '')::date                              as date_from,
+      nullif(f->>'dateTo', '')::date                                as date_to
+    from (select coalesce(payload->'filters', '{}'::jsonb) as f) src
   ),
   -- Аналітика проводки, згорнута в масив по сторонах.
   analytics as (
@@ -136,6 +138,14 @@ as $$
         'turnoverCredit', (select credit from turnover),
         'closingDebit',   greatest((select net from opening) + (select debit from turnover) - (select credit from turnover), 0::numeric),
         'closingCredit',  greatest(-((select net from opening) + (select debit from turnover) - (select credit from turnover)), 0::numeric)
+      ),
+      '$filters', (
+        select coalesce(payload->'filters', '{}'::jsonb)
+          || jsonb_strip_nulls(jsonb_build_object(
+               'organization',
+               (select jsonb_build_object('id', o.id::text, 'name', o.name)
+                from app.organization o cross join params p where o.id = p.org_id)
+             ))
       ),
       'extra', '{}'::jsonb
     ),

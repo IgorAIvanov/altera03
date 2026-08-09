@@ -39,11 +39,11 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
    */
   override applyParams(params: Record<string, unknown>) {
     super.applyParams(params);
-    if (this.$root.$query.documentId) queueMicrotask(() => this.buildReport());
+    if (this.filterValue("documentId")) queueMicrotask(() => this.buildReport());
   }
 
   protected override get canRun(): boolean {
-    return !this.busy && !!this.$root.$query.documentId;
+    return !this.busy && !!this.filterValue("documentId");
   }
 
   /** Рядок під назвою звіту на папері та в Excel: сам документ і організація. */
@@ -57,7 +57,7 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
   protected override async buildReport() {
     const env = await this.run<{ extra?: { document?: MovementDocument } }>(
       "index",
-      { documentId: this.$root.$query.documentId },
+      this.filtersPayload(),
     );
     if (!env.ok || !env.data) return;
     // rows зеркалимо як звичайно; шапку дістаємо з extra — вона транзієнтна

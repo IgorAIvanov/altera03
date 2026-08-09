@@ -88,6 +88,7 @@ Architecture notes:
 
 - [typebox-model-schema](../typebox-model-schema/SKILL.md) — define the model's `<model>.schema.ts` (TypeBox single source of truth for types, validation, and UI roles). Always pair with this skill when building a model.
 - [model-list-form](../model-list-form/SKILL.md) — build `<Model>List.ts` by extending the shared `ModelListBase` instead of hand-writing the toolbar, table, sort, and pagination.
+- [model-list-filters](../model-list-filters/SKILL.md) — the filter panel of that list: the `x-filter` annotation, the generated SQL and the markup, wired together.
 - [model-picker-form](../model-picker-form/SKILL.md) — build `<Model>Picker.ts` by extending the shared `ModelPickerBase`.
 - [db-function-contract](../db-function-contract/SKILL.md) — SQL function naming and the JSON response envelope.
 - [TypeBox on GitHub](https://github.com/sinclairzx81/typebox) — schema library reference.

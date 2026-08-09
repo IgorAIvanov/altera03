@@ -116,15 +116,9 @@ Width values: `"xs"` (60px), `"sm"` (100px), `"md"` (160px), `"lg"` (240px), `"f
 
 ### `x-filter` — list filters
 
-`deno task sql:gen` turns this annotation into parsing, `where` conditions and the
-mirrored answer inside `<model>_list`. You never hand-write filter SQL.
-
-| Form | Payload key(s) | Generated condition |
-|------|----------------|---------------------|
-| `true` | `<field>` | `col = value` |
-| `{ op: "range" }` | `<field>From`, `<field>To` | `col >= from`, `col <= to` |
-| `{ op: "like" }` | `<field>` | `col ilike '%value%'` |
-| `{ op: "range", key: "date" }` | `dateFrom`, `dateTo` | rename the payload keys |
+One line here is the whole SQL side of a filter: `deno task sql:gen` turns it into the
+parsing, the `where` condition and the mirrored answer inside `<model>_list`. You never
+hand-write filter SQL.
 
 ```ts
 counterpartyId: Type.String({
@@ -134,24 +128,14 @@ counterpartyId: Type.String({
 }),
 ```
 
-Three things the generator handles that are easy to get wrong by hand:
-
-- **Reference fields.** The client sends only the id; the generated `_list` filters on
-  the FK column *and* returns `counterparty: {id, name}` in `$filters`, so the picker in
-  the filter panel can show a label after a reload instead of an empty box.
-- **A date range over a `timestamp` column** becomes `col < to + interval '1 day'`, not
-  `col <= to` — otherwise the whole last day except midnight falls out of the result.
-  It also keeps the index usable, unlike casting the column to `date`.
-- **An unset filter is absent, not empty.** The client deletes empty values, so every
-  condition is `(v is null or …)` and SQL never distinguishes "absent" from "empty".
-
 `docDate` and `isPosted` carry `x-filter` in the shared `DocumentHeaderSchema`, so every
 document list can filter by period and posted state without declaring anything. It is
 only a capability — nothing changes until a screen renders the panel.
 
-The payload key must match what the screen writes into `$root.$filters` — see
-[model-list-form](../model-list-form/SKILL.md). A mismatch is silent: `jsonb` ignores
-unknown keys.
+**The forms of `x-filter`, what each generates, the reference-filter rule and the traps
+are in [model-list-filters](../model-list-filters/SKILL.md)** — read it before annotating.
+The short version: a reference field becomes **one** filter keyed by the `x-ref` `as` name
+whose value is the object `{id, name}`, never an `…Id` plus a separate label.
 
 ## Schema file structure
 

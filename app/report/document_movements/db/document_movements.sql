@@ -13,7 +13,8 @@ returns jsonb
 language sql
 as $$
   with params as (
-    select nullif(payload->>'documentId', '')::bigint as document_id
+    -- Фільтри вкладеним об'єктом `filters` — той самий контракт, що в списків.
+    select nullif(payload->'filters'->>'documentId', '')::bigint as document_id
   ),
   doc as (
     select

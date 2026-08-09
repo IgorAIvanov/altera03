@@ -16,6 +16,7 @@ import "@client/ui-kit/components/ui-attachments.ts";
 import "@client/ui-kit/tabular/ui-tabular-table.ts";
 import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
 import { icons } from "@client/ui-kit/icons.ts";
+import { movementsButton } from "@shared/document-movements.ts";
 
 export const tagName = "invoice-edit";
 
@@ -223,16 +224,21 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
       : "";
   }
 
-  /** Друк — за роздільником: він нічого не змінює в записі, а видає назовні. */
+  /**
+   * Друк і рух документа — за роздільником: обидві дії нічого не змінюють у
+   * записі, а видають назовні те, що з нього вийшло.
+   */
   protected override renderAuxActions() {
+    const item = this.$root.item;
     return html`
-      <button class="btn btn-sm btn-outline" ?disabled=${this.busy || !this.$root.item.id}
+      <button class="btn btn-sm btn-outline" ?disabled=${this.busy || !item.id}
         @click=${this.printPdf}>
         ${this.running === "printPdf"
           ? html`<span class="loading loading-spinner loading-xs"></span>`
           : icons.print}
         ${t("common.print")}
       </button>
+      ${movementsButton(item.id, item.isPosted, "btn-outline")}
     `;
   }
 

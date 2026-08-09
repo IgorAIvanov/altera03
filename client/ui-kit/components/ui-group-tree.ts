@@ -25,6 +25,7 @@ import { t } from "../../locale.ts";
 import { apiFetch } from "../../data/api.ts";
 import { bus } from "../../bus/bus.ts";
 import { tw } from "../../shared/styles.ts";
+import { icons } from "../icons.ts";
 
 export interface GroupNode {
   id: string;
@@ -44,12 +45,6 @@ function firstMessage(env: Envelope): string {
   return typeof m === "string" ? m : m.text ?? "";
 }
 
-const icon = {
-  add: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-  rename: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
-  move: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 17v-5"/><path d="m9 14.5 3-3 3 3"/></svg>`,
-  del: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
-};
 
 export const tagName = "ui-group-tree";
 
@@ -310,19 +305,19 @@ export class UiGroupTree extends GlobalStyledLitElement {
             <div class="flex items-center gap-1 p-1 border-b border-base-300">
               <span class="font-medium flex-1 px-1">${t("groups.title")}</span>
               <button class="btn btn-ghost btn-xs px-1" title=${t("groups.add")} @click=${this.#startAdd}>
-                ${icon.add}
+                ${icons.add}
               </button>
               <button class="btn btn-ghost btn-xs px-1" title=${t("groups.rename")}
                 ?disabled=${this.currentId === null} @click=${this.#startRename}>
-                ${icon.rename}
+                ${icons.open}
               </button>
               <button class="btn btn-ghost btn-xs px-1" title=${t("groups.move")}
                 ?disabled=${this.currentId === null} @click=${this.#startMoveGroup}>
-                ${icon.move}
+                ${icons.toGroup}
               </button>
               <button class="btn btn-ghost btn-xs px-1" title=${t("groups.delete")}
                 ?disabled=${this.currentId === null} @click=${this.#deleteCurrent}>
-                ${icon.del}
+                ${icons.delete}
               </button>
             </div>`
           : nothing}

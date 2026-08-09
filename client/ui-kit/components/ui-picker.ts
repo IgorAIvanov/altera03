@@ -4,6 +4,7 @@ import { customElement, property, state, query } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { apiFetch } from "../../data/api.ts";
 import { placePopover } from "../popover.ts";
+import { icons } from "../icons.ts";
 
 @customElement("ui-picker")
 export class UiPicker extends GlobalStyledLitElement {
@@ -218,9 +219,7 @@ export class UiPicker extends GlobalStyledLitElement {
         ${this.showClear ? html`
           <button class="btn btn-square btn-sm join-item"
             title="Очистити" ?disabled=${this.disabled || !this.displayValue} @click=${this._onClear}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
+            ${icons.clear}
           </button>
         ` : ""}
         ${hasBrowse ? html`

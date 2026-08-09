@@ -207,8 +207,16 @@ static override styles: CSSResultGroup = [
 
 ## Що перевірити перед комітом у ui-kit
 
+**`deno check app/main.ts` екранів НЕ перевіряє.** Вони підвантажуються
+динамічно через `view-manifest`, тож у граф entry не входять — а разом із ними
+не входять ані `query-table-base`, ані `report-base`, ані базові класи взагалі.
+Зрізаний метод основи так і пройшов повз: check мовчав, `build:front` теж
+(Vite типи не перевіряє), проби до цих файлів не дістають. Тому перевірка одна —
+`deno task check` по всьому дереву.
+
+
 ```bash
-deno check app/main.ts
+deno task check              # УСЕ дерево, не `deno check app/main.ts`
 deno task test:unit
 deno task check:deps
 deno task client:assets     # після правки theme.css або client/_locales

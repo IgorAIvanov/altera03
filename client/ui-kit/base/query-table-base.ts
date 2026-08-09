@@ -39,7 +39,7 @@ import { t } from "@client/locale.ts";
 import { tw } from "@client/shared/styles.ts";
 import { formatDate } from "@client/shared/datetime.ts";
 import { readUserScoped, writeUserScoped } from "@client/shared/user-storage.ts";
-import { BaseUI } from "./base-ui.ts";
+import { FilteredBase } from "./filtered-base.ts";
 import { icons } from "../icons.ts";
 import {
   alignClass,
@@ -54,7 +54,7 @@ import {
 /** Ключ пам'яті про згорнуту панель — свій на кожну модель. */
 const FILTER_PANEL_KEY = "list-filters-open";
 
-export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<ListRoot<Row>> {
+export abstract class QueryTableBase<Row extends { id: string }> extends FilteredBase<ListRoot<Row>> {
   static override styles: CSSResultGroup = [tw, css`
     tr.selected td { background: #cfe0f3 !important; color: var(--color-base-content, #243746) !important; }
 
@@ -189,7 +189,6 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
   // @types/node (його тягне пресет `vite.ts` того ж пакета), а там setTimeout
   // повертає Timeout, не number.
   #searchTimer?: ReturnType<typeof setTimeout>;
-  #filterTimer?: ReturnType<typeof setTimeout>;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -232,93 +231,24 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
    * порядок там значущий — `extraPayload()` застосунку має бути останнім.
    */
   protected queryPayload(): Record<string, unknown> {
-    const filters = this.$root.$filters;
     return {
       ...this.$root.$query,
-      // Вкладеним об'єктом, а не врозсип поруч із `search`/`page`: імена
-      // фільтрів вигадує екран, і рано чи пізно одне з них збіглося б із полем
-      // `$query`. SQL читає їх як `payload->'filters'->>'...'`.
-      // Ключа немає зовсім, коли фільтрів немає, — щоб у SQL вистачало
-      // `coalesce`, а не перевірки на порожній об'єкт.
-      ...(Object.keys(filters).length ? { filters } : {}),
+      // Фільтри — вкладеним об'єктом (`filtersPayload()`), а не врозсип поруч
+      // із `search`/`page`: імена фільтрів вигадує екран, і рано чи пізно одне
+      // з них збіглося б із полем `$query`.
+      ...this.filtersPayload(),
     };
   }
 
   // ── Фільтри ───────────────────────────────────────────────────────────────
   //
-  // Основа НЕ знає, з чого складається фільтр екрана, і це навмисно: набір свій
-  // у кожної форми, а найчастіші фільтри обліку — дата й період, тобто
-  // <ui-date>/<ui-period>. Опиши їх основа переліком видів — вона б статично
-  // імпортувала ці компоненти, і за них платив би кожен список і кожен діалог
-  // підбору. Тому основа дає рівно три речі: місце (панель), стан
-  // (`$root.$filters`) і зв'язування (`setFilter`/`bindFilter`).
+  // Стан і прив'язка — у `FilteredBase`, спільній зі звітами: набір фільтрів
+  // однаково не належить основі, а от «як його тримати» однакове. Тут лишається
+  // те, що робить із фільтра саме СПИСОК — негайний перезапит із першої
+  // сторінки; звіт того самого гака не перевизначає, бо його формує «Оновити».
 
-  /** Поточне значення фільтра. `undefined` — не заданий. */
-  protected filterValue<T = unknown>(key: string): T | undefined {
-    return this.$root.$filters[key] as T | undefined;
-  }
-
-  /**
-   * Записати один фільтр і перезапитати список із першої сторінки.
-   *
-   * `debounce` — для того, що набирають руками: інакше кожна літера була б
-   * запитом. Для вибору зі списку, дати чи прапорця затримка не потрібна.
-   */
-  protected setFilter(key: string, value: unknown, opts: { debounce?: boolean } = {}) {
-    this.setFilters({ [key]: value }, opts);
-  }
-
-  /**
-   * Записати кілька фільтрів однією дією.
-   *
-   * Потрібне частіше, ніж здається: `<ui-period>` віддає межі періоду ПАРОЮ, і
-   * два послідовні `setFilter` дали б два запити, другий з яких скасував би
-   * перший.
-   */
-  protected setFilters(patch: Record<string, unknown>, opts: { debounce?: boolean } = {}) {
-    for (const [key, value] of Object.entries(patch)) {
-      // Порожнє значення не зберігаємо, а ВИДАЛЯЄМО. Завдяки цьому «скільки
-      // фільтрів діє» і «що слати на сервер» — це просто вміст `$filters`, без
-      // окремої таблиці правил; а SQL не мусить розрізняти «не задано» і
-      // «задано порожнім».
-      if (value === undefined || value === null || value === "" || value === false) {
-        delete this.$root.$filters[key];
-      } else {
-        this.$root.$filters[key] = value;
-      }
-    }
-    clearTimeout(this.#filterTimer);
-    if (opts.debounce) {
-      this.#filterTimer = setTimeout(() => this.reload(), this.searchDebounceMs);
-    } else {
-      this.reload();
-    }
-  }
-
-  /**
-   * Прив'язка нативного контрола до фільтра — рівно як `BaseUI.bindTo` для полів
-   * форми: `@input=${this.bindFilter("number", { debounce: true })}`.
-   *
-   * Компоненти ui-kit подіями не однакові (`value-changed`, `item-selected`,
-   * своя структура `detail`), тому їх форма зв'язує сама через `setFilter`.
-   */
-  protected bindFilter(key: string, opts: { debounce?: boolean } = {}): (e: Event) => void {
-    return (e: Event) => {
-      const target = e.target as HTMLInputElement;
-      const value = target.type === "checkbox" ? target.checked : target.value;
-      this.setFilter(key, value, opts);
-    };
-  }
-
-  /** Скинути всі фільтри. Знати їх поіменно не треба — `$filters` і є весь набір. */
-  protected resetFilters() {
-    for (const key of Object.keys(this.$root.$filters)) delete this.$root.$filters[key];
+  protected override onFiltersChanged() {
     this.reload();
-  }
-
-  /** Скільки фільтрів діє — це число показує значок на кнопці тулбара. */
-  protected get activeFilterCount(): number {
-    return Object.keys(this.$root.$filters).length;
   }
 
   /**
@@ -356,7 +286,12 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
   protected rowStyle(_row: Row): string { return ""; }
   /** Дія активації рядка: подвійний клік і Enter. Список відкриває, пікер обирає. */
   protected abstract onActivate(row: Row): void;
-  /** Текст порожньої таблиці: у списку «немає даних», у пікера «не знайдено». */
+  /**
+   * Текст ПОРОЖНЬОГО набору: у списку «немає даних», у пікера «не знайдено».
+   *
+   * Саме порожнього, а не «нічого не знайшлося»: коли діє пошук чи фільтр,
+   * повідомлення дає `renderEmpty()`, і цей метод до нього не залучається.
+   */
   protected emptyText(): string { return t("common.noData"); }
 
   // ── Логіка ────────────────────────────────────────────────────────────────
@@ -708,13 +643,39 @@ export abstract class QueryTableBase<Row extends { id: string }> extends BaseUI<
    */
   protected renderFilters(): TemplateResult | string { return ""; }
 
+  /**
+   * Порожня таблиця.
+   *
+   * «Немає даних» саме по собі не каже головного: перелік порожній чи це відбір
+   * нічого не знайшов. А різниця тут — між «завести перший запис» і «зняти
+   * фільтр», тобто між двома протилежними діями. Тому повідомлення називає
+   * причину й дає з неї вихід тією ж кнопкою, якою причину створили.
+   *
+   * Пошук перевіряється першим: він видимий у тулбарі завжди, а панель фільтрів
+   * буває згорнута — коли діють обидва, чесніше показати на те, що на очах.
+   */
+  protected renderEmpty(): TemplateResult {
+    const cause = this.search
+      ? { text: t("common.noMatchSearch"), action: t("common.clearSearch"), run: () => { this.search = ""; this.reload(); } }
+      : this.activeFilterCount
+      ? { text: t("common.noMatchFilters"), action: t("common.filtersReset"), run: () => this.resetFilters() }
+      : null;
+
+    return html`
+      <div class="text-center p-8 text-muted flex flex-col items-center gap-2">
+        <span>${cause ? cause.text : this.emptyText()}</span>
+        ${cause
+          ? html`<button class="btn btn-sm btn-ghost" @click=${cause.run}>${cause.action}</button>`
+          : nothing}
+      </div>
+    `;
+  }
+
   protected renderTable(): TemplateResult {
     if (this.loading) {
       return html`<div class="flex justify-center p-8"><span class="loading loading-spinner"></span></div>`;
     }
-    if (this.rows.length === 0) {
-      return html`<div class="text-center p-8 text-muted">${this.emptyText()}</div>`;
-    }
+    if (this.rows.length === 0) return this.renderEmpty();
     const allOnPage = this.rows.length > 0 && this.rows.every((r) => this.isChecked(r.id));
     const someOnPage = !allOnPage && this.rows.some((r) => this.isChecked(r.id));
 

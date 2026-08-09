@@ -20,6 +20,8 @@ export const tagName = "account-card-report";
 
 type PickEvent = CustomEvent<{ id: string; label: string }>;
 type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
+/** Значення ссылочного фільтра: id вибирає записи, `name` показує пікер. */
+type Ref = { id: string; name: string };
 
 const money = new Intl.NumberFormat("uk-UA", {
   minimumFractionDigits: 2,
@@ -45,16 +47,15 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
     // Період за замовчуванням — поточний місяць: звіт відкривається вже
     // придатним до запуску, без ручного заповнення дат.
     const month = periodOf("month");
-    this.$root.$query.dateFrom ||= month.dateFrom;
-    this.$root.$query.dateTo ||= month.dateTo;
-
-    // Поточна організація за замовчуванням — але не перетираємо ту, що вже
-    // прийшла параметром переходу (drill-down з ОСВ несе свою організацію).
     const org = currentOrg();
-    if (org && !this.$root.$query.organizationId) {
-      this.$root.$query.organizationId = org.id;
-      this.$root.$query.organization = { id: org.id, name: org.name };
-    }
+    // Одним записом: `setFilters` звіт не переформовує (його формує «Оновити»).
+    // Наявне не перетираємо — drill-down з ОСВ несе свою організацію й період.
+    this.setFilters({
+      dateFrom: this.filterValue("dateFrom") || month.dateFrom,
+      dateTo: this.filterValue("dateTo") || month.dateTo,
+      organization: this.filterValue("organization")
+        ?? (org ? { id: org.id, name: org.name } : null),
+    });
   }
 
   /**
@@ -68,27 +69,22 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
   }
 
   protected override get canRun(): boolean {
-    const q = this.$root.$query;
-    return !this.busy && !!q.organizationId && !!q.accountCode;
+    return !this.busy
+      && !!this.filterValue<Ref>("organization")?.id
+      && !!this.filterValue<string>("accountCode");
   }
 
   protected override async buildReport() {
-    const q = this.$root.$query;
-    await this.loadInto("index", {
-      organizationId: q.organizationId,
-      accountCode: q.accountCode,
-      dateFrom: q.dateFrom,
-      dateTo: q.dateTo,
-    });
+    await this.loadInto("index", this.filtersPayload());
   }
 
   /** Рядок під назвою звіту на папері та в Excel: рахунок, організація, період. */
   protected override printSubtitle(): string {
-    const q = this.$root.$query;
+    const f = this.$root.$filters;
     const totals = this.$root.totals;
-    const account = [totals.account || q.accountCode, totals.accountName].filter(Boolean).join(" — ");
-    const period = periodLabel({ dateFrom: q.dateFrom, dateTo: q.dateTo });
-    return [account, q.organization?.name, period].filter(Boolean).join(" · ");
+    const account = [totals.account || f.accountCode, totals.accountName].filter(Boolean).join(" — ");
+    const period = periodLabel({ dateFrom: f.dateFrom, dateTo: f.dateTo });
+    return [account, f.organization?.name, period].filter(Boolean).join(" · ");
   }
 
   /**
@@ -189,7 +185,8 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
   }
 
   protected override renderFilters(): TemplateResult {
-    const q = this.$root.$query;
+    const org = this.filterValue<Ref>("organization");
+    const account = this.filterValue<string>("accountCode") ?? "";
 
     return html`
         <div class="flex gap-2 items-end flex-wrap">
@@ -198,12 +195,10 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
             required
             url="catalog/organization"
             fetch="lookup"
-            .displayValue=${q.organization?.name ?? ""}
-            .selectedId=${q.organizationId}
-            @item-selected=${(e: PickEvent) => {
-              q.organizationId = e.detail.id;
-              q.organization = { id: e.detail.id, name: e.detail.label };
-            }}
+            .displayValue=${org?.name ?? ""}
+            .selectedId=${org?.id ?? ""}
+            @item-selected=${(e: PickEvent) =>
+              this.setFilter("organization", { id: e.detail.id, name: e.detail.label })}
           ></ui-picker>
 
           <ui-picker
@@ -213,20 +208,18 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
             fetch="lookup"
             display-field="code"
             hint-field="name"
-            .displayValue=${q.accountCode}
-            .selectedId=${q.accountCode}
-            @item-selected=${(e: PickEvent) => { q.accountCode = e.detail.label; }}
-            @item-cleared=${() => { q.accountCode = ""; }}
+            .displayValue=${account}
+            .selectedId=${account}
+            @item-selected=${(e: PickEvent) => this.setFilter("accountCode", e.detail.label)}
+            @item-cleared=${() => this.setFilter("accountCode", "")}
           ></ui-picker>
 
           <ui-period
             .label=${t("period.label")}
-            .dateFrom=${q.dateFrom}
-            .dateTo=${q.dateTo}
-            @period-changed=${(e: PeriodEvent) => {
-              q.dateFrom = e.detail.dateFrom;
-              q.dateTo = e.detail.dateTo;
-            }}
+            .dateFrom=${this.filterValue<string>("dateFrom") ?? ""}
+            .dateTo=${this.filterValue<string>("dateTo") ?? ""}
+            @period-changed=${(e: PeriodEvent) =>
+              this.setFilters({ dateFrom: e.detail.dateFrom, dateTo: e.detail.dateTo })}
           ></ui-period>
         </div>
     `;

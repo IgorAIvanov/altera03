@@ -41,14 +41,14 @@ export const MovementDocumentSchema = Type.Object({
 });
 export type MovementDocument = Static<typeof MovementDocumentSchema>;
 
-/** `documentId` живе в `$query` — за ним звіт переформовується при applyParams. */
-export const DocumentMovementsQuerySchema = Type.Object({
+/** `documentId` живе у `$filters` — за ним звіт переформовується при applyParams. */
+export const DocumentMovementsFiltersSchema = Type.Object({
   documentId: Type.String({ default: "" }),
 });
-export type DocumentMovementsQuery = Static<typeof DocumentMovementsQuerySchema>;
+export type DocumentMovementsFilters = Static<typeof DocumentMovementsFiltersSchema>;
 
 export const DocumentMovementsRootSchema = Type.Object({
-  $query:   DocumentMovementsQuerySchema,
+  $filters: DocumentMovementsFiltersSchema,
   rows:     Type.Array(DocumentMovementRowSchema, { default: [] }),
   document: MovementDocumentSchema,
 });

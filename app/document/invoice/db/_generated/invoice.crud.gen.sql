@@ -16,7 +16,7 @@ declare
   v_f_date_from date := nullif(v_filters->>'dateFrom', '')::date;
   v_f_date_to date := nullif(v_filters->>'dateTo', '')::date;
   v_f_is_posted boolean := (v_filters->>'isPosted')::boolean;
-  v_f_counterparty_id bigint := nullif(v_filters->>'counterpartyId', '')::bigint;
+  v_f_counterparty_id bigint := nullif(v_filters->'counterparty'->>'id', '')::bigint;
   v_filters_out jsonb;
   v_rows      jsonb;
   v_total     int;

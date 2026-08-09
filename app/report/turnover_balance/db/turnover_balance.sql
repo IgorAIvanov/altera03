@@ -16,10 +16,25 @@ returns jsonb
 language sql
 as $$
   with params as (
+    -- Фільтри приходять вкладеним об'єктом `filters` — той самий контракт, що
+    -- в списків: ім'я фільтра рано чи пізно збіглося б із полем запиту, якби
+    -- вони лежали врозсип. Генератора для звітів немає, домовленість та сама.
     select
-      nullif(payload->>'organizationId', '')::bigint as org_id,
-      nullif(payload->>'dateFrom', '')::date         as date_from,
-      nullif(payload->>'dateTo', '')::date           as date_to
+      -- Ссылочний фільтр — ОДИН ключ з об'єктом `{id, name}`; тут потрібен id.
+      nullif(f->'organization'->>'id', '')::bigint as org_id,
+      nullif(f->>'dateFrom', '')::date            as date_from,
+      nullif(f->>'dateTo', '')::date              as date_to
+    from (select coalesce(payload->'filters', '{}'::jsonb) as f) src
+  ),
+  -- Назад той самий ключ їде з підписом із бази: id міг прийти сам, без назви
+  -- (перехід із іншого звіту), і тоді пікер стояв би порожнім при діючому фільтрі.
+  filters_out as (
+    select coalesce(payload->'filters', '{}'::jsonb)
+      || jsonb_strip_nulls(jsonb_build_object(
+           'organization',
+           (select jsonb_build_object('id', o.id::text, 'name', o.name)
+            from app.organization o cross join params p where o.id = p.org_id)
+         )) as value
   ),
   -- Рухи по рахунку з обох сторін проводки, зведені в один потік.
   moves as (
@@ -91,6 +106,7 @@ as $$
         )
         from rows
       ),
+      '$filters', (select value from filters_out),
       'extra', '{}'::jsonb
     ),
     'messages', '[]'::jsonb,

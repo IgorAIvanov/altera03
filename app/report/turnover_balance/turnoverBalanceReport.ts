@@ -17,6 +17,8 @@ export const tagName = "turnover-balance-report";
 
 type PickEvent = CustomEvent<{ id: string; label: string }>;
 type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
+/** Значення ссылочного фільтра: id вибирає записи, `name` показує пікер. */
+type Ref = { id: string; name: string };
 
 const money = new Intl.NumberFormat("uk-UA", {
   minimumFractionDigits: 2,
@@ -39,15 +41,16 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
   override connectedCallback() {
     super.connectedCallback();
     const month = periodOf("month");
-    this.$root.$query.dateFrom ||= month.dateFrom;
-    this.$root.$query.dateTo ||= month.dateTo;
-
-    // Поточна організація за замовчуванням, якщо перехід не приніс своєї.
     const org = currentOrg();
-    if (org && !this.$root.$query.organizationId) {
-      this.$root.$query.organizationId = org.id;
-      this.$root.$query.organization = { id: org.id, name: org.name };
-    }
+    // Умовчання одним записом: `setFilters` не перезапитує звіт (його формує
+    // «Оновити»), тож зайвих викликів це не коштує.
+    this.setFilters({
+      dateFrom: this.filterValue("dateFrom") || month.dateFrom,
+      dateTo: this.filterValue("dateTo") || month.dateTo,
+      // Поточна організація, якщо перехід не приніс своєї.
+      organization: this.filterValue("organization")
+        ?? (org ? { id: org.id, name: org.name } : null),
+    });
   }
 
   override applyParams(params: Record<string, unknown>) {
@@ -56,23 +59,18 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
   }
 
   protected override get canRun(): boolean {
-    return !this.busy && !!this.$root.$query.organizationId;
+    return !this.busy && !!this.filterValue<Ref>("organization")?.id;
   }
 
   protected override async buildReport() {
-    const q = this.$root.$query;
-    await this.loadInto("index", {
-      organizationId: q.organizationId,
-      dateFrom: q.dateFrom,
-      dateTo: q.dateTo,
-    });
+    await this.loadInto("index", this.filtersPayload());
   }
 
   /** Рядок під назвою звіту на папері та в Excel: організація й період. */
   protected override printSubtitle(): string {
-    const q = this.$root.$query;
-    const period = periodLabel({ dateFrom: q.dateFrom, dateTo: q.dateTo });
-    return [q.organization?.name, period].filter(Boolean).join(" · ");
+    const f = this.$root.$filters;
+    const period = periodLabel({ dateFrom: f.dateFrom, dateTo: f.dateTo });
+    return [f.organization?.name, period].filter(Boolean).join(" · ");
   }
 
   /**
@@ -81,16 +79,17 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
    * звіт, а стан у нього свій (див. BaseUI.applyParams).
    */
   private openCard(row: TurnoverBalanceRow) {
-    const q = this.$root.$query;
+    const f = this.$root.$filters;
     bus.emit({
       type: "tab.open",
       route: "report/account_card/list",
+      // Ті самі ключі, що у фільтрах картки: `applyParams` кладе їх прямо в
+      // `$filters` приймача, тож перекладати нема чого.
       params: {
-        organizationId: q.organizationId,
-        organization: q.organization,
+        organization: f.organization,
         accountCode: row.accountCode,
-        dateFrom: q.dateFrom,
-        dateTo: q.dateTo,
+        dateFrom: f.dateFrom,
+        dateTo: f.dateTo,
       },
     });
   }
@@ -115,7 +114,7 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
   }
 
   protected override renderFilters(): TemplateResult {
-    const q = this.$root.$query;
+    const org = this.filterValue<Ref>("organization");
 
     return html`
         <div class="flex gap-2 items-end flex-wrap">
@@ -124,22 +123,18 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
             required
             url="catalog/organization"
             fetch="lookup"
-            .displayValue=${q.organization?.name ?? ""}
-            .selectedId=${q.organizationId}
-            @item-selected=${(e: PickEvent) => {
-              q.organizationId = e.detail.id;
-              q.organization = { id: e.detail.id, name: e.detail.label };
-            }}
+            .displayValue=${org?.name ?? ""}
+            .selectedId=${org?.id ?? ""}
+            @item-selected=${(e: PickEvent) =>
+              this.setFilter("organization", { id: e.detail.id, name: e.detail.label })}
           ></ui-picker>
 
           <ui-period
             .label=${t("period.label")}
-            .dateFrom=${q.dateFrom}
-            .dateTo=${q.dateTo}
-            @period-changed=${(e: PeriodEvent) => {
-              q.dateFrom = e.detail.dateFrom;
-              q.dateTo = e.detail.dateTo;
-            }}
+            .dateFrom=${this.filterValue<string>("dateFrom") ?? ""}
+            .dateTo=${this.filterValue<string>("dateTo") ?? ""}
+            @period-changed=${(e: PeriodEvent) =>
+              this.setFilters({ dateFrom: e.detail.dateFrom, dateTo: e.detail.dateTo })}
           ></ui-period>
         </div>
     `;

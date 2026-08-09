@@ -2,17 +2,19 @@ import { html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
+import { movementsButton } from "@shared/document-movements.ts";
 import type { InvoiceRow } from "./invoice.schema.ts";
 // Компоненти панелі фільтрів імпортує САМЕ ЕКРАН — основа табличних форм про
 // них не знає, інакше <ui-period> і <ui-picker> їхали б у чанк кожного списку
 // й кожного діалогу підбору.
 import "@client/ui-kit/components/ui-period.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import { icons } from "@client/ui-kit/icons.ts";
 
 export const tagName = "invoice-list";
 
-/** Ссылка у фільтрі: id шле клієнт, `{id, name}` дзеркалить назад `invoice_list`. */
-type FilterRef = { id: string; name: string } | null;
+/** Значення ссылочного фільтра: id вибирає записи, `name` показує пікер. */
+type FilterRef = { id: string; name: string };
 type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
 type PickEvent = CustomEvent<{ id: string; label: string }>;
 
@@ -42,11 +44,17 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
       render: (row) => html`
         <button class="btn btn-ghost btn-xs px-1" title=${this.t("common.open")}
           @click=${stopRow(() => this.openEdit(row.id))}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          ${icons.open}
         </button>
       `,
     },
   ];
+
+  /** Рух документа — над виділеним рядком, як «Відкрити» й «Видалити». */
+  protected override renderToolbarExtra() {
+    const row = this.selectedRow;
+    return movementsButton(row?.id, row?.isPosted);
+  }
 
   /**
    * Панель фільтрів. Розмітка тут повністю своя — основа дає лише місце
@@ -59,9 +67,9 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
    *   · `counterpartyId`      — `invoice.schema.ts`, ссылка.
    */
   protected override renderFilters() {
-    // Представлення контрагента приходить з БД поруч з id — сам лише id пікеру
-    // нічого не сказав би, і після перезавантаження поле стояло б порожнім при
-    // діючому фільтрі.
+    // Ссылочний фільтр — ОДИН ключ з об'єктом: id вибирає записи, `name` малює
+    // пікер. Підпис приходить із БД під тим самим ключем, тож після
+    // перезавантаження поле не стоїть порожнім при діючому фільтрі.
     const counterparty = this.filterValue<FilterRef>("counterparty");
 
     return html`
@@ -81,9 +89,10 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
         fetch="lookup"
         show-clear
         .displayValue=${counterparty?.name ?? ""}
-        .selectedId=${this.filterValue<string>("counterpartyId") ?? ""}
-        @item-selected=${(e: PickEvent) => this.setFilter("counterpartyId", e.detail.id)}
-        @item-cleared=${() => this.setFilter("counterpartyId", "")}
+        .selectedId=${counterparty?.id ?? ""}
+        @item-selected=${(e: PickEvent) =>
+          this.setFilter("counterparty", { id: e.detail.id, name: e.detail.label })}
+        @item-cleared=${() => this.setFilter("counterparty", null)}
       ></ui-picker>
 
       <label class="flex items-center gap-2">

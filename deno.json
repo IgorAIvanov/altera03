@@ -37,7 +37,10 @@
     "scaffold:template": "deno run -A ./tools/generate-scaffold-template.ts ./create/template ./create/template.generated.ts --verbose",
     // Вбудовує прикладні скіли (metadata.audience: app) у skills.generated.ts.
     // Запускати після правки skills/src/**; розсинхрон ловить проба в test:unit.
-    "skills:build": "deno run -A ./tools/generate-skills.ts ./skills/src ./skills/skills.generated.ts --verbose",
+    // Перелік гліфів іде В СКІЛ, бо прикладник пише екран у встановленому
+    // застосунку, де фреймворк лежить у vendor/ і взяти список нізвідки.
+    // Спершу перелік, потім упаковка — інакше в пакет поїхав би вчорашній.
+    "skills:build": "deno run -A ./tools/generate-icons-doc.ts ./client/ui-kit/icons.ts ./skills/src/screen-design-rules/icons.md && deno run -A ./tools/generate-skills.ts ./skills/src ./skills/skills.generated.ts --verbose",
     // Генерує застосунок у тимчасовий каталог і перевіряє типи й збірку. На
     // місці шаблон перевірити не можна — він компілюється лише там, де живе.
     "scaffold:verify": "deno run -A ./tools/verify-scaffold.ts ./create/main.ts",
@@ -56,6 +59,12 @@
     "solution:status": "deno run -A ./tools/solution-status.ts .",
     // Оновлення одним проходом: розпакування + весь ланцюжок збірки й публікації.
     "solution:update": "deno run -A --env-file ./tools/update-solution.ts",
+    // Перевірка типів УСЬОГО дерева, а не `deno check app/main.ts`: екрани
+    // підвантажуються динамічно через view-manifest, тож у граф entry вони не
+    // входять — і зламаний список чи базовий клас таблиці ця перевірка мовчки
+    // пропускала. Знайдено рівно так: зрізаний метод основи не помітили ні
+    // check, ні збірка (Vite типи не перевіряє), ні проби.
+    "check": "deno check ./app ./client ./server ./tools ./scripts",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки

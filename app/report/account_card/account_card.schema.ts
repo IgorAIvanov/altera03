@@ -55,18 +55,20 @@ export const AccountCardTotalsSchema = Type.Object({
 });
 export type AccountCardTotals = Static<typeof AccountCardTotalsSchema>;
 
-/** Параметри звіту. `$`-префікс — службовий стан, що дзеркалиться з БД. */
-export const AccountCardQuerySchema = Type.Object({
-  organizationId: Type.String({ default: "" }),
-  organization:   Type.Optional(RefSchema),
-  accountCode:    Type.String({ default: "" }),
-  dateFrom:       Type.String({ default: "" }),
-  dateTo:         Type.String({ default: "" }),
+/**
+ * Фільтри звіту. Той самий контракт, що в списків: `$filters`, у payload —
+ * вкладений `filters`, ссылка ОДНИМ ключем з об'єктом `{id, name}`.
+ */
+export const AccountCardFiltersSchema = Type.Object({
+  organization: Type.Optional(RefSchema),
+  accountCode:  Type.String({ default: "" }),
+  dateFrom:     Type.String({ default: "" }),
+  dateTo:       Type.String({ default: "" }),
 });
-export type AccountCardQuery = Static<typeof AccountCardQuerySchema>;
+export type AccountCardFilters = Static<typeof AccountCardFiltersSchema>;
 
 export const AccountCardRootSchema = Type.Object({
-  $query: AccountCardQuerySchema,
+  $filters: AccountCardFiltersSchema,
   rows:   Type.Array(AccountCardRowSchema, { default: [] }),
   totals: AccountCardTotalsSchema,
 });

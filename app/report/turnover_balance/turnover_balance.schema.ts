@@ -29,16 +29,19 @@ export const TurnoverBalanceTotalsSchema = Type.Object({
 });
 export type TurnoverBalanceTotals = Static<typeof TurnoverBalanceTotalsSchema>;
 
-export const TurnoverBalanceQuerySchema = Type.Object({
-  organizationId: Type.String({ default: "" }),
-  organization:   Type.Optional(RefSchema),
-  dateFrom:       Type.String({ default: "" }),
-  dateTo:         Type.String({ default: "" }),
+/**
+ * Фільтри звіту. Той самий контракт, що в списків: `$filters`, у payload —
+ * вкладений `filters`, ссылка ОДНИМ ключем з об'єктом `{id, name}`.
+ */
+export const TurnoverBalanceFiltersSchema = Type.Object({
+  organization: Type.Optional(RefSchema),
+  dateFrom:     Type.String({ default: "" }),
+  dateTo:       Type.String({ default: "" }),
 });
-export type TurnoverBalanceQuery = Static<typeof TurnoverBalanceQuerySchema>;
+export type TurnoverBalanceFilters = Static<typeof TurnoverBalanceFiltersSchema>;
 
 export const TurnoverBalanceRootSchema = Type.Object({
-  $query: TurnoverBalanceQuerySchema,
+  $filters: TurnoverBalanceFiltersSchema,
   rows:   Type.Array(TurnoverBalanceRowSchema, { default: [] }),
   totals: TurnoverBalanceTotalsSchema,
 });

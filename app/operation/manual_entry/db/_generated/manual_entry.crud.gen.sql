@@ -16,15 +16,12 @@ declare
   v_f_date_from date := nullif(v_filters->>'dateFrom', '')::date;
   v_f_date_to date := nullif(v_filters->>'dateTo', '')::date;
   v_f_is_posted boolean := (v_filters->>'isPosted')::boolean;
-  v_filters_out jsonb;
   v_rows      jsonb;
   v_total     int;
 begin
   if v_sort_by not in ('number', 'docDate') then
     v_sort_by := 'number';
   end if;
-
-  v_filters_out := v_filters;
 
   select count(*)::int into v_total
   from app.document h
@@ -79,7 +76,7 @@ begin
         'item',   null,
         'options', '{}'::jsonb,
         'totals', jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size),
-        '$filters', v_filters_out,
+        '$filters', v_filters,
         'extra',  '{}'::jsonb
       ),
       'messages', '[]'::jsonb,

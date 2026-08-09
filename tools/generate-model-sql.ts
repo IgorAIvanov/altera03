@@ -362,8 +362,10 @@ function buildFilters(fields: Field[], model: string): FilterSpec[] {
       continue;
     }
 
-    // eq. Для ссылки фільтруємо по КОЛОНЦІ-FK: клієнт шле лише id, і це все,
-    // що потрібно для відбору.
+    // eq. Ссылка — ОДИН ключ з об'єктом `{id, <display>}`, а не пара
+    // «id + окреме представлення»: підпис потрібен пікеру в панелі, а зайвий
+    // ключ у наборі рахувався б за другий фільтр і переживав би зняття
+    // першого. Для відбору з об'єкта береться сам лише `id`.
     const sqlType = f.isBigint
       ? "bigint"
       : f.isInt
@@ -377,28 +379,34 @@ function buildFilters(fields: Field[], model: string): FilterSpec[] {
       : f.isTimestamp
       ? (f.isTimestampTz ? "timestamptz" : "timestamp")
       : "text";
-    const parse = f.isBool
+    // Ключ ссылочного фільтра — ім'я з `x-ref.as` (`counterparty`), а не
+    // `counterpartyId`: значення тепер об'єкт, і назва мусить це називати.
+    const key = f.ref ? f.ref.as : base;
+    const varName2 = f.ref ? `v_f_${camelToSnake(key)}_id` : varName;
+    const parse = f.ref
+      ? `nullif(v_filters->'${key}'->>'id', '')::${sqlType}`
+      : f.isBool
       ? `(v_filters->>'${base}')::boolean`
       : sqlType === "text"
       ? `nullif(v_filters->>'${base}', '')`
       : `nullif(v_filters->>'${base}', '')::${sqlType}`;
 
     const spec: FilterSpec = {
-      key: base,
-      decl: `  ${varName} ${sqlType} := ${parse};`,
-      cond: `(${varName} is null or ${col} = ${varName})`,
+      key,
+      decl: `  ${varName2} ${sqlType} := ${parse};`,
+      cond: `(${varName2} is null or ${col} = ${varName2})`,
     };
 
-    // Ссылка: назад віддаємо не лише id, а й представлення — рівно тим самим
-    // об'єктом `{id, <display>}`, що й у рядку списку. Інакше після
-    // перезавантаження сторінки пікер у панелі знав би id, але показував порожнє
-    // поле, і фільтр виглядав би скинутим, хоч і діяв.
+    // Назад той самий ключ віддається вже з представленням із бази: id прислав
+    // клієнт, підпис знає лише вона. Ключ ТОЙ САМИЙ, тобто відповідь уточнює
+    // фільтр, а не додає до нього другий — інакше після перезавантаження пікер
+    // знав би id, але показував порожнє поле.
     if (f.ref) {
       const r = f.ref;
       spec.mirror = {
         key: r.as,
         expr: `(select jsonb_build_object('id', x.${r.targetPk}::text, '${r.display}', x.${r.display})
-     from ${r.targetSchema}.${r.targetTable} x where x.${r.targetPk} = ${varName})`,
+     from ${r.targetSchema}.${r.targetTable} x where x.${r.targetPk} = ${varName2})`,
       };
     }
 
@@ -647,6 +655,8 @@ ${indent}))`
   const filterMirror = hasFilters
     ? `  v_filters_out := v_filters;\n` +
       mirrors.map((f) =>
+        // strip_nulls: якщо запису за id уже немає, ключ лишається таким, як
+        // прислав клієнт, а не затирається на null.
         `  v_filters_out := v_filters_out || jsonb_strip_nulls(jsonb_build_object(\n` +
         `    '${f.mirror!.key}',\n    ${f.mirror!.expr}\n  ));\n`
       ).join("") + "\n"
@@ -694,7 +704,7 @@ ${orderLadder(spec.listSort, "      ", spec.pkExpr)}
       `'totals', jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size)`,
       // `$filters` дзеркалиться назад так само, як `$query`: assign() на клієнті
       // зіллє його в `$root.$filters`, і панель побачить ефективний набір —
-      // разом із представленням ссылок, яке вона сама дістати не може.
+      // ссылочний фільтр уже з представленням із бази.
       ...(hasFilters ? [`'$filters', v_filters_out`] : []),
       `'extra',  '{}'::jsonb`,
     ])

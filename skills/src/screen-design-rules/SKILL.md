@@ -124,6 +124,17 @@ as "nothing here".
 glyph set for the whole ui-kit — and never size it with Tailwind classes; the glyphs live
 in shadow DOM and must not depend on whether `h-4` was generated elsewhere.
 
+**The full list of glyphs is [icons.md](icons.md), next to this file** — every key with
+what it draws. Read it before drawing an `<svg>` of your own: the set already covers save,
+post, print, Excel, filter, refresh, copy, row order, clear and document movements, and a
+hand-written copy stops following the set (including the `--icon-size` token). The list is
+generated from the source, so it cannot go stale; if the glyph you need is genuinely
+missing, that is a framework gap — see the application's `FRAMEWORK-GAPS.md`.
+
+Navigation icons are a **different** set: they live in the application's own
+`app/menu/icons.ts` (Material Design, filled), the database stores only the key, and an
+administrator picks them visually in the menu editor.
+
 Slots take **markup, not descriptors**, because a command is not always a button: import
 is a `<label class="btn">` wrapping a hidden file input, "Add block" is a `<details>`
 dropdown.
@@ -135,8 +146,8 @@ its own `render()` — the base sets a default, it does not forbid.
 
 Filters in an accounting list are long-lived (organization, period, status). A strip of
 controls above the grid permanently eats the height a dense table needs. The right-hand
-collapsible panel is the place — see
-[model-list-form](../model-list-form/SKILL.md).
+collapsible panel is the place, and the base already puts it there — see
+[model-list-filters](../model-list-filters/SKILL.md).
 
 ## Inline SVG sizes go in attributes
 
@@ -151,7 +162,17 @@ generate `h-4` somewhere else in the app.
 ## Empty states
 
 "No data" alone does not tell the user whether the catalogue is empty or their filter
-matched nothing. Say which, and offer the way out (clear the search, reset filters).
+matched nothing — and those call for opposite actions: enter the first record, or clear
+the filter.
+
+On a **table screen the base already does this**: `QueryTableBase.renderEmpty()` looks at
+the live search and the active filter count, names the cause and offers the way out with
+the very button that caused it. Do not hand-write an empty state there; `emptyText()`
+remains the override point for the genuinely-empty case only (the picker uses it to say
+«nothing found»).
+
+Anywhere else — a report body, a tabular section, a custom panel — the rule is yours to
+apply: say which of the two it is, and offer the exit.
 
 ## Accessibility floor
 

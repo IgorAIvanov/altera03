@@ -40,9 +40,76 @@ The subclass declares:
 | `renderToolbarExtra()` | no | extra action buttons in the toolbar |
 | `printSubtitle()` | no | organization and period line under the title |
 
-A report keeps its own root schema (`<model>.schema.ts` with `$query`, `rows`,
+A report keeps its own root schema (`<model>.schema.ts` with `$filters`, `rows`,
 `totals`) and passes it to `super(...)` — unlike a list, where the base supplies
 a generic schema.
+
+## Filters — the same machinery as a list
+
+Report filters are not a separate invention: `$root.$filters`, written through
+`setFilter` / `setFilters`, read through `filterValue`, and sent to SQL as a nested
+`filters` object. A reference filter is **one key holding `{id, name}`** — never an
+`…Id` plus a separate label. The whole contract, with the reasoning and the traps, is in
+**[model-list-filters](../model-list-filters/SKILL.md)**; read it before adding a filter
+to a report.
+
+Two things are specific to reports, and both follow from what a report costs:
+
+- **a filter change does not rebuild the report.** `onFiltersChanged()` stays empty (a
+  list overrides it to reload) — a turnover sheet for a year is not something to re-run on
+  every click in a picker. `Refresh` builds it, and `canRun` guards the required filters;
+- **there is no generator.** You write the `index` function by hand — but the payload
+  contract does not change because of that, which is exactly why it is the same one:
+  otherwise the application would carry two different conventions for one thing.
+
+**A report that no longer matches its filters says so.** Change a filter after the report
+was built and the base blurs the body, disables clicking through it, and floats a
+`Parameters changed` notice with a `Rebuild` button over it. Nothing to declare: the base
+sets the mark in `onFiltersChanged()` and clears it when the `index` command returns —
+one place that every path to building the report goes through. Without it the screen would
+show numbers for the old filters under a new period in the panel: everything looks fine,
+the number is wrong, and it prints that way too. On paper the blur is gone — printing is a
+deliberate act, and a blurred sheet would just be spoilt.
+
+```ts
+protected override get canRun(): boolean {
+  return !this.busy && !!this.filterValue<Ref>("organization")?.id;
+}
+
+protected override async buildReport() {
+  await this.loadInto("index", this.filtersPayload());   // → { filters: {…} }
+}
+```
+
+```sql
+with params as (
+  select
+    nullif(f->'organization'->>'id', '')::bigint as org_id,   -- one key, object value
+    nullif(f->>'dateFrom', '')::date             as date_from,
+    nullif(f->>'dateTo', '')::date               as date_to
+  from (select coalesce(payload->'filters', '{}'::jsonb) as f) src
+)
+-- … and in the envelope, the same key returned with the label from the database:
+--   '$filters', (select coalesce(payload->'filters','{}'::jsonb)
+--     || jsonb_strip_nulls(jsonb_build_object('organization', (select …))))
+```
+
+**Drill-down goes through the filters too.** `tab.open` `params` land straight in
+`$filters` of the target report (`ReportBase.applyParams`), so the keys a report passes
+are the keys the other one filters by — nothing is translated on the way:
+
+```ts
+bus.emit({
+  type: "tab.open",
+  route: "report/account_card/list",
+  params: { organization: f.organization, accountCode: row.accountCode,
+            dateFrom: f.dateFrom, dateTo: f.dateTo },
+});
+```
+
+Filters are drawn **under the toolbar**, not in the collapsible right-hand panel a list
+uses: in a report they are filled in *before* anything appears, so hiding them is
+pointless.
 
 ## Canonical example
 
@@ -51,9 +118,9 @@ Two shapes cover almost everything, and both are just subclasses:
 - a **turnover sheet** — own filters (organization, period, account), drill-down to
   another report on row click, two-level header with `colspan`/`rowspan`, totals in
   `tfoot`;
-- a **movements listing** — no filters of its own (`renderFilters()` returns
-  nothing), opened only by navigation from a document, so `buildReport()` reads its
-  parameters from the route.
+- a **movements listing** — no visible filters (`renderFilters()` returns nothing),
+  opened only by navigation from a document, so its single `documentId` filter arrives
+  through `applyParams` and the report builds itself at once.
 
 ## Markup rules that the export depends on
 
@@ -86,6 +153,12 @@ declare its permission in `manifest.json`:
 See [model-command-access](../model-command-access/SKILL.md). Print and export
 need no command of their own — both happen in the browser over data already
 loaded by `index`.
+
+## Related
+
+- [model-list-filters](../model-list-filters/SKILL.md) — the filter contract, shared with
+  list screens.
+- [screen-design-rules](../screen-design-rules/SKILL.md) — density, colours, empty states.
 
 ## Details
 

@@ -154,19 +154,20 @@ a *set* for a batch command, and there can be none while the cursor is alive.
 
 ## Filters (right-hand panel)
 
-The base gives you **the place, the state and the binding**. The markup and the controls
-are yours — any control, including `<ui-period>`, `<ui-date>` and `<ui-picker>`.
+The base gives you **the place, the state and the binding**; the markup and the controls
+are yours — any control, including `<ui-period>`, `<ui-date>`, `<ui-select>` and
+`<ui-picker>`. Override `renderFilters()` and the collapsible panel, the `Filters` toolbar
+button with an active-count badge, `Reset` and the remembered collapsed state all appear.
 
 ```ts
-// the screen imports what it actually uses:
-import "@client/ui-kit/components/ui-period.ts";
+import "@client/ui-kit/components/ui-period.ts";   // the screen imports what it uses
 
 protected override renderFilters() {
   return html`
     <ui-period
-      .dateFrom=${this.filterValue("dateFrom") ?? ""}
-      .dateTo=${this.filterValue("dateTo") ?? ""}
-      @value-changed=${(e: CustomEvent) =>
+      .dateFrom=${this.filterValue<string>("dateFrom") ?? ""}
+      .dateTo=${this.filterValue<string>("dateTo") ?? ""}
+      @period-changed=${(e: CustomEvent) =>
         this.setFilters({ dateFrom: e.detail.dateFrom, dateTo: e.detail.dateTo })}
     ></ui-period>
 
@@ -180,65 +181,19 @@ protected override renderFilters() {
 }
 ```
 
-The collapsible panel, the `Filters` toolbar button with an active-count badge, `Reset`,
-and remembering the collapsed state per user and per model all come from the base.
 Whether a screen has filters is detected from `renderFilters()` being overridden — there
-is no separate flag to drift out of sync with the markup.
+is no separate flag to drift out of sync with the markup. Values live in `$root.$filters`
+and go into the payload as a nested `filters` object; you annotate the field with
+`x-filter` in the schema and `deno task sql:gen` writes the SQL.
 
 There is deliberately **no declarative filter descriptor**. The most common filters in an
 accounting list are a date and a period, i.e. `<ui-date>` and `<ui-period>`; a built-in
 set of filter kinds would force the base to import those statically, and then every list
 **and every picker dialog** would carry them.
 
-### Binding
-
-| Method | Purpose |
-|---|---|
-| `filterValue<T>(key)` | read; `undefined` means not set |
-| `setFilter(key, value, {debounce})` | write one, reload from page 1 |
-| `setFilters(patch, {debounce})` | write several in **one** request |
-| `bindFilter(key, {debounce})` | ready-made handler for native `input`/`select` |
-| `resetFilters()` | clear everything |
-
-Use `setFilters` for anything that produces several values at once — `<ui-period>` emits
-both bounds together, and two consecutive `setFilter` calls would fire two requests where
-the second cancels the first. `debounce` is for typed input only.
-
-ui-kit components differ in their events (`value-changed`, `item-selected`, their own
-`detail` shape), so the screen wires them itself via `setFilter`; `bindFilter` covers
-native controls only — exactly like `BaseUI.bindTo` for form fields.
-
-### The SQL contract
-
-Values live in `$root.$filters` and go into the payload as a **nested `filters` object**,
-not spread next to `search`/`page` — a filter name would eventually collide with a
-`$query` field. An empty value is **deleted** rather than stored, so "how many filters are
-active" and "what to send" are both just the contents of `$filters`.
-
-**You do not write the SQL.** Annotate the field with `x-filter` in the model schema and
-`deno task sql:gen` generates the parsing, the `where` conditions and the mirrored answer
-inside `<model>_list` — see [typebox-model-schema](../typebox-model-schema/SKILL.md).
-
-```ts
-// invoice.schema.ts
-counterpartyId: Type.String({
-  "x-db-type": "bigint",
-  "x-filter": true,
-  "x-ref": { model: "counterparty", display: "name", as: "counterparty" },
-}),
-```
-
-**Reference filters carry a label back.** The client sends only the id; the generated
-`_list` returns `counterparty: {id, name}` inside `$filters`, and `assign()` mirrors it
-into the panel. Read it in `renderFilters()` for the picker's display value — without it
-the picker would know the id but show an empty box after a reload, and the filter would
-look cleared while still applying.
-
-`docDate` and `isPosted` are annotated in the shared `DocumentHeaderSchema`, so every
-document list already parses `dateFrom`/`dateTo`/`isPosted`.
-
-The payload key must match the key you write in `renderFilters()`. A mismatch is silent:
-`jsonb` ignores unknown keys.
+**The full story — every filter kind, the reference-filter rule, hand-written SQL and the
+traps — is in [model-list-filters](../model-list-filters/SKILL.md). Read it before adding
+a filter.**
 
 On a hierarchical catalogue the filter panel and the group tree share **one** right-hand
 column — filters on top, tree below.

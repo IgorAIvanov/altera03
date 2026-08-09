@@ -6,9 +6,18 @@
  *
  * Правило щодо даних: читати можна що завгодно, писати — тільки своє і тільки
  * з прибиранням за собою у `finally`. Ніяка проба не чіпає чужі рядки.
+ *
+ * Прибирає проба **фізично**, прямим запитом до бази (`purge`), а не командою
+ * `delete` моделі. Причина не в чистоті, а в тому, що `delete` тепер лише
+ * ПОЗНАЧАЄ запис: рядок лишався в таблиці разом зі своїм унікальним кодом, і
+ * другий прогін `deno task smoke` поспіль падав на `SMOKEUQ1` — тобто проби
+ * були одноразовими, а виглядало це як зламаний застосунок. Дозволено це
+ * рівно тут: власні рядки проби, локальна база, запобіжник оточення нижче.
  */
+import postgres from "postgres";
 import { assertEquals, assertExists } from "@std/assert";
 import { AppClient, type Envelope } from "@altera/tools/app-client";
+import { configFromEnv } from "@altera/server";
 import { createServer } from "../app/server.ts";
 
 /** Свідомо неіснуючий користувач: 401 від нього — доказ, що заголовок прочитано. */
@@ -43,6 +52,27 @@ function sessionCookie(headers: Headers): string | null {
   const name = Deno.env.get("AUTH_COOKIE_NAME")?.trim() || "altera_session";
   const match = raw.match(new RegExp(`(?:^|,\\s*)${name}=([^;]*)`));
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+/**
+ * Фізичне прибирання власного рядка проби.
+ *
+ * З'єднання своє, а не пул застосунку: `bootstrap()` пул назовні не віддає, і
+ * віддавати не повинен — це рантайм. Параметри ті самі, що в решти
+ * дев-інструментів (`configFromEnv`), тож промахнутися базою неможливо.
+ *
+ * Ім'я таблиці підставляється як ідентифікатор (`sql(table)`), а не рядком:
+ * значення тут свої, але правило «жодної конкатенації в SQL» не має винятків
+ * навіть у пробах — саме з таких винятків беруться зразки для копіювання.
+ */
+async function purge(table: string, id: string): Promise<void> {
+  const { host, port, database, username, password, ssl } = configFromEnv().database;
+  const sql = postgres({ host, port, database, username, password, ssl: ssl ?? false });
+  try {
+    await sql`delete from ${sql(table)} where id = ${id}`;
+  } finally {
+    await sql.end();
+  }
 }
 
 /** `state` із заголовка Location, який віддав authorize. */
@@ -260,8 +290,9 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           true,
         );
       } finally {
-        const removed = await client.model("bank", "delete", { id: bank.id });
-        assertEquals(removed.body.ok, true);
+        // Фізично: позначка на видалення лишила б код `SMOKEUQ1` у таблиці, і
+        // наступний прогін впав би на тій самій унікальності, яку й перевіряє.
+        await purge("app.bank", bank.id);
       }
     });
 
@@ -307,8 +338,11 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
             });
             assertEquals(moved.body.ok, true);
           } finally {
-            const removed = await client.model("nomenclature", "delete", { id: item.id });
-            assertEquals(removed.body.ok, true);
+            // Фізично, як і в пробі банку: позначена позиція лишилася б у
+            // таблиці з кодом `SMOKE-H1` і зайняла б його назавжди. Групи
+            // нижче прибирає `groupDelete` — у нього позначки немає, він
+            // видаляє по-справжньому.
+            await purge("app.nomenclature", item.id);
           }
         } finally {
           const removed = await client.model("nomenclature", "groupDelete", { id: s.id });
