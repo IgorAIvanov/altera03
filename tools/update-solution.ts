@@ -20,7 +20,7 @@
  */
 import { resolve } from "@std/path";
 
-import { importSolution } from "./import-solution.ts";
+import { importSolution, readPackageManifest } from "./import-solution.ts";
 import { printSolutionStatus, readSolutionStatus } from "./solution-status.ts";
 
 /**
@@ -90,6 +90,17 @@ export async function updateSolution(
 ): Promise<UpdateResult> {
   const projectRoot = resolve(Deno.cwd(), targetDirArg);
   const steps: UpdateStep[] = [];
+
+  // Частковий пакет — інструмент розробника, а не поставка: він не описує
+  // рішення цілком, тож поняття «оновити установку до нього» не існує. Беремо
+  // це до розпакування, бо манифест лежить першим записом і читається дешево.
+  const incoming = await readPackageManifest(archivePath);
+  if ((incoming.kind ?? "full") === "partial") {
+    throw new Error(
+      "Це частковий пакет (набір моделей), а не поставка рішення — оновлювати установку ним не можна.\n" +
+        "   Додати моделі в наявне рішення: deno task solution:import -- <пакет>",
+    );
+  }
 
   const imported = await importSolution(archivePath, projectRoot, {
     check: options.check,

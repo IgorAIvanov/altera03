@@ -8,9 +8,15 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 
-import { exportSolution, SOLUTION_MANIFEST_FILE } from "./export-solution.ts";
+import {
+  exportSolution,
+  SOLUTION_FORMAT_FULL,
+  SOLUTION_FORMAT_PARTIAL,
+  SOLUTION_MANIFEST_FILE,
+} from "./export-solution.ts";
 import { importSolution } from "./import-solution.ts";
 import { readSolutionStatus } from "./solution-status.ts";
+import { updateSolution } from "./update-solution.ts";
 
 const PINS = {
   "@altera/client": "jsr:@altera/client@^0.6.2",
@@ -147,4 +153,153 @@ Deno.test("імпорт: --check нічого не пише навіть кол�
       false,
     );
   });
+});
+
+// ── Часткове перенесення ─────────────────────────────────────────────────────
+
+/**
+ * Джерело з двома моделями, які посилаються одна на одну: `invoice` тягне
+ * `bank` і маршрутом (`ui-picker`), і його таблицею в SQL.
+ */
+const TWO_MODELS: Layout = {
+  "sql.json": '{"models":["catalog/bank","document/invoice"]}',
+  "shared/money.ts": "export const round = (x: number) => x;\n",
+  "catalog/bank/manifest.json": '{"model":"bank","schema":"app"}',
+  "catalog/bank/bankList.ts": "export const list = 1;\n",
+  "document/invoice/manifest.json": '{"model":"invoice","schema":"app"}',
+  "document/invoice/invoiceEdit.ts":
+    'import { round } from "@shared/money.ts";\nconst url = "catalog/bank";\nexport { round, url };\n',
+  "document/invoice/db/invoice.sql": "select * from app.bank where id = 1;\n",
+};
+
+async function partialPackage(routes: string[], files: Layout = TWO_MODELS) {
+  const source = await makeProject(files);
+  return await exportSolution(join(source, "app"), {
+    out: join(source, "models.tar.gz"),
+    name: "probe",
+    version: "1.0.0",
+    models: routes,
+  });
+}
+
+Deno.test("часткове вивантаження: у пакет їдуть рівно перелічені моделі", async () => {
+  const { manifest } = await partialPackage(["document/invoice"]);
+
+  assertEquals(manifest.kind, "partial");
+  assertEquals(manifest.models, ["document/invoice"]);
+  assertEquals(manifest.files.map((entry) => entry.path).sort(), [
+    "document/invoice/db/invoice.sql",
+    "document/invoice/invoiceEdit.ts",
+    "document/invoice/manifest.json",
+  ]);
+});
+
+// Тільки попереджаємо. Добирати залежності інструмент не має права: набір
+// моделей і є вибір людини, а тихе дотягування зробило б із двох моделей
+// половину рішення.
+Deno.test("часткове вивантаження: чужа модель і файл поза нею — попередження", async () => {
+  const { missing } = await partialPackage(["document/invoice"]);
+
+  assertEquals(missing.map((reference) => `${reference.kind} ${reference.target}`).sort(), [
+    "file shared/money.ts",
+    "model catalog/bank",
+  ]);
+});
+
+Deno.test("часткове вивантаження: одруківка в маршруті — відмова, а не порожній пакет", async () => {
+  await assertRejects(() => partialPackage(["catalog/bnak"]), Error, "catalog/bnak");
+});
+
+Deno.test("часткове завантаження: нова модель додається, наявне не чіпається", async () => {
+  const { outPath } = await partialPackage(["document/invoice"]);
+  const target = await makeProject(V1);
+
+  try {
+    const result = await importSolution(outPath, target);
+
+    assertEquals(result.mode, "merge");
+    assertEquals(result.written, 3);
+    // Те, що вже було, лишилося на місці...
+    assertEquals(
+      await Deno.readTextFile(join(target, "app", "catalog/bank/manifest.json")),
+      '{"model":"bank"}',
+    );
+    // ...а модель дописана в список збірки SQL — інакше вона нікуди не поїде.
+    const sql = JSON.parse(await Deno.readTextFile(join(target, "app", "sql.json")));
+    assertEquals(sql.models, ["document/invoice"]);
+    // Манифест поставки не пишеться: дерево поставці свідомо не дорівнює.
+    assertEquals(
+      await Deno.stat(join(target, "app", SOLUTION_MANIFEST_FILE)).then(() => true).catch(() => false),
+      false,
+    );
+  } finally {
+    await Deno.remove(target, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("часткове завантаження: наявна модель без --force не затирається", async () => {
+  const { outPath } = await partialPackage(["catalog/bank"]);
+  const target = await makeProject({ ...V1, "catalog/bank/mine.ts": "export const x = 1;\n" });
+
+  try {
+    const skipped = await importSolution(outPath, target);
+    assertEquals(skipped.written, 0);
+    assertEquals(
+      await Deno.readTextFile(join(target, "app", "catalog/bank/manifest.json")),
+      '{"model":"bank"}',
+    );
+
+    // З --force каталог моделі заміняється ЦІЛКОМ: усередині своєї моделі пакет
+    // вичерпний, тож прибраний у джерелі файл має зникнути й тут.
+    const forced = await importSolution(outPath, target, { force: true });
+    assertEquals(forced.written, 2);
+    assertEquals(
+      await Deno.readTextFile(join(target, "app", "catalog/bank/manifest.json")),
+      '{"model":"bank","schema":"app"}',
+    );
+    assertEquals(
+      await Deno.stat(join(target, "app", "catalog/bank/mine.ts")).then(() => true).catch(() => false),
+      false,
+    );
+  } finally {
+    await Deno.remove(target, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("часткове завантаження: --check нічого не пише", async () => {
+  const { outPath } = await partialPackage(["document/invoice"]);
+  const target = await makeProject(V1);
+
+  try {
+    const result = await importSolution(outPath, target, { check: true });
+
+    assertEquals(result.written, 0);
+    assertEquals(
+      await Deno.stat(join(target, "app", "document/invoice")).then(() => true).catch(() => false),
+      false,
+    );
+    assertEquals(await Deno.readTextFile(join(target, "app", "sql.json")), '{"models":[]}');
+  } finally {
+    await Deno.remove(target, { recursive: true }).catch(() => {});
+  }
+});
+
+// Головний запобіжник формату: інструмент, який про часткові пакети не знає,
+// розпакував би цей як повний і викинув усе решта рішення.
+Deno.test("частковий пакет: старий приймач відмовляється його читати", async () => {
+  const { manifest } = await partialPackage(["catalog/bank"]);
+
+  assertEquals(manifest.formatVersion, SOLUTION_FORMAT_PARTIAL);
+  assertEquals(manifest.formatVersion === SOLUTION_FORMAT_FULL, false);
+});
+
+Deno.test("часткове завантаження: solution:update таким пакетом не працює", async () => {
+  const { outPath } = await partialPackage(["catalog/bank"]);
+  const target = await makeProject(V1);
+
+  try {
+    await assertRejects(() => updateSolution(outPath, target), Error, "частковий пакет");
+  } finally {
+    await Deno.remove(target, { recursive: true }).catch(() => {});
+  }
 });

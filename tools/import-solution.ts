@@ -16,13 +16,23 @@
  * взагалі, пакет лягає поруч у `app.incoming/`, і друкується, чого торкнулися
  * обидві сторони. `--force` затирає правки свідомо.
  *
+ * **Частковий пакет** (`--models` при вивантаженні) веде себе ПРОТИЛЕЖНО: він
+ * описує не рішення, а набір моделей, тож `app/` не заміняє й нічого наявного
+ * не затирає — просто додає моделі, яких у приймачі немає. Модель, яка вже є,
+ * без `--force` не чіпається зовсім. Стан підтримки до нього не застосовний:
+ * манифест поставки не переписується, і установка сама переходить у ручний
+ * режим — додавання моделі є акт розробки, а не оновлення.
+ *
  * `deno.json` приймача інструмент не редагує. Бракуючі залежності він
  * ПЕРЕЛІЧУЄ готовими рядками — карта імпортів належить каркасу, і правити її
  * чужою рукою означало б мовчки міняти версії, на яких стоїть застосунок.
+ * `app/sql.json` — навпаки, дописується: він належить рішенню, і без запису в
+ * ньому дозавантажена модель не потрапить у зібраний SQL-пакет.
  *
  * Запуск:
  *   deno task solution:import -- ./erp-solution.tar.gz --check
  *   deno task solution:import -- ./erp-solution.tar.gz --force
+ *   deno task solution:import -- ./erp-models.tar.gz          # частковий: додає моделі
  */
 import { dirname, join, resolve } from "@std/path";
 import { UntarStream } from "@std/tar";
@@ -30,12 +40,18 @@ import { UntarStream } from "@std/tar";
 import {
   frameworkPin,
   type InstalledSolution,
-  SOLUTION_FORMAT_VERSION,
+  type SolutionKind,
   SOLUTION_MANIFEST_FILE,
   type SolutionManifest,
   stripJsonComments,
+  SUPPORTED_FORMAT_VERSIONS,
 } from "./export-solution.ts";
 import { readSolutionStatus, type SolutionStatus } from "./solution-status.ts";
+
+/** Вид пакета; старі пакети поля не мають і читаються як повні. */
+function kindOf(manifest: SolutionManifest): SolutionKind {
+  return manifest.kind ?? "full";
+}
 
 /** Шляхи в пакеті, які не записуються ніколи (див. коментар у циклі запису). */
 const SKIPPED_PATHS = new Set(["deno.json", "deno.jsonc", "deno.lock"]);
@@ -56,9 +72,14 @@ export type ImportMode =
   /** Знято з підтримки — розкласти поруч, `app/` не чіпати. */
   | "aside"
   /** Манифесту немає: звірити нема з чим, тож рішення за людиною. */
-  | "unknown";
+  | "unknown"
+  /** Частковий пакет: моделі додаються до наявного рішення, решта не чіпається. */
+  | "merge";
 
-function resolveMode(hasExisting: boolean, status: SolutionStatus, force: boolean): ImportMode {
+/** Рішення, які бувають лише при ПОВНОМУ пакеті: `merge` сюди не потрапляє. */
+type FullImportMode = Exclude<ImportMode, "merge">;
+
+function resolveMode(hasExisting: boolean, status: SolutionStatus, force: boolean): FullImportMode {
   if (!hasExisting) return "install";
   if (force) return "replace";
   if (!status.installed) return "unknown";
@@ -112,7 +133,7 @@ function listSample(title: string, paths: string[]) {
 }
 
 function reportPlan(
-  mode: ImportMode,
+  mode: FullImportMode,
   plan: UpdatePlan,
   incoming: SolutionManifest,
   status: SolutionStatus,
@@ -270,14 +291,44 @@ async function readPackage(archivePath: string): Promise<UnpackedSolution> {
   }
 
   if (!manifest) throw new Error("У пакеті немає solution.json — це не пакет прикладного рішення.");
-  if (manifest.formatVersion !== SOLUTION_FORMAT_VERSION) {
+  if (!SUPPORTED_FORMAT_VERSIONS.includes(manifest.formatVersion)) {
     throw new Error(
-      `Формат пакета ${manifest.formatVersion}, цей інструмент розуміє ${SOLUTION_FORMAT_VERSION}. ` +
+      `Формат пакета ${manifest.formatVersion}, цей інструмент розуміє ${SUPPORTED_FORMAT_VERSIONS.join(", ")}. ` +
         `Онови @altera/tools у приймачі.`,
     );
   }
+  if (kindOf(manifest) === "partial" && !manifest.models?.length) {
+    throw new Error("Пакет оголошений частковим, але переліку моделей у ньому немає.");
+  }
 
   return { manifest, files };
+}
+
+/**
+ * Тільки манифест, без розпакування решти.
+ *
+ * Потрібен тому, хто мусить вирішити ДО читання пакета — наприклад
+ * `update-solution`, який частковий пакет не бере взагалі. Манифест лежить
+ * першим записом саме для цього, тож обхід уривається одразу.
+ */
+export async function readPackageManifest(archivePathArg: string): Promise<SolutionManifest> {
+  const archivePath = resolve(Deno.cwd(), archivePathArg);
+  const file = await Deno.open(archivePath, { read: true });
+
+  const stream = file.readable
+    .pipeThrough(new DecompressionStream("gzip"))
+    .pipeThrough(new UntarStream());
+
+  for await (const entry of stream) {
+    if (entry.path.replace(/^\.\//, "") !== "solution.json") {
+      await entry.readable?.cancel();
+      continue;
+    }
+    const bytes = new Uint8Array(await new Response(entry.readable!).arrayBuffer());
+    return JSON.parse(new TextDecoder().decode(bytes)) as SolutionManifest;
+  }
+
+  throw new Error("У пакеті немає solution.json — це не пакет прикладного рішення.");
 }
 
 async function sha256(bytes: Uint8Array): Promise<string> {
@@ -376,6 +427,130 @@ async function listExistingFiles(dir: string): Promise<string[]> {
   return found;
 }
 
+// ── Часткове завантаження ────────────────────────────────────────────────────
+
+/**
+ * Дописує моделі в `app/sql.json`.
+ *
+ * Правити цей файл чужою рукою можна, на відміну від `deno.json`: він належить
+ * РІШЕННЮ, а не каркасу, і без запису в ньому модель не потрапить у зібраний
+ * SQL-пакет — тобто приїхала б у дерево й нікуди більше.
+ *
+ * Дописуються в КІНЕЦЬ, і порядок тут не косметика: збирач іде списком, а нова
+ * модель спирається на ядро й довідники, оголошені раніше.
+ */
+async function mergeSqlJson(appDir: string, routes: string[]): Promise<string[] | null> {
+  const path = join(appDir, "sql.json");
+  const text = await Deno.readTextFile(path).catch(() => null);
+  if (text === null) return null;
+
+  const config = JSON.parse(stripJsonComments(text)) as { models?: string[] };
+  const models = config.models ?? [];
+  const added = routes.filter((route) => !models.includes(route));
+  if (!added.length) return added;
+
+  config.models = [...models, ...added];
+  await Deno.writeTextFile(path, JSON.stringify(config, null, 2) + "\n");
+  return added;
+}
+
+interface PartialPlan {
+  /** Моделей у приймачі немає — будуть записані. */
+  fresh: string[];
+  /** Уже є: без `--force` не чіпаємо, з ним — каталог моделі заміняється. */
+  existing: string[];
+}
+
+async function planPartial(appDir: string, routes: string[]): Promise<PartialPlan> {
+  const fresh: string[] = [];
+  const existing: string[] = [];
+
+  for (const route of routes) {
+    const stat = await Deno.stat(join(appDir, route)).catch(() => null);
+    (stat?.isDirectory ? existing : fresh).push(route);
+  }
+  return { fresh, existing };
+}
+
+/**
+ * Частковий пакет — набір моделей, а не поставка.
+ *
+ * Дві властивості, які відрізняють це від оновлення рішення, і обидві прямо
+ * випливають з призначення (скелет для подальшої розробки):
+ *
+ * - **наявне не затирається.** Модель, яка в приймачі вже є, без `--force` не
+ *   чіпається зовсім: пакет не описує рішення цілком, тож і права переписувати
+ *   чуже в нього немає;
+ * - **манифест поставки не пишеться.** Він означав би «дерево дорівнює
+ *   поставці», а тут воно їй свідомо не дорівнює. Установка від цього
+ *   переходить у ручний режим сама — і це правильно: додавання моделі є акт
+ *   розробки, а не оновлення.
+ */
+async function importPartial(
+  appDir: string,
+  manifest: SolutionManifest,
+  files: Map<string, Uint8Array>,
+  options: ImportOptions,
+): Promise<ImportResult> {
+  const routes = manifest.models!;
+  await Deno.mkdir(appDir, { recursive: true });
+
+  const { fresh, existing } = await planPartial(appDir, routes);
+  const replaced = options.force ? existing : [];
+  const skipped = options.force ? [] : existing;
+  const write = [...fresh, ...replaced];
+
+  console.log(`\nЧастковий пакет: ${routes.length} моделей`);
+  for (const route of fresh) console.log(`   + ${route}`);
+  for (const route of replaced) console.log(`   ↻ ${route} — уже є, --force заміняє каталог цілком`);
+  for (const route of skipped) console.log(`   = ${route} — уже є, не чіпаю (--force замінить)`);
+
+  if (options.check) {
+    console.log(
+      write.length
+        ? `\n✅ Буде записано ${write.length} моделей; решта app/ не зміниться.`
+        : "\n⚠ Записувати нема чого: усі моделі пакета вже є. `--force` замінить їх каталоги.",
+    );
+    return { manifest, written: 0, mode: "merge" };
+  }
+
+  if (!write.length) {
+    console.log("\n⚠ Усі моделі пакета вже є в рішенні — нічого не змінено.");
+    console.log("   `--force` замінить їхні каталоги вмістом пакета.");
+    return { manifest, written: 0, mode: "merge" };
+  }
+
+  // Модель заміняється КАТАЛОГОМ, а не файл за файлом: усередині своєї моделі
+  // пакет вичерпний, тож файл, прибраний у джерелі, має зникнути й тут.
+  for (const route of replaced) await emptyDir(join(appDir, route));
+
+  const selected: SolutionManifest = {
+    ...manifest,
+    files: manifest.files.filter((entry) => write.some((route) => entry.path.startsWith(`${route}/`))),
+  };
+  await writeFiles(appDir, selected, files, options.verbose === true);
+
+  const addedToSql = await mergeSqlJson(appDir, write);
+  if (addedToSql === null) {
+    console.log("\n⚠ У приймача немає app/sql.json — допишіть моделі в його список самі:");
+    for (const route of write) console.log(`    ${JSON.stringify(route)},`);
+  } else if (addedToSql.length) {
+    console.log(`\n   app/sql.json: дописано ${addedToSql.join(", ")}`);
+  }
+
+  console.log(`\n✅ Записано ${selected.files.length} файлів (${write.length} моделей) у ${appDir}`);
+  console.log("   Решта рішення не змінена; манифест поставки не переписувався —");
+  console.log("   установка тепер у ручному режимі (deno task solution:status).");
+  console.log("\nДалі — доробити руками й прогнати ланцюжок:");
+  console.log("   пункти меню (app/admin/menu/db/data.sql) з пакетом не їдуть");
+  console.log("   deno task sql:registry");
+  console.log("   deno task locales:build");
+  console.log("   deno task sql:assemble && deno task sql:publish");
+  console.log("   deno task build:front");
+
+  return { manifest, written: selected.files.length, mode: "merge" };
+}
+
 export interface ImportOptions {
   /** Розібрати, звірити й надрукувати план, не записуючи нічого. */
   check?: boolean;
@@ -441,6 +616,18 @@ export async function importSolution(
   if (errors.length) {
     console.error("\n❌ Версії фреймворку розходяться:");
     for (const error of errors) console.error(`   ${error}`);
+  }
+
+  // Частковий пакет іде іншою дорогою цілком: стан підтримки до нього не
+  // застосовний (дерево йому й не мусить дорівнювати), а заміна `app/` була б
+  // прямо протилежна тому, для чого він існує.
+  if (kindOf(manifest) === "partial") {
+    // `--check` доповідає й тут раніше за будь-яку відмову — з тієї ж причини,
+    // що нижче: його запускають саме щоб побачити наслідки, ще нічого не вирішивши.
+    if (errors.length && !options.force && !options.check) {
+      throw new Error("Завантаження зупинено. Вирівняй версії або повтори з --force.");
+    }
+    return await importPartial(appDir, manifest, files, options);
   }
 
   const existing = await listExistingFiles(appDir);
