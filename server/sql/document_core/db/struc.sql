@@ -55,8 +55,22 @@ create table if not exists app.document (
   updated_by       bigint references app.users (id)
 );
 
+-- Унікальність — У МЕЖАХ РОКУ, а не за весь час: «Накладна №1» за 2026 і за 2027
+-- це два різні документи, і саме так нумерують у більшості організацій.
+--
+-- Рік береться з дати документа виразом просто в індексі. Окремого стовпчика з
+-- періодом немає навмисно: дата вже є, а другий стовпчик довелося б тримати з
+-- нею в згоді — тобто завести місце, де вони можуть розійтися.
+--
+-- Звідси й межа: рік у виразі ЗАШИТИЙ, бо індекс один на таблицю, а період
+-- нумератора — рядок конфігурації. Наскрізна нумерація (`period = none`) сюди
+-- лягає без натяжки (номери й так не повторюються), а місячна вимагає {MM} у
+-- шаблоні — це перевіряє app.numerator_validate.
+--
+-- Ім'я індексу лишається старим навмисно: рантайм виводить із нього поле форми
+-- (uq_document_number → number), щоб повідомлення сіло на потрібне поле.
 create unique index if not exists uq_document_number
-  on app.document (document_type_id, organization_id, number);
+  on app.document (document_type_id, organization_id, number, date_trunc('year', doc_date));
 
 -- Журнал документів і відбір за періодом.
 create index if not exists ix_document_org_date

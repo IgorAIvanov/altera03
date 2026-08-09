@@ -57,6 +57,11 @@ export const agentModelRoutes = {
     aliases: ["номенклатура","товар","товари","послуга","послуги"],
     priority: 10
   },
+  "numerator": {
+    editPath: "/admin/numerator/edit",
+    listPath: "/admin/numerator/list",
+    type: "admin"
+  },
   "organization": {
     editPath: "/catalog/organization/edit",
     listPath: "/catalog/organization/list",

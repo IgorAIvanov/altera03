@@ -10,47 +10,42 @@ as $$
 declare
   v_page      int  := greatest(coalesce((payload->>'page')::int, 1), 1);
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 20), 1);
-  v_sort_by   text := coalesce(payload->>'sortBy', 'code');
+  v_sort_by   text := coalesce(payload->>'sortBy', 'mfo');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
   v_rows      jsonb;
   v_total     int;
 begin
-  if v_sort_by not in ('code', 'name', 'mfo') then
-    v_sort_by := 'code';
+  if v_sort_by not in ('mfo', 'name') then
+    v_sort_by := 'mfo';
   end if;
 
   select count(*)::int into v_total
   from app.bank t
   where (
     coalesce(payload->>'search', '') = ''
-    or t.code ilike '%' || (payload->>'search') || '%'
-    or t.name ilike '%' || (payload->>'search') || '%'
     or t.mfo ilike '%' || (payload->>'search') || '%'
+    or t.name ilike '%' || (payload->>'search') || '%'
   );
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
     select jsonb_build_object(
       'id', t.id::text,
-      'code', t.code,
-      'name', t.name,
       'mfo', t.mfo,
+      'name', t.name,
       'isDeleted', t.is_deleted
     ) as r
     from app.bank t
     where (
       coalesce(payload->>'search', '') = ''
-      or t.code ilike '%' || (payload->>'search') || '%'
-      or t.name ilike '%' || (payload->>'search') || '%'
       or t.mfo ilike '%' || (payload->>'search') || '%'
+      or t.name ilike '%' || (payload->>'search') || '%'
     )
     order by
-      case when v_sort_by = 'code' and v_sort_dir = 'asc'  then t.code end asc,
-      case when v_sort_by = 'code' and v_sort_dir = 'desc' then t.code end desc,
-      case when v_sort_by = 'name' and v_sort_dir = 'asc'  then t.name end asc,
-      case when v_sort_by = 'name' and v_sort_dir = 'desc' then t.name end desc,
       case when v_sort_by = 'mfo' and v_sort_dir = 'asc'  then t.mfo end asc,
-      case when v_sort_by = 'mfo' and v_sort_dir = 'desc' then t.mfo end desc
+      case when v_sort_by = 'mfo' and v_sort_dir = 'desc' then t.mfo end desc,
+      case when v_sort_by = 'name' and v_sort_dir = 'asc'  then t.name end asc,
+      case when v_sort_by = 'name' and v_sort_dir = 'desc' then t.name end desc
     limit v_page_size
     offset (v_page - 1) * v_page_size
   ) sub;
@@ -81,9 +76,8 @@ as $$
         'item', (
           select jsonb_build_object(
         'id', t.id::text,
-        'code', t.code,
-        'name', t.name,
         'mfo', t.mfo,
+        'name', t.name,
         'isDeleted', t.is_deleted
       )
           from app.bank t
@@ -109,8 +103,8 @@ declare
   v_id     bigint;
   v_result jsonb;
 begin
-  if nullif(trim(coalesce(v_item->>'code', '')), '') is null then
-    raise exception 'code обов''язковий' using column = 'code';
+  if nullif(trim(coalesce(v_item->>'mfo', '')), '') is null then
+    raise exception 'mfo обов''язковий' using column = 'mfo';
   end if;
   if nullif(trim(coalesce(v_item->>'name', '')), '') is null then
     raise exception 'name обов''язковий' using column = 'name';
@@ -120,27 +114,24 @@ begin
   using (
     select
       nullif(v_item->>'id', '')::bigint as id,
-      nullif(trim(coalesce(v_item->>'code', '')), '') as code,
-      nullif(trim(coalesce(v_item->>'name', '')), '') as name,
       nullif(trim(coalesce(v_item->>'mfo', '')), '') as mfo,
+      nullif(trim(coalesce(v_item->>'name', '')), '') as name,
       (v_item->>'isDeleted')::boolean as is_deleted
   ) s
     on t.id = s.id
   when matched then update set
-    code = s.code,
-    name = s.name,
     mfo = s.mfo,
+    name = s.name,
     is_deleted = coalesce(s.is_deleted, t.is_deleted),
     updated_at = now()
-  when not matched then insert (code, name, mfo, is_deleted)
-    values (s.code, s.name, s.mfo, coalesce(s.is_deleted, false))
+  when not matched then insert (mfo, name, is_deleted)
+    values (s.mfo, s.name, coalesce(s.is_deleted, false))
   returning t.id into v_id;
 
   select jsonb_build_object(
         'id', t.id::text,
-        'code', t.code,
-        'name', t.name,
         'mfo', t.mfo,
+        'name', t.name,
         'isDeleted', t.is_deleted
       ) into v_result
   from app.bank t
@@ -229,13 +220,13 @@ as $$
 declare
   v_page      int  := greatest(coalesce((payload->>'page')::int, 1), 1);
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 10), 1);
-  v_sort_by   text := coalesce(payload->>'sortBy', 'name');
+  v_sort_by   text := coalesce(payload->>'sortBy', 'mfo');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
   v_rows      jsonb;
   v_total     int;
 begin
-  if v_sort_by not in ('name', 'mfo') then
-    v_sort_by := 'name';
+  if v_sort_by not in ('mfo', 'name') then
+    v_sort_by := 'mfo';
   end if;
 
   select count(*)::int into v_total
@@ -243,9 +234,8 @@ begin
   where not t.is_deleted
     and (
     coalesce(payload->>'search', '') = ''
-    or t.code ilike '%' || (payload->>'search') || '%'
-    or t.name ilike '%' || (payload->>'search') || '%'
     or t.mfo ilike '%' || (payload->>'search') || '%'
+    or t.name ilike '%' || (payload->>'search') || '%'
   );
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
@@ -259,15 +249,14 @@ begin
     where not t.is_deleted
       and (
       coalesce(payload->>'search', '') = ''
-      or t.code ilike '%' || (payload->>'search') || '%'
-      or t.name ilike '%' || (payload->>'search') || '%'
       or t.mfo ilike '%' || (payload->>'search') || '%'
+      or t.name ilike '%' || (payload->>'search') || '%'
     )
     order by
-      case when v_sort_by = 'name' and v_sort_dir = 'asc'  then t.name end asc,
-      case when v_sort_by = 'name' and v_sort_dir = 'desc' then t.name end desc,
       case when v_sort_by = 'mfo' and v_sort_dir = 'asc'  then t.mfo end asc,
-      case when v_sort_by = 'mfo' and v_sort_dir = 'desc' then t.mfo end desc
+      case when v_sort_by = 'mfo' and v_sort_dir = 'desc' then t.mfo end desc,
+      case when v_sort_by = 'name' and v_sort_dir = 'asc'  then t.name end asc,
+      case when v_sort_by = 'name' and v_sort_dir = 'desc' then t.name end desc
     limit v_page_size
     offset (v_page - 1) * v_page_size
   ) sub;

@@ -14,39 +14,62 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ── Автонумерація ───────────────────────────────────────────────────────────
--- Номер = префікс організації + префікс типу + порядковий номер у межах пари
--- (тип, організація). Унікальність гарантує uq_document_number.
+-- Тонка обгортка над нумератором (@core/numerator): формат номера, область
+-- лічильника й стратегія живуть там і налаштовуються, а не зашиті сюди.
+--
+-- Обгортка лишається тому, що документ — не єдиний, хто нумерується, але
+-- ЄДИНИЙ, у кого область складається сама з себе: тип відомий з моделі,
+-- організація й дата — з шапки. Кличучи нумератор напряму, кожен документ
+-- збирав би цей scope власноруч.
+--
+-- Рік береться з ДАТИ ДОКУМЕНТА: документ, уведений заднім числом, мусить
+-- отримати торішній лічильник. Тому null тут допустимий лише для нумератора
+-- без періоду — з періодом нумератор ВІДМОВИТЬ, бо без дати не знає, у чию
+-- область писати, а мовчазний now() поклав би номер не в той рік. Генерований
+-- save через це перевіряє дату ще до виклику й садить відмову на поле форми.
 
 drop function if exists app.doc_next_number(varchar, bigint);
+drop function if exists app.doc_next_number(varchar, bigint, timestamp);
 create function app.doc_next_number(
   p_type_code       varchar,
-  p_organization_id bigint
+  p_organization_id bigint,
+  p_date            timestamp default null
 ) returns varchar
 language plpgsql
 as $$
-declare
-  v_prefix text;
-  v_next   bigint;
 begin
-  select coalesce(o.prefix, '') || coalesce(dt.prefix, '')
-    into v_prefix
-  from app.document_type dt
-  cross join app.organization o
-  where dt.code = p_type_code
-    and o.id = p_organization_id;
-
-  if v_prefix is null then
-    raise exception 'Невідомий тип документа «%» або організація %', p_type_code, p_organization_id;
+  if not exists (select 1 from app.document_type where code = p_type_code) then
+    raise exception 'Невідомий тип документа «%»', p_type_code;
+  end if;
+  if not exists (select 1 from app.organization where id = p_organization_id) then
+    raise exception 'Невідома організація %', p_organization_id;
   end if;
 
-  select coalesce(max(nullif(substring(d.number from '[0-9]+$'), '')::bigint), 0) + 1
-    into v_next
-  from app.document d
-  join app.document_type dt on dt.id = d.document_type_id
-  where dt.code = p_type_code
-    and d.organization_id = p_organization_id;
+  return app.numerator_next(
+    p_type_code,
+    jsonb_build_object('orgId', p_organization_id, 'date', p_date)
+  );
+end;
+$$;
 
-  return v_prefix || lpad(v_next::text, 6, '0');
+-- Те саме для ручного номера: підтягнути лічильник, якщо користувач набрав
+-- номер більший за виданий. Див. app.numerator_bump_to.
+
+drop function if exists app.doc_bump_number(varchar, bigint, timestamp, varchar);
+create function app.doc_bump_number(
+  p_type_code       varchar,
+  p_organization_id bigint,
+  p_date            timestamp,
+  p_number          varchar
+) returns void
+language plpgsql
+as $$
+begin
+  perform app.numerator_bump_to(
+    p_type_code,
+    jsonb_build_object('orgId', p_organization_id, 'date', p_date),
+    p_number
+  );
 end;
 $$;
 

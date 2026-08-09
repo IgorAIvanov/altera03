@@ -10,12 +10,11 @@ export const tagName = "bank-list";
 export class BankList extends ModelListBase<BankRow> {
   protected model = "bank";
   protected editRoute = "catalog/bank/edit";
-  protected override defaultSortBy = "code";
+  protected override defaultSortBy = "mfo";
 
   protected columns: ListColumn<BankRow>[] = [
-    { key: "code", title: "common.code", width: "8rem", sortable: true },
+    { key: "mfo",  title: "bank.mfo", width: "7rem", sortable: true },
     { key: "name", title: "common.name", sortable: true, overflow: "ellipsis", tooltip: (r) => r.name },
-    { key: "mfo",  title: "bank.mfo", width: "7rem", muted: true, align: "right", sortable: true },
     {
       key: "_actions", title: "", width: "3rem", align: "center",
       render: (row) => html`

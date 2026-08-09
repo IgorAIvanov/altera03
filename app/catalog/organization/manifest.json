@@ -2,6 +2,7 @@
   "model": "organization",
   "type": "catalog",
   "schema": "app",
+  "numbering": { "field": "code", "template": "{NNNN}", "name": "Організації" },
   "views": {
     "list": {
       "module": "./organizationList.ts",

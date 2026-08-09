@@ -42,6 +42,7 @@ from (values
   ('report',         'account_card',       'Картка рахунку',                 'report',       'report/account_card/list',        20),
   ('report',         'document_movements', 'Рухи документа',                 'report',       'report/document_movements/list',  30),
   ('administration', 'print_template',     'Шаблони друку',                  'print',        'admin/print_template/list',       10),
+  ('administration', 'numerator',          'Нумератори',                     'settings',     'admin/numerator/list',            15),
   ('administration', 'menu',               'Меню',                           'settings',     'admin/menu/list',                 20),
   ('administration', 'user',               'Користувачі',                    'counterparty', 'admin/user/list',                 30),
   ('administration', 'user_group',         'Групи користувачів',             'counterparty', 'admin/user_group/list',           40),

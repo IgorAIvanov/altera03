@@ -58,7 +58,9 @@ export type Query = Static<typeof QuerySchema>;
  * На фронті шапка підключається через `Type.Composite`/`Type.Intersect` або
  * просто через `DocumentHeaderSchema` у Root-схемі форми.
  *
- * `number` порожній для нового документа — його підставить app.doc_next_number.
+ * `number` порожній для нового документа — його видасть нумератор
+ * (app.doc_next_number). Набраний руками номер лишається як є, але підтягує
+ * лічильник, інакше наступний авто-номер упреться в уже зайнятий.
  */
 export const DocumentHeaderSchema: TObject<{
   id: TUnion<[TString, TNull]>;

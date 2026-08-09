@@ -5,11 +5,12 @@ import { SortDirSchema } from "@client/shared/schema.ts";
 
 export const NomenclatureItemSchema = Type.Object({
   id:   Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint" }),
-  code: Type.String({
-    title: "Код", minLength: 1, maxLength: 20,
+  // Порожній код означає «видай наступний» — див. numbering у manifest.json.
+  code: Type.Optional(Type.String({
+    title: "Код", maxLength: 20,
     "x-list": { sortable: true },
     "x-search": true,
-  }),
+  })),
   name: Type.String({
     title: "Найменування", minLength: 1, maxLength: 200,
     "x-list": { sortable: true },

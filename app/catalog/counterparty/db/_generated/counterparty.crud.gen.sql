@@ -101,20 +101,34 @@ as $$
 declare
   v_item   jsonb := payload->'item';
   v_id     bigint;
+  v_prev   bigint := nullif(v_item->>'id', '')::bigint;
+  v_number varchar;
   v_result jsonb;
 begin
-  if nullif(trim(coalesce(v_item->>'code', '')), '') is null then
-    raise exception 'code обов''язковий' using column = 'code';
-  end if;
   if nullif(trim(coalesce(v_item->>'name', '')), '') is null then
     raise exception 'name обов''язковий' using column = 'name';
+  end if;
+
+  v_number := nullif(trim(coalesce(v_item->>'code', '')), '');
+  if v_number is null then
+    if v_prev is null then
+      v_number := app.numerator_next('counterparty', '{}'::jsonb);
+    else
+      select t.code into v_number from app.counterparty t where t.id = v_prev;
+    end if;
+  elsif v_prev is null
+     or v_number is distinct from (select t.code from app.counterparty t where t.id = v_prev) then
+    if exists (select 1 from app.numerator n where n.model = 'counterparty' and not n.is_editable) then
+      raise exception 'Номер призначає нумератор — ручна зміна вимкнена' using column = 'code';
+    end if;
+    perform app.numerator_bump_to('counterparty', '{}'::jsonb, v_number);
   end if;
 
   merge into app.counterparty t
   using (
     select
       nullif(v_item->>'id', '')::bigint as id,
-      nullif(trim(coalesce(v_item->>'code', '')), '') as code,
+      v_number as code,
       nullif(trim(coalesce(v_item->>'name', '')), '') as name,
       (v_item->>'isDeleted')::boolean as is_deleted
   ) s

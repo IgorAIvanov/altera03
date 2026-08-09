@@ -95,11 +95,29 @@ type FeatureDocumentManifest = {
   sortOrder?: number;
 };
 
+type FeatureNumberingManifest = {
+  /** Поле, яке заповнює нумератор: `code` у довіднику, `number` у документі. */
+  field: string;
+  /** Плейсхолдери {ORG} {TYPE} {YYYY} {YY} {MM} {N…}; перевіряє app.numerator_validate. */
+  template: string;
+  /** `counter` (умовчання, суцільна) або `sequence` (швидка, з розривами). */
+  strategy?: string;
+  /**
+   * Коли лічильник починається спочатку: `none` (умовчання) | `year` | `month`.
+   * Період БЕРЕТЬСЯ З ДАТИ ДОКУМЕНТА і в шаблоні відбиватися не мусить — рік у
+   * номері друкують не всі. Довідник лишається на `none`: дати в нього немає.
+   */
+  period?: string;
+  /** Підпис на екрані нумераторів; за замовчуванням — назва документа або ключ моделі. */
+  name?: string;
+};
+
 type FeatureManifest = {
   model: string;
   type?: string;
   schema?: string;
   document?: FeatureDocumentManifest;
+  numbering?: FeatureNumberingManifest;
   prints?: Record<string, FeaturePrintManifest>;
 };
 
@@ -421,12 +439,128 @@ function renderDocumentTypesSql(rows: Awaited<ReturnType<typeof collectDocumentT
   ].join("\n");
 }
 
+// ── Нумератори ──────────────────────────────────────────────────────────────
+// Манифест дає УМОВЧАННЯ, далі правило живе на admin-екрані: сід іде через
+// `on conflict do nothing`, тож повторний деплой правку адміністратора не
+// затирає. Той самий підхід, що й у шаблонів друку.
+
+type CollectedNumerator = {
+  model: string;
+  name: string;
+  template: string;
+  strategy: string;
+  period: string;
+  /** Тип моделі — єдине, чого numerator_validate сам знати не може. */
+  document: boolean;
+  /** Звідки брати вже видані номери при першому засіві лічильника. */
+  source: { table: string; column: string; orgColumn?: string; dateColumn?: string; filter?: string };
+};
+
+function toSnakeCase(value: string) {
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+async function collectNumerators(appDir: string, models: string[]) {
+  const rows: CollectedNumerator[] = [];
+
+  for (const model of models) {
+    const manifestPath = join(appDir, model, "manifest.json");
+    if (!await fileExists(manifestPath)) continue;
+
+    const manifest = await readFeatureManifest(manifestPath);
+    const numbering = manifest.numbering;
+    if (!numbering) continue;
+
+    if (!numbering.field?.trim() || !numbering.template?.trim()) {
+      throw new Error(`${manifestPath}: numbering повинен мати field і template.`);
+    }
+    const strategy = (numbering.strategy ?? "counter").trim();
+    if (strategy !== "counter" && strategy !== "sequence") {
+      throw new Error(`${manifestPath}: numbering.strategy — "counter" або "sequence", а не "${strategy}".`);
+    }
+    const period = (numbering.period ?? "none").trim();
+    // Правила шаблона й періоду перевіряє app.numerator_validate при публікації
+    // — другий набір тих самих правил тут розійшовся б із екраном нумераторів.
+    // Те, чого SQL сам знати не може (тип моделі живе в манифесті), їде туди
+    // явним аргументом p_document, а не окремою перевіркою тут.
+
+    const schema = getModelSchema(manifest, manifestPath);
+    const column = toSnakeCase(numbering.field.trim());
+
+    // Номер документа лежить у спільній шапці, а не в таблиці реквізитів, і
+    // область там складається сама: організація й дата — сусідні колонки.
+    const source: CollectedNumerator["source"] = manifest.type === "document"
+      ? {
+        table: "app.document",
+        column,
+        orgColumn: "organization_id",
+        dateColumn: "doc_date",
+        filter: `document_type_id = (select id from app.document_type where code = ${sqlStringLiteral(manifest.model)})`,
+      }
+      : { table: `${schema}.${manifest.model}`, column };
+
+    rows.push({
+      model: manifest.model,
+      name: (numbering.name ?? manifest.document?.name ?? manifest.model).trim(),
+      template: numbering.template.trim(),
+      strategy,
+      period,
+      document: manifest.type === "document",
+      source,
+    });
+  }
+
+  return rows.sort((left, right) => left.model.localeCompare(right.model));
+}
+
+function renderNumeratorSeedSql(row: CollectedNumerator) {
+  const arg = (value?: string) => value ? sqlStringLiteral(value) : "null";
+
+  return [
+    `-- Numerator for model ${row.model}`,
+    // Перевірка шаблона живе в SQL, а не тут: правити шаблон можна ще й на
+    // екрані, а другий набір тих самих правил у TypeScript розійшовся б із ним.
+    `select app.numerator_validate(${sqlStringLiteral(row.template)}, ${sqlStringLiteral(row.period)}, ${row.document});`,
+    // Налаштування (name/template/period/strategy) — умовчання: сіються раз і
+    // далі належать адміністратору (do nothing по суті). Джерело пересіву —
+    // СТРУКТУРНІ факти моделі, вони їдуть за манифестом при кожному деплої:
+    // без них app.numerator_reseed (екран нумераторів) не знав би, де лежать
+    // уже видані номери.
+    "insert into app.numerator (model, name, template, strategy, period,",
+    "  source_table, source_column, source_org_column, source_date_column, source_filter)",
+    `values (${sqlStringLiteral(row.model)}, ${sqlStringLiteral(row.name)}, ` +
+    `${sqlStringLiteral(row.template)}, ${sqlStringLiteral(row.strategy)}, ${sqlStringLiteral(row.period)},`,
+    `  ${sqlStringLiteral(row.source.table)}, ${sqlStringLiteral(row.source.column)}, ` +
+    `${arg(row.source.orgColumn)}, ${arg(row.source.dateColumn)}, ${arg(row.source.filter)})`,
+    "on conflict (model) do update set",
+    "  source_table       = excluded.source_table,",
+    "  source_column      = excluded.source_column,",
+    "  source_org_column  = excluded.source_org_column,",
+    "  source_date_column = excluded.source_date_column,",
+    "  source_filter      = excluded.source_filter;",
+    // Ідемпотентно: лічильник лише підіймається. Без цього перший запис після
+    // оновлення отримав би номер 1 і впав на унікальності.
+    `select app.numerator_reseed(${sqlStringLiteral(row.model)});`,
+    "",
+  ].join("\n");
+}
+
 async function buildGeneratedDataSections(appDir: string, models: string[]) {
   const sections: string[] = [];
 
   const documentTypes = await collectDocumentTypes(appDir, models);
   if (documentTypes.length) {
     sections.push(...buildSection("_generated/document-types.data.sql", renderDocumentTypesSql(documentTypes)));
+  }
+
+  // Строго за document-types: сід нумератора документа посилається на
+  // app.document_type, щоб відібрати вже видані номери свого типу.
+  const numerators = await collectNumerators(appDir, models);
+  if (numerators.length) {
+    sections.push(...buildSection(
+      "_generated/numerators.data.sql",
+      numerators.map(renderNumeratorSeedSql).join("\n"),
+    ));
   }
 
   const templates = await collectManifestPrintTemplates(appDir, models);

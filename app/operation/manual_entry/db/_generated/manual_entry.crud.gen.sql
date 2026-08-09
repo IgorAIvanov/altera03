@@ -16,12 +16,15 @@ declare
   v_f_date_from date := nullif(v_filters->>'dateFrom', '')::date;
   v_f_date_to date := nullif(v_filters->>'dateTo', '')::date;
   v_f_is_posted boolean := (v_filters->>'isPosted')::boolean;
+  v_filters_out jsonb;
   v_rows      jsonb;
   v_total     int;
 begin
   if v_sort_by not in ('number', 'docDate') then
     v_sort_by := 'number';
   end if;
+
+  v_filters_out := v_filters;
 
   select count(*)::int into v_total
   from app.document h
@@ -76,7 +79,7 @@ begin
         'item',   null,
         'options', '{}'::jsonb,
         'totals', jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size),
-        '$filters', v_filters,
+        '$filters', v_filters_out,
         'extra',  '{}'::jsonb
       ),
       'messages', '[]'::jsonb,
@@ -147,12 +150,21 @@ declare
   v_item    jsonb  := payload->'item';
   v_id      bigint := nullif(v_item->>'id', '')::bigint;
   v_org     bigint := nullif(v_item->>'organizationId', '')::bigint;
+  -- Рік для нумератора береться з дати документа, а не з now(): документ,
+  -- уведений заднім числом у грудень, мусить отримати торішній лічильник.
+  v_date    timestamp := nullif(v_item->>'docDate', '')::timestamp;
   v_number  varchar(20);
   v_type_id bigint;
   v_result  jsonb;
 begin
   if v_org is null then
     raise exception 'organizationId обов''язковий' using column = 'organization_id';
+  end if;
+  -- Дата перевіряється ДО видачі номера: без неї нумератор із періодом не знає,
+  -- у чию область писати, і відмовив би своєю внутрішньою помилкою без прив'язки
+  -- до поля. Колонка doc_date і так not null — тут лише відмова стає людською.
+  if v_date is null then
+    raise exception 'docDate обов''язковий' using column = 'doc_date';
   end if;
 
   select id into v_type_id from app.document_type where code = 'manual_entry';
@@ -165,10 +177,23 @@ begin
   v_number := nullif(trim(coalesce(v_item->>'number', '')), '');
   if v_number is null then
     if v_id is null then
-      v_number := app.doc_next_number('manual_entry', v_org);
+      v_number := app.doc_next_number('manual_entry', v_org, v_date);
     else
       select h.number into v_number from app.document h where h.id = v_id;
     end if;
+  elsif v_id is null
+     or v_number is distinct from (select h.number from app.document h where h.id = v_id) then
+    -- Номер набрали руками — на новому документі або виправили на наявному
+    -- (незмінений номер наявного сюди не потрапляє). Спершу право: нумератор
+    -- з вимкненим is_editable ручного номера не приймає. Далі лічильник: сам
+    -- по собі ручний номер його не піднімає, але лишити лічильник позаду не
+    -- можна — через кілька записів авто-номер упреться в уже зайнятий, і
+    -- виглядатиме це як поламана нумерація. Перенумерація наявного документа
+    -- підтягує лічильник із тієї ж причини.
+    if exists (select 1 from app.numerator n where n.model = 'manual_entry' and not n.is_editable) then
+      raise exception 'Номер призначає нумератор — ручна зміна вимкнена' using column = 'number';
+    end if;
+    perform app.doc_bump_number('manual_entry', v_org, v_date, v_number);
   end if;
 
   merge into app.document h

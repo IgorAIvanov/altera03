@@ -8,6 +8,7 @@
     "prefix": "ОП",
     "sortOrder": 5
   },
+  "numbering": { "field": "number", "template": "{ORG}{TYPE}-{NNNNNN}", "period": "year" },
   "views": {
     "list": { "module": "./manualEntryList.ts", "titleKey": "manualEntry.titleMany" },
     "edit": { "module": "./manualEntryEdit.ts", "titleKey": "manualEntry.titleOne" }

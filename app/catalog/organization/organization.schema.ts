@@ -5,12 +5,13 @@ import { SortDirSchema } from "@client/shared/schema.ts";
 
 export const OrganizationItemSchema = Type.Object({
   id:   Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
-  code: Type.String({
-    title: "Код", minLength: 1, maxLength: 9,
+  // Порожній код означає «видай наступний» — див. numbering у manifest.json.
+  code: Type.Optional(Type.String({
+    title: "Код", maxLength: 9,
     "x-form": { order: 1, width: "sm" },
     "x-list": { width: "8rem", sortable: true },
     "x-search": true,
-  }),
+  })),
   name: Type.String({
     title: "Назва", minLength: 1, maxLength: 150,
     "x-form": { order: 2, width: "full" },

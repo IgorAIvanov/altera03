@@ -2,6 +2,7 @@
   "model": "counterparty",
   "type": "catalog",
   "schema": "app",
+  "numbering": { "field": "code", "template": "{NNNNNN}", "name": "Контрагенти" },
   "views": {
     "list":   { "module": "./counterpartyList.ts",   "titleKey": "counterparty.titleMany" },
     "edit":   { "module": "./counterpartyEdit.ts",   "titleKey": "counterparty.titleOne" },

@@ -75,6 +75,44 @@ async function purge(table: string, id: string): Promise<void> {
   }
 }
 
+type NumeratorState = { scope_key: string; last_value: string };
+
+/**
+ * Знімок лічильників нумератора — і повернення їх на місце.
+ *
+ * Проба нумерації неминуче ЇХ ВИТРАЧАЄ, а це такий самий чужий стан, як зайнятий
+ * код: лишивши лічильник зрушеним, проба назавжди зсунула б номери реальних
+ * записів у базі розробника. Тому знімок береться цілком (областей у моделі
+ * кілька — своя на організацію й рік) і цілком же відновлюється у `finally`.
+ */
+async function numeratorSnapshot(model: string): Promise<NumeratorState[]> {
+  const { host, port, database, username, password, ssl } = configFromEnv().database;
+  const sql = postgres({ host, port, database, username, password, ssl: ssl ?? false });
+  try {
+    return await sql<NumeratorState[]>`
+      select scope_key, last_value from app.numerator_state where model = ${model}`;
+  } finally {
+    await sql.end();
+  }
+}
+
+async function numeratorRestore(model: string, snapshot: NumeratorState[]): Promise<void> {
+  const { host, port, database, username, password, ssl } = configFromEnv().database;
+  const sql = postgres({ host, port, database, username, password, ssl: ssl ?? false });
+  try {
+    // Саме заміна, а не оновлення: проба могла завести область, якої не було
+    // (наприклад, рік, у якому документів ще немає), і та мусить зникнути.
+    await sql`delete from app.numerator_state where model = ${model}`;
+    for (const row of snapshot) {
+      await sql`
+        insert into app.numerator_state (model, scope_key, last_value)
+        values (${model}, ${row.scope_key}, ${row.last_value})`;
+    }
+  } finally {
+    await sql.end();
+  }
+}
+
 /** `state` із заголовка Location, який віддав authorize. */
 function stateFromLocation(location: string): string {
   return new URL(location, "http://in-process").searchParams.get("state") ?? "";
@@ -249,13 +287,13 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
     });
 
     // Порушення унікальності раніше долітало до форми сирим текстом PostgreSQL
-    // (`duplicate key value violates unique constraint "uq_bank_code"`) зі
+    // (`duplicate key value violates unique constraint "uq_bank_mfo"`) зі
     // статусом 200. Проба стереже переклад за SQLSTATE: відмова — конвертом,
     // без внутрішньої будови бази.
     await t.step("модель: порушення унікальності — конверт без тексту PostgreSQL", async () => {
-      const code = "SMOKEUQ1";
+      const mfo = "SMK001";
       const created = await client.model("bank", "save", {
-        item: { code, name: "Smoke unique probe" },
+        item: { mfo, name: "Smoke unique probe" },
       });
 
       assertEquals(created.body.ok, true);
@@ -266,7 +304,7 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       // приберемо в будь-якому разі.
       try {
         const duplicate = await client.model("bank", "save", {
-          item: { code, name: "Smoke unique probe 2" },
+          item: { mfo, name: "Smoke unique probe 2" },
         });
 
         assertEquals(duplicate.status, 200);
@@ -280,19 +318,188 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           typeof m === "string" ? m : String((m as { text?: unknown }).text ?? "")
         );
         assertEquals(texts.some((text) => text.includes("duplicate key")), false);
-        assertEquals(texts.some((text) => text.includes("uq_bank_code")), false);
+        assertEquals(texts.some((text) => text.includes("uq_bank_mfo")), false);
 
-        // Поле форми поруч із текстом — з нього клієнт підсвічує саме `code`.
+        // Поле форми поруч із текстом — з нього клієнт підсвічує саме `mfo`.
         assertEquals(
           duplicate.body.messages.some((m) =>
+            typeof m === "object" && m !== null && (m as { field?: unknown }).field === "mfo"
+          ),
+          true,
+        );
+      } finally {
+        // Фізично: позначка на видалення лишила б МФО `SMK001` у таблиці, і
+        // наступний прогін впав би на тій самій унікальності, яку й перевіряє.
+        await purge("app.bank", bank.id);
+      }
+    });
+
+    // Нумератор: код видається сам, ручний код підтягує лічильник, а відкат
+    // транзакції номер ПОВЕРТАЄ. Останнє й відрізняє стратегію `counter` від
+    // `sequence`, і побачити це можна лише пробою — у відповіді успішного
+    // запису різниці немає.
+    await t.step("нумератор: авто-код, ручний код, відкат", async () => {
+      const before = await numeratorSnapshot("counterparty");
+      const created: string[] = [];
+
+      const add = async (item: Record<string, unknown>) => {
+        const res = await client.model("counterparty", "save", { item });
+        const row = res.body.data.item as { id: string; code: string } | null;
+        if (row) created.push(row.id);
+        return { ok: res.body.ok, row };
+      };
+
+      try {
+        const first = await add({ name: "Smoke нумератор 1" });
+        assertEquals(first.ok, true);
+        assertExists(first.row);
+        // Ширина з шаблона {NNNNNN}: доповнення нулями, а не сире число.
+        assertEquals(/^\d{6}$/.test(first.row.code), true);
+
+        const second = await add({ name: "Smoke нумератор 2" });
+        assertExists(second.row);
+        assertEquals(BigInt(second.row.code), BigInt(first.row.code) + 1n);
+
+        // Ручний код лічильник не видає, але лишити його позаду не можна:
+        // інакше наступний авто-код упреться в уже зайнятий.
+        const manual = (BigInt(second.row.code) + 10n).toString().padStart(6, "0");
+        const manualSaved = await add({ code: manual, name: "Smoke нумератор ручний" });
+        assertExists(manualSaved.row);
+        assertEquals(manualSaved.row.code, manual);
+
+        const afterManual = await add({ name: "Smoke нумератор 3" });
+        assertExists(afterManual.row);
+        assertEquals(BigInt(afterManual.row.code), BigInt(manual) + 1n);
+
+        // Код не за шаблоном лічильника не стосується взагалі.
+        const alien = await add({ code: "SMOKE-NUM", name: "Smoke нумератор чужий код" });
+        assertEquals(alien.ok, true);
+
+        // Відкат: назва довша за колонку валить запис ПІСЛЯ того, як номер уже
+        // взято. Номер мусить повернутися — наступний успішний запис отримує
+        // рівно те значення, яке взяв невдалий.
+        const failed = await add({ name: "Ы".repeat(300) });
+        assertEquals(failed.ok, false);
+
+        const afterRollback = await add({ name: "Smoke нумератор 4" });
+        assertExists(afterRollback.row);
+        assertEquals(BigInt(afterRollback.row.code), BigInt(afterManual.row.code) + 1n);
+      } finally {
+        for (const id of created) await purge("app.counterparty", id);
+        await numeratorRestore("counterparty", before);
+      }
+    });
+
+    // Нумерація в межах року — і саме тоді, коли року в номері НЕМАЄ. Це те
+    // місце, де конструкція легко зривається назад у «період видно з номера»:
+    // лічильник мусить починатися спочатку щороку, номер лишатися тим самим
+    // рядком, а унікальність триматися на індексі по даті документа.
+    await t.step("нумератор: період року при номері без року", async () => {
+      const before = await numeratorSnapshot("invoice");
+      // Контрагента проба теж заводить, тобто витрачає ЩЕ ОДИН лічильник —
+      // повернути треба обидва, інакше кожен прогін зсуває коди контрагентів.
+      const beforeParty = await numeratorSnapshot("counterparty");
+      const orgs = await client.model("organization", "lookup", { pageSize: 1 });
+      const org = (orgs.body.data.rows as { id: string }[])[0];
+      assertExists(org);
+
+      const party = await client.model("counterparty", "save", {
+        item: { name: "Smoke період контрагент" },
+      });
+      const partyRow = party.body.data.item as { id: string } | null;
+      assertExists(partyRow);
+
+      const docs: string[] = [];
+      const invoice = async (date: string, number?: string) => {
+        const item: Record<string, unknown> = {
+          organizationId: org.id,
+          docDate: `${date}T00:00:00`,
+          counterpartyId: partyRow.id,
+        };
+        if (number !== undefined) item.number = number;
+        const res = await client.model("invoice", "save", { item });
+        const row = res.body.data.item as { id: string; number: string } | null;
+        if (row) docs.push(row.id);
+        return { ok: res.body.ok, row, messages: res.body.messages };
+      };
+
+      try {
+        const first2026 = await invoice("2026-08-09");
+        assertExists(first2026.row);
+        const second2026 = await invoice("2026-09-01");
+        assertExists(second2026.row);
+
+        // Лічильник іде далі в межах року.
+        assertEquals(second2026.row.number !== first2026.row.number, true);
+
+        // А в іншому році починається спочатку — і дає ТОЙ САМИЙ рядок номера,
+        // бо року в ньому немає. Саме це й неможливо, поки період виводять із
+        // шаблона.
+        const first2025 = await invoice("2025-12-15");
+        assertExists(first2025.row);
+        assertEquals(first2025.row.number, first2026.row.number);
+
+        // Унікальність при цьому не втрачена: у своєму році номер зайнятий.
+        const clash = await invoice("2026-03-03", first2026.row.number);
+        assertEquals(clash.ok, false);
+        assertEquals(
+          clash.messages.some((m) =>
+            typeof m === "object" && m !== null && (m as { field?: unknown }).field === "number"
+          ),
+          true,
+        );
+
+        // Без дати номер не видається «з поточного року» мовчки: періодний
+        // лічильник без дати не знає своєї області, тож save відмовляє ще до
+        // видачі номера — і відмова сідає на поле дати, а не приходить
+        // внутрішньою помилкою нумератора.
+        const dateless = await client.model("invoice", "save", {
+          item: { organizationId: org.id, counterpartyId: partyRow.id },
+        });
+        assertEquals(dateless.body.ok, false);
+        assertEquals(
+          dateless.body.messages.some((m) =>
+            typeof m === "object" && m !== null && (m as { field?: unknown }).field === "docDate"
+          ),
+          true,
+        );
+      } finally {
+        // Шапка володіє id — рядки документа й проводки йдуть каскадом.
+        for (const id of docs) await purge("app.document", id);
+        await purge("app.counterparty", partyRow.id);
+        await numeratorRestore("invoice", before);
+        await numeratorRestore("counterparty", beforeParty);
+      }
+    });
+
+    // Екран нумераторів: прапорець is_editable — не мертвий перемикач, а
+    // серверна заборона. Вимкнений — ручний код відхиляється з прив'язкою до
+    // поля; запис при цьому не створюється. Знімок правила повертається у
+    // finally: сама відмова стану не лишає, а от вимкнений прапорець лишився б.
+    await t.step("нумератор: is_editable вимикає ручний номер", async () => {
+      const before = await client.model("numerator", "get", { id: "counterparty" });
+      const rule = before.body.data.item as Record<string, unknown> | null;
+      assertExists(rule);
+
+      try {
+        const off = await client.model("numerator", "save", {
+          item: { ...rule, isEditable: false },
+        });
+        assertEquals(off.body.ok, true);
+
+        const manual = await client.model("counterparty", "save", {
+          item: { code: "999998", name: "Smoke ручний код заборонено" },
+        });
+        assertEquals(manual.body.ok, false);
+        assertEquals(manual.body.data.item, null);
+        assertEquals(
+          manual.body.messages.some((m) =>
             typeof m === "object" && m !== null && (m as { field?: unknown }).field === "code"
           ),
           true,
         );
       } finally {
-        // Фізично: позначка на видалення лишила б код `SMOKEUQ1` у таблиці, і
-        // наступний прогін впав би на тій самій унікальності, яку й перевіряє.
-        await purge("app.bank", bank.id);
+        await client.model("numerator", "save", { item: rule });
       }
     });
 

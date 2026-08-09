@@ -73,6 +73,12 @@ type FeatureManifest = {
   hierarchy?: boolean;
   /** `generate: false` — CRUD написаний руками, генератор моделі не торкається. */
   sql?: { generate?: boolean };
+  /**
+   * Автонумерація (@core/numerator). Правило й лічильник живуть у базі, тут —
+   * лише те, що потрібно генератору: яке поле заповнювати. Сам шаблон їде в
+   * сід через assemble-sql-package.ts.
+   */
+  numbering?: { field: string; template?: string; strategy?: string; period?: string; name?: string };
 };
 
 type Ref = {
@@ -184,6 +190,12 @@ type ModelSpec = {
   listSort: SortEntry[];
   lookupSort: SortEntry[];
   listJoins: string[];
+  /**
+   * Поле, яке заповнює нумератор (`code`), або null. Для документа тут завжди
+   * null: номер шапки має власний шлях (app.doc_next_number), бо область
+   * лічильника збирається з організації й дати шапки.
+   */
+  numberedField: string | null;
   /** Ієрархічний довідник: див. FeatureManifest.hierarchy. */
   hierarchy: boolean;
   groupTable: string; // {schema}.{model}_group
@@ -832,12 +844,21 @@ declare
   v_item    jsonb  := payload->'item';
   v_id      bigint := nullif(v_item->>'id', '')::bigint;
   v_org     bigint := nullif(v_item->>'organizationId', '')::bigint;
+  -- Рік для нумератора береться з дати документа, а не з now(): документ,
+  -- уведений заднім числом у грудень, мусить отримати торішній лічильник.
+  v_date    timestamp := nullif(v_item->>'docDate', '')::timestamp;
   v_number  varchar(20);
   v_type_id bigint;
   v_result  jsonb;
 begin
   if v_org is null then
     raise exception 'organizationId обов''язковий' using column = 'organization_id';
+  end if;
+  -- Дата перевіряється ДО видачі номера: без неї нумератор із періодом не знає,
+  -- у чию область писати, і відмовив би своєю внутрішньою помилкою без прив'язки
+  -- до поля. Колонка doc_date і так not null — тут лише відмова стає людською.
+  if v_date is null then
+    raise exception 'docDate обов''язковий' using column = 'doc_date';
   end if;
 
   select id into v_type_id from app.document_type where code = '${spec.model}';
@@ -850,10 +871,23 @@ begin
   v_number := nullif(trim(coalesce(v_item->>'number', '')), '');
   if v_number is null then
     if v_id is null then
-      v_number := app.doc_next_number('${spec.model}', v_org);
+      v_number := app.doc_next_number('${spec.model}', v_org, v_date);
     else
       select h.number into v_number from app.document h where h.id = v_id;
     end if;
+  elsif v_id is null
+     or v_number is distinct from (select h.number from app.document h where h.id = v_id) then
+    -- Номер набрали руками — на новому документі або виправили на наявному
+    -- (незмінений номер наявного сюди не потрапляє). Спершу право: нумератор
+    -- з вимкненим is_editable ручного номера не приймає. Далі лічильник: сам
+    -- по собі ручний номер його не піднімає, але лишити лічильник позаду не
+    -- можна — через кілька записів авто-номер упреться в уже зайнятий, і
+    -- виглядатиме це як поламана нумерація. Перенумерація наявного документа
+    -- підтягує лічильник із тієї ж причини.
+    if exists (select 1 from app.numerator n where n.model = '${spec.model}' and not n.is_editable) then
+      raise exception 'Номер призначає нумератор — ручна зміна вимкнена' using column = 'number';
+    end if;
+    perform app.doc_bump_number('${spec.model}', v_org, v_date, v_number);
   end if;
 
   merge into app.document h
@@ -958,7 +992,19 @@ $$;`;
 function renderSave(spec: ModelSpec): string {
   if (spec.isDocument) return renderSaveDocument(spec);
   const writable = spec.itemFields.filter((f) => f.key !== "id");
-  const requiredFields = writable.filter((f) => f.required && f.isString);
+
+  const numbered = spec.numberedField
+    ? spec.itemFields.find((f) => f.key === spec.numberedField)
+    : undefined;
+  if (spec.numberedField && !numbered) {
+    throw new Error(
+      `${spec.model}: numbering.field = "${spec.numberedField}", але такого поля немає в ItemSchema`,
+    );
+  }
+
+  // Поле, яке заповнює нумератор, з обов'язкових виключаємо: порожнім його
+  // прислати можна і треба — саме це й означає «видай номер».
+  const requiredFields = writable.filter((f) => f.required && f.isString && f.key !== spec.numberedField);
 
   // `using column` — не косметика: рантайм дістає з нього ім'я поля форми
   // (колонка snake_case → поле camelCase) і клієнт підсвічує саме те поле,
@@ -969,7 +1015,9 @@ function renderSave(spec: ModelSpec): string {
       `    raise exception '${f.key} обов''язковий' using column = '${f.col}';\n  end if;`
     ).join("\n");
 
-  const headerSrc = spec.itemFields.map((f) => `      ${srcExpr(f, "v_item")} as ${f.col}`).join(",\n");
+  const headerSrc = spec.itemFields
+    .map((f) => `      ${f.key === spec.numberedField ? "v_number" : srcExpr(f, "v_item")} as ${f.col}`)
+    .join(",\n");
   const updateSetSql = [
     ...writable.map((f) => updateSet(f, "t")),
     `updated_at = now()`,
@@ -982,6 +1030,33 @@ function renderSave(spec: ModelSpec): string {
   const { object, joins } = itemObject(spec, "v_id");
   const joinSql = joins.length ? "\n  " + joins.join("\n  ") : "";
 
+  // Нумератор заповнює поле лише коли форма прислала його порожнім. Ручне
+  // значення лишається як є, але підтягує лічильник — інакше через кілька
+  // записів авто-номер упреться в уже зайнятий. Незмінений код наявного
+  // запису (форма шле item цілком) ручним не рахується — ані права, ані
+  // підтяжки він не потребує.
+  const numberingDecl = numbered
+    ? `\n  v_prev   bigint := nullif(v_item->>'id', '')::bigint;\n  v_number ${numbered.isString ? "varchar" : "text"};`
+    : "";
+  const numberingBody = numbered
+    ? `
+  v_number := nullif(trim(coalesce(v_item->>'${numbered.key}', '')), '');
+  if v_number is null then
+    if v_prev is null then
+      v_number := app.numerator_next('${spec.model}', '{}'::jsonb);
+    else
+      select t.${numbered.col} into v_number from ${spec.table} t where t.${spec.pk} = v_prev;
+    end if;
+  elsif v_prev is null
+     or v_number is distinct from (select t.${numbered.col} from ${spec.table} t where t.${spec.pk} = v_prev) then
+    if exists (select 1 from app.numerator n where n.model = '${spec.model}' and not n.is_editable) then
+      raise exception 'Номер призначає нумератор — ручна зміна вимкнена' using column = '${numbered.col}';
+    end if;
+    perform app.numerator_bump_to('${spec.model}', '{}'::jsonb, v_number);
+  end if;
+`
+    : "";
+
   return `drop function if exists ${spec.table}_save(bigint, jsonb);
 create function ${spec.table}_save(user_id bigint, payload jsonb)
 returns jsonb
@@ -989,11 +1064,11 @@ language plpgsql
 as $$
 declare
   v_item   jsonb := payload->'item';
-  v_id     bigint;
+  v_id     bigint;${numberingDecl}
   v_result jsonb;
 begin
 ${checks}
-
+${numberingBody}
   merge into ${spec.table} t
   using (
     select
@@ -1438,6 +1513,10 @@ async function buildSpec(
     throw new Error(`${model}: hierarchy можлива лише для catalog, не для document`);
   }
 
+  // Номер документа генератор і так підставляє через app.doc_next_number —
+  // оголошення numbering у документа лише називає шаблон для сіду.
+  const numberedField = isDocument ? null : (manifest.numbering?.field?.trim() || null);
+
   // Документ не описує спільні реквізити у власній схемі — генератор підмішує
   // DocumentHeaderSchema сам. Поля шапки живуть у app.document (аліас h),
   // реквізити документа — у app.<model> (аліас t) з ключем document_id.
@@ -1552,6 +1631,7 @@ async function buildSpec(
     listSort,
     lookupSort,
     listJoins,
+    numberedField,
     hierarchy,
     groupTable: `${schemaName}.${model}_group`,
     rowHasGroupName: hierarchy && rowKeys.has("groupName"),

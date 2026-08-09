@@ -69,7 +69,9 @@ export class OrganizationEdit extends BaseUI<OrganizationEditRoot> {
           <div class="flex gap-2">
             ${this.renderField(
               this.t("common.code"),
-              html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
+              // Порожній код підставить нумератор при записі (manifest numbering).
+              html`<input class="input input-bordered w-full" placeholder=${this.t("common.codeAuto")}
+                .value=${item.code ?? ""}
                 @input=${this.bindTo(item, "code")} />`,
               { class: "w-32", field: "code" },
             )}

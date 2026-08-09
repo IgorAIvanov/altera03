@@ -92,6 +92,17 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       models: [file("attachment/db/attachment.sql")],
     },
   },
+  // numerator — перед document_core: doc_next_number став обгорткою над ним.
+  // Порядок тут не про FK (їх між пакетами немає), а про читабельність пакета:
+  // спершу з'являється механізм номерів, потім ті, хто ним користується.
+  {
+    name: "numerator",
+    files: {
+      structure: [file("numerator/db/struc.sql")],
+      migrations: [file("numerator/db/migration.sql")],
+      models: [file("numerator/db/numerator.sql")],
+    },
+  },
   {
     name: "document_core",
     files: {

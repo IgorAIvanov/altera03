@@ -93,6 +93,10 @@ export const generatedModelRegistry = {
     "moveToGroup": "edit"
     }
   },
+  "numerator": {
+    type: "admin",
+    schema: "app"
+  },
   "organization": {
     type: "catalog",
     schema: "app"

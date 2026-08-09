@@ -70,10 +70,10 @@ export class BankEdit extends BaseUI<BankEditRoot> {
     return this.renderForm(html`
       <div class="flex flex-col gap-2">
           ${this.renderField(
-            this.t("common.code"),
-            html`<input class="input input-bordered w-full" .value=${item.code ?? ""}
-              @input=${this.bindTo(item, "code")} />`,
-            { field: "code" },
+            this.t("bank.mfo"),
+            html`<input class="input input-bordered w-full" .value=${item.mfo ?? ""}
+              @input=${this.bindTo(item, "mfo")} />`,
+            { field: "mfo", class: "w-32" },
           )}
 
           ${this.renderField(
@@ -81,13 +81,6 @@ export class BankEdit extends BaseUI<BankEditRoot> {
             html`<input class="input input-bordered w-full" .value=${item.name ?? ""}
               @input=${this.bindTo(item, "name")} />`,
             { field: "name" },
-          )}
-
-          ${this.renderField(
-            this.t("bank.mfo"),
-            html`<input class="input input-bordered w-full" .value=${item.mfo ?? ""}
-              @input=${this.bindTo(item, "mfo")} />`,
-            { field: "mfo" },
           )}
 
         ${this.pingResult

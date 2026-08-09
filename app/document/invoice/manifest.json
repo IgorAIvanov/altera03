@@ -8,6 +8,7 @@
     "prefix": "НК",
     "sortOrder": 10
   },
+  "numbering": { "field": "number", "template": "{ORG}{TYPE}-{NNNNNN}", "period": "year" },
   "prints": {
     "invoice_default": {
       "templateFile": "./prints/invoice_default.template.json",

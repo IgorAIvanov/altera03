@@ -3,12 +3,15 @@ import { SortDirSchema } from "@client/shared/schema.ts";
 
 // ── 1. Item — форма редагування та payload для save ───────────────────────────
 
+// Окремого `code` немає: кодом банку є МФО — власний загальновживаний
+// ідентифікатор, як ISO-код у валюти. Другий стовпчик поруч був би дублем.
 export const BankItemSchema = Type.Object({
-  id:   Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
-  code: Type.String({
-    title: "Код", minLength: 1, maxLength: 9,
+  id:  Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
+  mfo: Type.String({
+    title: "МФО", minLength: 1, maxLength: 6,
     "x-form": { order: 1, width: "sm" },
     "x-list": { width: "sm", sortable: true },
+    "x-lookup": true,
     "x-search": true,
   }),
   name: Type.String({
@@ -18,13 +21,6 @@ export const BankItemSchema = Type.Object({
     "x-lookup": true,
     "x-search": true,
   }),
-  mfo: Type.Optional(Type.String({
-    title: "МФО", maxLength: 6,
-    "x-form": { order: 3, width: "sm" },
-    "x-list": { width: "sm", sortable: true },
-    "x-lookup": true,
-    "x-search": true,
-  })),
   isDeleted: Type.Optional(Type.Boolean({ title: "Позначено на видалення", default: false })),
 });
 export type BankItem = Static<typeof BankItemSchema>;
@@ -33,9 +29,8 @@ export type BankItem = Static<typeof BankItemSchema>;
 
 export const BankRowSchema = Type.Object({
   id:       Type.String({ "x-db-type": "bigint" }),
-  code:     Type.String(),
+  mfo:      Type.String(),
   name:     Type.String(),
-  mfo:      Type.Optional(Type.String()),
   isDeleted: Type.Optional(Type.Boolean()),
 });
 export type BankRow = Static<typeof BankRowSchema>;
@@ -45,7 +40,7 @@ export type BankRow = Static<typeof BankRowSchema>;
 export const BankLookupRowSchema = Type.Object({
   id:  Type.String({ "x-db-type": "bigint" }),
   name: Type.String(),
-  mfo:  Type.Optional(Type.String()),
+  mfo:  Type.String(),
 });
 export type BankLookupRow = Static<typeof BankLookupRowSchema>;
 
@@ -56,9 +51,8 @@ export const BankListPayloadSchema = Type.Object({
   page:     Type.Optional(Type.Number({ minimum: 1 })),
   pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
   sortBy:   Type.Optional(Type.Union([
-              Type.Literal("code"),
-              Type.Literal("name"),
               Type.Literal("mfo"),
+              Type.Literal("name"),
             ])),
   sortDir:  Type.Optional(SortDirSchema),
 });

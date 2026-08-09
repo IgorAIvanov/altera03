@@ -25,6 +25,8 @@ export const viewManifest = [
   { route: "catalog/nomenclature/list", moduleFile: "app/catalog/nomenclature/nomenclatureList.ts", titleKey: "nomenclature.titleMany" },
   { route: "catalog/nomenclature/edit", moduleFile: "app/catalog/nomenclature/nomenclatureEdit.ts", titleKey: "nomenclature.titleOne" },
   { route: "catalog/nomenclature/picker", moduleFile: "app/catalog/nomenclature/nomenclaturePicker.ts", titleKey: "nomenclature.titleMany" },
+  { route: "admin/numerator/list", moduleFile: "app/admin/numerator/numeratorList.ts", titleKey: "numerator.titleMany" },
+  { route: "admin/numerator/edit", moduleFile: "app/admin/numerator/numeratorEdit.ts", titleKey: "numerator.titleOne" },
   { route: "catalog/organization/list", moduleFile: "app/catalog/organization/organizationList.ts", titleKey: "organization.titleMany" },
   { route: "catalog/organization/edit", moduleFile: "app/catalog/organization/organizationEdit.ts", titleKey: "organization.titleOne" },
   { route: "catalog/organization/picker", moduleFile: "app/catalog/organization/organizationPicker.ts", titleKey: "organization.titleMany" },

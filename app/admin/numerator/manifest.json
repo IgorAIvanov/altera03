@@ -1,0 +1,15 @@
+{
+  "model": "numerator",
+  "type": "admin",
+  "schema": "app",
+  "views": {
+    "list": {
+      "module": "./numeratorList.ts",
+      "titleKey": "numerator.titleMany"
+    },
+    "edit": {
+      "module": "./numeratorEdit.ts",
+      "titleKey": "numerator.titleOne"
+    }
+  }
+}

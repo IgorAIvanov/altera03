@@ -3,6 +3,7 @@
   "type": "catalog",
   "schema": "app",
   "hierarchy": true,
+  "numbering": { "field": "code", "template": "{NNNNNN}", "name": "Номенклатура" },
   "views": {
     "list":   { "module": "./nomenclatureList.ts",   "titleKey": "nomenclature.titleMany" },
     "edit":   { "module": "./nomenclatureEdit.ts",   "titleKey": "nomenclature.titleOne" },
