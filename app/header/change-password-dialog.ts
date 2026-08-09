@@ -2,6 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
 import { changeOwnPassword } from "@client/auth/session.ts";
+import { t } from "@client/locale.ts";
 
 export const tagName = "change-password-dialog";
 
@@ -50,20 +51,20 @@ export class ChangePasswordDialog extends GlobalStyledLitElement {
   private renderForm(): TemplateResult {
     return html`
       <form class="flex flex-col gap-3" @submit=${this.submit}>
-        <h2 class="text-lg font-medium">Зміна пароля</h2>
+        <h2 class="text-lg font-medium">${t("header.passwordTitle")}</h2>
 
-        <input class="input" type="password" placeholder="Поточний пароль" .value=${this.current}
+        <input class="input" type="password" placeholder=${t("header.passwordCurrent")} .value=${this.current}
                @input=${(e: Event) => this.current = (e.target as HTMLInputElement).value} />
-        <input class="input" type="password" placeholder="Новий пароль" .value=${this.next}
+        <input class="input" type="password" placeholder=${t("header.passwordNew")} .value=${this.next}
                @input=${(e: Event) => this.next = (e.target as HTMLInputElement).value} />
-        <input class="input" type="password" placeholder="Новий пароль ще раз" .value=${this.repeat}
+        <input class="input" type="password" placeholder=${t("header.passwordRepeat")} .value=${this.repeat}
                @input=${(e: Event) => this.repeat = (e.target as HTMLInputElement).value} />
 
         ${this.error ? html`<div class="text-error text-sm">${this.error}</div>` : nothing}
 
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn" @click=${() => this.dialogEl.close()}>Скасувати</button>
-          <button class="btn btn-primary" ?disabled=${this.busy}>Зберегти</button>
+          <button type="button" class="btn" @click=${() => this.dialogEl.close()}>${t("common.cancel")}</button>
+          <button class="btn btn-primary" ?disabled=${this.busy}>${t("common.save")}</button>
         </div>
       </form>
     `;
@@ -72,10 +73,10 @@ export class ChangePasswordDialog extends GlobalStyledLitElement {
   private renderDone(): TemplateResult {
     return html`
       <div class="flex flex-col gap-3">
-        <h2 class="text-lg font-medium">Пароль змінено</h2>
-        <p class="text-sm opacity-70">Наступний вхід — уже з новим паролем.</p>
+        <h2 class="text-lg font-medium">${t("header.passwordChanged")}</h2>
+        <p class="text-sm opacity-70">${t("header.passwordChangedHint")}</p>
         <div class="flex justify-end">
-          <button class="btn btn-primary" @click=${() => this.dialogEl.close()}>Закрити</button>
+          <button class="btn btn-primary" @click=${() => this.dialogEl.close()}>${t("common.close")}</button>
         </div>
       </div>
     `;
@@ -87,7 +88,7 @@ export class ChangePasswordDialog extends GlobalStyledLitElement {
     // Єдина перевірка, яку має сенс робити тут: сервер другого поля не бачить.
     // Довжину й правильність поточного пароля перевіряє він.
     if (this.next !== this.repeat) {
-      this.error = "Новий пароль і його повтор не збігаються";
+      this.error = t("header.passwordMismatch");
       return;
     }
 

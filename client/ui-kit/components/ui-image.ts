@@ -87,7 +87,7 @@ export class UiImage extends GlobalStyledLitElement {
     if (!file) return;
 
     if (file.size > this.maxSizeMb * 1024 * 1024) {
-      this._error = t("blob.tooLarge").replace("{size}", formatFileSize(this.maxSizeMb * 1024 * 1024));
+      this._error = t("blob.tooLarge", { size: formatFileSize(this.maxSizeMb * 1024 * 1024) });
       return;
     }
 

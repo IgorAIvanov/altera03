@@ -1,9 +1,11 @@
 {
-  "app.title": "{{name}}",
+  "//": "ЗГЕНЕРОВАНО `deno task locales:build` з _locales/ поряд із кодом — не редагувати.",
+  "menu.group.catalog": "Довідники",
   "counterparty.titleOne": "Контрагент",
   "counterparty.titleMany": "Контрагенти",
   "counterparty.edrpou": "ЄДРПОУ",
   "counterparty.edrpouInvalid": "ЄДРПОУ — 8 або 10 цифр",
   "counterparty.print": "Друк картки",
-  "counterparty.saveBeforePrint": "Спершу збережіть контрагента — друк читає дані з бази"
+  "counterparty.saveBeforePrint": "Спершу збережіть контрагента — друк читає дані з бази",
+  "app.title": "{{name}}"
 }

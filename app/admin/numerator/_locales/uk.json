@@ -1,0 +1,23 @@
+{
+  "numerator.titleMany": "Нумератори",
+  "numerator.titleOne": "Нумератор",
+  "numerator.model": "Модель",
+  "numerator.template": "Шаблон",
+  "numerator.templateHint": "Плейсхолдери: {ORG} — префікс організації, {TYPE} — префікс типу документа, {YYYY}/{YY} — рік, {MM} — місяць, {NNN…} — лічильник (ширина = довжина)",
+  "numerator.period": "Період",
+  "numerator.period_none": "наскрізний",
+  "numerator.period_year": "щороку",
+  "numerator.period_month": "щомісяця",
+  "numerator.periodCatalogHint": "Період прив'язаний до дати документа — довідник нумерується наскрізно",
+  "numerator.strategy": "Стратегія",
+  "numerator.strategy_counter": "лічильник (суцільна)",
+  "numerator.strategy_sequence": "послідовність (швидка)",
+  "numerator.isEditable": "Дозволити ручний номер",
+  "numerator.states": "Лічильники по областях",
+  "numerator.scope": "Область",
+  "numerator.scopeGlobal": "(єдина)",
+  "numerator.lastValue": "Останній номер",
+  "numerator.statesEmpty": "Номери ще не видавалися",
+  "numerator.orgPrefixMissing": "Шаблон містить {ORG}, але префікс порожній в організацій: {orgs}. База такі номери прийме, але людина їх не розрізнить.",
+  "numerator.unknownStrategy": "Стратегія «{strategy}» невідома"
+}

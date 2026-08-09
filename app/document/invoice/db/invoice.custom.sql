@@ -55,7 +55,7 @@ begin
   where l.document_id = invoice_post_entries.document_id;
 
   if v_amount = 0 then
-    raise exception 'Накладна без суми — проведення неможливе';
+    raise exception '@[invoice.postNoAmount]';
   end if;
 
   perform app.doc_entry_add(

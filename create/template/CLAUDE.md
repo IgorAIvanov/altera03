@@ -45,6 +45,7 @@ deno task dev:server       # тільки backend (--watch)
 deno task dev:front        # тільки Vite
 deno task sql:gen <family>/<model>   # згенерувати CRUD-SQL ОДНІЄЇ моделі зі схеми
 deno task sql:registry     # перегенерувати app/_generated/** з manifest.json
+deno task locales:build    # зібрати app/_locales/*.json із _locales/ поряд із кодом
 deno task sql:assemble     # зібрати SQL-пакет з db/ файлів моделей
 deno task sql:publish      # опублікувати SQL у PostgreSQL
 deno task skills:sync      # оновити .claude/skills з @altera/skills
@@ -153,6 +154,7 @@ app/
     <Model>List.ts          # список        (наслідує ModelListBase)
     <Model>Edit.ts          # форма         (наслідує BaseUI)
     <Model>Picker.ts        # діалог вибору (наслідує ModelPickerBase)
+    _locales/               # рядки ЦІЄЇ моделі: en.json, uk.json
     db/
       struc.sql             # DDL таблиць
       _generated/*.crud.gen.sql   # згенерований CRUD — правити не тут
@@ -163,7 +165,9 @@ app/
   _generated/               # реєстр моделей, прив'язки TS-команд, маршрути агента, маніфест в'ю
                             #   model-registry — дані (їх читає й клієнт), ts-commands — статичні
                             #   import модулів команд, тому його імпортує ТІЛЬКИ app/server.ts
-  _locales/                 # локалізація застосунку: en.json, uk.json
+  shared/_locales/          # рядки, що не належать жодній моделі: common.*, document.*
+  _locales/                 # ЗІБРАНІ локалі — склейка всіх _locales/ дерева, віддається
+                            #   браузеру; правити тут не можна, деталі нижче
   styles/tailwind.css       # ЄДИНИЙ вхід збірки Tailwind
   main.ts                   # composition root клієнта
   server.ts                 # composition root бекенду
@@ -194,7 +198,8 @@ scripts/
 3. прибрати пункт меню з `app/admin/menu/db/data.sql` (і сам рядок з БД);
 4. `deno task sql:registry` — щоб модель зникла з реєстру.
 
-Ключі перекладу (`counterparty.*`) лежать в `app/_locales/*.json`.
+Ключі перекладу (`counterparty.*`) лежать там само, де модель, —
+`app/catalog/counterparty/_locales/*.json`, тож прибираються разом із каталогом.
 
 ## Чого не чіпати
 
@@ -202,6 +207,7 @@ scripts/
 |------|------|------------|
 | `vendor/` | вихідники фреймворку з JSR | `deno install` |
 | `app/_generated/**` | реєстр з манифестів | `deno task sql:registry` |
+| `app/_locales/*.json` | склейка `_locales/` дерева | `deno task locales:build` |
 | `app/_sqlpackage/**` | зібраний SQL | `deno task sql:assemble` |
 | `db/_generated/*.crud.gen.sql` | CRUD зі схеми | `deno task sql:gen <family>/<model>` |
 | `.claude/skills/**` | скіли з пакета | `deno task skills:sync` |
@@ -221,9 +227,11 @@ scripts/
 2. `<model>.schema.ts` — TypeBox (skill `typebox-model-schema`).
 3. UI: `<Model>List.ts` (skill `model-list-form`), `<Model>Edit.ts` (skill `model-form-root`),
    `<Model>Picker.ts` (skill `model-picker-form`).
-4. `db/struc.sql`, потім `deno task sql:gen <family>/<model>`.
-5. Додати модель у `app/sql.json` — **порядок за зовнішніми ключами**.
-6. `deno task sql:registry && deno task sql:assemble && deno task sql:publish`.
+4. `_locales/<код>.json` — рядки моделі (заголовки, підписи полів), потім
+   `deno task locales:build`. Не в `app/_locales/*.json`: це склейка, і правку там зітре.
+5. `db/struc.sql`, потім `deno task sql:gen <family>/<model>`.
+6. Додати модель у `app/sql.json` — **порядок за зовнішніми ключами**.
+7. `deno task sql:registry && deno task sql:assemble && deno task sql:publish`.
 
 Тулбар, таблицю, пагінацію, сортування, пошук руками не писати — усе це в базових класах.
 Форму, що не наслідує базовий клас, доводиться потім переписувати цілком.

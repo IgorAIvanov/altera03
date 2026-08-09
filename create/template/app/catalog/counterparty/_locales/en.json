@@ -1,0 +1,8 @@
+{
+  "counterparty.titleOne": "Counterparty",
+  "counterparty.titleMany": "Counterparties",
+  "counterparty.edrpou": "EDRPOU",
+  "counterparty.edrpouInvalid": "EDRPOU must be 8 or 10 digits",
+  "counterparty.print": "Print card",
+  "counterparty.saveBeforePrint": "Save the counterparty first — printing reads from the database"
+}

@@ -1,0 +1,15 @@
+{
+  "chartOfAccount.titleMany": "Chart of accounts",
+  "chartOfAccount.titleOne": "Account",
+  "chartOfAccount.code": "Account",
+  "chartOfAccount.accountType": "Account type",
+  "chartOfAccount.type.active": "Active",
+  "chartOfAccount.type.passive": "Passive",
+  "chartOfAccount.type.activePassive": "Active-passive",
+  "chartOfAccount.parentCode": "Parent account",
+  "chartOfAccount.isGroup": "Group (header account)",
+  "chartOfAccount.isOffBalance": "Off-balance",
+  "chartOfAccount.isCurrency": "Currency accounting",
+  "chartOfAccount.isQuantitative": "Quantitative accounting",
+  "chartOfAccount.isActive": "Active"
+}

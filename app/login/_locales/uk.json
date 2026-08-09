@@ -1,0 +1,14 @@
+{
+  "login.title": "Вхід",
+  "login.setupTitle": "Створення адміністратора",
+  "login.unavailable": "Вхід недоступний",
+  "login.retry": "Спробувати ще раз",
+  "login.login": "Логін",
+  "login.fullName": "Повне ім'я",
+  "login.password": "Пароль",
+  "login.submit": "Увійти",
+  "login.setupSubmit": "Створити й увійти",
+  "login.emptyDatabase": "База порожня. Створіть користувача, який керуватиме системою.",
+  "login.emptyDatabaseProvider": "База порожня. Перший, хто ввійде через провайдера, стане адміністратором.",
+  "login.predefined": "Увійдіть як {login} — паролем із налаштувань."
+}

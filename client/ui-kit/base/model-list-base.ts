@@ -199,7 +199,7 @@ export abstract class ModelListBase<Row extends { id: string }> extends QueryTab
       if (rows.length < this.total) {
         this.messages = [{
           type: "warn",
-          text: t("common.exportTruncated").replace("{count}", String(rows.length)),
+          text: t("common.exportTruncated", { count: rows.length }),
         }];
       }
     } finally {

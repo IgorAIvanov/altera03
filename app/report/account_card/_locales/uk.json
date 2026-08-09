@@ -1,0 +1,13 @@
+{
+  "accountCard.title": "Картка рахунку",
+  "accountCard.account": "Рахунок",
+  "accountCard.build": "Сформувати",
+  "accountCard.document": "Документ",
+  "accountCard.analytics": "Субконто",
+  "accountCard.corrAccount": "Кор.рах.",
+  "accountCard.corrAnalytics": "Субконто кор.рах.",
+  "accountCard.balance": "Сальдо",
+  "accountCard.opening": "Сальдо на початок",
+  "accountCard.turnover": "Обороти за період",
+  "accountCard.closing": "Сальдо на кінець"
+}

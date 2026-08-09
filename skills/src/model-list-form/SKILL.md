@@ -267,7 +267,7 @@ two-line text. Two helpers from `model-list-base.ts` cover the common needs, and
 
 - One subclass per model, named `<Model>List.ts`, exporting `tagName`.
 - The `Row` type is imported from `<model>.schema.ts`, never re-declared.
-- Column `title` should be a localization key; add it to `app/_locales/*.json`. Framework-wide keys (`common.code`, `common.name`, …) already ship inside `@altera/client` — do not redefine them.
+- Column `title` should be a localization key; add it to the model's own `app/<family>/<model>/_locales/<code>.json` and run `deno task locales:build`. Do **not** edit `app/_locales/*.json` — that file is the merged build output and your edit is overwritten on the next build. Framework-wide keys (`common.code`, `common.name`, …) already ship inside `@altera/client` — do not redefine them.
 - Do not duplicate toolbar/table/pagination markup into the subclass. Model-specific changes go through the documented hooks; a change every list needs belongs in `ModelListBase` itself, i.e. in the framework — copying the base class into the app is never the answer.
 - Keep `width` as CSS values, never dynamic Tailwind classes.
 

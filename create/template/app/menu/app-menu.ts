@@ -2,6 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
 import { bus } from "@client/bus/bus.ts";
+import { resolveText } from "@client/locale.ts";
 
 export const tagName = "app-menu";
 
@@ -48,11 +49,16 @@ export class AppMenu extends GlobalStyledLitElement {
     return html`<nav class="p-2 w-56 overflow-auto">${this.nodes.map((node) => this.#renderNode(node))}</nav>`;
   }
 
+  // У `node.name` лежить МАРКЕР перекладу — `@[counterparty.titleMany]`, а не
+  // готовий текст: так меню перекладається разом з усім іншим. Те саме
+  // домовлення, що для повідомлень сервера: сервер тексту не перекладає (мови
+  // користувача він не знає), він його називає. Назва без маркера — та, що
+  // вписав адміністратор руками, — показується як є.
   #renderNode(node: MenuNode): TemplateResult {
     // Тека — заголовок розділу, а не посилання.
     if (!node.route) {
       return html`
-        <div class="mt-3 mb-1 text-xs uppercase opacity-60">${node.name}</div>
+        <div class="mt-3 mb-1 text-xs uppercase opacity-60">${resolveText(node.name)}</div>
         ${node.children.map((child) => this.#renderNode(child))}
       `;
     }
@@ -60,7 +66,7 @@ export class AppMenu extends GlobalStyledLitElement {
     return html`
       <a class="block px-2 py-1 rounded cursor-pointer hover:bg-base-200"
          @click=${() => bus.emit({ type: "tab.open", route: node.route!, id: null })}>
-        ${node.name}
+        ${resolveText(node.name)}
       </a>
       ${node.children.length ? node.children.map((child) => this.#renderNode(child)) : nothing}
     `;

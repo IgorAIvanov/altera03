@@ -94,7 +94,7 @@ export class UiAttachments extends GlobalStyledLitElement {
     try {
       for (const file of files) {
         if (file.size > this.maxSizeMb * 1024 * 1024) {
-          this._error = t("blob.tooLarge").replace("{size}", formatFileSize(this.maxSizeMb * 1024 * 1024));
+          this._error = t("blob.tooLarge", { size: formatFileSize(this.maxSizeMb * 1024 * 1024) });
           continue;
         }
         await uploadBlob(file, { model: this.ownerModel, id: this.ownerId });

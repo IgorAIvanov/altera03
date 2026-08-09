@@ -1,0 +1,15 @@
+{
+  "userGroup.titleMany": "User groups",
+  "userGroup.titleOne": "User group",
+  "userGroup.memberCount": "Members",
+  "userGroup.permissionCount": "Permissions",
+  "userGroup.permissions": "Permissions",
+  "userGroup.addPermission": "Add permission",
+  "userGroup.model": "Model",
+  "userGroup.action": "Action",
+  "userGroup.allowed": "Allowed",
+  "userGroup.allModels": "all models",
+  "userGroup.menus": "Menus",
+  "userGroup.members": "Members",
+  "userGroup.addMember": "Add member…"
+}

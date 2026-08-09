@@ -44,7 +44,7 @@ export default async function setPassword(
   if (!id) return fail("id обов'язковий");
 
   if (password.length < MIN_PASSWORD_LENGTH) {
-    return fail(`Пароль має містити щонайменше ${MIN_PASSWORD_LENGTH} символів`);
+    return fail(`@[user.passwordTooShort]${JSON.stringify({ min: MIN_PASSWORD_LENGTH })}`);
   }
 
   const hash = await hashPassword(password);
@@ -57,11 +57,11 @@ export default async function setPassword(
     returning id::text as id
   `;
 
-  if (updated.length === 0) return fail("Користувача не знайдено");
+  if (updated.length === 0) return fail("@[user.notFound]");
 
   return {
     ok: true,
     data: { item: null, rows: [], options: {}, totals: {} },
-    messages: [{ type: "info", text: "Пароль встановлено" }],
+    messages: [{ type: "info", text: "@[user.passwordSet]" }],
   };
 }

@@ -1,0 +1,18 @@
+{
+  "invoice.titleMany": "Накладні",
+  "invoice.titleOne": "Накладна",
+  "invoice.number": "Номер",
+  "invoice.date": "Дата",
+  "invoice.counterparty": "Контрагент",
+  "invoice.lines": "Рядки",
+  "invoice.bank": "Банк",
+  "invoice.qty": "Кількість",
+  "invoice.qtyPositive": "Кількість має бути більшою за нуль",
+  "invoice.price": "Ціна",
+  "invoice.amount": "Сума",
+  "invoice.addLine": "Додати рядок",
+  "invoice.total": "Разом",
+  "invoice.attachments": "Вкладення",
+  "invoice.saveBeforePrint": "Спочатку збережіть документ",
+  "invoice.postNoAmount": "Накладна без суми — проведення неможливе"
+}

@@ -540,7 +540,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
         ${this.selectable && this.checked.length > 0
           ? html`
             <span class="text-muted">
-              ${t("common.checked").replace("{count}", String(this.checked.length))}
+              ${t("common.checked", { count: this.checked.length })}
             </span>
             <button class="btn btn-sm btn-ghost" @click=${() => this.clearChecked()}>
               ${t("common.clearChecked")}
@@ -767,7 +767,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
             @click=${() => goto(this.page - 1)}>‹</button>
           <span class="join-item btn btn-xs btn-disabled pointer-events-none"
             aria-live="polite"
-            aria-label=${t("common.pageOf").replace("{page}", String(this.page)).replace("{total}", String(totalPages))}>
+            aria-label=${t("common.pageOf", { page: this.page, total: totalPages })}>
             ${this.page} / ${totalPages}
           </span>
           <button class="join-item btn btn-xs" ?disabled=${this.page >= totalPages}

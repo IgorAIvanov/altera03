@@ -17,6 +17,7 @@ import { customElement, state } from "lit/decorators.js";
 // Не BaseUI: та база — для форм моделі з `$root` і схемою, а тут ні моделі,
 // ні схеми немає. Потрібні лише спільні стилі.
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
+import { t } from "@client/locale.ts";
 import {
   type AuthMethodOption,
   type BootstrapState,
@@ -122,6 +123,19 @@ export class AppLogin extends GlobalStyledLitElement {
   }
 
   /**
+   * Підставити логін у перекладений рядок, лишивши його жирним.
+   *
+   * Рядок розрізається по `{login}`, а не склеюється з двох ключів: у частин
+   * фрази немає власного сенсу, і мова, де підмет стоїть інакше, зібрала б із
+   * них нісенітницю. Плейсхолдер усередині розмітки — випадок загальний, і це
+   * найдешевший спосіб його закрити, поки `t()` не вміє підстановки сам.
+   */
+  private withLogin(text: string, login: string) {
+    const [before, after = ""] = text.split("{login}");
+    return html`${before}<b>${login}</b>${after}`;
+  }
+
+  /**
    * Стану ще немає. Досі це малювало «…» назавжди — навіть коли причина була
    * відома: помилка запису в `this.error` не мала де показатися, бо render()
    * виходив раніше. Тепер це два різні екрани: очікування і збій.
@@ -131,14 +145,14 @@ export class AppLogin extends GlobalStyledLitElement {
       <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
         <div class="card bg-base-100 shadow-xl w-full max-w-sm">
           <div class="card-body gap-4">
-            <h2 class="card-title">Вхід недоступний</h2>
+            <h2 class="card-title">${t("login.unavailable")}</h2>
             <div class="alert alert-error text-sm">${this.error}</div>
             <button
               class="btn btn-primary w-full"
               @click=${this.loadBootstrapState}
               ?disabled=${this.busy}
             >
-              ${this.busy ? "…" : "Спробувати ще раз"}
+              ${this.busy ? "…" : t("login.retry")}
             </button>
           </div>
         </div>
@@ -181,20 +195,18 @@ export class AppLogin extends GlobalStyledLitElement {
     return html`
       <form class="flex flex-col gap-4" @submit=${this.submit}>
         ${setup
-          ? html`<p class="text-sm opacity-70">
-              База порожня. Створіть користувача, який керуватиме системою.
-            </p>`
+          ? html`<p class="text-sm opacity-70">${t("login.emptyDatabase")}</p>`
           : nothing}
 
         ${this.bootstrapState?.predefinedUserAvailable
           ? html`<p class="text-sm opacity-70">
-              Увійдіть як <b>${this.bootstrapState.predefinedLogin}</b> — паролем із налаштувань.
+              ${this.withLogin(t("login.predefined"), this.bootstrapState.predefinedLogin ?? "")}
             </p>`
           : nothing}
 
         <input
           class="input input-bordered w-full"
-          placeholder="Логін"
+          placeholder=${t("login.login")}
           autocomplete="username"
           .value=${this.login}
           @input=${(e: Event) => this.login = (e.target as HTMLInputElement).value}
@@ -204,7 +216,7 @@ export class AppLogin extends GlobalStyledLitElement {
         ${setup
           ? html`<input
               class="input input-bordered w-full"
-              placeholder="Повне ім'я"
+              placeholder=${t("login.fullName")}
               .value=${this.fullName}
               @input=${(e: Event) => this.fullName = (e.target as HTMLInputElement).value}
               required
@@ -214,7 +226,7 @@ export class AppLogin extends GlobalStyledLitElement {
         <input
           class="input input-bordered w-full"
           type="password"
-          placeholder="Пароль"
+          placeholder=${t("login.password")}
           autocomplete=${setup ? "new-password" : "current-password"}
           .value=${this.password}
           @input=${(e: Event) => this.password = (e.target as HTMLInputElement).value}
@@ -222,7 +234,7 @@ export class AppLogin extends GlobalStyledLitElement {
         />
 
         <button class="btn btn-primary w-full" type="submit" ?disabled=${this.busy}>
-          ${this.busy ? "…" : setup ? "Створити й увійти" : "Увійти"}
+          ${this.busy ? "…" : setup ? t("login.setupSubmit") : t("login.submit")}
         </button>
       </form>
     `;
@@ -298,12 +310,10 @@ export class AppLogin extends GlobalStyledLitElement {
       <div class="min-h-screen flex items-center justify-center bg-base-200 p-4">
         <div class="card bg-base-100 shadow-xl w-full max-w-sm">
           <div class="card-body gap-4">
-            <h2 class="card-title">${setup ? "Створення адміністратора" : "Вхід"}</h2>
+            <h2 class="card-title">${setup ? t("login.setupTitle") : t("login.title")}</h2>
 
             ${this.isSetup && !this.hasPasswordLogin
-              ? html`<p class="text-sm opacity-70">
-                  База порожня. Перший, хто ввійде через провайдера, стане адміністратором.
-                </p>`
+              ? html`<p class="text-sm opacity-70">${t("login.emptyDatabaseProvider")}</p>`
               : nothing}
 
             ${this.hasPasswordLogin ? this.renderPasswordForm(setup) : nothing}

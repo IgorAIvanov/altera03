@@ -1,4 +1,5 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
+import { resolveText } from "@client/locale.ts";
 import { customElement, property } from "lit/decorators.js";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import { viewManifest } from "../../_generated/view-manifest.generated.ts";
@@ -293,7 +294,16 @@ export class MenuEdit extends BaseUI<MenuEditRoot> {
                       @change=${(e: Event) => this.setCode(i, (e.target as HTMLInputElement).value)} />
                   </td>
                   <td>
+                    <!-- У полі стоїть те, що лежить у базі, а там — ключ
+                         перекладу (bank.titleMany). Підказка показує, у що він
+                         розгорнеться: без неї редактор перетворюється на список
+                         кодів, у якому не впізнати власний пункт. Ключа немає
+                         (адміністратор вписав свою назву) — t() віддає той
+                         самий рядок, і підказка не з'являється.
+                         (Зворотних лапок тут бути не може — вони обривають
+                         сам html-шаблон.) -->
                     <input class="input input-sm w-full" .value=${entry.name}
+                      title=${resolveText(entry.name) !== entry.name ? resolveText(entry.name) : nothing}
                       @input=${(e: Event) => this.setEntry(i, { name: (e.target as HTMLInputElement).value })} />
                   </td>
                   <!-- Іконка вибирається сіткою: у option розмітки не буває,

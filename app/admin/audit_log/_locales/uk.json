@@ -1,0 +1,22 @@
+{
+  "auditLog.titleMany": "Журнал аудиту",
+  "auditLog.occurredAt": "Час",
+  "auditLog.user": "Користувач",
+  "auditLog.model": "Модель",
+  "auditLog.command": "Команда",
+  "auditLog.recordId": "Запис",
+  "auditLog.result": "Результат",
+  "auditLog.success": "Успіх",
+  "auditLog.failure": "Помилка",
+  "auditLog.anyModel": "Будь-яка модель",
+  "auditLog.anyResult": "Будь-який",
+  "auditLog.openRecord": "Відкрити запис",
+  "auditLog.cmd.save": "Запис",
+  "auditLog.cmd.delete": "Позначення на видалення",
+  "auditLog.cmd.undelete": "Зняття позначки",
+  "auditLog.cmd.post": "Проведення",
+  "auditLog.cmd.unpost": "Скасування проведення",
+  "auditLog.cmd.copy": "Копіювання",
+  "auditLog.cmd.moveToGroup": "Переміщення до групи",
+  "auditLog.cmd.setPassword": "Зміна пароля"
+}

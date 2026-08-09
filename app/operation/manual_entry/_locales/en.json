@@ -1,0 +1,17 @@
+{
+  "manualEntry.titleMany": "Manual entries",
+  "manualEntry.titleOne": "Manual entry",
+  "manualEntry.entries": "Postings",
+  "manualEntry.debit": "Debit",
+  "manualEntry.credit": "Credit",
+  "manualEntry.debitAnalytics": "Debit analytics",
+  "manualEntry.creditAnalytics": "Credit analytics",
+  "manualEntry.account": "Account",
+  "manualEntry.analytics": "Analytics",
+  "manualEntry.description": "Description",
+  "manualEntry.currency": "Currency",
+  "manualEntry.currencyAmount": "Cur. amount",
+  "manualEntry.quantity": "Quantity",
+  "manualEntry.lineNoAccount": "Line {line}: the debit or the credit account is empty",
+  "manualEntry.postNoEntries": "An operation with no entries cannot be posted"
+}

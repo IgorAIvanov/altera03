@@ -284,7 +284,7 @@ begin
   from app.numerator n where n.model = p_model;
 
   if v_template is null then
-    raise exception 'Нумератор моделі «%» не налаштовано', p_model
+    raise exception '@[core.numeratorMissing]%', jsonb_build_object('model', p_model)::text
       using hint = 'Виконай deno task sql:assemble && deno task sql:publish';
   end if;
 

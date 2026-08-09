@@ -1,0 +1,15 @@
+{
+  "userGroup.titleMany": "Групи користувачів",
+  "userGroup.titleOne": "Група користувачів",
+  "userGroup.memberCount": "Учасників",
+  "userGroup.permissionCount": "Прав",
+  "userGroup.permissions": "Права",
+  "userGroup.addPermission": "Додати право",
+  "userGroup.model": "Модель",
+  "userGroup.action": "Дія",
+  "userGroup.allowed": "Дозволено",
+  "userGroup.allModels": "усі моделі",
+  "userGroup.menus": "Меню",
+  "userGroup.members": "Учасники",
+  "userGroup.addMember": "Додати учасника…"
+}

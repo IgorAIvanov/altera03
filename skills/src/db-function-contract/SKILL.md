@@ -180,6 +180,40 @@ Register-oriented naming examples:
 - `messages` — user-visible messages (errors, warnings, info)
 - `meta` — technical metadata (execution time, etc.)
 
+## Messages the user reads are named, not written
+
+The server does not translate text and must not try: the user's language lives in the
+browser, not on the server. So any message a **person** will read is emitted as a marker
+that the client expands — `@[key]`, optionally followed by a JSON object of named
+substitutions:
+
+```sql
+raise exception '@[invoice.postNoAmount]';
+
+raise exception '@[core.debitAccountNotFound]%',
+  jsonb_build_object('account', p_debit_account)::text;
+
+-- a field error still binds to the form field
+raise exception '@[common.fieldRequired]' using column = 'code';
+```
+
+The JSON tail — not `|key=value` — because substituted values are user data (an account
+name, a counterparty) and any separator will eventually appear inside one.
+
+A string **without** a marker is passed through untouched, and that is the point: it is
+how a message for the user is told apart from a diagnostic for the developer.
+`'attachment_save: id обов''язковий'` should never reach a person, so do not mark it.
+Mark deliberately, only where the message really lands in a form banner or a dialog.
+
+The key must exist in the locale files, in **every** language — a named key with no
+translation reaches the screen as `invoice.postNoAmount`, which is worse than untranslated
+text. Add it to the model's own `_locales/<code>.json` and run `deno task locales:build`;
+framework-wide keys (`common.fieldRequired`, `core.*`) already ship inside `@altera/client`.
+A test scans the SQL and fails on a key that has no translation.
+
+TS-backed commands follow the same rule: `fail("@[user.notFound]")`, and with parameters
+`` fail(`@[user.passwordTooShort]${JSON.stringify({ min: 8 })}`) ``.
+
 ## Workflow
 
 1. Identify the model family before naming any functions.

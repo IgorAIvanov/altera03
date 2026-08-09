@@ -1,0 +1,9 @@
+{
+  "header.currentOrganization": "Current organization",
+  "header.chooseOrganization": "Select organization",
+  "header.language": "Interface language",
+  "header.profileSettings": "Profile settings",
+  "header.changePassword": "Change password",
+  "header.logout": "Sign out",
+  "header.loggingOut": "Signing out…"
+}

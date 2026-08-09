@@ -8,7 +8,7 @@ import { currentUser, logout } from "@client/auth/session.ts";
 // тоді @customElement не виконується й тег лишається невизначеним.
 import "./change-password-dialog.ts";
 import type { ChangePasswordDialog } from "./change-password-dialog.ts";
-import { t } from "@client/locale.ts";
+import { availableLocales, getLocale, localeName, t } from "@client/locale.ts";
 import { currentOrg, setCurrentOrg } from "@shared/current-organization.ts";
 
 @customElement("app-header")
@@ -78,8 +78,34 @@ export class AppHeader extends SignalWatcher(LitElement) {
     }
     .org-name.placeholder { opacity: 0.6; font-style: italic; }
 
-    /* Выпадающий список организаций — в стиле верхней панели */
-    .org-menu {
+    /* Мова інтерфейсу. Кнопка, а не div з @click: дія має існувати й для
+       клавіатури. Через це ж — скидання оформлення: у shadow root цього
+       компонента немає ані теми, ані Tailwind (він наслідує LitElement, а не
+       GlobalStyledLitElement), тож <button> прийшов би зі стилями браузера. */
+    .lang-wrap { position: relative; }
+
+    .lang-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 6px;
+      border: 0;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.08);
+      color: inherit;
+      font: inherit;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .lang-btn:hover { background: rgba(255, 255, 255, 0.18); }
+
+    .lang-code {
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+
+    /* Випадне меню верхньої панелі — спільне для організацій і для мови */
+    .hdr-menu {
       position: absolute;
       top: calc(100% + 4px);
       right: 0;
@@ -95,42 +121,47 @@ export class AppHeader extends SignalWatcher(LitElement) {
       padding: 2px 0;
     }
 
-    .org-menu-empty {
+    .hdr-menu-empty {
       padding: 8px 12px;
       font-size: 12px;
       opacity: 0.7;
       white-space: nowrap;
     }
     /* Відмова — не те саме, що порожній довідник, і виглядати однаково вони не мають. */
-    .org-menu-empty.error {
+    .hdr-menu-empty.error {
       color: #ffd0d0;
       opacity: 1;
       white-space: normal;
       max-width: 260px;
     }
 
-    .org-menu-item {
+    .hdr-menu-item {
       display: flex;
       align-items: center;
       gap: 8px;
+      width: 100%;
       padding: 6px 12px 6px 10px;
-      font-size: inherit;
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
       cursor: pointer;
       white-space: nowrap;
     }
-    .org-menu-item:hover { background: var(--color-secondary, #4a7ab5); }
-    .org-menu-item.active {
+    .hdr-menu-item:hover { background: var(--color-secondary, #4a7ab5); }
+    .hdr-menu-item.active {
       font-weight: 500;
       background: rgba(255, 255, 255, 0.12);
     }
 
-    .org-check {
+    .hdr-check {
       width: 14px;
       flex-shrink: 0;
       color: #9be6b4;
       opacity: 0;
     }
-    .org-menu-item.active .org-check { opacity: 1; }
+    .hdr-menu-item.active .hdr-check { opacity: 1; }
 
     /* Кнопка пользователя */
     .user-btn {
@@ -228,6 +259,8 @@ export class AppHeader extends SignalWatcher(LitElement) {
 
   @state() private open = false;
   @state() private orgOpen = false;
+  @state() private langOpen = false;
+  @state() private locales: string[] = [];
   @state() private orgs: Array<{ id: string; name: string }> = [];
   /** Чому список порожній. Порожній рядок — причини немає, справді нічого немає. */
   @state() private orgsError = "";
@@ -295,7 +328,7 @@ export class AppHeader extends SignalWatcher(LitElement) {
   }
 
   private iconCheck() {
-    return svg`<svg class="org-check" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+    return svg`<svg class="hdr-check" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
     </svg>`;
   }
@@ -353,6 +386,33 @@ export class AppHeader extends SignalWatcher(LitElement) {
     this.orgOpen = false;
   }
 
+  /** Відкрити/закрити перемикач мови; перелік читається на першому відкритті. */
+  private async toggleLangMenu() {
+    this.langOpen = !this.langOpen;
+    if (this.langOpen && this.locales.length === 0) {
+      this.locales = await availableLocales();
+    }
+  }
+
+  /**
+   * Зміна мови — з перезавантаженням сторінки, а не на місці.
+   *
+   * `t()` читає мапу перекладів, а не сигнал: уже намальовані екрани її не
+   * слухають і після `setLocale` лишилися б старою мовою до наступної
+   * перемальовки. Зробити `t()` реактивним означало б вимагати реактивного
+   * контексту скрізь, де він викликається, — включно з масивами колонок, які
+   * будуються один раз. Перезавантаження ж коштує рівно нічого: відкриті
+   * вкладки відновлюються зі сховища, а сесія живе в cookie. Той самий довід,
+   * що й у `handleLogout`.
+   */
+  private selectLocale(code: string) {
+    this.langOpen = false;
+    if (code === getLocale()) return;
+
+    localStorage.setItem("locale", code);
+    globalThis.location.reload();
+  }
+
   private async handleLogout() {
     if (this.loggingOut) return;
     this.loggingOut = true;
@@ -391,18 +451,40 @@ export class AppHeader extends SignalWatcher(LitElement) {
 
           ${this.orgOpen ? html`
             <div class="overlay" @click=${() => this.orgOpen = false}></div>
-            <div class="org-menu">
+            <div class="hdr-menu">
               ${this.orgs.length === 0
-                ? html`<div class="org-menu-empty ${this.orgsError ? "error" : ""}">
+                ? html`<div class="hdr-menu-empty ${this.orgsError ? "error" : ""}">
                     ${this.orgsError || t("common.noData")}
                   </div>`
                 : this.orgs.map(o => html`
-                  <div class="org-menu-item ${o.id === org?.id ? "active" : ""}"
+                  <button type="button" class="hdr-menu-item ${o.id === org?.id ? "active" : ""}"
                     @click=${() => this.selectOrg(o)}>
                     ${this.iconCheck()}
                     <span class="org-name">${o.name}</span>
-                  </div>
+                  </button>
                 `)}
+            </div>
+          ` : ""}
+        </div>
+
+        <div class="lang-wrap">
+          <button type="button" class="lang-btn"
+            title=${t("header.language")} aria-label=${t("header.language")}
+            @click=${this.toggleLangMenu}>
+            <span class="lang-code">${getLocale().toUpperCase()}</span>
+            <span class="chevron ${this.langOpen ? "open" : ""}">${this.iconChevron()}</span>
+          </button>
+
+          ${this.langOpen ? html`
+            <div class="overlay" @click=${() => this.langOpen = false}></div>
+            <div class="hdr-menu">
+              ${this.locales.map(code => html`
+                <button type="button" class="hdr-menu-item ${code === getLocale() ? "active" : ""}"
+                  @click=${() => this.selectLocale(code)}>
+                  ${this.iconCheck()}
+                  <span>${localeName(code)}</span>
+                </button>
+              `)}
             </div>
           ` : ""}
         </div>
@@ -422,14 +504,14 @@ export class AppHeader extends SignalWatcher(LitElement) {
             ${this.userSubtitle}
           </div>
           <div class="dropdown-item" @click=${() => this.open = false}>
-            ${this.iconSettings()} Налаштування профілю
+            ${this.iconSettings()} ${t("header.profileSettings")}
           </div>
           <div class="dropdown-item" @click=${this.openPasswordChange}>
-            ${this.iconPassword()} Змінити пароль
+            ${this.iconPassword()} ${t("header.changePassword")}
           </div>
           <div class="dropdown-divider"></div>
           <div class="dropdown-item danger" @click=${this.handleLogout}>
-            ${this.iconLogout()} ${this.loggingOut ? "Вихід…" : "Вийти"}
+            ${this.iconLogout()} ${this.loggingOut ? t("header.loggingOut") : t("header.logout")}
           </div>
         </div>
       ` : ""}

@@ -1,0 +1,7 @@
+{
+  "//": "ЗГЕНЕРОВАНО `deno task locales:build` з _locales/ поряд із кодом — не редагувати.",
+  "locales": [
+    "en",
+    "uk"
+  ]
+}

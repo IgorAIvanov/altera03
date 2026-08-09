@@ -156,9 +156,7 @@ export function periodLabel(p: Period, format: string = dateFormat.date): string
     }
     case "quarter": {
       const q = Math.floor((a.month - 1) / 3);
-      return t("period.quarterOfYear")
-        .replace("{q}", QUARTER_ROMAN[q])
-        .replace("{year}", String(a.year));
+      return t("period.quarterOfYear", { q: QUARTER_ROMAN[q], year: a.year });
     }
     case "year":
       return String(a.year);

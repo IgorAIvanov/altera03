@@ -1,0 +1,22 @@
+{
+  "auditLog.titleMany": "Audit log",
+  "auditLog.occurredAt": "Time",
+  "auditLog.user": "User",
+  "auditLog.model": "Model",
+  "auditLog.command": "Command",
+  "auditLog.recordId": "Record",
+  "auditLog.result": "Result",
+  "auditLog.success": "Success",
+  "auditLog.failure": "Failed",
+  "auditLog.anyModel": "Any model",
+  "auditLog.anyResult": "Any result",
+  "auditLog.openRecord": "Open the record",
+  "auditLog.cmd.save": "Save",
+  "auditLog.cmd.delete": "Mark for deletion",
+  "auditLog.cmd.undelete": "Unmark",
+  "auditLog.cmd.post": "Post",
+  "auditLog.cmd.unpost": "Unpost",
+  "auditLog.cmd.copy": "Copy",
+  "auditLog.cmd.moveToGroup": "Move to group",
+  "auditLog.cmd.setPassword": "Set password"
+}

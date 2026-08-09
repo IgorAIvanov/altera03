@@ -1,0 +1,17 @@
+{
+  "manualEntry.titleMany": "Операції",
+  "manualEntry.titleOne": "Операція",
+  "manualEntry.entries": "Проводки",
+  "manualEntry.debit": "Дебет",
+  "manualEntry.credit": "Кредит",
+  "manualEntry.debitAnalytics": "Субконто Дт",
+  "manualEntry.creditAnalytics": "Субконто Кт",
+  "manualEntry.account": "Рахунок",
+  "manualEntry.analytics": "Субконто",
+  "manualEntry.description": "Зміст",
+  "manualEntry.currency": "Валюта",
+  "manualEntry.currencyAmount": "Сума вал.",
+  "manualEntry.quantity": "Кількість",
+  "manualEntry.lineNoAccount": "Рядок {line}: не заповнено рахунок дебету або кредиту",
+  "manualEntry.postNoEntries": "Операція без проводок — проведення неможливе"
+}

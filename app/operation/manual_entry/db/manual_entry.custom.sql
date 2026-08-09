@@ -44,7 +44,7 @@ begin
     order by l.line_no, l.id
   loop
     if v_line.debit_account is null or v_line.credit_account is null then
-      raise exception 'Рядок %: не заповнено рахунок дебету або кредиту', v_line.line_no;
+      raise exception '@[manualEntry.lineNoAccount]%', jsonb_build_object('line', v_line.line_no)::text;
     end if;
 
     -- Валюту/кількість/обов'язковість субконто перевіряє doc_entry_add за
@@ -66,7 +66,7 @@ begin
   end loop;
 
   if v_count = 0 then
-    raise exception 'Операція без проводок — проведення неможливе';
+    raise exception '@[manualEntry.postNoEntries]';
   end if;
 end;
 $$;

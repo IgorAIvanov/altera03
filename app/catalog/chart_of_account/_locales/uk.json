@@ -1,0 +1,15 @@
+{
+  "chartOfAccount.titleMany": "План рахунків",
+  "chartOfAccount.titleOne": "Рахунок",
+  "chartOfAccount.code": "Рахунок",
+  "chartOfAccount.accountType": "Вид рахунку",
+  "chartOfAccount.type.active": "Активний",
+  "chartOfAccount.type.passive": "Пасивний",
+  "chartOfAccount.type.activePassive": "Активно-пасивний",
+  "chartOfAccount.parentCode": "Належить рахунку",
+  "chartOfAccount.isGroup": "Група (рахунок вищого рівня)",
+  "chartOfAccount.isOffBalance": "Позабалансовий",
+  "chartOfAccount.isCurrency": "Валютний облік",
+  "chartOfAccount.isQuantitative": "Кількісний облік",
+  "chartOfAccount.isActive": "Активний"
+}

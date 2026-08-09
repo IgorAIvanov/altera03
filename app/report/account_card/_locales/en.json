@@ -1,0 +1,13 @@
+{
+  "accountCard.title": "Account card",
+  "accountCard.account": "Account",
+  "accountCard.build": "Run",
+  "accountCard.document": "Document",
+  "accountCard.analytics": "Analytics",
+  "accountCard.corrAccount": "Corr.acc.",
+  "accountCard.corrAnalytics": "Corr. analytics",
+  "accountCard.balance": "Balance",
+  "accountCard.opening": "Opening balance",
+  "accountCard.turnover": "Period turnover",
+  "accountCard.closing": "Closing balance"
+}

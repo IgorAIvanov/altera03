@@ -173,7 +173,7 @@ Nothing in the picker subclass changes: `multiple` arrives as a property from
 
 - One subclass per model, named `<Model>Picker.ts`, exporting `tagName`.
 - The `Row` type is the model's `LookupRow`, imported from `<model>.schema.ts`.
-- Column `title` should be a localization key; add it to the locale JSON files.
+- Column `title` should be a localization key; add it to the model's own `app/<family>/<model>/_locales/<code>.json` and run `deno task locales:build`. `app/_locales/*.json` is the merged build output — editing it directly is lost on the next build.
 - The SQL `lookup` function must return `{ rows: [{ id, <labelField>, … }] }` — see [db-function-contract](../db-function-contract/SKILL.md).
 - Do not duplicate search/table/footer markup — change `ModelPickerBase` for all pickers, or accept the defaults.
 - Keep `width` as CSS values, never dynamic Tailwind classes.

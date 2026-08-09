@@ -1,9 +1,11 @@
 {
-  "app.title": "{{name}}",
+  "//": "ЗГЕНЕРОВАНО `deno task locales:build` з _locales/ поряд із кодом — не редагувати.",
+  "menu.group.catalog": "Catalogues",
   "counterparty.titleOne": "Counterparty",
   "counterparty.titleMany": "Counterparties",
   "counterparty.edrpou": "EDRPOU",
   "counterparty.edrpouInvalid": "EDRPOU must be 8 or 10 digits",
   "counterparty.print": "Print card",
-  "counterparty.saveBeforePrint": "Save the counterparty first — printing reads from the database"
+  "counterparty.saveBeforePrint": "Save the counterparty first — printing reads from the database",
+  "app.title": "{{name}}"
 }

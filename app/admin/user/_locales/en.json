@@ -1,0 +1,23 @@
+{
+  "user.titleMany": "Users",
+  "user.titleOne": "User",
+  "user.login": "Login",
+  "user.fullName": "Full name",
+  "user.groupCount": "Groups",
+  "user.groups": "Groups",
+  "user.password": "Password",
+  "user.passwordNotSet": "No password set - this user cannot sign in",
+  "user.noPassword": "no password",
+  "user.setPassword": "Set password",
+  "user.passwordPlaceholder": "at least 8 characters",
+  "user.passwordAfterSave": "Password can be set after the user is saved",
+  "user.identities": "External logins",
+  "user.identityAdd": "Add link",
+  "user.identityProvider": "Provider",
+  "user.identityExternalId": "External id",
+  "user.identityLastLogin": "Last login",
+  "user.identitiesEmpty": "No links — this user cannot sign in through an external provider",
+  "user.passwordTooShort": "The password must be at least {min} characters long",
+  "user.notFound": "User not found",
+  "user.passwordSet": "Password set"
+}

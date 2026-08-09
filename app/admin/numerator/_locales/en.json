@@ -1,0 +1,23 @@
+{
+  "numerator.titleMany": "Numerators",
+  "numerator.titleOne": "Numerator",
+  "numerator.model": "Model",
+  "numerator.template": "Template",
+  "numerator.templateHint": "Placeholders: {ORG} — organization prefix, {TYPE} — document type prefix, {YYYY}/{YY} — year, {MM} — month, {NNN…} — counter (width = length)",
+  "numerator.period": "Period",
+  "numerator.period_none": "continuous",
+  "numerator.period_year": "yearly",
+  "numerator.period_month": "monthly",
+  "numerator.periodCatalogHint": "The period is tied to the document date — catalogs are numbered continuously",
+  "numerator.strategy": "Strategy",
+  "numerator.strategy_counter": "counter (gapless)",
+  "numerator.strategy_sequence": "sequence (fast)",
+  "numerator.isEditable": "Allow manual number",
+  "numerator.states": "Counters by scope",
+  "numerator.scope": "Scope",
+  "numerator.scopeGlobal": "(single)",
+  "numerator.lastValue": "Last value",
+  "numerator.statesEmpty": "No numbers issued yet",
+  "numerator.orgPrefixMissing": "The template contains {ORG}, but the prefix is empty for these organizations: {orgs}. The database will accept such numbers, but a person will not tell them apart.",
+  "numerator.unknownStrategy": "Unknown strategy «{strategy}»"
+}

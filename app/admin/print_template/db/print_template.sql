@@ -139,13 +139,13 @@ declare
   v_schema       jsonb   := coalesce(v_item->'schema', '{}'::jsonb);
 begin
   if v_code is null then
-    raise exception 'code обов''язковий';
+    raise exception '@[common.fieldRequired]' using column = 'code';
   end if;
   if v_name is null then
-    raise exception 'name обов''язковий';
+    raise exception '@[common.fieldRequired]' using column = 'name';
   end if;
   if v_target_model is null then
-    raise exception 'targetModel обов''язковий';
+    raise exception '@[common.fieldRequired]' using column = 'target_model';
   end if;
 
   -- Шаблон за замовчуванням єдиний на модель: знімаємо прапорець з решти ДО

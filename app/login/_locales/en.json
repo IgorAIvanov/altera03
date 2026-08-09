@@ -1,0 +1,14 @@
+{
+  "login.title": "Sign in",
+  "login.setupTitle": "Create administrator",
+  "login.unavailable": "Sign-in unavailable",
+  "login.retry": "Try again",
+  "login.login": "Login",
+  "login.fullName": "Full name",
+  "login.password": "Password",
+  "login.submit": "Sign in",
+  "login.setupSubmit": "Create and sign in",
+  "login.emptyDatabase": "The database is empty. Create the user who will run the system.",
+  "login.emptyDatabaseProvider": "The database is empty. The first person to sign in through a provider becomes the administrator.",
+  "login.predefined": "Sign in as {login} using the password from the settings."
+}

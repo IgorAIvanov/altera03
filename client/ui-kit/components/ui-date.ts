@@ -1,7 +1,7 @@
 import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
-import { getLocale } from "../../locale.ts";
+import { getLocale, t } from "../../locale.ts";
 import { placePopover } from "../popover.ts";
 import {
   dateFormat,
@@ -328,7 +328,7 @@ export class UiDate extends GlobalStyledLitElement {
       <div class="flex justify-between mt-2 pt-2 border-t border-base-300">
         <button type="button" class="btn btn-ghost btn-xs"
           @click=${() => { const p = toParts(todayIso())!; this._pick(p.year, p.month, p.day); }}>
-          ${getLocale() === "uk" ? "Сьогодні" : "Today"}
+          ${t("common.today")}
         </button>
         ${this.showClear
           ? html`<button type="button" class="btn btn-ghost btn-xs text-error"

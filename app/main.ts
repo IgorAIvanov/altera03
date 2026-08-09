@@ -10,7 +10,7 @@ import { initDataService } from "@client/data/data-service.ts";
 import { ServerUnavailableError } from "@client/data/api.ts";
 import { mustChangePassword, restoreSession } from "@client/auth/session.ts";
 import { dropLegacyKey } from "@client/shared/user-storage.ts";
-import { setLocale, type Locale } from "@client/locale.ts";
+import { setLocale } from "@client/locale.ts";
 import { hydrateCurrentOrg } from "@shared/current-organization.ts";
 
 // Компоненти оболонки застосунку — визначають кастомні елементи (@customElement).
@@ -29,8 +29,10 @@ initDataService();
 dropLegacyKey("altera.open-tabs");
 dropLegacyKey("altera.current-organization");
 
-const savedLocale = (localStorage.getItem("locale") ?? "uk") as Locale;
-await setLocale(savedLocale);
+// Мову називає застосунок, а не фреймворк: щоб додати ще одну, досить покласти
+// `app/_locales/<код>.json` — переліку, який треба десь оголосити, немає.
+// Ключі, яких у цій мові немає, беруться з англійської (див. FALLBACK_LOCALE).
+await setLocale(localStorage.getItem("locale") ?? "uk");
 
 /**
  * Оболонка піднімається лише після того, як з'ясувалося, що сесія є.

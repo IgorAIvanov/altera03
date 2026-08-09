@@ -8,6 +8,20 @@
 -- не потрапили — `catalog/nomenclature/list` і `admin/settings/main`: таких
 -- в'ю немає у view-manifest, тобто це були мертві пункти. Додано
 -- `report/document_movements/list`, який існує, але в моці був відсутній.
+--
+-- У `name` лежить МАРКЕР перекладу `@[ключ]`, а не готовий текст: інакше меню
+-- лишалося б мовою сіду, скільки б мов застосунок не знав. Це те саме
+-- домовлення, що для повідомлень сервера, — сервер тексту не перекладає, він
+-- його називає. Маркер, а не голий ключ: так намір оголошений, і назва,
+-- вписана адміністратором («Наші контрагенти»), не може випадково збігтися з
+-- ключем. Ціна одна й видима: у редакторі меню в полі «Назва» стоїть маркер;
+-- що з нього вийде, показує підказка поля.
+--
+-- Ключ листа — це `<model>.titleMany` самої моделі, а не власний ключ меню:
+-- пункт «Банки» і заголовок списку банків — те саме слово, і два ключі на
+-- нього розійшлися б мовчки. Заразом ключ їде разом із моделлю: прибрали
+-- модель — прибрався й переклад. Свої ключі (`menu.group.*`) мають лише корені,
+-- бо за ними моделі немає.
 
 insert into app.menu (code, name, is_active)
 values ('default', 'Основне меню', true)
@@ -18,10 +32,10 @@ insert into app.menu_item (menu_id, parent_id, code, name, icon_key, route_path,
 select m.id, null, v.code, v.name, v.icon_key, v.route_path, v.sort_order
 from app.menu m
 cross join (values
-  ('catalog',        'Довідники',       'catalog',  null::varchar(500), 10),
-  ('document',       'Документи',       'document', null,               20),
-  ('report',         'Звіти',           'report',   null,               30),
-  ('administration', 'Адміністрування', 'settings', null,               40)
+  ('catalog',        '@[menu.group.catalog]',        'catalog',  null::varchar(500), 10),
+  ('document',       '@[menu.group.document]',       'document', null,               20),
+  ('report',         '@[menu.group.report]',         'report',   null,               30),
+  ('administration', '@[menu.group.administration]', 'settings', null,               40)
 ) as v(code, name, icon_key, route_path, sort_order)
 where m.code = 'default'
 on conflict do nothing;
@@ -30,23 +44,23 @@ on conflict do nothing;
 insert into app.menu_item (menu_id, parent_id, code, name, icon_key, route_path, sort_order)
 select p.menu_id, p.id, v.code, v.name, v.icon_key, v.route_path, v.sort_order
 from (values
-  ('catalog',        'organization',       'Організації',                    'organization', 'catalog/organization/list',       10),
-  ('catalog',        'chart_of_account',   'План рахунків',                  'account',      'catalog/chart_of_account/list',   20),
-  ('catalog',        'currency',           'Валюти',                         'catalog',      'catalog/currency/list',           30),
-  ('catalog',        'bank',               'Банки',                          'bank',         'catalog/bank/list',               40),
-  ('catalog',        'counterparty',       'Контрагенти',                    'counterparty', 'catalog/counterparty/list',       50),
-  ('catalog',        'nomenclature',       'Номенклатура',                   'catalog',      'catalog/nomenclature/list',       60),
-  ('document',       'manual_entry',       'Операції (бухгалтерські)',       'document',     'operation/manual_entry/list',     10),
-  ('document',       'invoice',            'Рахунки',                        'invoice',      'document/invoice/list',           20),
-  ('report',         'turnover_balance',   'Оборотно-сальдова',              'balance',      'report/turnover_balance/list',    10),
-  ('report',         'account_card',       'Картка рахунку',                 'report',       'report/account_card/list',        20),
-  ('report',         'document_movements', 'Рухи документа',                 'report',       'report/document_movements/list',  30),
-  ('administration', 'print_template',     'Шаблони друку',                  'print',        'admin/print_template/list',       10),
-  ('administration', 'numerator',          'Нумератори',                     'settings',     'admin/numerator/list',            15),
-  ('administration', 'menu',               'Меню',                           'settings',     'admin/menu/list',                 20),
-  ('administration', 'user',               'Користувачі',                    'counterparty', 'admin/user/list',                 30),
-  ('administration', 'user_group',         'Групи користувачів',             'counterparty', 'admin/user_group/list',           40),
-  ('administration', 'audit_log',          'Журнал аудиту',                  'settings',     'admin/audit_log/list',            50)
+  ('catalog',        'organization',       '@[organization.titleMany]',         'organization', 'catalog/organization/list',       10),
+  ('catalog',        'chart_of_account',   '@[chartOfAccount.titleMany]',       'account',      'catalog/chart_of_account/list',   20),
+  ('catalog',        'currency',           '@[currency.titleMany]',             'catalog',      'catalog/currency/list',           30),
+  ('catalog',        'bank',               '@[bank.titleMany]',                 'bank',         'catalog/bank/list',               40),
+  ('catalog',        'counterparty',       '@[counterparty.titleMany]',         'counterparty', 'catalog/counterparty/list',       50),
+  ('catalog',        'nomenclature',       '@[nomenclature.titleMany]',         'catalog',      'catalog/nomenclature/list',       60),
+  ('document',       'manual_entry',       '@[manualEntry.titleMany]',          'document',     'operation/manual_entry/list',     10),
+  ('document',       'invoice',            '@[invoice.titleMany]',              'invoice',      'document/invoice/list',           20),
+  ('report',         'turnover_balance',   '@[turnoverBalance.title]',          'balance',      'report/turnover_balance/list',    10),
+  ('report',         'account_card',       '@[accountCard.title]',              'report',       'report/account_card/list',        20),
+  ('report',         'document_movements', '@[documentMovements.title]',        'report',       'report/document_movements/list',  30),
+  ('administration', 'print_template',     '@[printTemplate.titleMany]',        'print',        'admin/print_template/list',       10),
+  ('administration', 'numerator',          '@[numerator.titleMany]',            'settings',     'admin/numerator/list',            15),
+  ('administration', 'menu',               '@[menu.titleMany]',                 'settings',     'admin/menu/list',                 20),
+  ('administration', 'user',               '@[user.titleMany]',                 'counterparty', 'admin/user/list',                 30),
+  ('administration', 'user_group',         '@[userGroup.titleMany]',            'counterparty', 'admin/user_group/list',           40),
+  ('administration', 'audit_log',          '@[auditLog.titleMany]',             'settings',     'admin/audit_log/list',            50)
 ) as v(parent_code, code, name, icon_key, route_path, sort_order)
 join app.menu m      on m.code = 'default'
 join app.menu_item p on p.menu_id = m.id and p.parent_id is null and p.code = v.parent_code

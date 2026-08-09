@@ -1,6 +1,7 @@
 import { LitElement, html, css, svg, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "@client/bus/bus.ts";
+import { resolveText, t } from "@client/locale.ts";
 import { menuIcon } from "./icons.ts";
 import type { MenuItem, MenuRow } from "./menu.types.ts";
 
@@ -228,7 +229,13 @@ export class AppMenu extends LitElement {
     for (const row of rows) {
       byId.set(row.id, {
         id: row.id,
-        label: row.name,
+        // У базі лежить МАРКЕР перекладу — `@[bank.titleMany]`, а не готовий
+        // текст: інакше меню лишалося б мовою сіду, хоч би скільки мов
+        // застосунок знав. Те саме домовлення, що для повідомлень сервера:
+        // сервер тексту не перекладає (мови користувача він не знає), він його
+        // називає. Назва без маркера — те, що вписав адміністратор руками, — іде
+        // на екран недоторканою.
+        label: resolveText(row.name),
         icon: menuIcon(row.icon),
         route: row.route ?? undefined,
       });
@@ -359,7 +366,7 @@ export class AppMenu extends LitElement {
   override render() {
     return html`
       <div class="toggle">
-        <div class="toggle-btn" @click=${this.toggle} title="${this.collapsed ? "Розгорнути" : "Згорнути"}">
+        <div class="toggle-btn" @click=${this.toggle} title=${this.collapsed ? t("nav.expand") : t("nav.collapse")}>
           ${this.iconCollapse(this.collapsed)}
         </div>
       </div>

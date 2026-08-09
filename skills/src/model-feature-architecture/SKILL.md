@@ -24,7 +24,7 @@ Target structure:
 - DB SQL source for model functions also stays with the model
 - backend only calls published PostgreSQL functions
 - backend generic model runtime lives separately from model UI folders
-- shared frontend localization infrastructure should live outside the model folder, for example under app/i18n/
+- translation strings belong to the model too: `app/<family>/<model>/_locales/<code>.json` holds every key the model's screens use. `app/_locales/*.json` is the merged build output (`deno task locales:build`) — never edit it by hand, the next build overwrites it. Keys that genuinely belong to no single model (`common.*`, `document.*`) go to `app/shared/_locales/`. Framework-wide keys already ship inside `@altera/client`; do not redefine them.
 
 Recommended model contents:
 - manifest.json
@@ -37,6 +37,7 @@ Recommended model contents:
 - optional <Model>PickerDialog.ts when picker and nested create flow need one host component
 - optional <model>.api.ts when the feature has non-standard frontend transport or extra model-specific commands
 - <model>.schema.ts — the TypeBox single source of truth for item, row, lookup, payload, and response shapes. Define it with the [typebox-model-schema](../typebox-model-schema/SKILL.md) skill. Do not hand-write parallel `<model>.types.ts` interfaces.
+- _locales/<code>.json — one file per language, holding the model's own keys; run `deno task locales:build` after editing
 - db/struc.sql
 - db/migration.sql
 - db/data.sql

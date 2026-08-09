@@ -1,0 +1,23 @@
+{
+  "user.titleMany": "Користувачі",
+  "user.titleOne": "Користувач",
+  "user.login": "Логін",
+  "user.fullName": "Повне ім'я",
+  "user.groupCount": "Груп",
+  "user.groups": "Групи",
+  "user.password": "Пароль",
+  "user.passwordNotSet": "Пароль не встановлено — увійти під цим користувачем неможливо",
+  "user.noPassword": "без пароля",
+  "user.setPassword": "Встановити пароль",
+  "user.passwordPlaceholder": "щонайменше 8 символів",
+  "user.passwordAfterSave": "Пароль можна встановити після збереження користувача",
+  "user.identities": "Зовнішні входи",
+  "user.identityAdd": "Додати зв'язку",
+  "user.identityProvider": "Провайдер",
+  "user.identityExternalId": "Зовнішній ідентифікатор",
+  "user.identityLastLogin": "Останній вхід",
+  "user.identitiesEmpty": "Зв'язок немає — увійти через зовнішнього провайдера цей користувач не зможе",
+  "user.passwordTooShort": "Пароль має містити щонайменше {min} символів",
+  "user.notFound": "Користувача не знайдено",
+  "user.passwordSet": "Пароль встановлено"
+}

@@ -1,0 +1,9 @@
+{
+  "header.currentOrganization": "Поточна організація",
+  "header.chooseOrganization": "Оберіть організацію",
+  "header.language": "Мова інтерфейсу",
+  "header.profileSettings": "Налаштування профілю",
+  "header.changePassword": "Змінити пароль",
+  "header.logout": "Вийти",
+  "header.loggingOut": "Вихід…"
+}

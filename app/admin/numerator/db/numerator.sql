@@ -139,8 +139,7 @@ begin
     ),
     'messages', case when v_warn is null then '[]'::jsonb else jsonb_build_array(jsonb_build_object(
       'type', 'warning',
-      'text', 'Шаблон містить {ORG}, але префікс порожній в організацій: ' || v_warn ||
-              '. База такі номери прийме, але людина їх не розрізнить.'
+      'text', '@[numerator.orgPrefixMissing]' || jsonb_build_object('orgs', v_warn)::text
     )) end,
     'meta', '{}'::jsonb
   );
@@ -166,13 +165,13 @@ begin
   end if;
 
   if nullif(trim(coalesce(v_item->>'name', '')), '') is null then
-    raise exception 'name обов''язковий' using column = 'name';
+    raise exception '@[common.fieldRequired]' using column = 'name';
   end if;
   if nullif(trim(coalesce(v_item->>'template', '')), '') is null then
-    raise exception 'template обов''язковий' using column = 'template';
+    raise exception '@[common.fieldRequired]' using column = 'template';
   end if;
   if v_strategy not in ('counter', 'sequence') then
-    raise exception 'Стратегія «%» невідома', v_strategy
+    raise exception '@[numerator.unknownStrategy]%', jsonb_build_object('strategy', v_strategy)::text
       using hint = 'Доступні: counter, sequence', column = 'strategy';
   end if;
 

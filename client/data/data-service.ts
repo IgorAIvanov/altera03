@@ -1,10 +1,39 @@
 import { bus } from "../bus/bus.ts";
 import type { DataLoadMessage, DataSaveMessage, DialogIcon } from "../bus/bus.types.ts";
+import { resolveText, t } from "../locale.ts";
 import { apiFetch, type EnvelopeMessage, readEnvelope } from "./api.ts";
 
 /** Текст повідомлення конверта: воно буває голим рядком і об'єктом. */
 function messageText(message: EnvelopeMessage): string {
   return typeof message === "string" ? message : String(message.text ?? "");
+}
+
+/**
+ * Розгорнути маркери перекладу в повідомленнях конверта.
+ *
+ * Тут, а не у формі, і з тієї ж причини, що й перехоплення `modal`: це єдина
+ * точка, через яку проходять УСІ команди моделей. Повідомлення без маркера
+ * лишається як є — тобто діагностика для розробника («attachment_save: id
+ * обов'язковий») крізь цю функцію проходить недоторканою, і саме так її й
+ * відрізняють від тексту, призначеного користувачеві.
+ *
+ * Тільки `messages[]`, а не весь payload: обхід усього конверта коштував би
+ * рекурсії на кожній відповіді, а головне — тоді контрагент, названий
+ * «@[щось]», став би ключем. Поля даних розгортає той екран, який знає, що
+ * поле службове (так робить меню).
+ */
+function resolveMessages<T extends { messages?: EnvelopeMessage[] }>(envelope: T): T {
+  const messages = envelope.messages;
+  if (!messages?.length) return envelope;
+
+  return {
+    ...envelope,
+    messages: messages.map((message) =>
+      typeof message === "string"
+        ? resolveText(message)
+        : { ...message, text: resolveText(String(message.text ?? "")) }
+    ),
+  };
 }
 
 /**
@@ -47,13 +76,16 @@ async function callApi(model: string, command: string, payload: unknown): Promis
     // `API error 503: bank/list` замість неї — рівно та мовчанка, з якої
     // доводилося лізти в консоль. Розбір ще й ловить відповідь не від нашого
     // сервера (сторінку помилки проксі) і піднімає екран «сервера немає».
-    const envelope = await readEnvelope(res);
+    // Маркери розгортаємо ДО всього іншого: далі текст іде і у виняток, і у
+    // модальне вікно, і в банер форми — розгортати в трьох місцях означало б
+    // забути в одному.
+    const envelope = resolveMessages(await readEnvelope(res));
     if (!res.ok && !envelope.ok) {
       // Саме messageText, а не `messages[0]`: повідомлення буває об'єктом, і
       // тоді в текст помилки їхало б «[object Object]».
       const first = envelope.messages?.[0];
       throw new Error(
-        (first && messageText(first)) || `Помилка ${res.status}: ${model}/${command}`,
+        (first && messageText(first)) || t("common.requestFailed", { status: res.status }),
       );
     }
 

@@ -431,7 +431,9 @@ begin
       'messages', jsonb_build_array(jsonb_build_object(
         'type', 'info',
         'modal', true,
-        'text', 'Користувач має пов''язані документи — його деактивовано, а не видалено'
+        -- Маркер перекладу: сервер мови користувача не знає, тому текст лише
+        -- називає — розгортає його клієнт (client/locale.ts, resolveText).
+        'text', '@[core.userDeactivatedNotDeleted]'
       ))
     );
   end if;

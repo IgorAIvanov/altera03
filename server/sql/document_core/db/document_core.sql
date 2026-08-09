@@ -125,8 +125,8 @@ begin
 
     if v_id is null then
       if cfg.is_required then
-        raise exception 'Не заповнено субконто «%» рахунку % (%)',
-          cfg.dimension_name, p_account, p_side;
+        raise exception '@[core.subcontoRequired]%',
+          jsonb_build_object('dimension', cfg.dimension_name, 'account', p_account, 'side', p_side)::text;
       end if;
       continue;
     end if;
@@ -184,11 +184,11 @@ begin
   where id = p_document_id;
 
   if not found then
-    raise exception 'Документ % не знайдено', p_document_id;
+    raise exception '@[core.documentNotFound]%', jsonb_build_object('id', p_document_id)::text;
   end if;
 
   if v_doc.is_deleted then
-    raise exception 'Документ % позначено на видалення — проведення неможливе', p_document_id;
+    raise exception '@[core.documentDeleted]%', jsonb_build_object('id', p_document_id)::text;
   end if;
 
   delete from app.journal_entry where document_id = p_document_id;
@@ -229,23 +229,23 @@ declare
   v_quantity        numeric;
 begin
   if p_amount is null or p_amount = 0 then
-    raise exception 'Проводка % документа %: нульова сума', p_line_no, p_document_id;
+    raise exception '@[core.entryZeroAmount]%', jsonb_build_object('line', p_line_no, 'document', p_document_id)::text;
   end if;
 
   select is_group, is_currency, is_quantitative into v_debit
   from app.chart_of_account where code = p_debit_account;
   if v_debit is null then
-    raise exception 'Рахунок дебету «%» не знайдено', p_debit_account;
+    raise exception '@[core.debitAccountNotFound]%', jsonb_build_object('account', p_debit_account)::text;
   elsif v_debit.is_group then
-    raise exception 'Рахунок дебету «%» — група, проводка неможлива', p_debit_account;
+    raise exception '@[core.debitAccountIsGroup]%', jsonb_build_object('account', p_debit_account)::text;
   end if;
 
   select is_group, is_currency, is_quantitative into v_credit
   from app.chart_of_account where code = p_credit_account;
   if v_credit is null then
-    raise exception 'Рахунок кредиту «%» не знайдено', p_credit_account;
+    raise exception '@[core.creditAccountNotFound]%', jsonb_build_object('account', p_credit_account)::text;
   elsif v_credit.is_group then
-    raise exception 'Рахунок кредиту «%» — група, проводка неможлива', p_credit_account;
+    raise exception '@[core.creditAccountIsGroup]%', jsonb_build_object('account', p_credit_account)::text;
   end if;
 
   v_needs_currency := v_debit.is_currency or v_credit.is_currency;
@@ -253,7 +253,7 @@ begin
 
   if v_needs_currency then
     if p_currency_id is null or p_currency_amount is null then
-      raise exception 'Проводка %: валютний рахунок вимагає валюту й суму у валюті', p_line_no;
+      raise exception '@[core.entryNeedsCurrency]%', jsonb_build_object('line', p_line_no)::text;
     end if;
     v_currency_id := p_currency_id;
     v_currency_amount := p_currency_amount;
@@ -261,7 +261,7 @@ begin
 
   if v_needs_quantity then
     if p_quantity is null then
-      raise exception 'Проводка %: кількісний рахунок вимагає кількість', p_line_no;
+      raise exception '@[core.entryNeedsQuantity]%', jsonb_build_object('line', p_line_no)::text;
     end if;
     v_quantity := p_quantity;
   end if;
