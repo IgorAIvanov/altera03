@@ -396,11 +396,20 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
     // рядком, а унікальність триматися на індексі по даті документа.
     await t.step("нумератор: період року при номері без року", async () => {
       const before = await numeratorSnapshot("invoice");
-      // Контрагента проба теж заводить, тобто витрачає ЩЕ ОДИН лічильник —
-      // повернути треба обидва, інакше кожен прогін зсуває коди контрагентів.
+      // Організацію й контрагента проба заводить СВОЇХ, а не бере перших-ліпших
+      // із бази. Не з чистоти: у CI база порожня (див. .github/workflows/ci.yml),
+      // і проба, що спирається на чужі рядки, там просто не має за що взятися.
+      // Тому й лічильників на відновлення троє — кожен заведений запис витрачає
+      // свій, а лишити їх зрушеними означає зсунути коди реальних записів.
       const beforeParty = await numeratorSnapshot("counterparty");
-      const orgs = await client.model("organization", "lookup", { pageSize: 1 });
-      const org = (orgs.body.data.rows as { id: string }[])[0];
+      const beforeOrg = await numeratorSnapshot("organization");
+
+      // Префікс — щоб {ORG} у шаблоні номера був не порожній: проба перевіряє
+      // саме той вигляд номера, який отримає застосунок.
+      const organization = await client.model("organization", "save", {
+        item: { name: "Smoke період організація", prefix: "SMK" },
+      });
+      const org = organization.body.data.item as { id: string } | null;
       assertExists(org);
 
       const party = await client.model("counterparty", "save", {
@@ -465,10 +474,13 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         );
       } finally {
         // Шапка володіє id — рядки документа й проводки йдуть каскадом.
+        // Організація йде ПІСЛЯ документів: на неї посилається app.document.
         for (const id of docs) await purge("app.document", id);
         await purge("app.counterparty", partyRow.id);
+        await purge("app.organization", org.id);
         await numeratorRestore("invoice", before);
         await numeratorRestore("counterparty", beforeParty);
+        await numeratorRestore("organization", beforeOrg);
       }
     });
 
