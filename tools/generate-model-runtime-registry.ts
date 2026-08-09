@@ -26,12 +26,12 @@ type ManifestRecord = {
   type?: string;
   schema?: string;
   /**
-   * Політика аудиту моделі. `true` пише всі команди, об'єкт — лише перелічені;
-   * відсутність блоку не створює записів аудиту.
+   * Застарілий блок політики аудиту. Більше не читається: рівень журналу — це
+   * налаштування установки (`app.audit_setting`), яке правлять на екрані
+   * `admin/audit_setting`, а не властивість рішення. Лишився в типі, щоб
+   * генератор міг сказати про нього вголос, а не мовчки проковтнути.
    */
-  audit?: boolean | {
-    commands?: string[];
-  };
+  audit?: unknown;
   /**
    * Друковані форми моделі. Сам блок читає `sql:assemble` (сеє шаблони в БД);
    * тут його наявність — ознака «модель друкується», з якої виводиться
@@ -118,20 +118,9 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
 
     const modelTypeLine = manifest.type ? `    type: ${JSON.stringify(manifest.type)}` : null;
     const modelSchemaLine = manifest.schema ? `    schema: ${JSON.stringify(manifest.schema)}` : null;
-    const audit = manifest.audit;
-    // `false` теж переноситься, а не відкидається як «нічого не оголошено»:
-    // умовчання рантайму — писати змінювальні команди, тож проковтнутий `false`
-    // означав би журнал там, де його свідомо вимкнули. Мовчазна відмова
-    // виконати оголошене — найгірший з можливих наслідків.
-    const modelAuditLine = typeof audit === "boolean"
-      ? `    audit: ${audit}`
-      : audit && Array.isArray(audit.commands)
-      ? `    audit: { commands: ${JSON.stringify(audit.commands)} }`
-      : null;
     const bodyParts = [
       modelTypeLine,
       modelSchemaLine,
-      modelAuditLine,
       sqlCommandEntries.length ? `    sqlCommands: {\n${sqlCommandEntries.join(",\n")}\n    }` : null,
       accessEntries.length ? `    access: {\n${accessEntries.join(",\n")}\n    }` : null,
     ]
@@ -293,6 +282,17 @@ async function collectManifests(appDir: string) {
       if (manifest.schema !== undefined && !IDENTIFIER_PATTERN.test(manifest.schema)) {
         throw new Error(`Manifest schema must be a lowercase SQL identifier: ${toPosixPath(relative(Deno.cwd(), manifestPath))}`);
       }
+      // Політика журналу переїхала в базу (`app.audit_setting`, екран
+      // `admin/audit_setting`). Мовчки проковтнути залишений блок не можна:
+      // модель виглядала б журнальованою, а журнал би не писався — і побачив
+      // би це лише той, хто піде його шукати після події.
+      if (manifest.audit !== undefined) {
+        console.warn(
+          `⚠ ${toPosixPath(relative(Deno.cwd(), manifestPath))}: блок "audit" більше не читається — ` +
+            `рівень журналу задається на екрані «Налаштування журналу» (app.audit_setting). Приберіть його з манифеста.`,
+        );
+      }
+
       if (typeof manifest.model === "string" && manifest.model.trim()) {
         manifests.push({ manifestPath, manifest });
       }
@@ -315,6 +315,21 @@ async function collectManifests(appDir: string) {
 
   manifests.sort((left, right) => (left.manifest.model ?? "").localeCompare(right.manifest.model ?? ""));
   return manifests;
+}
+
+/**
+ * Ключі моделей застосунку — усе, що оголосило себе в `manifest.json`.
+ *
+ * Той самий обхід, що будує реєстр, а не перелік із `sql.json`: у `sql.json`
+ * лежать моделі, які везуть СВІЙ SQL, і моделі без нього туди не потрапляють
+ * (`admin/user` живе на функціях ядра, звіти власних таблиць не мають). Для
+ * налаштувань журналу потрібні саме ті моделі, що доходять до рантайму, — тобто
+ * реєстрові.
+ */
+export async function collectAppModelKeys(appDirArg = "./app"): Promise<string[]> {
+  const manifests = await collectManifests(resolve(Deno.cwd(), appDirArg));
+  const keys = new Set(manifests.map(({ manifest }) => manifest.model!.trim()).filter(Boolean));
+  return [...keys].sort((left, right) => left.localeCompare(right));
 }
 
 export async function generateModelRuntimeRegistry(

@@ -1,0 +1,16 @@
+{
+  "model": "audit_setting",
+  "type": "admin",
+  "schema": "app",
+  "sql": { "generate": false },
+  "views": {
+    "list": {
+      "module": "./auditSettingList.ts",
+      "titleKey": "auditSetting.titleMany"
+    },
+    "edit": {
+      "module": "./auditSettingEdit.ts",
+      "titleKey": "auditSetting.titleOne"
+    }
+  }
+}

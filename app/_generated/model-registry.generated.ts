@@ -15,6 +15,10 @@ export const generatedModelRegistry = {
     type: "admin",
     schema: "app"
   },
+  "audit_setting": {
+    type: "admin",
+    schema: "app"
+  },
   "bank": {
     type: "catalog",
     schema: "app",

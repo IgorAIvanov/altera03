@@ -13,6 +13,7 @@
     "@core/menu",
     "admin/menu",
     "admin/audit_log",
+    "admin/audit_setting",
     "admin/user_group",
     "@core/attachment",
     "catalog/organization",

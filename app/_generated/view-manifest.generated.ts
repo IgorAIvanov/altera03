@@ -3,6 +3,8 @@
 export const viewManifest = [
   { route: "report/account_card/list", moduleFile: "app/report/account_card/accountCardReport.ts", titleKey: "accountCard.title" },
   { route: "admin/audit_log/list", moduleFile: "app/admin/audit_log/auditLogList.ts", titleKey: "auditLog.titleMany" },
+  { route: "admin/audit_setting/list", moduleFile: "app/admin/audit_setting/auditSettingList.ts", titleKey: "auditSetting.titleMany" },
+  { route: "admin/audit_setting/edit", moduleFile: "app/admin/audit_setting/auditSettingEdit.ts", titleKey: "auditSetting.titleOne" },
   { route: "catalog/bank/list", moduleFile: "app/catalog/bank/bankList.ts", titleKey: "bank.titleMany" },
   { route: "catalog/bank/edit", moduleFile: "app/catalog/bank/bankEdit.ts", titleKey: "bank.titleOne" },
   { route: "catalog/bank/picker", moduleFile: "app/catalog/bank/bankPicker.ts", titleKey: "bank.titleMany" },

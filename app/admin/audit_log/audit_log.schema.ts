@@ -36,6 +36,12 @@ export type AuditLogFilters = Static<typeof AuditLogFiltersSchema>;
 
 export const AuditLogListPayloadSchema = Type.Object({
   search:   Type.Optional(Type.String()),
+  /**
+   * Ключі моделей, чия НАЗВА збіглася з пошуком: у журналі лежить `bank`, а в
+   * колонці стоїть «Банки», і перекласти ключ уміє лише клієнт — він і рахує
+   * збіг (`extraPayload()`), SQL додає перелік до пошуку через `or`.
+   */
+  modelKeys: Type.Optional(Type.Array(Type.String())),
   filters:  Type.Optional(AuditLogFiltersSchema),
   page:     Type.Optional(Type.Number({ minimum: 1 })),
   pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),

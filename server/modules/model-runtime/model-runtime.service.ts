@@ -40,22 +40,44 @@ const STANDARD_COMMAND_ACTIONS: Record<string, string> = {
 };
 
 /**
- * Стандартні команди, які МІНЯЮТЬ запис, — журнал пише їх за замовчуванням,
- * без оголошення в манифесті.
+ * Рівень журналу моделі — значення `app.audit_setting.level`.
  *
- * Доти аудит вмикався тільки поіменним списком, і з дванадцяти моделей його
- * оголосила рівно одна. Позначка на видалення нікуди не потрапляла — тобто
- * найпотрібніша для журналу подія («хто прибрав запис») не лишала сліду саме
- * там, де слід і шукають. Це та сама пастка, що з правом `undelete` вище:
- * команду видає ГЕНЕРАТОР усім моделям одразу, а оголошувати її треба руками
- * в кожному манифесті — тож забути можна лише в один бік, і саме мовчки.
- *
- * Читання (`list`, `get`, `lookup`) сюди не входить: воно роздуло б журнал
- * так, що змін у ньому не знайти. Нестандартна команда (`copy`, `moveToGroup`,
- * TS-команда) теж — вона мусить назвати себе в манифесті сама: журнал змін не
- * знає, чи щось змінює команда з довільним іменем.
+ * Це НАЛАШТУВАННЯ УСТАНОВКИ, а не властивість моделі: рівень лежить у базі й
+ * міняється на екрані `admin/audit_setting`. Доти політика жила в
+ * `manifest.json`, тобто в рішенні, — увімкнути журнал не можна було, не
+ * правлячи застосунок і не викочуючи його заново (а на встановленій системі
+ * така правка ще й знімає рішення з підтримки).
  */
-const AUDITED_BY_DEFAULT = new Set(["save", "delete", "undelete", "post", "unpost"]);
+type AuditLevel = "none" | "changes" | "all";
+
+/**
+ * Дії, які МІНЯЮТЬ запис. Рівень `changes` пише саме їх.
+ *
+ * Кошик визначає ПРАВО команди, а не її ім'я, і це головне тут: право рантайм
+ * і так рахує для перевірки доступу (`resolveRequiredAction`), тож нестандартна
+ * команда (`copy`, `moveToGroup`, будь-яка TS-команда) потрапляє в потрібний
+ * кошик сама — з того самого оголошення `commands.access`. Другий перелік імен
+ * розійшовся б із першим, і мовчки.
+ *
+ * `view` і `authenticated` сюди не входять: читання роздуло б журнал так, що
+ * змін у ньому не знайти. Кому потрібне й воно — той ставить рівень `all`.
+ */
+const CHANGING_ACTIONS = new Set(["create", "edit", "delete", "post", "unpost"]);
+
+/**
+ * Скільки живе прочитаний перелік рівнів.
+ *
+ * Кеш тут є, хоча в перевірці ПРАВ його свідомо немає: право стосується одного
+ * користувача й одного виклику, а налаштування журналу — це десяток рядків на
+ * всю установку, що міняються раз на місяць з одного екрана. Без кешу кожна
+ * команда коштувала б зайвого round-trip рівно заради того, щоб дізнатися
+ * «журнал вимкнено». Свій процес скидає кеш одразу, щойно екран зберіг
+ * налаштування, тож TTL потрібен лише сусіднім екземплярам.
+ */
+const AUDIT_SETTINGS_TTL_MS = 30_000;
+
+/** Модель, чиї команди міняють самі налаштування журналу (скидає кеш). */
+const AUDIT_SETTING_MODEL = "audit_setting";
 
 /** Оголошення «досить бути авторизованим»: право моделі не перевіряється. */
 const AUTHENTICATED = "authenticated";
@@ -122,19 +144,6 @@ function auditRecordId(payload: Record<string, unknown>, result?: unknown): stri
     if (/^\d+$/.test(id)) return id;
   }
   return null;
-}
-
-/**
- * Чи писати цю команду в журнал. Оголошення в манифесті СИЛЬНІШЕ за умовчання
- * в обидва боки: список звужує (і може додати свою команду), `false` вимикає
- * журнал моделі цілком.
- */
-function shouldAudit(config: ModelBackendConfig | undefined, command: string) {
-  const declared = config?.audit;
-  if (declared === true) return true;
-  if (declared === false) return false;
-  if (declared) return declared.commands.includes(command);
-  return AUDITED_BY_DEFAULT.has(command);
 }
 
 function assertIdentifier(value: string, label: string) {
@@ -259,6 +268,15 @@ export class ModelRuntimeService {
 
     const normalizedPayload = normalizePayload(payload);
     const config = getModelConfig(model);
+
+    // Право рахуємо ДО спроби виконання: воно ж називає рівень журналу
+    // (`CHANGING_ACTIONS`), а журнал пише і невдалі виклики — включно з тими,
+    // що впали до перевірки доступу. Функція чиста, тож зайвого тут немає, а
+    // порядок відмов нижче лишається старим: спершу «немає команди», потім
+    // «право не оголошене».
+    const action = resolveRequiredAction(model, command, normalizedPayload, config);
+    const audited = await this.shouldAudit(model, action);
+
     let result: unknown;
     try {
       const tsCommand = config?.tsCommands?.[command];
@@ -277,7 +295,6 @@ export class ModelRuntimeService {
         throw ModelCommandError.notConfigured(model, command);
       }
 
-      const action = resolveRequiredAction(model, command, normalizedPayload, config);
       if (action === null) {
         throw ModelCommandError.accessNotDeclared(model, command);
       }
@@ -299,13 +316,13 @@ export class ModelRuntimeService {
       }
       result = candidate;
     } catch (error) {
-      if (shouldAudit(config, command)) {
+      if (audited) {
         await this.writeAudit(model, command, normalizedPayload, userId, false);
       }
       throw error;
     }
 
-    if (shouldAudit(config, command)) {
+    if (audited) {
       await this.writeAudit(
         model,
         command,
@@ -316,9 +333,58 @@ export class ModelRuntimeService {
       );
     }
 
+    // Налаштування журналу щойно могли змінитися — читаємо їх заново, не
+    // чекаючи TTL. Своєму процесу цього досить; сусіднім екземплярам лишається
+    // TTL, і затримка в півхвилини на екрані налаштувань нікому не шкодить.
+    if (model === AUDIT_SETTING_MODEL) {
+      this.auditLevelsExpireAt = 0;
+    }
+
     // Ключі доступу до вкладень (`token`, `<field>Token`) назовні не виходять —
     // рантайм міняє їх на підписані токени. Див. blob-token.ts.
     return await signEnvelopeTokens(result, { userId, sessionId });
+  }
+
+  // ── Журнал змін ───────────────────────────────────────────────────────────
+
+  /** Рівні журналу по моделях: лише рядки, де журнал справді ввімкнений. */
+  private auditLevels = new Map<string, AuditLevel>();
+  private auditLevelsExpireAt = 0;
+
+  /**
+   * Чи писати цю команду в журнал. `action === null` (команда без оголошеного
+   * права — тобто зламана конфігурація) рахується читанням: такий виклик і так
+   * не виконається, а рівень `all` його все одно збереже.
+   */
+  private async shouldAudit(model: string, action: string | null) {
+    const level = await this.auditLevel(model);
+    if (level === "all") return true;
+    if (level === "changes") return action !== null && CHANGING_ACTIONS.has(action);
+    return false;
+  }
+
+  private async auditLevel(model: string): Promise<AuditLevel> {
+    if (Date.now() >= this.auditLevelsExpireAt) {
+      // Позначку рухаємо ДО запиту: інакше кожна команда, поки база не
+      // відповіла, бачила б кеш простроченим і слала свій запит.
+      this.auditLevelsExpireAt = Date.now() + AUDIT_SETTINGS_TTL_MS;
+      try {
+        const rows = await this.db.sql<{ model: string; level: string }[]>`
+          select model, level from app.audit_setting where level <> 'none'
+        `;
+        this.auditLevels = new Map(rows.map((row) => [row.model, row.level as AuditLevel]));
+      } catch (error) {
+        // Таблиці ще немає (схему не накотили) або база недоступна. Журнал —
+        // не привід валити команду, тому мовчки лишаємося без нього; слід у
+        // консолі є, а наступна спроба буде через TTL, а не на кожен виклик.
+        console.error("❌ audit: не вдалося прочитати app.audit_setting:", error);
+        this.auditLevels = new Map();
+      }
+    }
+
+    // Моделі, якої в таблиці немає, журнал не ведеться: умовчання — «не
+    // логувати», і воно однакове для незасіяної моделі та для явного `none`.
+    return this.auditLevels.get(model) ?? "none";
   }
 
   /** Аудит не може змінювати результат команди, але збій журналу лишає слід у консолі. */

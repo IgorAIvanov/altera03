@@ -60,7 +60,8 @@ from (values
   ('administration', 'menu',               '@[menu.titleMany]',                 'settings',     'admin/menu/list',                 20),
   ('administration', 'user',               '@[user.titleMany]',                 'counterparty', 'admin/user/list',                 30),
   ('administration', 'user_group',         '@[userGroup.titleMany]',            'counterparty', 'admin/user_group/list',           40),
-  ('administration', 'audit_log',          '@[auditLog.titleMany]',             'settings',     'admin/audit_log/list',            50)
+  ('administration', 'audit_log',          '@[auditLog.titleMany]',             'settings',     'admin/audit_log/list',            50),
+  ('administration', 'audit_setting',      '@[auditSetting.titleMany]',         'settings',     'admin/audit_setting/list',        55)
 ) as v(parent_code, code, name, icon_key, route_path, sort_order)
 join app.menu m      on m.code = 'default'
 join app.menu_item p on p.menu_id = m.id and p.parent_id is null and p.code = v.parent_code

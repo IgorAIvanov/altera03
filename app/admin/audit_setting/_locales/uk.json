@@ -1,0 +1,14 @@
+{
+  "auditSetting.titleMany": "Налаштування журналу",
+  "auditSetting.titleOne": "Журнал моделі",
+  "auditSetting.model": "Модель",
+  "auditSetting.modelKey": "Ключ моделі",
+  "auditSetting.level": "Що журналювати",
+  "auditSetting.level_none": "не журналювати",
+  "auditSetting.level_changes": "зміни записів",
+  "auditSetting.level_all": "усі команди, разом із читанням",
+  "auditSetting.levelHint": "«Зміни записів» — створення, зміна, позначення на видалення, проведення й розпроведення. «Усі команди» додає читання (списки, форми, пікери, друк): журнал від цього росте дуже швидко.",
+  "auditSetting.eventCount": "Подій у журналі",
+  "auditSetting.unknownModel": "Моделі «{model}» немає в переліку налаштувань журналу",
+  "auditSetting.unknownLevel": "Рівень «{level}» невідомий"
+}

@@ -8,6 +8,10 @@ as $$
   with params as (
     select
       nullif(trim(coalesce(payload->>'search', '')), '')                  as search,
+      -- Ключі моделей, чия НАЗВА збіглася з пошуковим рядком. Рахує їх клієнт:
+      -- у журналі лежить ключ (`bank`), а в колонці стоїть назва («Банки»), і
+      -- переклад живе в його локалях — база про нього не знає нічого.
+      coalesce(payload->'modelKeys', '[]'::jsonb)                          as model_keys,
       greatest(coalesce((payload->>'page')::int, 1), 1)                    as page,
       least(greatest(coalesce((payload->>'pageSize')::int, 20), 1), 200)   as page_size,
       case when payload->>'sortBy' in ('occurredAt', 'user', 'model', 'command', 'recordId', 'isSuccess')
@@ -60,6 +64,7 @@ as $$
         or u.login ilike '%' || p.search || '%'
         or u.full_name ilike '%' || p.search || '%'
         or l.model ilike '%' || p.search || '%'
+        or l.model in (select jsonb_array_elements_text(p.model_keys))
         or l.command ilike '%' || p.search || '%'
         or l.record_id::text ilike '%' || p.search || '%'
       )

@@ -113,6 +113,37 @@ async function numeratorRestore(model: string, snapshot: NumeratorState[]): Prom
   }
 }
 
+/**
+ * Команди, записані в журнал для одного запису моделі.
+ *
+ * Прямим запитом до бази, як і `purge`: журнал назовні віддає лише список із
+ * пагінацією й фільтрами, а пробі потрібен факт «рядок є / рядка немає» по
+ * конкретному запису.
+ */
+async function auditCommands(model: string, recordId: string): Promise<string[]> {
+  const { host, port, database, username, password, ssl } = configFromEnv().database;
+  const sql = postgres({ host, port, database, username, password, ssl: ssl ?? false });
+  try {
+    const rows = await sql<{ command: string }[]>`
+      select command from app.audit_log
+      where model = ${model} and record_id = ${recordId}
+      order by id`;
+    return rows.map((row) => row.command);
+  } finally {
+    await sql.end();
+  }
+}
+
+async function purgeAudit(model: string, recordId: string): Promise<void> {
+  const { host, port, database, username, password, ssl } = configFromEnv().database;
+  const sql = postgres({ host, port, database, username, password, ssl: ssl ?? false });
+  try {
+    await sql`delete from app.audit_log where model = ${model} and record_id = ${recordId}`;
+  } finally {
+    await sql.end();
+  }
+}
+
 /** `state` із заголовка Location, який віддав authorize. */
 function stateFromLocation(location: string): string {
   return new URL(location, "http://in-process").searchParams.get("state") ?? "";
@@ -331,6 +362,47 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         // Фізично: позначка на видалення лишила б МФО `SMK001` у таблиці, і
         // наступний прогін впав би на тій самій унікальності, яку й перевіряє.
         await purge("app.bank", bank.id);
+      }
+    });
+
+    // Журнал: що писати, вирішує НАЛАШТУВАННЯ в базі, а не манифест. Три рівні
+    // видно лише пробою — у відповіді самої команди різниці немає жодної.
+    //
+    // Заразом це перевірка скидання кеша рівнів: усі три відрізки живуть в
+    // ОДНОМУ процесі застосунку, тобто без скидання після `audit_setting/save`
+    // другий і третій відрізки читали б рівень першого й проба падала б.
+    await t.step("журнал: рівень вирішує, що писати", async () => {
+      const level = async (value: string) =>
+        await client.model("audit_setting", "save", { item: { id: "bank", level: value } });
+
+      const before = await client.model("audit_setting", "get", { id: "bank" });
+      const restore = (before.body.data.item as { level?: string } | null)?.level ?? "none";
+
+      await level("changes");
+      const created = await client.model("bank", "save", {
+        item: { mfo: "SMK002", name: "Smoke audit probe" },
+      });
+      const bank = created.body.data.item as { id: string } | null;
+      assertExists(bank);
+
+      try {
+        // `changes`: запис у журналі, читання — ні.
+        await client.model("bank", "get", { id: bank.id });
+        assertEquals(await auditCommands("bank", bank.id), ["save"]);
+
+        // `all`: до журналу потрапляє й читання.
+        await level("all");
+        await client.model("bank", "get", { id: bank.id });
+        assertEquals(await auditCommands("bank", bank.id), ["save", "get"]);
+
+        // `none` — умовчання для всіх моделей: не пишеться нічого.
+        await level("none");
+        await client.model("bank", "get", { id: bank.id });
+        assertEquals(await auditCommands("bank", bank.id), ["save", "get"]);
+      } finally {
+        await purgeAudit("bank", bank.id);
+        await purge("app.bank", bank.id);
+        await level(restore);
       }
     });
 

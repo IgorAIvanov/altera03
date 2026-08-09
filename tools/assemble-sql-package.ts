@@ -1,4 +1,5 @@
 import { basename, join, relative, resolve, SEPARATOR } from "@std/path";
+import { collectAppModelKeys } from "./generate-model-runtime-registry.ts";
 
 // SQL ядра приходить АРГУМЕНТОМ, а не імпортом `@altera/server/sql`, і це не
 // косметика. Поки імпорт був тут, версію ядра називав інструмент: у пакеті
@@ -545,8 +546,36 @@ function renderNumeratorSeedSql(row: CollectedNumerator) {
   ].join("\n");
 }
 
+// ── Налаштування журналу ────────────────────────────────────────────────────
+// Перелік моделей для екрана «Налаштування журналу» будується при складанні:
+// рукописний список розійшовся б із дійсністю на першій же новій моделі, а
+// побачити це можна було б лише тому, хто піде шукати подію, якої немає.
+//
+// Їде САМ ПЕРЕЛІК, без рівня: рівень має умовчання `none` у колонці й після
+// першої публікації належить адміністратору, тож `do nothing` тут — не
+// дрібниця, а те, що робить налаштування налаштуванням.
+
+function renderAuditSettingsSql(modelKeys: string[]) {
+  return [
+    "-- Generated from model manifests: перелік моделей для налаштування журналу.",
+    "insert into app.audit_setting (model)",
+    "values",
+    modelKeys.map((key) => `  (${sqlStringLiteral(key)})`).join(",\n"),
+    "on conflict (model) do nothing;",
+    "",
+  ].join("\n");
+}
+
 async function buildGeneratedDataSections(appDir: string, models: string[]) {
   const sections: string[] = [];
+
+  // Не з `models` (тобто не з sql.json): там лише моделі зі своїм SQL, а
+  // журналюється все, що доходить до рантайму. Джерело те саме, що в реєстру, —
+  // манифести.
+  const auditModels = await collectAppModelKeys(appDir);
+  if (auditModels.length) {
+    sections.push(...buildSection("_generated/audit-settings.data.sql", renderAuditSettingsSql(auditModels)));
+  }
 
   const documentTypes = await collectDocumentTypes(appDir, models);
   if (documentTypes.length) {

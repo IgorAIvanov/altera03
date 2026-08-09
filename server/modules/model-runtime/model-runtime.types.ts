@@ -26,18 +26,10 @@ export interface TsModelCommandConfig {
 export interface ModelBackendConfig {
   type?: string;
   schema?: string;
-  /**
-   * Політика журналу змін. Відсутня — умовчання: стандартні команди, що
-   * міняють запис (`save`, `delete`, `undelete`, `post`, `unpost`).
-   *
-   * `true` — усі команди моделі, включно з читанням; список — рівно вказані
-   * (так додається нестандартна команда, як-от `copy`); `false` — не писати
-   * нічого. Список і `false` звужують умовчання свідомо, тож модель, якій
-   * журнал не потрібен, каже це вголос.
-   */
-  audit?: boolean | {
-    commands: string[];
-  };
+  // Політики журналу тут немає навмисно: що журналювати — налаштування
+  // УСТАНОВКИ (`app.audit_setting`, екран `admin/audit_setting`), а не
+  // властивість моделі. Поки вона жила в манифесті, увімкнути журнал не можна
+  // було, не правлячи рішення й не викочуючи його заново.
   sqlCommands?: Record<string, SqlModelCommandDefinition>;
   tsCommands?: Record<string, TsModelCommandConfig>;
   /**

@@ -9,6 +9,11 @@ export const agentModelRoutes = {
     listPath: "/admin/audit_log/list",
     type: "admin"
   },
+  "audit_setting": {
+    editPath: "/admin/audit_setting/edit",
+    listPath: "/admin/audit_setting/list",
+    type: "admin"
+  },
   "bank": {
     editPath: "/catalog/bank/edit",
     listPath: "/catalog/bank/list",

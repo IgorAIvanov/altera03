@@ -73,6 +73,7 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
     name: "audit",
     files: {
       structure: [file("audit/db/struc.sql")],
+      data: [file("audit/db/data.sql")],
     },
   },
   // menu — одразу за access: app.user_group_menu посилається на app.user_group.

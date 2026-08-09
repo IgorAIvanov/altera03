@@ -5,6 +5,7 @@ import { bus } from "@client/bus/bus.ts";
 import { icons } from "@client/ui-kit/icons.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
 import { viewRoute } from "@shared/view-route.ts";
+import { modelKeysMatching, modelTitle } from "@shared/model-title.ts";
 import { generatedModelRegistry } from "../../_generated/model-registry.generated.ts";
 import type { AuditLogRow } from "./audit_log.schema.ts";
 // Компоненти панелі фільтрів імпортує САМЕ ЕКРАН — основа табличних форм про
@@ -65,9 +66,9 @@ export class AuditLogList extends ModelListBase<AuditLogRow> {
       key: "model", title: "auditLog.model", width: "11rem", sortable: true, overflow: "ellipsis",
       // Ім'я моделі — технічне (`chart_of_account`); у журналі його читає
       // людина, тож показуємо назву, а ключ лишаємо в підказці.
-      render: (row) => this.modelTitle(row.model),
+      render: (row) => modelTitle(row.model),
       tooltip: (row) => row.model,
-      exportText: (row) => this.modelTitle(row.model),
+      exportText: (row) => modelTitle(row.model),
     },
     {
       key: "command", title: "auditLog.command", width: "11rem", sortable: true, overflow: "ellipsis",
@@ -142,20 +143,15 @@ export class AuditLogList extends ModelListBase<AuditLogRow> {
     `;
   }
 
-  // ── Людські назви ─────────────────────────────────────────────────────────
-
   /**
-   * `t()` повертає сам ключ, коли перекладу немає, — і саме це тут ознака того,
-   * що моделі в локалях немає (службові моделі ядра її не мають). Тоді чесніше
-   * показати технічне ім'я, ніж «audit_log.titleOne».
+   * Пошук по видимій назві моделі, а не лише по ключу з бази: у колонці стоїть
+   * «Банки», а в журналі — `bank`, і перекласти його вміє тільки клієнт.
    */
-  private modelTitle(key: string): string {
-    for (const suffix of ["titleOne", "titleMany"]) {
-      const value = this.t(`${key}.${suffix}`);
-      if (value !== `${key}.${suffix}`) return value;
-    }
-    return key;
+  protected override extraPayload() {
+    return { modelKeys: modelKeysMatching(this.search) };
   }
+
+  // ── Людські назви ─────────────────────────────────────────────────────────
 
   /** Стандартні команди перекладені; нестандартна лишається як є. */
   private commandTitle(command: string): string {
@@ -170,7 +166,7 @@ export class AuditLogList extends ModelListBase<AuditLogRow> {
     // Підпис приходить із БД під тим самим ключем.
     const user = this.filterValue<FilterRef>("user");
     const models = MODEL_KEYS
-      .map((key) => ({ key, title: this.modelTitle(key) }))
+      .map((key) => ({ key, title: modelTitle(key) }))
       .sort((a, b) => a.title.localeCompare(b.title));
 
     return html`
