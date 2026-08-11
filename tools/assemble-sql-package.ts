@@ -59,14 +59,19 @@ const PACKAGE_STEPS: PackageStep[] = [
     defaultOutput: "models_app.sql",
     resolveFiles: async (appDir, model) => {
       const name = basename(model);
-      const generated = `${model}/db/_generated/${name}.crud.gen.sql`;
+      const generatedCrud = `${model}/db/_generated/${name}.crud.gen.sql`;
+      const generatedIndex = `${model}/db/_generated/${name}.index.gen.sql`;
       const custom = `${model}/db/${name}.custom.sql`;
       const legacy = `${model}/db/${name}.sql`;
       const files: string[] = [];
-      const hasGenerated = await fileExists(join(appDir, generated));
-      if (hasGenerated) files.push(generated);
+      const hasCrud = await fileExists(join(appDir, generatedCrud));
+      if (hasCrud) files.push(generatedCrud);
+      // Обгортка index звіту. Legacy-файл вона НЕ витісняє — на відміну від
+      // CRUD, вона нічого рукописного не заміняє: сам запит звіту лишається
+      // в db/<model>.sql функцією <model>_data, і без нього обгортка порожня.
+      if (await fileExists(join(appDir, generatedIndex))) files.push(generatedIndex);
       if (await fileExists(join(appDir, custom))) files.push(custom);
-      if (!hasGenerated && await fileExists(join(appDir, legacy))) files.push(legacy);
+      if (!hasCrud && await fileExists(join(appDir, legacy))) files.push(legacy);
       return files;
     },
   },

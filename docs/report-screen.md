@@ -58,6 +58,64 @@ dateTo` уже в компоненті. Дефолт «поточний міся
 [`client/shared/period.ts`](../client/shared/period.ts), підпис періоду для
 `printSubtitle()` — `periodLabel()` звідти ж.
 
+## SQL: обгортка генерується, запит пишеться
+
+У звіту дві функції, і рукописна з них одна:
+
+| файл | функція | хто пише |
+|---|---|---|
+| `db/_generated/<report>.index.gen.sql` | `app.<report>_index(user_id, payload)` | `deno task sql:gen` |
+| `db/<report>.sql` | `app.<report>_data(user_id, filters)` | розробник |
+
+Обгортка будується зі **схеми фільтрів** (`<Pascal>FiltersSchema` — та сама, з якою
+зв'язаний екран) і робить усе, що навколо запиту:
+
+- **розбирає** `payload.filters`, згортаючи ссылку до id: `organization` (об'єкт
+  `{id, name}`) приходить у тіло звіту як `organizationId`, порожній рядок означає
+  «не задано»;
+- **відмовляє**, коли не заповнений обов'язковий фільтр, — повідомленням із
+  прив'язкою до поля, а не порожнім аркушем;
+- **вертає эхо** `$filters` із підписом із бази, інакше пікер у панелі стоятиме
+  порожнім при діючому фільтрі;
+- **загортає** результат у конверт.
+
+Походження ссылки оголошується в схемі — без нього підпис для эха брати нізвідки;
+обов'язковість — це `Type.Optional`, як і в полях форми:
+
+```ts
+const refFilter = (model: string) =>
+  Type.Union([Type.Object({ id: Type.String(), name: Type.String() }), Type.Null()],
+    { default: null, "x-ref": { model } });
+
+export const TurnoverBalanceFiltersSchema = Type.Object({
+  organization: refFilter("organization"),                    // обов'язковий
+  dateFrom:     Type.Optional(Type.String({ default: "" })),  // необов'язковий
+  dateTo:       Type.Optional(Type.String({ default: "" })),
+});
+```
+
+Тіло звіту починається з уже розібраних значень і віддає лише вміст `data` — ні
+конверта, ні эха, ні перевірки обов'язкових:
+
+```sql
+create function app.turnover_balance_data(user_id bigint, filters jsonb)
+returns jsonb language sql as $$
+  with params as (
+    select
+      nullif(filters->>'organizationId', '')::bigint as org_id,
+      nullif(filters->>'dateFrom', '')::date         as date_from,
+      nullif(filters->>'dateTo', '')::date           as date_to
+  ),
+  -- … запит …
+  select jsonb_build_object('rows', …, 'totals', …);   -- 'extra', якщо потрібне екрану
+$$;
+```
+
+Чому саме так, а не хелпером на кожну дію: обгортка складається з чотирьох дрібниць,
+жодна з яких сама по собі не варта уваги, — і саме тому вони й розходилися. Методологію
+вхідного сальдо одного разу правили у двох звітах окремо, і обидва вважалися джерелом
+правди; це та сама природа.
+
 ## Друк
 
 Друкує браузер — те, що на екрані. Серверного рендеру для звітів немає свідомо:

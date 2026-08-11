@@ -96,6 +96,7 @@
   "common.unsavedClose": "Data has been changed. Do you want to save the changes?",
   "common.dontSave": "Don't save",
   "common.confirmTitle": "Confirmation",
+  "core.reportFilterRequired": "Required report filters are not set",
   "core.subcontoRequired": "Analytics «{dimension}» is required for account {account} ({side})",
   "core.documentNotFound": "Document {id} not found",
   "core.documentDeleted": "Document {id} is marked for deletion — it cannot be posted",

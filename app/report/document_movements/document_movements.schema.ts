@@ -41,7 +41,14 @@ export const MovementDocumentSchema = Type.Object({
 });
 export type MovementDocument = Static<typeof MovementDocumentSchema>;
 
-/** `documentId` живе у `$filters` — за ним звіт переформовується при applyParams. */
+/**
+ * `documentId` живе у `$filters` — за ним звіт переформовується при applyParams.
+ *
+ * Ссылкою не оголошений: підпис документа звіт віддає окремо, в `extra.document`
+ * (номер, дата, сума, організація — заголовку потрібне все, а не самé ім'я).
+ * Обов'язковий — без документа звіту немає взагалі; `Optional` тут означав би
+ * «можна не задавати», і звіт мовчки віддавав би порожнечу.
+ */
 export const DocumentMovementsFiltersSchema = Type.Object({
   documentId: Type.String({ default: "" }),
 });

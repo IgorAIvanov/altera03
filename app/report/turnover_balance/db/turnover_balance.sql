@@ -10,40 +10,30 @@
 -- показувати всі 87 рядків плану рахунків, з яких 80 порожні, — марно.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-drop function if exists app.turnover_balance_index(bigint, jsonb);
-create function app.turnover_balance_index(user_id bigint, payload jsonb)
+-- Тіло звіту. Обгортку `app.turnover_balance_index` генерує sql:gen зі схеми
+-- фільтрів: розбір `payload.filters`, перевірку обов'язкових, эхо `$filters` і
+-- конверт. Сюди фільтри приходять уже РОЗІБРАНИМИ — ссылка згорнута до id, —
+-- а назад іде лише вміст `data`.
+drop function if exists app.turnover_balance_data(bigint, jsonb);
+create function app.turnover_balance_data(user_id bigint, filters jsonb)
 returns jsonb
 language sql
 as $$
   with params as (
-    -- Фільтри приходять вкладеним об'єктом `filters` — той самий контракт, що
-    -- в списків: ім'я фільтра рано чи пізно збіглося б із полем запиту, якби
-    -- вони лежали врозсип. Генератора для звітів немає, домовленість та сама.
     select
-      -- Ссылочний фільтр — ОДИН ключ з об'єктом `{id, name}`; тут потрібен id.
-      nullif(f->'organization'->>'id', '')::bigint as org_id,
-      nullif(f->>'dateFrom', '')::date            as date_from,
-      nullif(f->>'dateTo', '')::date              as date_to
-    from (select coalesce(payload->'filters', '{}'::jsonb) as f) src
-  ),
-  -- Назад той самий ключ їде з підписом із бази: id міг прийти сам, без назви
-  -- (перехід із іншого звіту), і тоді пікер стояв би порожнім при діючому фільтрі.
-  filters_out as (
-    select coalesce(payload->'filters', '{}'::jsonb)
-      || jsonb_strip_nulls(jsonb_build_object(
-           'organization',
-           (select jsonb_build_object('id', o.id::text, 'name', o.name)
-            from app.organization o cross join params p where o.id = p.org_id)
-         )) as value
+      nullif(filters->>'organizationId', '')::bigint as org_id,
+      nullif(filters->>'dateFrom', '')::date         as date_from,
+      nullif(filters->>'dateTo', '')::date           as date_to
   ),
   -- Рухи по рахунку з обох сторін проводки, зведені в один потік.
+  -- Організація тут не перевіряється: обов'язковість фільтра оголошена в
+  -- схемі, і відмовляє обгортка — до тіла звіт без організації не доходить.
   moves as (
     select je.debit_account as account, d.doc_date, je.amount as debit, 0::numeric as credit
     from params p
     join app.document d
       on d.organization_id = p.org_id and d.is_posted and not d.is_deleted
     join app.journal_entry je on je.document_id = d.id
-    where p.org_id is not null
 
     union all
 
@@ -52,7 +42,6 @@ as $$
     join app.document d
       on d.organization_id = p.org_id and d.is_posted and not d.is_deleted
     join app.journal_entry je on je.document_id = d.id
-    where p.org_id is not null
   ),
   agg as (
     select
@@ -66,7 +55,7 @@ as $$
       -- видно ніколи: <ui-period> завжди підставляє період. Видно лише тому,
       -- хто покличе звіт напряму — з API, агентом або з іншого звіту.
       --
-      -- Те саме правило продубльоване в app.account_card_index: поки
+      -- Те саме правило продубльоване в app.account_card_data: поки
       -- методологія живе в кожному звіті окремо, воно мусить бути записане в
       -- обох місцях (див. docs/gaps-wishes/FRAMEWORK-WISHES.md — шар обчислень).
       coalesce(sum(m.debit - m.credit) filter (
@@ -101,26 +90,17 @@ as $$
     order by a.account
   )
   select jsonb_build_object(
-    'ok', true,
-    'data', jsonb_build_object(
-      'item', null,
-      'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),
-      'options', '{}'::jsonb,
-      'totals', (
-        select jsonb_build_object(
-          'openingDebit',   coalesce(sum("openingDebit"), 0),
-          'openingCredit',  coalesce(sum("openingCredit"), 0),
-          'turnoverDebit',  coalesce(sum("turnoverDebit"), 0),
-          'turnoverCredit', coalesce(sum("turnoverCredit"), 0),
-          'closingDebit',   coalesce(sum("closingDebit"), 0),
-          'closingCredit',  coalesce(sum("closingCredit"), 0)
-        )
-        from rows
-      ),
-      '$filters', (select value from filters_out),
-      'extra', '{}'::jsonb
-    ),
-    'messages', '[]'::jsonb,
-    'meta', '{}'::jsonb
+    'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),
+    'totals', (
+      select jsonb_build_object(
+        'openingDebit',   coalesce(sum("openingDebit"), 0),
+        'openingCredit',  coalesce(sum("openingCredit"), 0),
+        'turnoverDebit',  coalesce(sum("turnoverDebit"), 0),
+        'turnoverCredit', coalesce(sum("turnoverCredit"), 0),
+        'closingDebit',   coalesce(sum("closingDebit"), 0),
+        'closingCredit',  coalesce(sum("closingCredit"), 0)
+      )
+      from rows
+    )
   );
 $$;

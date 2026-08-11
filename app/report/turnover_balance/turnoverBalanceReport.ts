@@ -69,7 +69,9 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
   /** Рядок під назвою звіту на папері та в Excel: організація й період. */
   protected override printSubtitle(): string {
     const f = this.$root.$filters;
-    const period = periodLabel({ dateFrom: f.dateFrom, dateTo: f.dateTo });
+    // Період необов'язковий (схема каже це прямо), тож у підпис він може й не
+    // прийти — periodLabel порожній період і не друкує.
+    const period = periodLabel({ dateFrom: f.dateFrom ?? "", dateTo: f.dateTo ?? "" });
     return [f.organization?.name, period].filter(Boolean).join(" · ");
   }
 

@@ -96,6 +96,7 @@
   "common.unsavedClose": "Дані змінено. Зберегти зміни?",
   "common.dontSave": "Не зберігати",
   "common.confirmTitle": "Підтвердження",
+  "core.reportFilterRequired": "Не заповнено обов'язкові фільтри звіту",
   "core.subcontoRequired": "Не заповнено субконто «{dimension}» рахунку {account} ({side})",
   "core.documentNotFound": "Документ {id} не знайдено",
   "core.documentDeleted": "Документ {id} позначено на видалення — проведення неможливе",

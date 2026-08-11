@@ -1455,6 +1455,221 @@ function renderFile(spec: ModelSpec): string {
   ].join("\n\n");
 }
 
+// ── звіт: обгортка команди index ────────────────────────────────────────────
+//
+// У звіту немає CRUD — є одна команда вибірки. Але навколо самого запиту
+// щоразу писалося те саме: розбір `payload.filters`, зворотне представлення
+// ссылочного фільтра (`$filters`) і конверт відповіді. Це не просто дубль:
+// саме він одного разу розійшовся — методологію вхідного сальдо правили у двох
+// звітах окремо, і обидва вважалися джерелом правди.
+//
+// Тому обгортку генеруємо, а рукописним лишається те, заради чого звіт і
+// пишуть, — запит. Розкладка та сама, що в CRUD:
+//
+//   db/_generated/<model>.index.gen.sql   app.<model>_index  ← генерується
+//   db/<model>.sql                        app.<model>_data   ← пишеться руками
+//
+// Ядро отримує вже РОЗІБРАНІ фільтри (ссылка згорнута до id) і повертає
+// `{rows, totals, extra}` — ні про конверт, ні про эхо воно не знає.
+
+type ReportFilter = {
+  /** Ключ у `payload.filters` — те саме ім'я, яким його називає панель. */
+  key: string;
+  /** Ключ у нормалізованому наборі: ссылка стає `<key>Id` (конвенція моделей). */
+  normKey: string;
+  required: boolean;
+  /** Джерело підпису для эха; порожнє — фільтр не ссылочний. */
+  ref?: { table: string; pk: string; display: string };
+  isString: boolean;
+};
+
+type ReportSpec = { schema: string; model: string; filters: ReportFilter[] };
+
+/**
+ * Ключ фільтра їде в SQL текстом усередині `jsonb_build_object`, тож мусить
+ * бути звичайним ідентифікатором. `assertIdentifier` тут не годиться — ключі
+ * camelCase (`dateFrom`), і це нормально: це JSON-ключ, а не ім'я колонки.
+ */
+function assertJsonKey(value: string, label: string) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+    throw new Error(`${label}: ключ фільтра «${value}» має бути ідентифікатором`);
+  }
+}
+
+async function buildReportSpec(
+  appRoot: string,
+  modelPath: string,
+  map: ModelMetaMap,
+  verbose: boolean,
+): Promise<ReportSpec> {
+  const { model, path } = schemaModuleFor(appRoot, modelPath);
+  const manifest = JSON.parse(
+    await Deno.readTextFile(join(appRoot, modelPath, "manifest.json")),
+  ) as FeatureManifest;
+  const schemaName = manifest.schema ?? "app";
+  assertIdentifier(schemaName, "schema");
+  assertIdentifier(model, "model");
+
+  const Pascal = pascalCase(model);
+  const mod = await importSchema(path);
+  const filtersSchema = mod[`${Pascal}FiltersSchema`];
+
+  // Звіт без фільтрів можливий, але майже завжди це описка в імені експорту, а
+  // виглядає вона як робоча генерація. Тому голосно, але не фатально.
+  if (!filtersSchema) {
+    console.warn(
+      `⚠ ${modelPath}: немає ${Pascal}FiltersSchema — обгортка буде без фільтрів. ` +
+        `Якщо фільтри у звіту є, звір ім'я експорту.`,
+    );
+  }
+
+  const props = filtersSchema?.properties ?? {};
+  const required = new Set<string>(filtersSchema?.required ?? []);
+  const filters: ReportFilter[] = [];
+
+  for (const [key, prop] of Object.entries(props)) {
+    assertJsonKey(key, `${model}.${key}`);
+    const xref = prop["x-ref"];
+    if (xref) {
+      const target = map.get(xref.model);
+      if (!target) {
+        throw new Error(`${model}.${key}: модель '${xref.model}' не знайдена (x-ref фільтра)`);
+      }
+      filters.push({
+        key,
+        normKey: `${key}Id`,
+        required: required.has(key),
+        ref: {
+          table: `${target.schema}.${target.model}`,
+          pk: target.pk,
+          display: xref.display ?? target.displayCol,
+        },
+        isString: false,
+      });
+      continue;
+    }
+    filters.push({
+      key,
+      normKey: key,
+      required: required.has(key),
+      isString: isStringType(prop),
+    });
+  }
+
+  if (verbose) {
+    const shown = filters.map((f) =>
+      `${f.normKey}${f.required ? "*" : ""}${f.ref ? `→${f.ref.table}` : ""}`
+    );
+    console.log(`· ${model}: звіт, фільтри=[${shown.join(", ")}]`);
+  }
+
+  return { schema: schemaName, model, filters };
+}
+
+function renderReportIndex(spec: ReportSpec): string {
+  const fn = `${spec.schema}.${spec.model}`;
+
+  // Нормалізація. Порожній рядок прирівняний до «не задано»: панель шле саме
+  // його, коли поле очистили, і `null` тут з'явився б лише в теорії.
+  const normPairs = spec.filters.map((f) =>
+    f.ref
+      ? `    '${f.normKey}', nullif(v_filters->'${f.key}'->>'id', '')`
+      : f.isString
+      ? `    '${f.normKey}', nullif(v_filters->>'${f.key}', '')`
+      : `    '${f.normKey}', v_filters->'${f.key}'`
+  );
+
+  const echoPairs = spec.filters.filter((f) => f.ref).map((f) =>
+    `    '${f.key}',\n` +
+    `    (select jsonb_build_object('id', x.${f.ref!.pk}::text, 'name', x.${f.ref!.display})\n` +
+    `       from ${f.ref!.table} x where x.${f.ref!.pk} = (v_norm->>'${f.normKey}')::bigint)`
+  );
+
+  const echo = echoPairs.length
+    ? `  v_out := v_filters || jsonb_strip_nulls(jsonb_build_object(\n${
+      echoPairs.join(",\n")
+    }\n  ));`
+    : `  v_out := v_filters;`;
+
+  // Перевірка обов'язкових. Оператор `?` замість порівняння з null: після
+  // jsonb_strip_nulls «не задано» — це відсутність ключа, однаково для рядка,
+  // числа й ссылки, тож одна перевірка на всі види.
+  const checks = spec.filters.filter((f) => f.required).map((f) =>
+    `  if not (v_norm ? '${f.normKey}') then\n` +
+    `    return ${refusal(f.key)};\n` +
+    `  end if;\n`
+  );
+
+  return `-- ⚠ ЗГЕНЕРОВАНО deno task sql:gen — НЕ РЕДАГУВАТИ.
+-- Джерело: ${spec.model}.schema.ts (${pascalCase(spec.model)}FiltersSchema) + manifest.json.
+-- Сам запит звіту — рукописний, у db/${spec.model}.sql: ${fn}_data(user_id, filters).
+
+drop function if exists ${fn}_index(bigint, jsonb);
+create function ${fn}_index(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_filters jsonb := coalesce(payload->'filters', '{}'::jsonb);
+  v_norm    jsonb;
+  v_out     jsonb;
+  v_data    jsonb;
+begin
+  -- Ссылка згортається до id: далі всередині звіту вона нікому не потрібна.
+  v_norm := jsonb_strip_nulls(jsonb_build_object(
+${normPairs.join(",\n")}
+  ));
+
+  -- Назад ссылка їде з підписом із бази: id міг прийти сам, без назви (перехід
+  -- із іншого звіту), і тоді пікер стояв би порожнім при діючому фільтрі.
+${echo}
+
+${checks.length ? checks.join("\n") + "\n" : ""}  v_data := coalesce(${fn}_data(user_id, v_norm), '{}'::jsonb);
+
+  return jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item',     v_data->'item',
+      'rows',     coalesce(v_data->'rows', '[]'::jsonb),
+      'options',  coalesce(v_data->'options', '{}'::jsonb),
+      'totals',   coalesce(v_data->'totals', '{}'::jsonb),
+      'extra',    coalesce(v_data->'extra', '{}'::jsonb),
+      '$filters', v_out
+    ),
+    'messages', '[]'::jsonb,
+    'meta', '{}'::jsonb
+  );
+end;
+$$;
+`;
+}
+
+/**
+ * Відмова через незаповнений обов'язковий фільтр.
+ *
+ * Эхо `$filters` у відмову теж кладеться: без нього панель втратила б підписи
+ * ссылочних фільтрів рівно тоді, коли користувач і має їх доповнювати.
+ *
+ * Текст — маркер: сервер мови користувача не знає. Поле називається одне —
+ * перше незаповнене; перелічувати всі означало б показати той самий рядок
+ * кілька разів, а які саме фільтри обов'язкові, видно з зірочок у панелі.
+ */
+function refusal(field: string): string {
+  return `jsonb_build_object(
+      'ok', false,
+      'data', jsonb_build_object(
+        'item', null, 'rows', '[]'::jsonb, 'options', '{}'::jsonb,
+        'totals', '{}'::jsonb, 'extra', '{}'::jsonb, '$filters', v_out
+      ),
+      'messages', jsonb_build_array(jsonb_build_object(
+        'type', 'error',
+        'text', '@[core.reportFilterRequired]',
+        'field', '${field}'
+      )),
+      'meta', '{}'::jsonb
+    )`;
+}
+
 // ── вилучення метаданих ─────────────────────────────────────────────────────────
 
 function schemaModuleFor(appRoot: string, modelPath: string) {
@@ -1719,9 +1934,8 @@ async function main() {
     }
 
     const manifestType = manifest?.type;
-    if (manifestType && manifestType !== "catalog" && manifestType !== "document") {
-      // Звіт не має CRUD: у нього одна команда вибірки, написана руками в
-      // db/<model>.sql. Схема лишається — з неї живе форма параметрів.
+    const isReport = manifestType === "report";
+    if (manifestType && manifestType !== "catalog" && manifestType !== "document" && !isReport) {
       if (verbose) console.log(`· ${modelPath}: type=${manifestType} — генерація CRUD не потрібна`);
       continue;
     }
@@ -1751,11 +1965,23 @@ async function main() {
     // лишає без генерації всі моделі, що стоять у sql.json нижче за неї.
     // Ненульовий код виходу при цьому зберігається — див. нижче.
     try {
-      const spec = await buildSpec(appRoot, modelPath, map, verbose);
       const outDir = join(appRoot, modelPath, "db", "_generated");
       await Deno.mkdir(outDir, { recursive: true });
-      const outFile = join(outDir, `${spec.model}.crud.gen.sql`);
-      await Deno.writeTextFile(outFile, renderFile(spec));
+
+      // У звіту генерується не CRUD, а ОБГОРТКА команди index: розбір фільтрів,
+      // перевірка обов'язкових, эхо `$filters` і конверт. Сам запит лишається
+      // рукописним — у db/<model>.sql, функцією <model>_data.
+      const [outFile, text] = isReport
+        ? [
+          join(outDir, `${model}.index.gen.sql`),
+          renderReportIndex(await buildReportSpec(appRoot, modelPath, map, verbose)),
+        ]
+        : await (async () => {
+          const spec = await buildSpec(appRoot, modelPath, map, verbose);
+          return [join(outDir, `${spec.model}.crud.gen.sql`), renderFile(spec)] as const;
+        })();
+
+      await Deno.writeTextFile(outFile, text);
       console.log(`✓ ${modelPath} → ${outFile}`);
       count++;
     } catch (error) {

@@ -58,9 +58,9 @@ Two things are specific to reports, and both follow from what a report costs:
 - **a filter change does not rebuild the report.** `onFiltersChanged()` stays empty (a
   list overrides it to reload) — a turnover sheet for a year is not something to re-run on
   every click in a picker. `Refresh` builds it, and `canRun` guards the required filters;
-- **there is no generator.** You write the `index` function by hand — but the payload
-  contract does not change because of that, which is exactly why it is the same one:
-  otherwise the application would carry two different conventions for one thing.
+- **only the query is hand-written.** `sql:gen` generates the `index` wrapper from the
+  filters schema — filter parsing, the required-filter refusal, the `$filters` echo and
+  the envelope. What you write is the part a report exists for: the query itself.
 
 **A report that no longer matches its filters says so.** Change a filter after the report
 was built and the base blurs the body, disables clicking through it, and floats a
@@ -81,17 +81,59 @@ protected override async buildReport() {
 }
 ```
 
+## SQL: a generated wrapper and a hand-written body
+
+Two functions, and only the second one is yours:
+
+| file | function | who writes it |
+|---|---|---|
+| `db/_generated/<report>.index.gen.sql` | `app.<report>_index(user_id, payload)` | `deno task sql:gen` |
+| `db/<report>.sql` | `app.<report>_data(user_id, filters)` | you |
+
+The wrapper reads the **filters schema** — `<Pascal>FiltersSchema`, the same one the
+screen binds to — and does everything around the query:
+
+- parses `payload.filters`, collapsing a reference to its id: `organization` (an object
+  `{id, name}`) arrives at your function as `organizationId`, an empty string becomes
+  "not set";
+- refuses when a required filter is missing, with the message bound to that field —
+  so an unset organization is a clear refusal, not an empty sheet;
+- echoes `$filters` back with the label read from the database, so the picker in the
+  panel is not left blank next to a filter that is in force;
+- wraps your result in the envelope.
+
+Declare the origin of a reference filter in the schema — without it the wrapper has
+nowhere to read the label from. Requiredness is `Type.Optional`, exactly as in a form:
+
+```ts
+const refFilter = (model: string) =>
+  Type.Union([Type.Object({ id: Type.String(), name: Type.String() }), Type.Null()],
+    { default: null, "x-ref": { model } });
+
+export const TurnoverBalanceFiltersSchema = Type.Object({
+  organization: refFilter("organization"),                    // required
+  dateFrom:     Type.Optional(Type.String({ default: "" })),  // optional
+  dateTo:       Type.Optional(Type.String({ default: "" })),
+});
+```
+
+Your function then starts with parsed values and returns only the contents of `data` —
+no envelope, no echo, and no check that a required filter is set:
+
 ```sql
-with params as (
-  select
-    nullif(f->'organization'->>'id', '')::bigint as org_id,   -- one key, object value
-    nullif(f->>'dateFrom', '')::date             as date_from,
-    nullif(f->>'dateTo', '')::date               as date_to
-  from (select coalesce(payload->'filters', '{}'::jsonb) as f) src
-)
--- … and in the envelope, the same key returned with the label from the database:
---   '$filters', (select coalesce(payload->'filters','{}'::jsonb)
---     || jsonb_strip_nulls(jsonb_build_object('organization', (select …))))
+create function app.turnover_balance_data(user_id bigint, filters jsonb)
+returns jsonb
+language sql
+as $$
+  with params as (
+    select
+      nullif(filters->>'organizationId', '')::bigint as org_id,
+      nullif(filters->>'dateFrom', '')::date         as date_from,
+      nullif(filters->>'dateTo', '')::date           as date_to
+  ),
+  -- … the query …
+  select jsonb_build_object('rows', …, 'totals', …);   -- 'extra' if the screen needs it
+$$;
 ```
 
 **Drill-down goes through the filters too.** `tab.open` `params` land straight in

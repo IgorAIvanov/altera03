@@ -5,10 +5,18 @@ import { Type, type Static } from "@sinclair/typebox";
  * тому й схема описує не запис, а параметри та результат.
  */
 
-const RefSchema = Type.Union([
-  Type.Object({ id: Type.String(), name: Type.String() }),
-  Type.Null(),
-], { default: null });
+/**
+ * Ссылочний фільтр звіту: значення — `{id, name}`, як і в списках.
+ *
+ * Функція, а не спільна константа, бо `x-ref` у кожного фільтра свій: він
+ * називає МОДЕЛЬ, з якої береться підпис. Ключ той самий, що в моделях, щоб
+ * словник був один — див. пояснення в turnover_balance.schema.ts.
+ */
+const refFilter = (model: string) =>
+  Type.Union([
+    Type.Object({ id: Type.String(), name: Type.String() }),
+    Type.Null(),
+  ], { default: null, "x-ref": { model } });
 
 /** Значення субконто в рядку звіту разом з ключем моделі для переходу. */
 export const ReportAnalyticSchema = Type.Object({
@@ -60,10 +68,15 @@ export type AccountCardTotals = Static<typeof AccountCardTotalsSchema>;
  * вкладений `filters`, ссылка ОДНИМ ключем з об'єктом `{id, name}`.
  */
 export const AccountCardFiltersSchema = Type.Object({
-  organization: Type.Optional(RefSchema),
+  organization: refFilter("organization"),
+  // Рахунок ссылкою НЕ оголошений навмисно: значення фільтра — сам код
+  // (`361`), і пікер показує його ж (`display-field="code"`). Підпису, який
+  // треба було б донести з бази, тут немає, тож і `x-ref` нема чого робити.
   accountCode:  Type.String({ default: "" }),
-  dateFrom:     Type.String({ default: "" }),
-  dateTo:       Type.String({ default: "" }),
+  // Обов'язковість — це `Type.Optional`; чому саме так і що було доти —
+  // див. turnover_balance.schema.ts.
+  dateFrom:     Type.Optional(Type.String({ default: "" })),
+  dateTo:       Type.Optional(Type.String({ default: "" })),
 });
 export type AccountCardFilters = Static<typeof AccountCardFiltersSchema>;
 

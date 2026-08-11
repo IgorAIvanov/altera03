@@ -83,7 +83,9 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
     const f = this.$root.$filters;
     const totals = this.$root.totals;
     const account = [totals.account || f.accountCode, totals.accountName].filter(Boolean).join(" — ");
-    const period = periodLabel({ dateFrom: f.dateFrom, dateTo: f.dateTo });
+    // Період необов'язковий (схема каже це прямо), тож у підпис він може й не
+    // прийти — periodLabel порожній період і не друкує.
+    const period = periodLabel({ dateFrom: f.dateFrom ?? "", dateTo: f.dateTo ?? "" });
     return [account, f.organization?.name, period].filter(Boolean).join(" · ");
   }
 

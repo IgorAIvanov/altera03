@@ -7,14 +7,17 @@
 -- момент проведення.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-drop function if exists app.document_movements_index(bigint, jsonb);
-create function app.document_movements_index(user_id bigint, payload jsonb)
+-- Тіло звіту. Обгортку `app.document_movements_index` генерує sql:gen зі схеми
+-- фільтрів: розбір, перевірку обов'язкового documentId і конверт. Ссылочних
+-- фільтрів тут немає, тож эхо порожнє — підпис документа звіт віддає сам,
+-- в `extra.document`: заголовку потрібні номер, дата, сума й організація.
+drop function if exists app.document_movements_data(bigint, jsonb);
+create function app.document_movements_data(user_id bigint, filters jsonb)
 returns jsonb
 language sql
 as $$
   with params as (
-    -- Фільтри вкладеним об'єктом `filters` — той самий контракт, що в списків.
-    select nullif(payload->'filters'->>'documentId', '')::bigint as document_id
+    select nullif(filters->>'documentId', '')::bigint as document_id
   ),
   doc as (
     select
@@ -70,19 +73,12 @@ as $$
     order by je.line_no, je.id
   )
   select jsonb_build_object(
-    'ok', true,
-    'data', jsonb_build_object(
-      'item', null,
-      'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),
-      'options', '{}'::jsonb,
-      'totals', jsonb_build_object(
-        'amount', coalesce((select sum("amount") from rows), 0)
-      ),
-      'extra', jsonb_build_object(
-        'document', coalesce((select to_jsonb(doc) from doc), '{}'::jsonb)
-      )
+    'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),
+    'totals', jsonb_build_object(
+      'amount', coalesce((select sum("amount") from rows), 0)
     ),
-    'messages', '[]'::jsonb,
-    'meta', '{}'::jsonb
+    'extra', jsonb_build_object(
+      'document', coalesce((select to_jsonb(doc) from doc), '{}'::jsonb)
+    )
   );
 $$;

@@ -10,19 +10,19 @@
 -- («catalog», «operation») БД не зберігає: джерело правди про маршрути одне.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-drop function if exists app.account_card_index(bigint, jsonb);
-create function app.account_card_index(user_id bigint, payload jsonb)
+-- Тіло звіту. Обгортку `app.account_card_index` генерує sql:gen зі схеми
+-- фільтрів: розбір, перевірку обов'язкових, эхо `$filters` і конверт.
+drop function if exists app.account_card_data(bigint, jsonb);
+create function app.account_card_data(user_id bigint, filters jsonb)
 returns jsonb
 language sql
 as $$
   with params as (
     select
-      -- Фільтри вкладеним об'єктом `filters`; ссылка — один ключ з об'єктом.
-      nullif(f->'organization'->>'id', '')::bigint                  as org_id,
-      nullif(trim(coalesce(f->>'accountCode', '')), '')             as account,
-      nullif(f->>'dateFrom', '')::date                              as date_from,
-      nullif(f->>'dateTo', '')::date                                as date_to
-    from (select coalesce(payload->'filters', '{}'::jsonb) as f) src
+      nullif(filters->>'organizationId', '')::bigint          as org_id,
+      nullif(trim(coalesce(filters->>'accountCode', '')), '') as account,
+      nullif(filters->>'dateFrom', '')::date                  as date_from,
+      nullif(filters->>'dateTo', '')::date                    as date_to
   ),
   -- Аналітика проводки, згорнута в масив по сторонах.
   analytics as (
@@ -70,14 +70,15 @@ as $$
      and (je.debit_account = p.account or je.credit_account = p.account)
     join app.document_type dt on dt.id = d.document_type_id
     left join app.currency cur on cur.id = je.currency_id
-    where p.org_id is not null and p.account is not null
+    -- Організація й рахунок не перевіряються: обов'язковість оголошена в схемі
+    -- фільтрів, і відмовляє обгортка — сюди звіт без них не доходить.
   ),
   -- Вхідне сальдо: усе, що було ДО початку періоду. Немає початку — немає і
   -- «до»: сальдо нульове, а весь рух іде в рядки картки. Доти умова читалася
   -- навпаки (`date_from is null or …`), і при виклику без періоду кожен рух
   -- ішов і у вхідне сальдо, і в період — сальдо, що наростає, стартувало з
   -- подвійної суми. З екрана не видно: <ui-period> завжди підставляє період.
-  -- Те саме правило продубльоване в app.turnover_balance_index.
+  -- Те саме правило продубльоване в app.turnover_balance_data.
   opening as (
     select coalesce(sum(m.debit - m.credit), 0::numeric) as net
     from moves m, params p
@@ -130,32 +131,16 @@ as $$
     from period
   )
   select jsonb_build_object(
-    'ok', true,
-    'data', jsonb_build_object(
-      'item', null,
-      'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),
-      'options', '{}'::jsonb,
-      'totals', jsonb_build_object(
-        'account',        (select account from params),
-        'accountName',    (select coalesce(name, '') from app.chart_of_account, params where code = params.account),
-        'openingDebit',   greatest((select net from opening), 0::numeric),
-        'openingCredit',  greatest(-(select net from opening), 0::numeric),
-        'turnoverDebit',  (select debit from turnover),
-        'turnoverCredit', (select credit from turnover),
-        'closingDebit',   greatest((select net from opening) + (select debit from turnover) - (select credit from turnover), 0::numeric),
-        'closingCredit',  greatest(-((select net from opening) + (select debit from turnover) - (select credit from turnover)), 0::numeric)
-      ),
-      '$filters', (
-        select coalesce(payload->'filters', '{}'::jsonb)
-          || jsonb_strip_nulls(jsonb_build_object(
-               'organization',
-               (select jsonb_build_object('id', o.id::text, 'name', o.name)
-                from app.organization o cross join params p where o.id = p.org_id)
-             ))
-      ),
-      'extra', '{}'::jsonb
-    ),
-    'messages', '[]'::jsonb,
-    'meta', '{}'::jsonb
+    'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),
+    'totals', jsonb_build_object(
+      'account',        (select account from params),
+      'accountName',    (select coalesce(name, '') from app.chart_of_account, params where code = params.account),
+      'openingDebit',   greatest((select net from opening), 0::numeric),
+      'openingCredit',  greatest(-(select net from opening), 0::numeric),
+      'turnoverDebit',  (select debit from turnover),
+      'turnoverCredit', (select credit from turnover),
+      'closingDebit',   greatest((select net from opening) + (select debit from turnover) - (select credit from turnover), 0::numeric),
+      'closingCredit',  greatest(-((select net from opening) + (select debit from turnover) - (select credit from turnover)), 0::numeric)
+    )
   );
 $$;
