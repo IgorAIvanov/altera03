@@ -48,7 +48,8 @@ deno task sql:registry     # перегенерувати app/_generated/** з m
 deno task locales:build    # зібрати app/_locales/*.json із _locales/ поряд із кодом
 deno task sql:assemble     # зібрати SQL-пакет з db/ файлів моделей
 deno task sql:publish      # опублікувати SQL у PostgreSQL
-deno task skills:sync      # оновити .claude/skills з @altera/skills
+deno task check            # типи ВСЬОГО app/ — екрани вантажаться динамічно, вхід їх не бачить
+deno task skills:sync      # оновити .claude/skills + FRAMEWORK-CHANGELOG.md з @altera/skills
 deno task startdb          # docker compose up -d (PostgreSQL)
 deno task build:front      # продуктивна збірка
 deno task solution:export  # вивантажити рішення (app/) у переносимий пакет
@@ -211,6 +212,7 @@ scripts/
 | `app/_sqlpackage/**` | зібраний SQL | `deno task sql:assemble` |
 | `db/_generated/*.crud.gen.sql` | CRUD зі схеми | `deno task sql:gen <family>/<model>` |
 | `.claude/skills/**` | скіли з пакета | `deno task skills:sync` |
+| `FRAMEWORK-CHANGELOG.md` | що змінилося у фреймворку — читати після оновлення | `deno task skills:sync` |
 
 Згенерований CRUD **комітиться** — це вихідник, а не продукт збірки: він має потрапляти
 в дифф рев'ю разом зі схемою, з якої зроблений. Правки поверх нього пишуться в

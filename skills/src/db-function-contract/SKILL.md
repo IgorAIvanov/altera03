@@ -44,7 +44,10 @@ deno task sql:registry && deno task sql:assemble && deno task sql:publish
   and searches by the target's display column.
 - `x-table: { table, parentFk, orderBy? }` — tabular part (master-detail); the array's
   item schema describes the line columns (which may themselves carry `x-ref`).
-- `x-db-type` / `x-db-col` — column type cast / column-name override.
+- `x-db-type` / `x-db-col` — column type cast / column-name override. The type is a bare
+  name from a closed list — `bigint`, `int`, `integer`, `numeric`, `json`, `jsonb`, `date`,
+  `timestamp`, `timestamptz`, `text`, `varchar`. Precision and length belong to the DDL:
+  `numeric(10,2)` here is a generation error, not a cast.
 
 **Override semantics (standard vs custom):** decided by file presence, per function.
 The assembler concatenates, in order, `db/_generated/<model>.crud.gen.sql` then
@@ -84,7 +87,14 @@ Extra commands follow the same naming style: `nextCode`, `nextNumber`, `<verb><N
 
 - Standard catalog-style models have a base function contract: list, get, save, delete, lookup.
 - Document models keep the same base contract and add `post` and `unpost` when the manifest declares `type: "document"`.
-- Information-register models are a separate family. Do not force them into catalog CRUD naming if the real contract is period-based or slice-based. Define the function set from the register semantics first: for example history, actual-on-date, slice-last, upsert, or bulk-upsert.
+- Information registers (`type: register`) get the generated CRUD — `list`, `get`, `save`,
+  `delete` — like a catalog, minus `lookup`: nothing references a register row, so there is
+  nobody to pick it in a picker, and no `LookupRowSchema` is required. What generation does
+  not give is the register's own reading — `_at` (value on a date), `_history`, `_set`:
+  those are period-based, they are yours to write, and they go in `db/<model>.custom.sql`.
+  Note that `delete` on a register is **physical**: the generator branches on the presence
+  of an `isDeleted` field, not on the model type, and a register normally has none — a row
+  marked as deleted would silently distort a "latest value on date" slice.
 - Functions accept `userId` as the first parameter and a JSONB payload as the second parameter unless there is a strong reason not to.
 - Functions return JSONB.
 - `lookup` functions used for picker / autocomplete should return business-facing labels. Prefer `name` as the picker `label` by default; keep technical codes in separate fields only when the UI explicitly needs them.

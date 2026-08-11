@@ -9,7 +9,7 @@
 // рядок `⚠` у виводі збірки.
 import { assertEquals } from "@std/assert";
 import { join, relative, SEPARATOR } from "@std/path";
-import { SKILL_FILES } from "./skills.generated.ts";
+import { CHANGELOG, SKILL_FILES } from "./skills.generated.ts";
 
 const SRC_DIR = join(import.meta.dirname!, "src");
 
@@ -89,4 +89,14 @@ Deno.test("skills.generated.ts збігається зі skills/src на дис�
       );
     }
   });
+});
+
+Deno.test("CHANGELOG у пакеті збігається з CHANGELOG.md на диску", async () => {
+  // Той самий довід, що вище: файл їде в застосунок ВБУДОВАНИМ, тож правка без
+  // `deno task skills:build` дійшла б до прикладників старим текстом — і саме
+  // там, де він розповідає, що зламалося при оновленні.
+  const disk = (await Deno.readTextFile(join(import.meta.dirname!, "..", "CHANGELOG.md")))
+    .replaceAll("\r\n", "\n");
+
+  assertEquals(CHANGELOG, disk);
 });

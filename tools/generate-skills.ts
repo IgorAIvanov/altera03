@@ -68,7 +68,20 @@ export interface SkillsBuildResult {
 }
 
 export async function generateSkills(
-  options: { srcDir: string; outFile: string; version: string; verbose?: boolean },
+  options: {
+    srcDir: string;
+    outFile: string;
+    version: string;
+    /**
+     * Файл «що змінилося», який їде в застосунок разом зі скілами.
+     *
+     * Скіли кажуть, ЯК робити зараз, і не кажуть, що змінилося й що доведеться
+     * поправити руками. Без цього каналу таке знання лишалося б у цьому
+     * репозиторії — у CLAUDE.md і docs/, куди прикладник не дивиться взагалі.
+     */
+    changelogFile: string;
+    verbose?: boolean;
+  },
 ): Promise<SkillsBuildResult> {
   const shipped: string[] = [];
   const kept: string[] = [];
@@ -105,10 +118,14 @@ export async function generateSkills(
   const keys = [...files.keys()].sort();
   const entries = keys.map((key) => `  ${JSON.stringify(key)}: ${JSON.stringify(files.get(key))},`);
 
+  // LF — з тієї ж причини, що й у скілах: артефакт не має залежати від autocrlf.
+  const changelog = (await Deno.readTextFile(options.changelogFile)).replaceAll("\r\n", "\n");
+
   await Deno.writeTextFile(
     options.outFile,
     `${HEADER}\nexport const SKILLS_VERSION = ${JSON.stringify(options.version)};\n\n` +
-      `export const SKILL_FILES: Record<string, string> = {\n${entries.join("\n")}\n};\n`,
+      `export const SKILL_FILES: Record<string, string> = {\n${entries.join("\n")}\n};\n\n` +
+      `export const CHANGELOG: string = ${JSON.stringify(changelog)};\n`,
   );
 
   if (options.verbose) {
@@ -121,16 +138,16 @@ export async function generateSkills(
 
 async function main() {
   const verbose = Deno.args.includes("--verbose");
-  const [srcDir, outFile] = Deno.args.filter((arg) => !arg.startsWith("--"));
+  const [srcDir, outFile, changelogFile] = Deno.args.filter((arg) => !arg.startsWith("--"));
 
-  if (!srcDir || !outFile) {
-    throw new Error("Вжиток: generate-skills <srcDir> <outFile> [--verbose]");
+  if (!srcDir || !outFile || !changelogFile) {
+    throw new Error("Вжиток: generate-skills <srcDir> <outFile> <changelogFile> [--verbose]");
   }
 
   const manifestPath = join(outFile, "..", "deno.json");
   const version = JSON.parse(await Deno.readTextFile(manifestPath)).version as string;
 
-  const result = await generateSkills({ srcDir, outFile, version, verbose });
+  const result = await generateSkills({ srcDir, outFile, version, changelogFile, verbose });
 
   for (const name of result.undeclared) {
     console.warn(

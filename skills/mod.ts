@@ -11,9 +11,18 @@
 // склонував репозиторій і ще нічого не запускав, має отримати робочі скіли. Тому в
 // кожному лежить шапка «не редагувати»: правка на місці загубилася б при
 // наступному оновленні, і мовчки.
-import { SKILL_FILES, SKILLS_VERSION } from "./skills.generated.ts";
+import { CHANGELOG, SKILL_FILES, SKILLS_VERSION } from "./skills.generated.ts";
 
-export { SKILL_FILES, SKILLS_VERSION };
+export { CHANGELOG, SKILL_FILES, SKILLS_VERSION };
+
+/**
+ * Куди лягає «що змінилося» — у КОРІНЬ застосунку, а не в `.claude/skills`.
+ *
+ * Скіли кажуть, як робити зараз; цей файл — що змінилося й що доведеться
+ * поправити руками, і читає його людина, яка щойно оновила пакети. У теці
+ * скілів вона його не побачить, а в корені він потрапляє і в дифф оновлення.
+ */
+const CHANGELOG_FILE = "FRAMEWORK-CHANGELOG.md";
 
 /** За цим рядком sync упізнає СВОЇ файли — і лише їх прибирає. */
 const MARK = "@altera/skills@";
@@ -46,6 +55,8 @@ async function isOurs(dir: string): Promise<boolean> {
 }
 
 export interface SyncResult {
+  /** Шлях розкладеного «що змінилося» відносно targetDir. */
+  changelog: string;
   /** Скіли, розкладені цим прогоном. */
   written: string[];
   /** Скіли попередніх версій, яких у пакеті вже немає, — прибрані. */
@@ -100,13 +111,21 @@ export async function syncSkills(
     if (!written.includes(name)) written.push(name);
   }
 
+  await Deno.writeTextFile(`${options.targetDir}/${CHANGELOG_FILE}`, withNotice(CHANGELOG));
+
   if (options.verbose) {
     for (const name of written) console.log(`· ${name}`);
     for (const name of removed) console.log(`− ${name} (немає в цій версії)`);
     for (const name of skipped) console.log(`⚠ ${name}: свій скіл із таким іменем — не чіпав`);
   }
 
-  return { written: written.sort(), removed: removed.sort(), skipped: skipped.sort(), targetDir: options.targetDir };
+  return {
+    written: written.sort(),
+    removed: removed.sort(),
+    skipped: skipped.sort(),
+    changelog: CHANGELOG_FILE,
+    targetDir: options.targetDir,
+  };
 }
 
 async function main() {
@@ -118,6 +137,7 @@ async function main() {
   console.log(
     `✓ ${result.written.length} скілів → ${targetDir}/.claude/skills (@altera/skills@${SKILLS_VERSION})`,
   );
+  console.log(`✓ що змінилося → ${targetDir}/${result.changelog} — прочитай перед роботою`);
   if (result.skipped.length) {
     console.log(
       `  ${result.skipped.length} пропущено: там свій скіл із тим самим іменем. ` +

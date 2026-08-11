@@ -29,17 +29,29 @@ export class MyReport extends ReportBase<MyRoot> {
 
   constructor() { super(MyRootSchema); }
 
+  override connectedCallback() {
+    super.connectedCallback();
+    const month = periodOf("month");
+    // Умовчання одним записом: setFilters звіт не переформовує (його формує
+    // «Оновити»), тож зайвих запитів це не коштує.
+    this.setFilters({
+      dateFrom: this.filterValue("dateFrom") || month.dateFrom,
+      dateTo:   this.filterValue("dateTo")   || month.dateTo,
+    });
+  }
+
   protected override get canRun(): boolean {
-    return !this.busy && !!this.$root.$query.organizationId;
+    return !this.busy && !!this.filterValue<Ref>("organization")?.id;
   }
 
   protected override async buildReport() {
-    await this.loadInto("index", { ...this.$root.$query });
+    await this.loadInto("index", this.filtersPayload());   // → { filters: {…} }
   }
 
   protected override printSubtitle(): string {
-    const q = this.$root.$query;
-    return [q.organization?.name, periodLabel({ dateFrom: q.dateFrom, dateTo: q.dateTo })]
+    const f = this.$root.$filters;
+    return [f.organization?.name,
+            periodLabel({ dateFrom: f.dateFrom ?? "", dateTo: f.dateTo ?? "" })]
       .filter(Boolean).join(" · ");
   }
 
@@ -47,6 +59,14 @@ export class MyReport extends ReportBase<MyRoot> {
   protected override renderBody()    { return html`<table class="table table-sm w-full">…</table>`; }
 }
 ```
+
+**Значення фільтрів живуть у `$root.$filters`, а не в `$query`.** `$query` — це
+сторінка, сортування й пошук таблиці, тобто те, чого у звіту немає взагалі;
+фільтри ж їдуть у payload вкладеним об'єктом (`filtersPayload()` → `{ filters:
+{…} }`) — той самий контракт, що в списків, і саме його читає згенерована
+обгортка `index`. Читання — `filterValue(key)`, запис — `setFilter` /
+`setFilters`; ссылка лежить ОДНИМ ключем з об'єктом `{id, name}`, звідки пікер
+бере і `selectedId`, і `displayValue`.
 
 Кнопки «Сформувати» в тулбарі немає навмисно: «Оновити» — це вона і є. Друк і
 Excel вимикаються, поки `rows` порожні.

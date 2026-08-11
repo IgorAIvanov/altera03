@@ -165,6 +165,11 @@ type ModelSpec = {
   // Документ: дані живуть у двох таблицях — спільна шапка app.document (h)
   // і таблиця реквізитів app.<model> (t) з первинним ключем document_id.
   isDocument: boolean;
+  /**
+   * Регістр: та сама п'ятірка, що в довідника, але БЕЗ `lookup` — на регістр
+   * ніхто не посилається, тож підбирати його в пікері нема кому.
+   */
+  isRegister: boolean;
   fromClause: string; // "app.invoice t" або "app.document h join app.invoice t on ..."
   pkExpr: string; // "t.id" або "h.id"
   /**
@@ -1446,7 +1451,7 @@ function renderFile(spec: ModelSpec): string {
     renderSave(spec),
     renderDelete(spec),
     ...(spec.softDelete ? [renderUndelete(spec)] : []),
-    renderLookup(spec),
+    ...(spec.isRegister ? [] : [renderLookup(spec)]),
     ...(spec.isDocument ? [renderPost(spec), renderUnpost(spec)] : []),
     ...(spec.hierarchy
       ? [renderGroupTree(spec), renderGroupSave(spec), renderGroupDelete(spec), renderMoveToGroup(spec)]
@@ -1754,9 +1759,17 @@ async function buildSpec(
   const itemSchema = mod[`${Pascal}ItemSchema`];
   const rowSchema = mod[`${Pascal}RowSchema`];
   const lookupSchema = mod[`${Pascal}LookupRowSchema`];
-  if (!itemSchema || !rowSchema || !lookupSchema) {
+
+  // Регістр — це дані, а не картка: на нього ніхто не посилається, тож і
+  // підбирати його в пікері нема кому й нема чим (представлення в рядка курсу
+  // валют немає взагалі). Тому `lookup` йому не генерується, а `LookupRowSchema`
+  // не вимагається — інакше довелося б писати схему заради функції, яку ніхто
+  // не покличе.
+  const isRegister = manifest.type === "register";
+  if (!itemSchema || !rowSchema || (!lookupSchema && !isRegister)) {
     throw new Error(
-      `${model}: очікую ${Pascal}ItemSchema/${Pascal}RowSchema/${Pascal}LookupRowSchema`,
+      `${model}: очікую ${Pascal}ItemSchema/${Pascal}RowSchema` +
+        (isRegister ? "" : `/${Pascal}LookupRowSchema`),
     );
   }
 
@@ -1791,8 +1804,10 @@ async function buildSpec(
   const itemFields = isDocument ? [...headerFields, ...parsed.fields.filter((f) => f.key !== "id")] : parsed.fields;
 
   // Аліас lookup-полів визначає походження ключа: шапка чи таблиця моделі.
-  const lookupFields = parseObject(lookupSchema, schemaName, map, `${model}.lookup`).fields
-    .map((f) => (isDocument && headerKeys.has(f.key) ? { ...f, alias: "h" } : f));
+  const lookupFields = lookupSchema
+    ? parseObject(lookupSchema, schemaName, map, `${model}.lookup`).fields
+      .map((f) => (isDocument && headerKeys.has(f.key) ? { ...f, alias: "h" } : f))
+    : [];
 
   const rowKeys = new Set(Object.keys(rowSchema.properties ?? {}));
   const listFields = itemFields.filter((f) =>
@@ -1866,6 +1881,7 @@ async function buildSpec(
     table: `${schemaName}.${model}`,
     pk: isDocument ? "document_id" : "id",
     isDocument,
+    isRegister,
     fromClause: isDocument
       ? `app.document h\n    join ${schemaName}.${model} t on t.document_id = h.id`
       : `${schemaName}.${model} t`,
@@ -1935,7 +1951,8 @@ async function main() {
 
     const manifestType = manifest?.type;
     const isReport = manifestType === "report";
-    if (manifestType && manifestType !== "catalog" && manifestType !== "document" && !isReport) {
+    const GENERATED_TYPES = ["catalog", "document", "register", "report"];
+    if (manifestType && !GENERATED_TYPES.includes(manifestType)) {
       if (verbose) console.log(`· ${modelPath}: type=${manifestType} — генерація CRUD не потрібна`);
       continue;
     }

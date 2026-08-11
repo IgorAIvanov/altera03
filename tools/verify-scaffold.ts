@@ -54,6 +54,21 @@ async function linkLocalPackages(appDir: string, repoRoot: string): Promise<stri
 
   config.links = links;
   await Deno.writeTextFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  // Той самий підмін, але для Tailwind. `links` віддає пакет каталогом ПОЗА
+  // застосунком, тож `vendor/jsr.io/@altera` тут не з'являється зовсім, і
+  // `@source` на нього не веде нікуди — а пресет це тепер вважає помилкою
+  // збірки. І правильно вважає: у справжньому застосунку порожнє джерело
+  // означає зниклі класи фреймворку при зеленій збірці. Тому не послаблюємо
+  // перевірку, а наводимо шлях туди, куди в цьому режимі веде й усе інше.
+  const cssPath = join(appDir, "app", "styles", "tailwind.css");
+  const css = await Deno.readTextFile(cssPath);
+  const patched = css.replace(
+    /@source\s+"[^"]*vendor\/jsr\.io\/@altera[^"]*"/,
+    `@source "${join(repoRoot, "client").replaceAll("\\", "/")}"`,
+  );
+  if (patched !== css) await Deno.writeTextFile(cssPath, patched);
+
   return links;
 }
 

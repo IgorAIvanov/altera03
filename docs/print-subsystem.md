@@ -15,7 +15,7 @@
 | [`server/modules/print/print-pdf.renderer.ts`](../server/modules/print/print-pdf.renderer.ts) | малювання плану в PDF (pdf-lib). Чистий рендер: без БД і без знання про моделі |
 | [`server/modules/print/barcode/`](../server/modules/print/barcode) | символіки штрих-кодів: Code 128 і EAN-13 своїми силами, QR — обгортка над `qrcode-generator`. Віддають модулі, не малюють |
 | [`server/modules/print/print.handlers.ts`](../server/modules/print/print.handlers.ts) | рантайм-команди `runtime.printPdf` і `runtime.printPreview` |
-| [`app/_sqlinit/print_template/db/`](../app/_sqlinit/print_template/db) | таблиця `app.print_template` + `print_template_resolve` — те, без чого ядро не працює |
+| [`server/sql/print_template/db/`](../server/sql/print_template/db) | таблиця `app.print_template` + `print_template_resolve` — те, без чого ядро не працює |
 | `app/<family>/<model>/manifest.json` | опис друкованої форми моделі |
 | `app/<family>/<model>/prints/*.template.json` | файл шаблону |
 | [`app/admin/print_template/`](../app/admin/print_template) | звичайна admin-модель: CRUD-SQL, список і редактор шаблонів |

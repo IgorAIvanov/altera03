@@ -51,7 +51,7 @@ SQL-функції моделей віддають **сирий `access_key`** �
 
 ## Схема даних
 
-Одна таблиця `app.attachment` на весь застосунок (`app/_sqlinit/attachment/`):
+Одна таблиця `app.attachment` на весь застосунок (пакет ядра `@core/attachment`, `server/sql/attachment/`):
 
 | колонка | навіщо |
 |---|---|
@@ -111,7 +111,7 @@ app.attachment_update(p_user_id, p_name, p_mime, p_stream,
 | `attachment/delete` | `{ id }` | видалення |
 
 Моделі `attachment` немає маніфесту: вона інфраструктурна, живе в
-`_sqlinit/attachment` і працює на стандартному авто-маршруті
+`@core/attachment` і працює на стандартному авто-маршруті
 `{schema}.{model}_{command}`.
 
 ## HTTP

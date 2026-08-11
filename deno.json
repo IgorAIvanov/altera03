@@ -44,7 +44,7 @@
     // Перелік гліфів іде В СКІЛ, бо прикладник пише екран у встановленому
     // застосунку, де фреймворк лежить у vendor/ і взяти список нізвідки.
     // Спершу перелік, потім упаковка — інакше в пакет поїхав би вчорашній.
-    "skills:build": "deno run -A ./tools/generate-icons-doc.ts ./client/ui-kit/icons.ts ./skills/src/screen-design-rules/icons.md && deno run -A ./tools/generate-skills.ts ./skills/src ./skills/skills.generated.ts --verbose",
+    "skills:build": "deno run -A ./tools/generate-icons-doc.ts ./client/ui-kit/icons.ts ./skills/src/screen-design-rules/icons.md && deno run -A ./tools/generate-skills.ts ./skills/src ./skills/skills.generated.ts ./CHANGELOG.md --verbose",
     // Генерує застосунок у тимчасовий каталог і перевіряє типи й збірку. На
     // місці шаблон перевірити не можна — він компілюється лише там, де живе.
     "scaffold:verify": "deno run -A ./tools/verify-scaffold.ts ./create/main.ts",

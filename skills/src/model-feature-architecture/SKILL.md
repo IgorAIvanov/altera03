@@ -55,7 +55,7 @@ Workflow:
 2. Group all model-specific UI and contract files together.
 3. Add manifest.json and declare the model key, required `type`, SQL `schema`, routed views such as list, picker and edit.
 4. Define `<model>.schema.ts` with the [typebox-model-schema](../typebox-model-schema/SKILL.md) skill before writing UI or SQL. This TypeBox file is the single source of truth: every UI component imports its types from here, and the SQL function contract mirrors its payload and response shapes. Do not start a model without it.
-5. Identify the model family before locking the SQL contract: catalog-style models usually use List, Pick, Edit, Delete. Loockup; document models use the same base contract plus standard `post` and `unpost`; information registers may need history, slice, actual-on-date, or bulk-record commands.
+5. Identify the model family before locking the SQL contract — `deno task sql:gen` generates a different set per `type`: `catalog` → `list`/`get`/`save`/`delete`(/`undelete`)/`lookup`; `document` → the same plus `post`/`unpost`; `register` → the same as a catalog but **without** `lookup`; `report` → the `index` wrapper only, the query itself stays hand-written. A register's own period-based reading (history, slice, actual-on-date) is not generated — write it in `db/<model>.custom.sql`.
 6. Assume the backend generic runtime can serve the standard commands without a dedicated model module.
 7. Use the shared frontend model runtime helper directly for standard commands unless a thin model-local wrapper adds real value.
 8. Add a TS command (manifest `commands.ts` → colocated `db/<model>.commands.ts`) only when the model needs an extra command that cannot be a plain SQL function; standard commands stay SQL-backed.
@@ -80,7 +80,8 @@ Architecture notes:
 - Manifest may optionally include `agent.allow`, `agent.allowCommands`, `agent.aliases`, and `agent.priority` for LLM access control, model discovery, and fallback ordering.
 - `schema` identifies the SQL schema that owns the model objects and should normally be `app` unless the feature deliberately lives in another lowercase SQL schema.
 - `type: document` is reserved for true editable document models and must declare `views.edit`.
-- An information-register model is still a first-class model in the same architecture, but it may have a different SQL command set than a catalog or document card.
+- An information-register model is a first-class model in the same architecture and gets the same generated CRUD as a catalog (minus `lookup`); what differs is the reading it adds on top — value on a date, history, slice.
+- Every generated table needs `created_at` and `updated_at`: `save` writes `updated_at = now()` unconditionally. Without them generation is green, publishing is green, and the first write fails.
 - The app shell can build routes from model-local manifest.json files at build time. Standard models should fit that routed-feature contract instead of registering routes manually.
 - For standard model commands, direct use of the shared frontend runtime client is preferred over duplicating identical <model>.api.ts wrappers in every model folder.
 - A dedicated backend controller/service/module should be treated as an exception path for specialized behavior, not as the default for every model.

@@ -39,10 +39,21 @@ $$;
 -- проводки по рахунках 311–314:
 --   ERROR: column "code" does not exist
 --
--- Міняємо адресно, лише поки значення досі те, яке поклав сід: установка, яка
--- вже описала свій довідник по-своєму, лишається як є.
+-- Міняємо адресно, і не лише за значенням, яке поклав сід, а за ФАКТОМ: колонки
+-- `code` в таблиці немає, а `mfo` є. Без цієї перевірки правка ламала б рівно ті
+-- установки, де вона не потрібна, — застосунок зі своїм `app.bank`, у якого
+-- колонка `code` справжня, дістав би опис на неіснуючу `mfo`, і публікація впала б
+-- на тригері. Установка, яка вже описала свій довідник по-своєму, теж лишається як є.
 update app.analytic_dimension
 set code_column = 'mfo'
 where code = 'bank'
   and target_table = 'app.bank'
-  and code_column = 'code';
+  and code_column = 'code'
+  and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'app' and table_name = 'bank' and column_name = 'code'
+  )
+  and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'app' and table_name = 'bank' and column_name = 'mfo'
+  );
