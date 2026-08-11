@@ -24,7 +24,13 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
   @property({ type: String }) url = "";
-  @property({ type: String }) fetch = "fetch";
+  /**
+   * Команда моделі, якою шукається підказка при вводі. Умовчання — `lookup`:
+   * саме її дає генератор CRUD і саме її оголошують моделі. Доти тут стояло
+   * `fetch`, тобто умовчання не працювало НІ РАЗУ — команди з таким іменем
+   * немає ні в кого, і пікер без явного атрибута мовчки нічого не знаходив.
+   */
+  @property({ type: String }) fetch = "lookup";
   @property({ type: String }) picker = "picker";
   @property({ type: String, attribute: "display-field" }) displayField = "name";
   @property({ type: String, attribute: "id-field" }) idField = "id";
@@ -56,6 +62,7 @@ export class UiPicker extends GlobalStyledLitElement {
 
   // синхронизируем состояние popover с _items
   protected override updated() {
+    this.#warnMissingLabel();
     if (!this._popover) return;
     const open = this._popover.matches(":popover-open");
     if (this._items.length > 0 && !open) {
@@ -67,6 +74,37 @@ export class UiPicker extends GlobalStyledLitElement {
       this._popover.querySelector<HTMLElement>(`[data-index="${this._activeIndex}"]`)
         ?.scrollIntoView({ block: "nearest" });
     }
+  }
+
+  /** Попереджаємо один раз на елемент: інакше кожен перемальовок дав би рядок. */
+  #labelWarned = false;
+
+  /**
+   * Заповнений `selected-id` без `display-value` — це завжди недомовка форми, а
+   * на екрані вона виглядає як «дані не прийшли»: поле порожнє, і шукати йдуть у
+   * SQL. Причина ж, як правило, за три шари звідти — форма написала не ту
+   * властивість (`.valueId`/`.valueLabel` замість `.selectedId`/`.displayValue`)
+   * або слухає не ту подію. Lit присвоює невідому властивість екземпляру
+   * мовчки, невідома подія просто ніколи не настає, `deno check` цього не
+   * бачить, збірка зелена — жоден звичний канал про це не скаже.
+   *
+   * Затримка перед самим рядком потрібна проти хибних спрацювань: підпис
+   * інколи приїжджає окремим запитом, на кадр-два пізніше за id.
+   */
+  #warnMissingLabel() {
+    if (this.#labelWarned || !this.selectedId || this.displayValue) return;
+    this.#labelWarned = true;
+
+    setTimeout(() => {
+      if (!this.selectedId || this.displayValue) return;
+      console.warn(
+        `[ui-picker url="${this.url}"] selected-id="${this.selectedId}" заданий, ` +
+          `а display-value порожній — поле покажеться порожнім. Підпис дає форма: ` +
+          `.displayValue (атрибут display-value). Контракт компонента — ` +
+          `.selectedId / .displayValue / @item-selected / @item-cleared.`,
+        this,
+      );
+    }, 300);
   }
 
   /**

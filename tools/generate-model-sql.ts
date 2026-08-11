@@ -226,6 +226,44 @@ function assertIdentifier(value: string, label: string) {
   }
 }
 
+/**
+ * Відомі значення `x-db-type`.
+ *
+ * Перевірка потрібна тому, що розбір нижче звіряє РІВНІСТЬ рядків: природне
+ * `numeric(10,2)` (саме так стоїть у DDL) не впізнає жодна гілка, і поле
+ * провалюється в текстовий fallback — у `merge` їде
+ * `nullif(trim(coalesce(...)),'')`. Генерація при цьому зелена, публікація теж,
+ * а падає воно аж у базі на першому `save`:
+ *
+ *   column "markup" is of type numeric but expression is of type text
+ *
+ * Тобто помилка в схемі виявлялася на три кроки пізніше, ніж могла б. Приймати
+ * `numeric(p,s)` і зрізати дужки було б тихіше, але гірше: схема й DDL могли б
+ * розійтися мовчки. Точність і довжину задає DDL — у схемі лишається голий тип.
+ */
+const KNOWN_DB_TYPES = [
+  "bigint",
+  "int",
+  "integer",
+  "numeric",
+  "json",
+  "jsonb",
+  "date",
+  "timestamp",
+  "timestamptz",
+  "text",
+  "varchar",
+];
+
+function assertDbType(value: string, label: string) {
+  if (!KNOWN_DB_TYPES.includes(value)) {
+    throw new Error(
+      `${label}: x-db-type «${value}» невідомий; дозволені: ${KNOWN_DB_TYPES.join(", ")} ` +
+        `(точність і довжину задає DDL)`,
+    );
+  }
+}
+
 function toField(
   key: string,
   prop: TSchema,
@@ -236,6 +274,7 @@ function toField(
 ): Field {
   const col = prop["x-db-col"] ?? camelToSnake(key);
   const dbType = prop["x-db-type"];
+  if (dbType !== undefined) assertDbType(dbType, `${owner}.${key}`);
   const isBigint = dbType === "bigint";
   const isInt = dbType === "int" || dbType === "integer";
   const isNumeric = dbType === "numeric";

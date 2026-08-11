@@ -15,6 +15,9 @@
     "dev:front": "deno run -A --env-file=.env npm:vite --configLoader native",
     "build:front": "deno run -A --env-file=.env npm:vite build --configLoader native",
 
+    "//check": "Каталогом, а не входом: `deno check ./app/main.ts` до екранів НЕ доходить — їх вантажить оболонка динамічно за згенерованим маніфестом, тобто статичного шляху від main.ts до жодної в'ю немає. Vite типів не перевіряє взагалі, тож розбіжність екрана з базовим класом (наприклад після оновлення @altera/client) не видно ніде: збірка зелена, а кнопка мовчки зникає з інтерфейсу.",
+    "check": "deno check ./app",
+
     "//sql:registry": "Версія інструмента вказана явно. Без піна `deno run jsr:@altera/tools/...` бере довільну версію з реєстру — саме так у застосунок приїхав tools@0.3.0 замість 0.3.3.",
     "sql:registry": "deno run -A jsr:@altera/tools@^0.7.0/generate-model-runtime-registry ./app ./app/_generated/model-registry.generated.ts ./app/_generated/agent-routes.generated.ts ./app/_generated/view-manifest.generated.ts --verbose",
     "sql:gen": "deno run -A jsr:@altera/tools@^0.7.0/generate-model-sql ./app --verbose",

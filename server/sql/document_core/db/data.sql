@@ -11,17 +11,23 @@ insert into app.analytic_dimension (
 values
   -- Організації тут немає свідомо: вона реквізит шапки документа, а не субконто.
   ('counterparty', 'Контрагент', 'catalog', 'counterparty', 'app.counterparty', 'id', 'code', 'name', true),
-  ('bank',         'Банк',       'catalog', 'bank',         'app.bank',         'id', 'code', 'name', true)
+  -- Кодом банку є МФО: окремої колонки code в app.bank немає (див. її struc.sql).
+  ('bank',         'Банк',       'catalog', 'bank',         'app.bank',         'id', 'mfo',  'name', true)
 on conflict (code) do update
 set
-  name         = excluded.name,
-  entity_kind  = excluded.entity_kind,
-  model_key    = excluded.model_key,
-  target_table = excluded.target_table,
-  id_column    = excluded.id_column,
-  code_column  = excluded.code_column,
-  name_column  = excluded.name_column,
-  is_active    = excluded.is_active;
+  name      = excluded.name,
+  is_active = excluded.is_active;
+-- ОПИС ДОВІДНИКА ПРИ ПОВТОРНІЙ ПУБЛІКАЦІЇ НЕ ПЕРЕПИСУЄТЬСЯ.
+--
+-- `target_table`, `id_column`, `code_column`, `name_column` оновлюються лише
+-- первинною вставкою: сід дає УМОВЧАННЯ, а далі опис належить установці — той
+-- самий поділ, що в нумераторах і шаблонах друку. Доти рядок переписувався
+-- цілком, і застосунок не міг уточнити опис власного довідника: правка жила до
+-- наступної публікації, після чого проведення знову падало.
+--
+-- Ціна зворотна й теж реальна: виправлення опису в цьому файлі на вже
+-- налаштовану базу не поїде. Такі виправлення робить migration.sql — і робить
+-- адресно, лише коли значення досі те, яке поклав сід.
 
 -- Які субконто веде рахунок. Тільки конкретні рахунки: на групи проводок
 -- не буває, тому рядок для групи був би обманом.

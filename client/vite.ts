@@ -125,6 +125,89 @@ async function scanManifests(appRoot: string): Promise<Record<string, string>> {
   return input;
 }
 
+// ── Плагін перевірки @source ────────────────────────────────────────────────
+// `@source` — єдине, чим Tailwind дізнається про розмітку ПОЗА каталогом
+// застосунку, тобто про класи самого фреймворку (тулбари, пікер, пагінація,
+// діалоги). Директива йде повз бандлер: сканер читає її з диска, тож ані Vite,
+// ані типи про неї не знають, а сам Tailwind на шлях, який нікуди не веде, не
+// скаржиться — порожній результат сканування для нього не помилка.
+//
+// Наслідок вимірювався: 53 класи фреймворку просто не потрапили в CSS, і кожен
+// екран, який він малює, виглядав не так, як задуманий, — при ЗЕЛЕНІЙ збірці.
+// Симптом «трохи не той вигляд» легко списати на задум дизайну.
+//
+// Найчастіше шлях ламається при перенесенні рішення: `solution:export` вивозить
+// `app/` цілком, разом з `app/styles/tailwind.css`, а шлях у ньому написаний для
+// того дерева, звідки рішення поїхало (у монорепо фреймворку — `../../client`,
+// у встановленому застосунку фреймворк лежить у `vendor/jsr.io/@altera`).
+//
+// Тому: неіснуючий шлях валить збірку, порожній каталог дає попередження.
+// Мовчазним це лишати не можна — джерело класів, яке нічого не дало, помилка
+// завжди.
+
+const SOURCE_DIRECTIVE = /@source\s+(?:not\s+)?["']([^"']+)["']/g;
+const SKIP_DIRS = new Set(["node_modules", "vendor", "dist"]);
+
+/** Прибирає коментарі, зберігаючи номери рядків (згадка `@source` у тексті — не вжиток). */
+function stripCssComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+}
+
+async function collectCssFiles(dir: string, out: string[] = []): Promise<string[]> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) await collectCssFiles(full, out);
+    else if (entry.name.endsWith(".css")) out.push(full);
+  }
+  return out;
+}
+
+function sourceCheckPlugin(appRoot: string): Plugin {
+  return {
+    name: "vite-plugin-altera-source-check",
+    async buildStart() {
+      for (const file of await collectCssFiles(appRoot)) {
+        const text = stripCssComments(await readFile(file, "utf-8"));
+
+        for (const match of text.matchAll(SOURCE_DIRECTIVE)) {
+          const raw = match[1];
+          // Взірці (`**/*.html`) і `inline(...)` пропускаємо: там не шлях.
+          if (raw.startsWith("inline(") || /[*?[\]{}]/.test(raw)) continue;
+
+          const target = resolve(dirname(file), raw);
+          const where = `${toPosix(relative(process.cwd(), file))}:` +
+            `${text.slice(0, match.index).split("\n").length}`;
+
+          if (!existsSync(target)) {
+            // Підказка різна: шлях у vendor/ написаний правильно й просто ще не
+            // матеріалізований, а будь-який інший — це чуже дерево (найчастіше
+            // монорепо фреймворку, звідки приїхало рішення).
+            const hint = raw.includes("vendor/")
+              ? `Каталог з'являється після \`deno install\` при "vendor": true в deno.json.`
+              : `У встановленому застосунку фреймворк лежить у vendor/:\n` +
+                `  @source "../../vendor/jsr.io/@altera";`;
+
+            throw new Error(
+              `${where}: @source "${raw}" — каталогу ${target} немає.\n` +
+                `Класи, вжиті лише за межами застосунку (розмітка фреймворку), у CSS не потраплять,\n` +
+                `а збірка лишиться зеленою.\n${hint}`,
+            );
+          }
+
+          try {
+            if ((await readdir(target)).length === 0) {
+              this.warn(`${where}: @source "${raw}" — каталог порожній, класів звідти не буде`);
+            }
+          } catch {
+            // Не каталог, а файл — законний вид джерела, перевіряти нічого.
+          }
+        }
+      }
+    },
+  };
+}
+
 function appModulesPlugin(appRoot: string): Plugin {
   return {
     name: "vite-plugin-app-modules",
@@ -297,6 +380,7 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
       // але він і не заважає, а пресет має працювати в обох розкладках.
       deno(),
       tailwindcss(),
+      sourceCheckPlugin(appRoot),
       appModulesPlugin(appRoot),
       // `rename: { stripBase: true }` в обох таргетах — ПЛОСКА копія.
       //

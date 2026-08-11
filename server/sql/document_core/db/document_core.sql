@@ -321,3 +321,63 @@ as $$
       updated_by = p_user_id
   where id = p_document_id;
 $$;
+
+-- ── Опис виміру мусить збігатися з таблицею, яку він описує ─────────────────
+--
+-- `app.doc_analytic_set` збирає запит за субконто ДИНАМІЧНО — з `target_table`,
+-- `id_column`, `code_column`, `name_column`. Тому неіснуюча колонка в описі не
+-- видно ані при публікації схеми, ані при записі документа: воно падає аж при
+-- проведенні, і лише для тих рахунків, які ведуть саме цей вимір:
+--   ERROR: column "code" does not exist
+--   CONTEXT: PL/pgSQL function app.doc_analytic_set(...)
+--
+-- Тобто помилка в ОДНОМУ рядку конфігурації виявлялася через три кроки після
+-- себе і виглядала як зламане проведення. Тригер повертає її на місце: рядок,
+-- який описує довідник неправильно, просто не записується.
+--
+-- Тригером, а не перевіркою в сіді: писати сюди може й застосунок (уточнити
+-- опис власного довідника — його право), а домовленість «не забудь покликати
+-- перевірку» тримається рівно доти, доки про неї пам'ятають.
+
+drop function if exists app.analytic_dimension_check() cascade;
+create function app.analytic_dimension_check()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_rel     oid;
+  v_missing text[] := '{}';
+  v_column  text;
+begin
+  v_rel := to_regclass(new.target_table);
+
+  if v_rel is null then
+    raise exception 'Вимір «%»: таблиці % не існує', new.code, new.target_table
+      using hint = 'target_table пишеться зі схемою: app.<таблиця>';
+  end if;
+
+  foreach v_column in array
+    array_remove(array[new.id_column, new.code_column, new.name_column], null)
+  loop
+    if not exists (
+      select 1 from pg_attribute
+      where attrelid = v_rel and attname = v_column and attnum > 0 and not attisdropped
+    ) then
+      v_missing := v_missing || v_column;
+    end if;
+  end loop;
+
+  if cardinality(v_missing) > 0 then
+    raise exception 'Вимір «%»: у таблиці % немає колонок: %',
+      new.code, new.target_table, array_to_string(v_missing, ', ')
+      using hint = 'Субконто читається саме цими колонками — див. app.doc_analytic_set';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_analytic_dimension_check on app.analytic_dimension;
+create trigger tr_analytic_dimension_check
+before insert or update on app.analytic_dimension
+for each row execute function app.analytic_dimension_check();
