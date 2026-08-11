@@ -72,10 +72,16 @@ as $$
     left join app.currency cur on cur.id = je.currency_id
     where p.org_id is not null and p.account is not null
   ),
+  -- Вхідне сальдо: усе, що було ДО початку періоду. Немає початку — немає і
+  -- «до»: сальдо нульове, а весь рух іде в рядки картки. Доти умова читалася
+  -- навпаки (`date_from is null or …`), і при виклику без періоду кожен рух
+  -- ішов і у вхідне сальдо, і в період — сальдо, що наростає, стартувало з
+  -- подвійної суми. З екрана не видно: <ui-period> завжди підставляє період.
+  -- Те саме правило продубльоване в app.turnover_balance_index.
   opening as (
     select coalesce(sum(m.debit - m.credit), 0::numeric) as net
     from moves m, params p
-    where p.date_from is null or m.doc_date::date < p.date_from
+    where p.date_from is not null and m.doc_date::date < p.date_from
   ),
   period as (
     select m.*

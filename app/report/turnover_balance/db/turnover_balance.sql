@@ -57,9 +57,20 @@ as $$
   agg as (
     select
       m.account,
-      -- Вхідне сальдо: усе, що було до початку періоду.
+      -- Вхідне сальдо: усе, що було ДО початку періоду. Немає початку — немає
+      -- і «до»: сальдо нульове, а весь рух іде в оборот.
+      --
+      -- Доти умова читалася навпаки (`date_from is null or …`), і при виклику
+      -- БЕЗ періоду кожен рух потрапляв одночасно і у вхідне сальдо, і в
+      -- оборот — кінцеве виходило вдвічі більшим за факт. З екрана цього не
+      -- видно ніколи: <ui-period> завжди підставляє період. Видно лише тому,
+      -- хто покличе звіт напряму — з API, агентом або з іншого звіту.
+      --
+      -- Те саме правило продубльоване в app.account_card_index: поки
+      -- методологія живе в кожному звіті окремо, воно мусить бути записане в
+      -- обох місцях (див. docs/gaps-wishes/FRAMEWORK-WISHES.md — шар обчислень).
       coalesce(sum(m.debit - m.credit) filter (
-        where p.date_from is null or m.doc_date::date < p.date_from
+        where p.date_from is not null and m.doc_date::date < p.date_from
       ), 0::numeric) as opening_net,
       coalesce(sum(m.debit) filter (where in_period), 0::numeric)  as turnover_debit,
       coalesce(sum(m.credit) filter (where in_period), 0::numeric) as turnover_credit
