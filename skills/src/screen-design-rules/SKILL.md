@@ -129,7 +129,8 @@ what it draws. Read it before drawing an `<svg>` of your own: the set already co
 post, print, Excel, filter, refresh, copy, row order, clear and document movements, and a
 hand-written copy stops following the set (including the `--icon-size` token). The list is
 generated from the source, so it cannot go stale; if the glyph you need is genuinely
-missing, that is a framework gap — see the application's `FRAMEWORK-GAPS.md`.
+missing, that is a framework gap — report it through whatever channel this application
+uses, rather than hand-drawing a replacement.
 
 Navigation icons are a **different** set: they live in the application's own
 `app/menu/icons.ts` (Material Design, filled), the database stores only the key, and an
