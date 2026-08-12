@@ -76,6 +76,16 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       data: [file("audit/db/data.sql")],
     },
   },
+  // setting — теж лише за app.users. Сіду в ядрі немає навмисно, як і в меню:
+  // ЩО можна налаштувати, називає застосунок, тому каталог (він же умовчання)
+  // лежить у нього — app/admin/setting/db/data.sql.
+  {
+    name: "setting",
+    files: {
+      structure: [file("setting/db/struc.sql")],
+      models: [file("setting/db/setting.sql")],
+    },
+  },
   // menu — одразу за access: app.user_group_menu посилається на app.user_group.
   // Сід меню в ядрі відсутній навмисно: склад пунктів — це маршрути конкретного
   // застосунку, тож data.sql лишається в нього (app/admin/menu/db/data.sql).

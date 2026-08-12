@@ -1,0 +1,11 @@
+{
+  "setting.titleOne": "Налаштування",
+  "setting.titleMany": "Налаштування",
+  "setting.saved": "Налаштування збережено",
+  "setting.unknownKey": "Невідоме налаштування: {keys}",
+  "setting.section.list": "Списки",
+  "setting.list.pageSize": "Рядків на сторінці",
+  "setting.list.pageSizeHint": "Скільки рядків показувати в списках за умовчанням",
+  "setting.list.exportRowLimit": "Стеля вивантаження в Excel",
+  "setting.list.exportRowLimitHint": "Вивантажується весь відбір; понад цю кількість рядків файл не збирається"
+}

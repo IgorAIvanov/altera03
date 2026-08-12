@@ -126,6 +126,17 @@ export const generatedModelRegistry = {
     "preview": "view"
     }
   },
+  "setting": {
+    type: "admin",
+    schema: "app",
+    sqlCommands: {
+    "effective": "setting_effective"
+    },
+    access: {
+    "//": "Накладені значення читає КОЖЕН, хто ввійшов: за ними ui-kit малює списки. Права на модель тут вимагати не можна — це право на ЕКРАН налаштувань, а не на те, щоб застосунок працював.",
+    "effective": "authenticated"
+    }
+  },
   "turnover_balance": {
     type: "report",
     schema: "app",

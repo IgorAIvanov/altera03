@@ -82,6 +82,10 @@ export const agentModelRoutes = {
     listPath: "/admin/print_template/list",
     type: "admin"
   },
+  "setting": {
+    editPath: "/admin/setting/edit",
+    type: "admin"
+  },
   "turnover_balance": {
     listPath: "/report/turnover_balance/list",
     type: "report"

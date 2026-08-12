@@ -1,0 +1,11 @@
+{
+  "setting.titleOne": "Settings",
+  "setting.titleMany": "Settings",
+  "setting.saved": "Settings saved",
+  "setting.unknownKey": "Unknown setting: {keys}",
+  "setting.section.list": "Lists",
+  "setting.list.pageSize": "Rows per page",
+  "setting.list.pageSizeHint": "How many rows lists show by default",
+  "setting.list.exportRowLimitHint": "The whole selection is exported; above this many rows the file is not built",
+  "setting.list.exportRowLimit": "Excel export ceiling"
+}
