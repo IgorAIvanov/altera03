@@ -261,6 +261,7 @@ export type BankLookupData = Static<typeof BankLookupDataSchema>;
 - `ItemSchema` contains all editable fields plus `id`. It is used as the save payload item and as the form source.
 - `RowSchema` contains only fields needed for the list view — do not duplicate all item fields.
 - `LookupRowSchema` contains `id`, the display field (usually `name`), and any extra searchable fields. Keep it minimal.
+- **A reference in `RowSchema` or `LookupRowSchema` is named by the key of the nested object** (`counterparty: Type.Object({ id, name })`), never by repeating `x-ref`. The annotation lives once, on `counterpartyId` in `ItemSchema`; the generator adds the join and builds the object. A key with no matching reference in `ItemSchema` is parsed as a plain column (`t.counterparty`) — generation and publishing stay green and the picker fails on first open with `column t.counterparty does not exist`.
 - `x-form`, `x-list`, `x-lookup` annotations are the canonical way to declare UI roles — do not create separate display configuration objects.
 - `options` in `GetDataSchema` is typed explicitly per model — list every dropdown the form needs (currencies, statuses, groups, etc.).
 - Payload schemas are validated at runtime by the backend using `Value.Check()` or TypeBox-compatible validator.

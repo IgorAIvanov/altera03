@@ -102,10 +102,15 @@ export type InvoiceRow = Static<typeof InvoiceRowSchema>;
 
 // ── LookupRow ─────────────────────────────────────────────────────────────────
 
+// Ссылка називається ключем ВКЛАДЕНОГО об'єкта, як і в Row: анотація `x-ref`
+// лишається на `counterpartyId` у формі, а join і вкладений об'єкт генератор
+// докладе сам. Номер документа сам по собі рахунок не називає — вибирають
+// його за контрагентом.
 export const InvoiceLookupRowSchema = Type.Object({
-  id:      Type.String({ "x-db-type": "bigint" }),
-  number:  Type.Optional(Type.String()),
-  docDate: Type.String(),
+  id:           Type.String({ "x-db-type": "bigint" }),
+  number:       Type.Optional(Type.String()),
+  docDate:      Type.String(),
+  counterparty: Type.Object({ id: Type.String(), name: Type.String() }),
 });
 export type InvoiceLookupRow = Static<typeof InvoiceLookupRowSchema>;
 

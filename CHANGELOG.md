@@ -7,6 +7,44 @@
 
 ---
 
+## Не опубліковано
+
+### Потребує дії
+
+**`lookup` навчився ссылкам — моделі з ссылкою в пікері треба перегенерувати.**
+Раніше `<Model>LookupRowSchema` із вкладеним об'єктом (`counterparty`) давав
+зламану функцію: генератор виводив `r_counterparty.name`, а `left join`, що
+створює цей аліас, ставив тільки в `list`. `create function` тіла не перевіряє,
+тож генерація й публікація були зелені, а пікер падав на першому відкритті:
+
+```
+ERROR: column t.counterparty does not exist
+```
+
+Тепер `lookup` бере ті самі join-и, що й `list`. Ссылка називається **ключем
+вкладеного об'єкта**, а `x-ref` лишається на полі `<name>Id` в `ItemSchema` —
+дублювати анотацію не треба й не можна:
+
+```ts
+export const InvoiceLookupRowSchema = Type.Object({
+  id:           Type.String({ "x-db-type": "bigint" }),
+  number:       Type.Optional(Type.String()),
+  counterparty: Type.Object({ id: Type.String(), name: Type.String() }),
+});
+```
+
+Прогоніть `deno task sql:gen <family>/<model>` для моделей, чий пікер показує
+ссылку, і опублікуйте. Рукописний обхід (копія `_lookup` з дописаним join) після
+цього можна викидати цілком.
+
+**Пошук у пікері тепер шукає й по ссылках** — там, де в схемі стоїть
+`searchable: true`. Доти та сама анотація діяла в списку й мовчки не діяла в
+підборі. Якщо шукати по назві контрагента в пікері не треба — заберіть
+`searchable` (він і в списку тоді зникне) або приберіть ссылку з
+`LookupRowSchema`.
+
+---
+
 ## client 0.9.0 · server 0.11.1 · tools 0.8.0 · skills 0.1.6 · create 0.6.1
 
 ### Потребує дії

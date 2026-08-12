@@ -393,9 +393,11 @@ begin
   select count(*)::int into v_total
   from app.document h
     join app.manual_entry t on t.document_id = h.id
+  left join app.organization r_organization on r_organization.id = h.organization_id
   where not h.is_deleted
     and (
     coalesce(payload->>'search', '') = ''
+    or r_organization.name ilike '%' || (payload->>'search') || '%'
     or h.number ilike '%' || (payload->>'search') || '%'
     or h.presentation ilike '%' || (payload->>'search') || '%'
   );
@@ -409,9 +411,11 @@ begin
     ) as r
     from app.document h
     join app.manual_entry t on t.document_id = h.id
+    left join app.organization r_organization on r_organization.id = h.organization_id
     where not h.is_deleted
       and (
       coalesce(payload->>'search', '') = ''
+      or r_organization.name ilike '%' || (payload->>'search') || '%'
       or h.number ilike '%' || (payload->>'search') || '%'
       or h.presentation ilike '%' || (payload->>'search') || '%'
     )

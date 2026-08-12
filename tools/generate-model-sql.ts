@@ -196,6 +196,11 @@ type ModelSpec = {
   lookupSort: SortEntry[];
   listJoins: string[];
   /**
+   * Ті самі join-и для `lookup`. Окремі від `listJoins`, бо набори полів різні:
+   * підбір показує менше, ніж список, і тягти в нього зайву таблицю нема за що.
+   */
+  lookupJoins: string[];
+  /**
    * Поле, яке заповнює нумератор (`code`), або null. Для документа тут завжди
    * null: номер шапки має власний шлях (app.doc_next_number), бо область
    * лічильника збирається з організації й дати шапки.
@@ -1212,6 +1217,11 @@ $$;`;
 function renderLookup(spec: ModelSpec): string {
   const defaultSort = spec.lookupSort[0]?.token ?? spec.lookupFields[0]?.col ?? spec.pk;
   const cols = fieldEntries(spec.lookupFields).map((e) => `      ${e}`).join(",\n");
+  // Join-и ссылок — так само, як у `list`. Без них вивід і пошук посилаються на
+  // аліас, якого в запиті немає: `create function` тіла не перевіряє, тож
+  // ламається це не на публікації, а на першому відкритті пікера.
+  const joinsCount = spec.lookupJoins.length ? "\n  " + spec.lookupJoins.join("\n  ") : "";
+  const joinsRows = spec.lookupJoins.length ? "\n    " + spec.lookupJoins.join("\n    ") : "";
   const filter = spec.deletedExpr ? `not ${spec.deletedExpr}` : "";
   const activeFilter = filter ? `${filter}\n      and ` : "";
   const activeFilterCount = filter ? `${filter}\n    and ` : "";
@@ -1232,7 +1242,7 @@ declare
   v_total     int;
 begin
 ${sortGuard}  select count(*)::int into v_total
-  from ${spec.fromClause}
+  from ${spec.fromClause}${joinsCount}
   where ${activeFilterCount}(
 ${searchClause(spec.searchExprsLookup, "    ")}
   );
@@ -1242,7 +1252,7 @@ ${searchClause(spec.searchExprsLookup, "    ")}
     select jsonb_build_object(
 ${cols}
     ) as r
-    from ${spec.fromClause}
+    from ${spec.fromClause}${joinsRows}
     where ${activeFilter}(
 ${searchClause(spec.searchExprsLookup, "      ")}
     )
@@ -1803,10 +1813,19 @@ async function buildSpec(
   const tables = parsed.tables;
   const itemFields = isDocument ? [...headerFields, ...parsed.fields.filter((f) => f.key !== "id")] : parsed.fields;
 
+  // Ссылка в підборі описується так само, як у списку: ключем ВКЛАДЕНОГО
+  // об'єкта (`counterparty`), а сама анотація `x-ref` лишається на полі
+  // `counterpartyId` в ItemSchema. Двоїти її по схемах не можна — розійдуться:
+  // LookupRowSchema тоді розібрав би `counterparty` як звичайну колонку
+  // `t.counterparty`, якої в таблиці немає.
+  const refByAs = new Map(itemFields.filter((f) => f.ref).map((f) => [f.ref!.as, f]));
   // Аліас lookup-полів визначає походження ключа: шапка чи таблиця моделі.
   const lookupFields = lookupSchema
     ? parseObject(lookupSchema, schemaName, map, `${model}.lookup`).fields
-      .map((f) => (isDocument && headerKeys.has(f.key) ? { ...f, alias: "h" } : f))
+      .map((f) =>
+        refByAs.get(f.key) ??
+          (isDocument && headerKeys.has(f.key) ? { ...f, alias: "h" } : f)
+      )
     : [];
 
   const rowKeys = new Set(Object.keys(rowSchema.properties ?? {}));
@@ -1828,10 +1847,14 @@ async function buildSpec(
     }
   }
 
-  // search (lookup): лише скалярні поля шапки (без ref-joins)
+  // search (lookup): те саме, що в списку. Раніше ссылки звідси свідомо
+  // викидалися — «без ref-joins», — але це був наслідок того, що join-ів у
+  // lookup не було взагалі: оголошений `searchable` мовчки не діяв у підборі й
+  // діяв у списку, тобто той самий рядок схеми означав різне.
   const searchExprsLookup: string[] = [];
   for (const f of itemFields) {
-    if (!f.ref && f.search) searchExprsLookup.push(`${f.alias}.${f.col}`);
+    if (f.ref?.searchable) searchExprsLookup.push(`${f.ref.alias}.${f.ref.display}`);
+    else if (!f.ref && f.search) searchExprsLookup.push(`${f.alias}.${f.col}`);
   }
   if (searchExprsLookup.length === 0) {
     for (const f of itemFields) {
@@ -1857,6 +1880,12 @@ async function buildSpec(
     f.ref && (f.ref.searchable || f.ref.sortable || rowKeys.has(f.ref.as))
   );
   const listJoins = refJoins(listRefFields);
+
+  // joins для lookup: ссылки у виводі підбору плюс ті, за якими він шукає.
+  const lookupJoins = refJoins([
+    ...lookupFields.filter((f) => f.ref),
+    ...itemFields.filter((f) => f.ref?.searchable),
+  ]);
 
   // Позначка живе в шапці документа (app.document) або в самій таблиці довідника.
   const hasDeleted = isDocument || itemFields.some((f) => f.col === "is_deleted");
@@ -1901,6 +1930,7 @@ async function buildSpec(
     listSort,
     lookupSort,
     listJoins,
+    lookupJoins,
     numberedField,
     hierarchy,
     groupTable: `${schemaName}.${model}_group`,

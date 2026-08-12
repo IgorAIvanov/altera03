@@ -145,10 +145,31 @@ export const InvoiceItemSchema = Type.Object({
   order by case when v_sort_by='counterparty' and v_sort_dir='asc' then c.name end asc, ...
   ```
 - **`save`** — пише лише `counterparty_id`, join не потрібен.
-- **`search`** — якщо `searchable:true`, у `ilike` додається `c.name`.
+- **`search`** — якщо `searchable:true`, у `ilike` додається `c.name`. Однаково в
+  `list` і в `lookup`: одна анотація не може означати в підборі інше, ніж у списку.
+- **`lookup`** — те саме, що в `list`: `left join`, вкладений об'єкт і `id` поруч.
+
+**Анотація живе в одному місці — на полі `counterpartyId` в `ItemSchema`.**
+`RowSchema` і `LookupRowSchema` називають ссылку ключем **вкладеного об'єкта**, а
+join і сам об'єкт генератор докладає сам:
+
+```ts
+export const InvoiceLookupRowSchema = Type.Object({
+  id:           Type.String({ "x-db-type": "bigint" }),
+  number:       Type.Optional(Type.String()),
+  counterparty: Type.Object({ id: Type.String(), name: Type.String() }),
+});
+```
+
+Продублювати `x-ref` у `LookupRowSchema` не можна, і незадекларована ссылка теж
+не працює: ключ без пари в `ItemSchema` розбирається як звичайна колонка
+`t.counterparty`, якої в таблиці немає. `create function` тіла не перевіряє —
+генерація й публікація зелені, а падає це на першому відкритті пікера
+(`ERROR: column t.counterparty does not exist`).
 
 Ціна: кожна ссылка в Row = ще один `left join` у list-запиті. Для документів з
-3–5 ссылками — нормально.
+3–5 ссылками — нормально. У `lookup` join-и вужчі: тільки ті ссылки, які підбір
+показує або за якими шукає.
 
 ---
 

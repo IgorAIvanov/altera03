@@ -403,11 +403,15 @@ begin
   select count(*)::int into v_total
   from app.document h
     join app.invoice t on t.document_id = h.id
+  left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
+  left join app.organization r_organization on r_organization.id = h.organization_id
   where not h.is_deleted
     and (
     coalesce(payload->>'search', '') = ''
+    or r_organization.name ilike '%' || (payload->>'search') || '%'
     or h.number ilike '%' || (payload->>'search') || '%'
     or h.presentation ilike '%' || (payload->>'search') || '%'
+    or r_counterparty.name ilike '%' || (payload->>'search') || '%'
   );
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
@@ -415,15 +419,21 @@ begin
     select jsonb_build_object(
       'id', h.id::text,
       'number', h.number,
-      'docDate', h.doc_date
+      'docDate', h.doc_date,
+      'counterpartyId', t.counterparty_id::text,
+      'counterparty', case when r_counterparty.id is null then null else jsonb_build_object('id', r_counterparty.id::text, 'name', r_counterparty.name) end
     ) as r
     from app.document h
     join app.invoice t on t.document_id = h.id
+    left join app.counterparty r_counterparty on r_counterparty.id = t.counterparty_id
+    left join app.organization r_organization on r_organization.id = h.organization_id
     where not h.is_deleted
       and (
       coalesce(payload->>'search', '') = ''
+      or r_organization.name ilike '%' || (payload->>'search') || '%'
       or h.number ilike '%' || (payload->>'search') || '%'
       or h.presentation ilike '%' || (payload->>'search') || '%'
+      or r_counterparty.name ilike '%' || (payload->>'search') || '%'
     )
     order by
       case when v_sort_by = 'number' and v_sort_dir = 'asc'  then h.number end asc,
