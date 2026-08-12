@@ -9,7 +9,7 @@ import "@client/ui-kit/confirm-host.ts";
 import { apiFetch, readEnvelope, ServerUnavailableError } from "../data/api.ts";
 import { readUserScoped, writeUserScoped } from "../shared/user-storage.ts";
 import { buildTabUrl, parseTabPath } from "./tab-url.ts";
-import { matchShortcut, type ShortcutTarget } from "../shell/shortcuts.ts";
+import { matchShortcut, modalDialogInPath, type ShortcutTarget } from "../shell/shortcuts.ts";
 
 const MAX_TABS = 30;
 const HOME_TAB_ID = "home";
@@ -503,12 +503,20 @@ export class TabController extends LitElement {
    * всі відкриті форми разом. Оболонка ж знає, яка вкладка активна.
    *
    * Порядок перевірок і є вся суть — черга на клавішу:
-   *  1. контекстне меню ярлика (найдрібніше з відкритого);
-   *  2. подія вже оброблена компонентом — не чіпаємо;
-   *  3. відкрите модальне вікно шини — не чіпаємо;
-   *  4. і лише тоді дія оболонки.
+   *  1. клавіша прийшла з відкритого нативного `<dialog>` — не наша взагалі;
+   *  2. контекстне меню ярлика (найдрібніше з відкритого);
+   *  3. подія вже оброблена компонентом — не чіпаємо;
+   *  4. відкрите модальне вікно шини — не чіпаємо;
+   *  5. і лише тоді дія оболонки.
    */
   #onWindowKeyDown = (e: KeyboardEvent) => {
+    // Нативне `<dialog>` (зміна пароля в шапці, будь-яке вікно застосунку)
+    // закриває себе САМЕ — браузером. Позначити подію обробленою там нема кому,
+    // а `preventDefault()` оболонки робить це ЗА нього: Esc закривав вкладку, а
+    // вікно лишалося відкритим. Перевірка стоїть перша: доки вікно відкрите,
+    // решта інтерфейсу для клавіатури не існує — включно з меню ярлика.
+    if (modalDialogInPath(e.composedPath())) return;
+
     if (e.code === "Escape" && this.tabMenu) {
       e.preventDefault();
       this.#closeTabMenu();

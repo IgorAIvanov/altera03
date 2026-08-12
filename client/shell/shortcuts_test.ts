@@ -6,7 +6,7 @@
  * користуються.
  */
 import { assertEquals } from "@std/assert";
-import { type KeyStroke, matchShortcut } from "./shortcuts.ts";
+import { type KeyStroke, matchShortcut, modalDialogInPath } from "./shortcuts.ts";
 
 function stroke(code: string, mods: Partial<KeyStroke> = {}): KeyStroke {
   return { code, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods };
@@ -51,4 +51,29 @@ Deno.test("чужа клавіша — null", () => {
   assertEquals(matchShortcut(stroke("KeyA", { ctrlKey: true })), null);
   assertEquals(matchShortcut(stroke("F7")), null);
   assertEquals(matchShortcut(stroke("Tab")), null);
+});
+
+// Вузли шляху описані качиною типізацією навмисно: справжній DOM тут не
+// потрібен, а проба лишається без браузера.
+const node = (localName: string, open?: boolean) => ({ localName, open } as unknown as EventTarget);
+
+Deno.test("відкрите <dialog> у шляху події зупиняє оболонку", () => {
+  // Esc усередині діалогу: браузер закриє вікно сам, і вкладка під ним
+  // закриватися НЕ мусить — це і є дефект, заради якого перевірка з'явилася.
+  assertEquals(
+    modalDialogInPath([node("input"), node("form"), node("dialog", true), node("body")]),
+    true,
+  );
+});
+
+Deno.test("закрите <dialog> у шляху не заважає", () => {
+  // Розмітка діалогу лишається в DOM після закриття; поки він не відкритий,
+  // клавіша належить вкладці, як і до появи вікна.
+  assertEquals(modalDialogInPath([node("button"), node("dialog", false), node("body")]), false);
+  assertEquals(modalDialogInPath([node("button"), node("dialog"), node("body")]), false);
+});
+
+Deno.test("без діалогу — звичайний шлях", () => {
+  assertEquals(modalDialogInPath([node("input"), node("div"), node("body")]), false);
+  assertEquals(modalDialogInPath([]), false);
 });
