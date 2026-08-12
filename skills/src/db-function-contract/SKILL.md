@@ -388,3 +388,37 @@ If you write your own `<model>_post_entries`, two consequences:
   decide what off-balance accounts do to your totals — in this repository's
   turnover sheet they stay as rows but are left out of the sum, because otherwise
   "the balance adds up" stops meaning anything.
+
+## Reading the register: use the ledger layer, do not scan it yourself
+
+Balances and turnovers are not stored anywhere — they are computed by scanning
+`app.journal_entry`. The core package `@core/ledger` is where that scanning
+lives, and a report or a document that needs figures calls it instead of writing
+its own query:
+
+| Function | A row is | For |
+|---|---|---|
+| `app.acc_entries(org, from, to, accounts, dims)` | one **side** of an entry | account card, anything looking *from an account* |
+| `app.acc_journal(org, from, to, accounts, dims, document_id)` | one **entry**, both sides | entry journal, document movements |
+| `app.acc_balance_turnover(org, from, to, accounts, dims)` | one account | turnover sheet — opening, turnover and closing in one pass |
+| `app.acc_balance(org, before, …)` / `app.acc_turnover(org, from, to, …)` | one account | a single figure |
+| `app.acc_account_tree(code)` | — | an account together with its sub-accounts |
+
+Two rules the layer exists to keep, both of which have already cost real money:
+
+- **what counts as a movement** — posted, not marked for deletion, of that
+  organization — is stated once, in `acc_entries`. Forget `is_posted` in one
+  report and it silently disagrees with every other;
+- **an opening balance with an open start date is zero.** A movement cannot be
+  both the balance brought forward and a turnover of the period. Take the
+  opening figure from `acc_balance_turnover`, never from
+  `acc_balance(org, date_from)` — that mistake doubled the closing balance twice,
+  and it is invisible on screen because the period control always fills a period
+  in.
+
+The layer deliberately does **not** decide whether a balance is shown as debit or
+credit: it returns the net (debit − credit, debit positive), and the report
+splits it by account type. Arithmetic and presentation are different jobs.
+
+Add `"@core/ledger"` to `app/sql.json` after `@core/document_core` and after your
+chart of accounts.

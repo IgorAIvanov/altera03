@@ -1,9 +1,15 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Картка рахунку: усі проводки по рахунку за період із сальдо, що наростає.
 --
--- Підсумки ніде не зберігаються — вхідне сальдо рахується скануванням регістру
--- за індексами ix_journal_entry_debit / ix_journal_entry_credit. Це свідоме
--- рішення: немає ні перерахунку при скасуванні проведення, ні розсинхрону.
+-- Власної арифметики тут БІЛЬШЕ НЕМАЄ. Потік рухів дає `app.acc_entries`, а
+-- вхідне сальдо й обороти — `app.acc_balance_turnover` (обидва з `@core/ledger`).
+-- Доти та сама методологія жила ще й в оборотно-сальдовій, і двічі коштувала
+-- подвоєного сальдо: спершу в обох звітах (рух ставав і залишком, і оборотом
+-- при виклику без періоду), потім у наростаючому залишку картки, який брався з
+-- `acc_balance(org, null)` — тобто «всі рухи» замість «до початку періоду».
+--
+-- Звіту лишається подання: розкласти чисте сальдо на дебетову й кредитову
+-- колонки та накопичити його по рядках.
 --
 -- Кожен рядок несе document_type_code і model_key субконто — ключі моделей,
 -- за якими клієнт сам знаходить маршрут форми у view-manifest. Родину моделі
@@ -24,123 +30,69 @@ as $$
       nullif(filters->>'dateFrom', '')::date                  as date_from,
       nullif(filters->>'dateTo', '')::date                    as date_to
   ),
-  -- Аналітика проводки, згорнута в масив по сторонах.
-  analytics as (
-    select
-      jea.journal_entry_id,
-      jea.side,
-      jsonb_agg(jsonb_build_object(
-        'dimensionCode', jea.dimension_code,
-        'dimensionName', d.name,
-        'modelKey',      d.model_key,
-        'valueId',       jea.value_id::text,
-        'presentation',  jea.value_presentation
-      ) order by jea.slot_no) as items
-    from app.journal_entry_analytic jea
-    join app.analytic_dimension d on d.code = jea.dimension_code
-    group by jea.journal_entry_id, jea.side
-  ),
-  -- Усі рухи по рахунку від початку обліку: з них беремо і вхідне сальдо,
-  -- і рядки періоду — щоб не сканувати регістр двічі.
-  moves as (
-    select
-      je.id            as entry_id,
-      d.id             as document_id,
-      d.doc_date,
-      d.number         as doc_number,
-      dt.code          as document_type_code,
-      coalesce(dt.short_name, dt.name) as document_type_name,
-      je.line_no,
-      case when je.debit_account  = p.account then je.amount else 0::numeric end as debit,
-      case when je.credit_account = p.account then je.amount else 0::numeric end as credit,
-      case when je.debit_account  = p.account then je.credit_account else je.debit_account end as corr_account,
-      cur.code          as currency_code,
-      je.currency_amount,
-      je.quantity,
-      je.description,
-      -- Сторона, з якої дивиться картка: її аналітика цікавить у першу чергу.
-      case when je.debit_account = p.account then 'debit' else 'credit' end as own_side
+  -- Сальдо й обороти рахунку — одним викликом шару. Організація й рахунок тут
+  -- не перевіряються: обов'язковість оголошена в схемі фільтрів, і відмовляє
+  -- обгортка — сюди звіт без них не доходить.
+  totals as (
+    select bt.opening_net, bt.debit, bt.credit
     from params p
-    join app.document d
-      on d.organization_id = p.org_id
-     and d.is_posted
-     and not d.is_deleted
-    join app.journal_entry je
-      on je.document_id = d.id
-     and (je.debit_account = p.account or je.credit_account = p.account)
-    join app.document_type dt on dt.id = d.document_type_id
-    left join app.currency cur on cur.id = je.currency_id
-    -- Організація й рахунок не перевіряються: обов'язковість оголошена в схемі
-    -- фільтрів, і відмовляє обгортка — сюди звіт без них не доходить.
+    cross join lateral app.acc_balance_turnover(
+      p.org_id, p.date_from, p.date_to, array[p.account]::varchar[]
+    ) bt
   ),
-  -- Вхідне сальдо: усе, що було ДО початку періоду. Немає початку — немає і
-  -- «до»: сальдо нульове, а весь рух іде в рядки картки. Доти умова читалася
-  -- навпаки (`date_from is null or …`), і при виклику без періоду кожен рух
-  -- ішов і у вхідне сальдо, і в період — сальдо, що наростає, стартувало з
-  -- подвійної суми. З екрана не видно: <ui-period> завжди підставляє період.
-  -- Те саме правило продубльоване в app.turnover_balance_data.
-  opening as (
-    select coalesce(sum(m.debit - m.credit), 0::numeric) as net
-    from moves m, params p
-    where p.date_from is not null and m.doc_date::date < p.date_from
-  ),
+  -- Рядки періоду. Бік рахунку («свій») шар уже вибрав сам: у `acc_entries`
+  -- рядок — це БІК проводки, тож дебет, кредит, кореспондуючий рахунок і
+  -- аналітика приходять уже з погляду цього рахунку.
   period as (
-    select m.*
-    from moves m, params p
-    where (p.date_from is null or m.doc_date::date >= p.date_from)
-      and (p.date_to   is null or m.doc_date::date <= p.date_to)
+    select e.*
+    from params p
+    cross join lateral app.acc_entries(
+      p.org_id, p.date_from, p.date_to, array[p.account]::varchar[]
+    ) e
   ),
   numbered as (
     select
-      p.*,
-      (select net from opening) + sum(p.debit - p.credit)
-        over (order by p.doc_date, p.document_id, p.line_no, p.entry_id
-              rows between unbounded preceding and current row) as running
-    from period p
+      e.*,
+      coalesce((select opening_net from totals), 0::numeric)
+        + sum(e.debit - e.credit) over (
+            order by e.doc_date, e.document_id, e.line_no, e.entry_id
+            rows between unbounded preceding and current row
+          ) as running
+    from period e
   ),
   rows as (
     select
-      n.entry_id::text    as "entryId",
-      n.document_id::text as "documentId",
-      n.document_type_code as "documentTypeCode",
-      n.document_type_name as "documentTypeName",
+      n.entry_id::text     as "entryId",
+      n.document_id::text  as "documentId",
+      n.doc_type_code      as "documentTypeCode",
+      n.doc_type_name      as "documentTypeName",
       n.doc_date::text     as "docDate",
       n.doc_number         as "docNumber",
       n.corr_account       as "corrAccount",
-      coalesce(ca.name, '') as "corrAccountName",
+      n.corr_account_name  as "corrAccountName",
       n.debit, n.credit,
       greatest(n.running, 0::numeric)  as "balanceDebit",
       greatest(-n.running, 0::numeric) as "balanceCredit",
       n.currency_code   as "currencyCode",
-      n.currency_amount as "currencyAmount",
-      n.quantity        as "quantity",
+      coalesce(n.currency_debit, n.currency_credit) as "currencyAmount",
+      coalesce(n.quantity_debit, n.quantity_credit) as "quantity",
       n.description,
-      coalesce(own.items, '[]'::jsonb)  as "analytics",
-      coalesce(corr.items, '[]'::jsonb) as "corrAnalytics"
+      n.dims      as "analytics",
+      n.corr_dims as "corrAnalytics"
     from numbered n
-    left join app.chart_of_account ca on ca.code = n.corr_account
-    left join analytics own  on own.journal_entry_id  = n.entry_id and own.side  = n.own_side
-    left join analytics corr on corr.journal_entry_id = n.entry_id
-                            and corr.side = case when n.own_side = 'debit' then 'credit' else 'debit' end
     order by n.doc_date, n.document_id, n.line_no, n.entry_id
-  ),
-  turnover as (
-    select
-      coalesce(sum(debit), 0::numeric)  as debit,
-      coalesce(sum(credit), 0::numeric) as credit
-    from period
   )
   select jsonb_build_object(
     'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),
     'totals', jsonb_build_object(
       'account',        (select account from params),
       'accountName',    (select coalesce(name, '') from app.chart_of_account, params where code = params.account),
-      'openingDebit',   greatest((select net from opening), 0::numeric),
-      'openingCredit',  greatest(-(select net from opening), 0::numeric),
-      'turnoverDebit',  (select debit from turnover),
-      'turnoverCredit', (select credit from turnover),
-      'closingDebit',   greatest((select net from opening) + (select debit from turnover) - (select credit from turnover), 0::numeric),
-      'closingCredit',  greatest(-((select net from opening) + (select debit from turnover) - (select credit from turnover)), 0::numeric)
+      'openingDebit',   greatest(coalesce((select opening_net from totals), 0), 0::numeric),
+      'openingCredit',  greatest(-coalesce((select opening_net from totals), 0), 0::numeric),
+      'turnoverDebit',  coalesce((select debit from totals), 0::numeric),
+      'turnoverCredit', coalesce((select credit from totals), 0::numeric),
+      'closingDebit',   greatest(coalesce((select opening_net + debit - credit from totals), 0), 0::numeric),
+      'closingCredit',  greatest(-coalesce((select opening_net + debit - credit from totals), 0), 0::numeric)
     )
   );
 $$;

@@ -24,6 +24,7 @@
     "data/currency_rate",
     "@core/numerator",
     "@core/document_core",
+    "@core/ledger",
     "@core/help_content",
     "@core/help_scenario",
     "@core/print_template",

@@ -2,12 +2,18 @@
 -- Оборотно-сальдова відомість: по кожному рахунку — сальдо на початок,
 -- обороти за період і сальдо на кінець.
 --
--- Рахується тим самим скануванням регістру, що й картка рахунку: підсумків
--- ніде не зберігаємо. Один прохід по app.journal_entry дає обидві сторони —
--- дебетову й кредитову — через union all, далі все згортається по рахунку.
+-- Власної арифметики тут БІЛЬШЕ НЕМАЄ: сальдо й обороти рахує шар ядра
+-- (`@core/ledger`, `app.acc_balance_turnover`) — один прохід по регістру на всі
+-- три величини. Доти ця методологія жила ще й у картці рахунку, і одного разу
+-- вони розійшлися: при виклику без періоду кожен рух ставав одночасно вхідним
+-- сальдо й оборотом. Тепер джерело одне, а звіту лишається подання.
 --
--- У відомість потрапляють лише рахунки, де є рух або ненульове сальдо:
--- показувати всі 87 рядків плану рахунків, з яких 80 порожні, — марно.
+-- Подання — це саме те, чого шар не робить: він віддає ЧИСТЕ сальдо
+-- (`net` = дебет − кредит), а розкласти його на дебетову й кредитову колонки —
+-- справа звіту.
+--
+-- У відомість потрапляють лише рахунки з рухом або ненульовим сальдо (порожні
+-- рядки плану відсіює сам шар).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Тіло звіту. Обгортку `app.turnover_balance_index` генерує sql:gen зі схеми
@@ -25,80 +31,27 @@ as $$
       nullif(filters->>'dateFrom', '')::date         as date_from,
       nullif(filters->>'dateTo', '')::date           as date_to
   ),
-  -- Рухи по рахунку з обох сторін проводки, зведені в один потік.
-  -- Організація тут не перевіряється: обов'язковість фільтра оголошена в
-  -- схемі, і відмовляє обгортка — до тіла звіт без організації не доходить.
-  -- Порожній бік рядка не дає: проводка на забалансовому рахунку однобічна
-  -- («Дт 021» не кореспондує ні з чим), і без цієї умови її порожня сторона
-  -- збиралася б у звіт окремим рахунком «null» — з сумою, яка робить підсумки
-  -- зведеними, хоча такого рахунку немає.
-  moves as (
-    select je.debit_account as account, d.doc_date, je.amount as debit, 0::numeric as credit
-    from params p
-    join app.document d
-      on d.organization_id = p.org_id and d.is_posted and not d.is_deleted
-    join app.journal_entry je on je.document_id = d.id
-    where je.debit_account is not null
-
-    union all
-
-    select je.credit_account, d.doc_date, 0::numeric, je.amount
-    from params p
-    join app.document d
-      on d.organization_id = p.org_id and d.is_posted and not d.is_deleted
-    join app.journal_entry je on je.document_id = d.id
-    where je.credit_account is not null
-  ),
-  agg as (
-    select
-      m.account,
-      -- Вхідне сальдо: усе, що було ДО початку періоду. Немає початку — немає
-      -- і «до»: сальдо нульове, а весь рух іде в оборот.
-      --
-      -- Доти умова читалася навпаки (`date_from is null or …`), і при виклику
-      -- БЕЗ періоду кожен рух потрапляв одночасно і у вхідне сальдо, і в
-      -- оборот — кінцеве виходило вдвічі більшим за факт. З екрана цього не
-      -- видно ніколи: <ui-period> завжди підставляє період. Видно лише тому,
-      -- хто покличе звіт напряму — з API, агентом або з іншого звіту.
-      --
-      -- Те саме правило продубльоване в app.account_card_data: поки
-      -- методологія живе в кожному звіті окремо, воно мусить бути записане в
-      -- обох місцях (див. docs/gaps-wishes/FRAMEWORK-WISHES.md — шар обчислень).
-      coalesce(sum(m.debit - m.credit) filter (
-        where p.date_from is not null and m.doc_date::date < p.date_from
-      ), 0::numeric) as opening_net,
-      coalesce(sum(m.debit) filter (where in_period), 0::numeric)  as turnover_debit,
-      coalesce(sum(m.credit) filter (where in_period), 0::numeric) as turnover_credit
-    from (
-      select m.*, (
-        (select date_from from params) is null or m.doc_date::date >= (select date_from from params)
-      ) and (
-        (select date_to from params) is null or m.doc_date::date <= (select date_to from params)
-      ) as in_period
-      from moves m
-    ) m
-    cross join params p
-    group by m.account
-  ),
+  -- Організація тут не перевіряється: обов'язковість фільтра оголошена в схемі,
+  -- і відмовляє обгортка — до тіла звіт без організації не доходить.
   rows as (
     select
-      a.account                                   as "accountCode",
-      coalesce(coa.name, '')                      as "accountName",
+      bt.account                                     as "accountCode",
+      bt.account_name                                as "accountName",
       -- Забалансовий рахунок у підсумок не входить (нижче): він однобічний за
       -- визначенням, тож дебет із кредитом на ньому не зводяться — і підсумок,
       -- який його враховує, перестає означати «баланс зійшовся». Рядок при
       -- цьому лишається: подивитися на забалансові залишки треба саме тут.
-      coalesce(coa.is_off_balance, false)          as "isOffBalance",
-      greatest(a.opening_net, 0::numeric)         as "openingDebit",
-      greatest(-a.opening_net, 0::numeric)        as "openingCredit",
-      a.turnover_debit                            as "turnoverDebit",
-      a.turnover_credit                           as "turnoverCredit",
-      greatest(a.opening_net + a.turnover_debit - a.turnover_credit, 0::numeric)  as "closingDebit",
-      greatest(-(a.opening_net + a.turnover_debit - a.turnover_credit), 0::numeric) as "closingCredit"
-    from agg a
-    left join app.chart_of_account coa on coa.code = a.account
-    where a.opening_net <> 0 or a.turnover_debit <> 0 or a.turnover_credit <> 0
-    order by a.account
+      coalesce(coa.is_off_balance, false)            as "isOffBalance",
+      greatest(bt.opening_net, 0::numeric)           as "openingDebit",
+      greatest(-bt.opening_net, 0::numeric)          as "openingCredit",
+      bt.debit                                       as "turnoverDebit",
+      bt.credit                                      as "turnoverCredit",
+      greatest(bt.closing_net, 0::numeric)           as "closingDebit",
+      greatest(-bt.closing_net, 0::numeric)          as "closingCredit"
+    from params p
+    cross join lateral app.acc_balance_turnover(p.org_id, p.date_from, p.date_to) bt
+    left join app.chart_of_account coa on coa.code = bt.account
+    order by bt.account
   )
   select jsonb_build_object(
     'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),

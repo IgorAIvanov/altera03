@@ -5,6 +5,11 @@
 -- відкривається сама форма документа. Показує проводки як вони лежать у
 -- app.journal_entry — зі знімками субконто, тобто такими, якими вони були на
 -- момент проведення.
+--
+-- Читає регістр через шар ядра (`@core/ledger`, `app.acc_journal`): рядок =
+-- ПРОВОДКА, дебет і кредит поруч — саме те, що потрібно рухам документа.
+-- Складання субконто в масив (`journal_entry_analytic` → `jsonb_agg`) було
+-- третім дублем тієї самої дрібниці в трьох звітах; тепер воно одне.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Тіло звіту. Обгортку `app.document_movements_index` генерує sql:gen зі схеми
@@ -35,42 +40,28 @@ as $$
     join app.document_type dt on dt.id = d.document_type_id
     join app.organization o on o.id = d.organization_id
   ),
-  analytics as (
-    select
-      jea.journal_entry_id,
-      jea.side,
-      jsonb_agg(jsonb_build_object(
-        'dimensionName', d.name,
-        'modelKey',      d.model_key,
-        'valueId',       jea.value_id::text,
-        'presentation',  jea.value_presentation
-      ) order by jea.slot_no) as items
-    from app.journal_entry_analytic jea
-    join app.analytic_dimension d on d.code = jea.dimension_code
-    group by jea.journal_entry_id, jea.side
-  ),
+  -- Організація шару обов'язкова, тож беремо її з самого документа: звіт
+  -- питає про КОНКРЕТНИЙ документ, а не про період чи рахунок.
   rows as (
     select
-      je.line_no            as "lineNo",
-      je.debit_account      as "debitAccount",
-      coalesce(da.name, '') as "debitAccountName",
-      coalesce(dr.items, '[]'::jsonb) as "debitAnalytics",
-      je.credit_account     as "creditAccount",
-      coalesce(ca.name, '') as "creditAccountName",
-      coalesce(cr.items, '[]'::jsonb) as "creditAnalytics",
-      je.amount             as "amount",
-      cur.code              as "currencyCode",
-      je.currency_amount    as "currencyAmount",
-      je.quantity           as "quantity",
-      je.description        as "description"
+      j.line_no             as "lineNo",
+      j.debit_account       as "debitAccount",
+      j.debit_account_name  as "debitAccountName",
+      j.debit_dims          as "debitAnalytics",
+      j.credit_account      as "creditAccount",
+      j.credit_account_name as "creditAccountName",
+      j.credit_dims         as "creditAnalytics",
+      j.amount              as "amount",
+      j.currency_code       as "currencyCode",
+      j.currency_amount     as "currencyAmount",
+      j.quantity            as "quantity",
+      j.description         as "description"
     from params p
-    join app.journal_entry je on je.document_id = p.document_id
-    left join app.chart_of_account da on da.code = je.debit_account
-    left join app.chart_of_account ca on ca.code = je.credit_account
-    left join app.currency cur on cur.id = je.currency_id
-    left join analytics dr on dr.journal_entry_id = je.id and dr.side = 'debit'
-    left join analytics cr on cr.journal_entry_id = je.id and cr.side = 'credit'
-    order by je.line_no, je.id
+    join app.document d on d.id = p.document_id
+    cross join lateral app.acc_journal(
+      d.organization_id, null, null, null, null, p.document_id
+    ) j
+    order by j.line_no, j.entry_id
   )
   select jsonb_build_object(
     'rows', coalesce((select jsonb_agg(to_jsonb(rows)) from rows), '[]'::jsonb),

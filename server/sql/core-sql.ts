@@ -113,6 +113,16 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       data: [file("document_core/db/data.sql")],
     },
   },
+  // Шар читання регістру. Окремим пакетом, а не всередині document_core: своїх
+  // таблиць у нього немає (лише функції над чужими), а застосунок без
+  // бухгалтерського контуру не мусить його везти. Іде ПІСЛЯ document_core —
+  // читає його таблиці — і після плану рахунків застосунку.
+  {
+    name: "ledger",
+    files: {
+      models: [file("ledger/db/ledger.sql")],
+    },
+  },
   {
     name: "help_content",
     files: {
