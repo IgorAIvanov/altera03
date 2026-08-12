@@ -18,10 +18,22 @@ const ROOT = new URL("../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, 
 /** Пакети фреймворку — джерело істини для власних пінів. */
 const PACKAGES = ["server", "client", "tools", "skills"] as const;
 
-/** Файли, у яких піни повторюються (і в `imports`, і в рядках задач). */
+/**
+ * Файли, у яких піни повторюються (і в `imports`, і в рядках задач).
+ *
+ * Проба сканує їх ТЕКСТОМ, а не структурою, — саме тому сюди входять `Dockerfile`
+ * і `docker-compose.yml`. Доти перевірялися лише `deno.json`, і піни в докерних
+ * файлах тихо застрягли на `@altera/tools@^0.5.x` при поточних `0.11.x`: каретка
+ * на `0.x` не пускає далі наступного мінора, тобто контейнерний `solution:update`
+ * ішов інструментом піврічної давнини проти свіжого сервера. Це та сама
+ * розбіжність версій, через яку вже був фікс-реліз, лише в місці, куди ніхто
+ * не дивився.
+ */
 const PIN_FILES = [
   "create/template/deno.json",
   "create/deno.json",
+  "create/template/Dockerfile",
+  "create/template/docker-compose.yml",
   "tools/deno.json",
 ];
 
