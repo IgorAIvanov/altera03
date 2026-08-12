@@ -519,7 +519,16 @@ async function collectNumerators(appDir: string, models: string[]) {
   return rows.sort((left, right) => left.model.localeCompare(right.model));
 }
 
-function renderNumeratorSeedSql(row: CollectedNumerator) {
+/**
+ * Оголошення нумератора — правило й джерело пересіву.
+ *
+ * Відокремлене від самого пересіву навмисно: місця в пакеті в них РІЗНІ.
+ * Оголошення мусить стояти перед сідами застосунку (сід, що заводить запис
+ * через `<model>_save`, бере в нього номер), а пересів — після них: він
+ * підтягує лічильник під рядки, які сід вставив прямим `insert` із власним
+ * кодом. Доти обидві дії стояли одним блоком у кінці, і не працювала жодна.
+ */
+function renderNumeratorDeclarationSql(row: CollectedNumerator) {
   const arg = (value?: string) => value ? sqlStringLiteral(value) : "null";
 
   return [
@@ -544,11 +553,20 @@ function renderNumeratorSeedSql(row: CollectedNumerator) {
     "  source_org_column  = excluded.source_org_column,",
     "  source_date_column = excluded.source_date_column,",
     "  source_filter      = excluded.source_filter;",
-    // Ідемпотентно: лічильник лише підіймається. Без цього перший запис після
-    // оновлення отримав би номер 1 і впав на унікальності.
-    `select app.numerator_reseed(${sqlStringLiteral(row.model)});`,
     "",
   ].join("\n");
+}
+
+/**
+ * Пересів лічильника — окремою секцією, ПІСЛЯ сідів застосунку.
+ *
+ * Ідемпотентно: лічильник лише підіймається. Без цього перший запис після
+ * оновлення отримав би номер 1 і впав на унікальності — а якщо пересів
+ * виконати ДО сіду застосунку, рядки, які сід вставив сам, лічильник не
+ * побачить, і та сама унікальність упаде на першому ж записі з екрана.
+ */
+function renderNumeratorReseedSql(row: CollectedNumerator) {
+  return `select app.numerator_reseed(${sqlStringLiteral(row.model)});`;
 }
 
 // ── Налаштування журналу ────────────────────────────────────────────────────
@@ -571,7 +589,19 @@ function renderAuditSettingsSql(modelKeys: string[]) {
   ].join("\n");
 }
 
-async function buildGeneratedDataSections(appDir: string, models: string[]) {
+/**
+ * Метадані застосунку — типи документів, правила нумерації, перелік моделей для
+ * журналу. Ідуть ПЕРЕД `db/data.sql` моделей, і це не косметика порядку.
+ *
+ * Залежність тут одностороння: сід застосунку може потребувати типу документа
+ * (документи в ньому заводяться викликом `<model>_save`, як і радить
+ * документація), а метадані сіду застосунку не потребують ніколи. Доти вони
+ * стояли в кінці секції даних — і сід, що заводить документ, падав на порожній
+ * базі з «Тип документа … не зареєстровано». Гірше за саму помилку те, що вона
+ * самозакривалася: публікація зупинялася ДО реєстрації типів, тож наступна
+ * впиралася в те саме, і вийти з кола можна було лише правкою сіду.
+ */
+async function buildGeneratedMetadataSections(appDir: string, models: string[]) {
   const sections: string[] = [];
 
   // Не з `models` (тобто не з sql.json): там лише моделі зі своїм SQL, а
@@ -593,7 +623,27 @@ async function buildGeneratedDataSections(appDir: string, models: string[]) {
   if (numerators.length) {
     sections.push(...buildSection(
       "_generated/numerators.data.sql",
-      numerators.map(renderNumeratorSeedSql).join("\n"),
+      numerators.map(renderNumeratorDeclarationSql).join("\n"),
+    ));
+  }
+
+  return sections;
+}
+
+/** Те, що мусить бачити вже засіяні дані застосунку, — після них. */
+async function buildGeneratedDataSections(appDir: string, models: string[]) {
+  const sections: string[] = [];
+
+  const numerators = await collectNumerators(appDir, models);
+  if (numerators.length) {
+    sections.push(...buildSection(
+      "_generated/numerators-reseed.data.sql",
+      [
+        "-- Пересів лічильників: підтягує їх під рядки, які сіди застосунку",
+        "-- вставили самі. Тому саме тут, а не поруч з оголошеннями вище.",
+        ...numerators.map(renderNumeratorReseedSql),
+        "",
+      ].join("\n"),
     ));
   }
 
@@ -647,6 +697,12 @@ export async function assembleSqlPackage(
 
     for (const step of PACKAGE_STEPS) {
       const sectionChunks: string[] = [];
+
+      // Метадані — до сідів моделей: сід застосунку може заводити документ, а
+      // тип документа мусить існувати раніше (див. buildGeneratedMetadataSections).
+      if (step.key === "data") {
+        sectionChunks.push(...await buildGeneratedMetadataSections(appDir, manifest.models));
+      }
 
       for (const model of manifest.models) {
         // Пакети ядра (`@core/<назва>`) їдуть із серверного пакета, а не з appDir.
