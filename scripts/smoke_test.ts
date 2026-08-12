@@ -66,10 +66,20 @@ function sessionCookie(headers: Headers): string | null {
  * навіть у пробах — саме з таких винятків беруться зразки для копіювання.
  */
 async function purge(table: string, id: string): Promise<void> {
+  await withDb((sql) => sql`delete from ${sql(table)} where id = ${id}`);
+}
+
+/**
+ * З'єднання на один крок проби — тими самими параметрами, що в решти
+ * дев-інструментів. Потрібне там, де перевіряється не команда моделі, а
+ * домовленість самої БАЗИ (гак перед записом документа): завести й прибрати
+ * функцію застосунку командою моделі неможливо.
+ */
+async function withDb<T>(fn: (sql: ReturnType<typeof postgres>) => Promise<T>): Promise<T> {
   const { host, port, database, username, password, ssl } = configFromEnv().database;
   const sql = postgres({ host, port, database, username, password, ssl: ssl ?? false });
   try {
-    await sql`delete from ${sql(table)} where id = ${id}`;
+    return await fn(sql);
   } finally {
     await sql.end();
   }
@@ -549,6 +559,126 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         // Організація йде ПІСЛЯ документів: на неї посилається app.document.
         for (const id of docs) await purge("app.document", id);
         await purge("app.counterparty", partyRow.id);
+        await purge("app.organization", org.id);
+        await numeratorRestore("invoice", before);
+        await numeratorRestore("counterparty", beforeParty);
+        await numeratorRestore("organization", beforeOrg);
+      }
+    });
+
+    // Гак «перед записом документа» — точка розширення, якої з боку застосунку
+    // не видно взагалі: вона є, лише поки ядро кличе її з тригера на
+    // app.document. Пропаде виклик — заборона закритого періоду перестане діяти
+    // МОВЧКИ, і виявиться це проведенням у закритому місяці, а не помилкою.
+    // Тому проба заводить свій гак, звіряє назви дій на всіх шляхах запису й
+    // прибирає його у finally.
+    await t.step("документ: гак перед записом кличеться на всіх шляхах", async () => {
+      const before = await numeratorSnapshot("invoice");
+      const beforeParty = await numeratorSnapshot("counterparty");
+      const beforeOrg = await numeratorSnapshot("organization");
+
+      const organization = await client.model("organization", "save", {
+        item: { name: "Smoke гак організація", prefix: "SMG" },
+      });
+      const org = organization.body.data.item as { id: string } | null;
+      assertExists(org);
+
+      const party = await client.model("counterparty", "save", {
+        item: { name: "Smoke гак контрагент" },
+      });
+      const partyRow = party.body.data.item as { id: string } | null;
+      assertExists(partyRow);
+
+      // Рядок документа потрібен, щоб його можна було ПРОВЕСТИ: документ без
+      // суми відмовляється проводитися, і крок мовчки перевіряв би не те.
+      const bank = await client.model("bank", "save", {
+        item: { mfo: "999871", name: "Smoke гак банк" },
+      });
+      const bankRow = bank.body.data.item as { id: string } | null;
+      assertExists(bankRow);
+
+      const docs: string[] = [];
+      /**
+       * Назви дій без службових `update`.
+       *
+       * Запис документа доходить до шапки двічі — сам запис і денормалізація
+       * підсумку з представленням, — але це подробиця генерованого `save`, а не
+       * контракт гака. Звіряємо те, що ядро ОБІЦЯЄ: дію названо словом
+       * застосунку на кожному шляху.
+       */
+      const ops = async () =>
+        (await withDb((sql) =>
+          sql<{ op: string }[]>`select op from app.smoke_guard_log order by id`
+        )).map((r) => r.op).filter((op) => op !== "update");
+
+      try {
+        await withDb(async (sql) => {
+          await sql.unsafe(`
+            create table app.smoke_guard_log (id bigserial primary key, op text not null);
+            create function app.doc_before_write(
+              p_user_id bigint, p_op text, p_doc jsonb, p_prev jsonb
+            ) returns void language plpgsql as $fn$
+            begin
+              insert into app.smoke_guard_log (op) values (p_op);
+            end $fn$;
+          `);
+        });
+
+        const saved = await client.model("invoice", "save", {
+          item: {
+            organizationId: org.id,
+            docDate: "2026-08-12T00:00:00",
+            counterpartyId: partyRow.id,
+            lines: [{ lineNo: 1, bankId: bankRow.id, qty: 2, price: 50 }],
+          },
+        });
+        const doc = saved.body.data.item as { id: string } | null;
+        assertExists(doc);
+        docs.push(doc.id);
+
+        assertEquals((await client.model("invoice", "post", { id: doc.id })).body.ok, true);
+        assertEquals((await client.model("invoice", "unpost", { id: doc.id })).body.ok, true);
+
+        assertEquals((await client.model("invoice", "delete", { id: doc.id })).body.ok, true);
+
+        // Проведення й позначка на видалення — обидва `update` у TG_OP, тож
+        // назвати їх може лише ядро. Саме через це гак і приймає `op`.
+        assertEquals(await ops(), ["insert", "post", "unpost", "delete"]);
+
+        // Відмова гака доходить конвертом, а не 500 — інакше заборона періоду
+        // виглядала б для користувача як зламаний застосунок. Журнал тут не
+        // допоміг би: разом із відмовою відкочується й запис у нього.
+        await withDb(async (sql) => {
+          await sql.unsafe(`
+            create or replace function app.doc_before_write(
+              p_user_id bigint, p_op text, p_doc jsonb, p_prev jsonb
+            ) returns void language plpgsql as $fn$
+            begin raise exception 'smoke guard: заборонено'; end $fn$;
+          `);
+        });
+        assertEquals((await client.model("invoice", "undelete", { id: doc.id })).body.ok, false);
+
+        // Гак із чужим підписом не кликався б — і застосунок вважав би, що
+        // заборона діє. Ядро валить запис замість того, щоб мовчати.
+        await withDb(async (sql) => {
+          await sql.unsafe(`
+            drop function app.doc_before_write(bigint, text, jsonb, jsonb);
+            create function app.doc_before_write(p_user_id bigint, p_op text) returns void
+            language plpgsql as $fn$ begin end $fn$;
+          `);
+        });
+        assertEquals((await client.model("invoice", "undelete", { id: doc.id })).body.ok, false);
+      } finally {
+        await withDb(async (sql) => {
+          await sql.unsafe(`
+            drop function if exists app.doc_before_write(bigint, text, jsonb, jsonb);
+            drop function if exists app.doc_before_write(bigint, text);
+            drop table if exists app.smoke_guard_log;
+          `);
+        });
+        for (const id of docs) await purge("app.document", id);
+        await purge("app.counterparty", partyRow.id);
+        await purge("app.bank", bankRow.id);
         await purge("app.organization", org.id);
         await numeratorRestore("invoice", before);
         await numeratorRestore("counterparty", beforeParty);

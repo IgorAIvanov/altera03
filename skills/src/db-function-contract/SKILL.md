@@ -319,3 +319,48 @@ Consequences you must keep in mind when writing SQL by hand:
 
 `undelete` is a standard command: the runtime knows it and maps it to the `delete`
 permission, so it needs no `commands.access` entry.
+
+## One hook runs before every write to a document header
+
+A closed-period lock, "who may post back-dated documents", any "may this document
+be touched at all" rule — these must hold on **every** path that writes
+`app.document`: `save` of any document model, `post` / `unpost`, the delete mark,
+and every model added later. Writing the check into each command means it holds
+where nobody forgot; putting your own trigger on `app.document` means adding an
+object to a table the core owns, which the core knows nothing about.
+
+So the core calls one hook, from its own trigger. You switch it on by **creating
+the function** — there is nothing to register:
+
+```sql
+create function app.doc_before_write(
+  p_user_id bigint, p_op text, p_doc jsonb, p_prev jsonb
+) returns void
+language plpgsql
+as $$
+begin
+  if p_op in ('insert', 'update', 'post', 'unpost')
+     and (p_doc->>'doc_date')::date <= app.period_lock_date(p_user_id) then
+    raise exception '@[app.periodLocked]%',
+      jsonb_build_object('date', p_doc->>'doc_date')::text;
+  end if;
+end $$;
+```
+
+- **`p_op` is the application's word, not SQL's:** `insert`, `update`, `post`,
+  `unpost`, `delete` (the mark), `undelete`, `purge` (a physical row delete). The
+  core has to name it, because `TG_OP` cannot: posting and marking for deletion
+  are both `update`.
+- **rows arrive as JSONB, not as an id.** On insert there is nothing to read yet,
+  and a check needs the fields themselves — the date, the organization.
+  `p_prev` is the state before the write, so moving a document *into* a locked
+  period is visible too.
+- **it is a guard, not an editor.** Whatever it returns goes nowhere; the row is
+  written as it came. To refuse, `raise` — the message reaches the user in the
+  normal envelope, so name it with a translation marker.
+- **no function, no check** — the core stays silent. But a function of that name
+  with a *different signature* fails the write loudly: silently not being called
+  is the one outcome worse than not existing, because the application would
+  believe the rule is in force.
+- one function per database, not per model — that is the point: it holds for
+  models that do not exist yet.

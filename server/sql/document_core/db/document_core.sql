@@ -381,3 +381,111 @@ drop trigger if exists tr_analytic_dimension_check on app.analytic_dimension;
 create trigger tr_analytic_dimension_check
 before insert or update on app.analytic_dimension
 for each row execute function app.analytic_dimension_check();
+
+-- ── Гак «перед записом документа» ───────────────────────────────────────────
+--
+-- Заборона закритого періоду, право писати заднім числом, будь-яка перевірка
+-- «чи можна чіпати цей документ» потрібні КОЖНОМУ обліковому застосунку — і в
+-- кожного мусили б діяти на ВСІХ шляхах запису шапки: `save` будь-якого
+-- документа, `post`/`unpost`, позначка на видалення, і на кожній моделі, що
+-- з'явиться потім. Дописувати перевірку в кожну команду означає «діє там, де не
+-- забули»; ставити свій тригер на app.document — додавати об'єкт до ЧУЖОЇ
+-- таблиці, про який ядро не знає й з яким розійдеться при першій же зміні
+-- документообігу.
+--
+-- Тому точка розширення тут, і тригером — з тієї самої причини, що й у
+-- `analytic_dimension_check` вище: домовленість «не забудь покликати перевірку»
+-- тримається рівно доти, доки про неї пам'ятають.
+--
+-- Застосунок вмикає гак тим, що СТВОРЮЄ функцію:
+--
+--   create function app.doc_before_write(
+--     p_user_id bigint, p_op text, p_doc jsonb, p_prev jsonb
+--   ) returns void language plpgsql as $$
+--   begin
+--     if p_op in ('insert', 'update', 'post', 'unpost')
+--        and (p_doc->>'doc_date')::date <= app.period_lock_date(p_user_id) then
+--       raise exception 'Період закрито: %', p_doc->>'doc_date';
+--     end if;
+--   end $$;
+--
+-- Текст відмови їде людині, тож у застосунку його називають ключем-маркером
+-- (див. docs/localization.md), а не пишуть рядком, як у прикладі вище: маркер
+-- у ЦЬОМУ файлі проба звіряла б зі словниками фреймворку, а ключ там прикладний.
+--
+-- Немає функції — немає й перевірки; ядро мовчить. А от функція з ІНШИМ
+-- підписом валить запис із текстом, який називає очікуваний: інакше застосунок
+-- вважав би, що заборона діє, а вона мовчки не кликалася б — саме той різновид
+-- помилки, заради якого гак і робиться.
+--
+-- `op` називає дію словом застосунку, а не SQL: 'insert', 'update', 'post',
+-- 'unpost', 'delete' (позначка), 'undelete', 'purge' (фізичне видалення рядка).
+-- Різницю доводиться називати ядру, бо з `TG_OP` вона не видно: і проведення, і
+-- позначка на видалення — це `update`.
+--
+-- Рядки їдуть JSONB, а не одним `document_id`: на вставці читати ще нема чого
+-- (рядка в таблиці немає), а перевірці потрібні саме реквізити — дата й
+-- організація. `p_prev` дає стан ДО запису, тож перенесення документа з
+-- відкритого періоду в закритий (і назад) теж видно.
+--
+-- Гак — сторож, а не редактор: значення, які він поверне, нікуди не йдуть, і
+-- рядок записується таким, яким прийшов.
+
+drop function if exists app.document_guard() cascade;
+create function app.document_guard()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_hook regprocedure;
+  v_op   text;
+  v_user bigint;
+begin
+  v_hook := to_regprocedure('app.doc_before_write(bigint, text, jsonb, jsonb)');
+
+  if v_hook is null then
+    -- Функція з таким іменем є, але підпис інший — мовчати не можна: застосунок
+    -- у цьому випадку впевнений, що заборона діє.
+    if exists (
+      select 1 from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'app' and p.proname = 'doc_before_write'
+    ) then
+      raise exception 'app.doc_before_write існує з іншим підписом і тому не кликається'
+        using hint = 'Очікую app.doc_before_write(p_user_id bigint, p_op text, p_doc jsonb, p_prev jsonb) returns void';
+    end if;
+    return coalesce(new, old);
+  end if;
+
+  v_op := case
+    when tg_op = 'INSERT' then 'insert'
+    when tg_op = 'DELETE' then 'purge'
+    when not old.is_posted  and new.is_posted  then 'post'
+    when old.is_posted      and not new.is_posted then 'unpost'
+    when not old.is_deleted and new.is_deleted then 'delete'
+    when old.is_deleted     and not new.is_deleted then 'undelete'
+    else 'update'
+  end;
+
+  -- Виконавця несе сам рядок: його пишуть усі шляхи запису (генерований `save`,
+  -- `doc_unpost`, проведення). Окремого сеансового налаштування ядро не заводить —
+  -- воно розійшлося б із рядком рівно тоді, коли писали б повз команду.
+  v_user := coalesce(
+    case when tg_op = 'DELETE' then old.updated_by else new.updated_by end,
+    case when tg_op = 'DELETE' then old.created_by else new.created_by end
+  );
+
+  execute 'select app.doc_before_write($1, $2, $3, $4)'
+    using v_user,
+          v_op,
+          case when tg_op = 'DELETE' then null else to_jsonb(new) end,
+          case when tg_op = 'INSERT' then null else to_jsonb(old) end;
+
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists tr_document_guard on app.document;
+create trigger tr_document_guard
+before insert or update or delete on app.document
+for each row execute function app.document_guard();
