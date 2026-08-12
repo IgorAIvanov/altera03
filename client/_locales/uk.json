@@ -80,6 +80,8 @@
   "tabs.copyFailed": "Не вдалося скопіювати — ось адреса:",
   "report.stale": "Параметри змінилися — звіт застарів",
   "report.rebuild": "Переформувати",
+  "report.notBuilt": "Задайте відбір і натисніть «Оновити»",
+  "report.emptyFor": "за відбором: {filters}",
   "period.label": "Період",
   "period.today": "Сьогодні",
   "period.thisWeek": "Цей тиждень",

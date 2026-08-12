@@ -39,6 +39,27 @@ The subclass declares:
 | `renderFilters()` | no | pickers and dates under the toolbar |
 | `renderToolbarExtra()` | no | extra action buttons in the toolbar |
 | `printSubtitle()` | no | organization and period line under the title |
+| `hasData` | no | what counts as data (default: `$root.rows` is non-empty) |
+| `emptyHint()` | no | what narrowed the result (default: `printSubtitle()`) |
+
+## The empty report is drawn by the base
+
+`renderBody()` is called **only when there is data**. Otherwise the base draws
+the empty state, and it tells two cases apart: the report has not been built yet
+(«press Refresh») versus it was built and came back empty («no data» plus the
+selection that produced it — organization, period).
+
+That difference matters more in a report than in a list: a report's filter is
+mandatory, so "we are looking in the wrong place" is the *usual* reason for an
+empty screen — a second organization in the database, a period with no documents
+— and it is the easiest thing to mistake for a broken report. People go looking
+in the SQL.
+
+So **do not write your own «no data» row inside `<tbody>`** — it is unreachable
+now. And if an empty row list is still a meaningful answer for your report,
+override `hasData` rather than fighting the base: an account card with an opening
+balance and no movements in the period has an answer to show, and the same flag
+also enables Print and Excel.
 
 A report keeps its own root schema (`<model>.schema.ts` with `$filters`, `rows`,
 `totals`) and passes it to `super(...)` — unlike a list, where the base supplies

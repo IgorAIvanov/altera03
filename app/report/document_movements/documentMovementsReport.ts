@@ -175,9 +175,6 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
           </thead>
           <tbody>
             ${this.$root.rows.map((row) => this.renderRow(row))}
-            ${this.$root.rows.length === 0
-              ? html`<tr><td colspan="7" class="text-center text-muted py-4">${t("common.noData")}</td></tr>`
-              : ""}
           </tbody>
           <tfoot>
             <tr>

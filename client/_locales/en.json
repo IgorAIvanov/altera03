@@ -80,6 +80,8 @@
   "tabs.copyFailed": "Could not copy — here is the address:",
   "report.stale": "Parameters changed — the report is out of date",
   "report.rebuild": "Rebuild",
+  "report.notBuilt": "Set the selection and press Refresh",
+  "report.emptyFor": "for the selection: {filters}",
   "period.label": "Period",
   "period.today": "Today",
   "period.thisWeek": "This week",

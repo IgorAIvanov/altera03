@@ -154,6 +154,18 @@ export abstract class ReportBase<Root extends Record<string, unknown>> extends F
   }
 
   /**
+   * Чи звіт узагалі формували в цій вкладці.
+   *
+   * Порожній екран до першого «Оновити» і порожній результат — це різні речі, і
+   * ліки в них протилежні: у першому випадку треба натиснути кнопку, у другому —
+   * змінити відбір. Ознака вже є в `stale` (`null` = ще не формували), тож
+   * окремого стану не заводимо.
+   */
+  protected get isBuilt(): boolean {
+    return this.stale !== null;
+  }
+
+  /**
    * Фільтри змінилися. Список цей гак перевизначає на перезапит, звіт — на
    * ознаку: формувати сам він не буде.
    */
@@ -209,6 +221,17 @@ export abstract class ReportBase<Root extends Record<string, unknown>> extends F
     const rows = (this.$root as Record<string, unknown>).rows;
     return Array.isArray(rows) && rows.length > 0;
   }
+
+  /**
+   * Чим звужено — рядок під «немає даних».
+   *
+   * Умовчання — той самий підпис, що йде на папір (`printSubtitle()`): звіт його
+   * вже пише, і в ньому рівно те, що треба назвати — організація й період.
+   * Другого переліку фільтрів заводити не варто: він розійшовся б із першим, і
+   * мовчки. Перекривають цей метод тоді, коли на екрані доречно сказати більше,
+   * ніж на аркуші.
+   */
+  protected emptyHint(): string { return this.printSubtitle(); }
 
   // ── Дії тулбару ───────────────────────────────────────────────────────────
 
@@ -282,6 +305,30 @@ export abstract class ReportBase<Root extends Record<string, unknown>> extends F
   protected abstract renderBody(): TemplateResult;
 
   /**
+   * Порожній звіт замість таблиці.
+   *
+   * «Немає даних» саме по собі не каже головного — те саме, що вже вирішено для
+   * списків (`QueryTableBase.renderEmpty`). Але у звіті причина інша й майже
+   * завжди одна: **відбір обов'язковий**, тож найчастіша порожнеча — не «нічого
+   * не заведено», а «дивимося не туди»: не та організація, не той період.
+   * Сплутати це з «звіт зламався» найлегше, а коштує довго — шукати йдуть у SQL.
+   *
+   * Кнопки тут немає навмисно, і це відмінність від списку: фільтри звіту стоять
+   * на очах під тулбаром (не в згортній панелі), тому вихід з причини — сам
+   * екран. «Скинути фільтри» тут ще й шкідливе: обов'язкові поля довелося б
+   * заповнювати заново.
+   */
+  protected renderEmpty(): TemplateResult {
+    const hint = this.emptyHint();
+    return html`
+      <div class="text-center p-8 text-muted flex flex-col items-center gap-1">
+        <span>${this.isBuilt ? t("common.noData") : t("report.notBuilt")}</span>
+        ${this.isBuilt && hint ? html`<span class="text-sm">${t("report.emptyFor", { filters: hint })}</span>` : nothing}
+      </div>
+    `;
+  }
+
+  /**
    * Вікно «параметри змінилися». `role="status"` — щоб про це дізналася й
    * читалка екрана: розмиття для неї не існує, а звіт під ним застарілий.
    *
@@ -311,7 +358,7 @@ export abstract class ReportBase<Root extends Record<string, unknown>> extends F
           ${this.renderStaleNotice()}
           <div class="report-body flex flex-col gap-2 ${this.isStale ? "stale" : ""}">
             ${this.renderPrintHeader()}
-            ${this.renderBody()}
+            ${this.hasData ? this.renderBody() : this.renderEmpty()}
           </div>
         </div>
       </div>

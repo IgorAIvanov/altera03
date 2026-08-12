@@ -78,6 +78,18 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
     await this.loadInto("index", this.filtersPayload());
   }
 
+  /**
+   * У картці порожній перелік рухів ще не означає порожній звіт: рахунок може
+   * мати вхідне сальдо й не мати жодного обороту за період — і саме це число
+   * приходили подивитися. Тому даними вважається і ненульове сальдо; інакше
+   * основа замінила б таблицю на «немає даних», сховавши відповідь.
+   */
+  protected override get hasData(): boolean {
+    if (super.hasData) return true;
+    const { openingDebit, openingCredit, closingDebit, closingCredit } = this.$root.totals;
+    return [openingDebit, openingCredit, closingDebit, closingCredit].some((v) => Number(v) !== 0);
+  }
+
   /** Рядок під назвою звіту на папері та в Excel: рахунок, організація, період. */
   protected override printSubtitle(): string {
     const f = this.$root.$filters;
@@ -263,9 +275,6 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
               ${this.extraFillerCells("td")}
             </tr>
             ${this.$root.rows.map((row) => this.renderRow(row))}
-            ${this.$root.rows.length === 0
-              ? html`<tr><td colspan="8" class="text-center text-muted py-4">${t("common.noData")}</td></tr>`
-              : ""}
           </tbody>
           <tfoot>
             <tr>
