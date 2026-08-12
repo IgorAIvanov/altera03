@@ -1,8 +1,4 @@
 {
-  "header.currentOrganization": "Поточна організація",
-  "header.chooseOrganization": "Оберіть організацію",
-  "header.language": "Мова інтерфейсу",
-  "header.profileSettings": "Налаштування профілю",
   "header.changePassword": "Змінити пароль",
   "header.passwordTitle": "Зміна пароля",
   "header.passwordCurrent": "Поточний пароль",
@@ -11,6 +7,5 @@
   "header.passwordMismatch": "Нові паролі не збігаються",
   "header.passwordChanged": "Пароль змінено",
   "header.passwordChangedHint": "Наступного разу входьте з новим паролем.",
-  "header.logout": "Вийти",
-  "header.loggingOut": "Вихід…"
+  "header.logout": "Вийти"
 }

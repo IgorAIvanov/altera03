@@ -43,6 +43,15 @@ export const InvoiceLookupRowSchema = Type.Object({
 `searchable` (він і в списку тоді зникне) або приберіть ссылку з
 `LookupRowSchema`.
 
+### Тільки для нових застосунків
+
+**Діалог зміни власного пароля** — `app/header/change-password-dialog.ts` плюс
+кнопка в шапці. Без нього пароль у застосунку змінювався рівно один раз і лише
+примусово: форма в `app/login/` вмикається прапорцем `mustChangePassword()` і
+гасне разом із ним, а більше до `changeOwnPassword()` не веде нічого. Наявним
+застосункам файл треба взяти з шаблону — з ним і ключі `header.password*` у
+`app/header/_locales/`.
+
 ---
 
 ## client 0.9.0 · server 0.11.1 · tools 0.8.0 · skills 0.1.6 · create 0.6.1

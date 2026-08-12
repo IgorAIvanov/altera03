@@ -1,8 +1,4 @@
 {
-  "header.currentOrganization": "Current organization",
-  "header.chooseOrganization": "Select organization",
-  "header.language": "Interface language",
-  "header.profileSettings": "Profile settings",
   "header.changePassword": "Change password",
   "header.passwordTitle": "Change password",
   "header.passwordCurrent": "Current password",
@@ -11,6 +7,5 @@
   "header.passwordMismatch": "The new passwords do not match",
   "header.passwordChanged": "Password changed",
   "header.passwordChangedHint": "Use the new password the next time you sign in.",
-  "header.logout": "Sign out",
-  "header.loggingOut": "Signing out…"
+  "header.logout": "Sign out"
 }

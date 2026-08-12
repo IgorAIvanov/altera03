@@ -7,5 +7,14 @@
   "counterparty.edrpouInvalid": "EDRPOU must be 8 or 10 digits",
   "counterparty.print": "Print card",
   "counterparty.saveBeforePrint": "Save the counterparty first — printing reads from the database",
+  "header.changePassword": "Change password",
+  "header.passwordTitle": "Change password",
+  "header.passwordCurrent": "Current password",
+  "header.passwordNew": "New password",
+  "header.passwordRepeat": "Repeat new password",
+  "header.passwordMismatch": "The new passwords do not match",
+  "header.passwordChanged": "Password changed",
+  "header.passwordChangedHint": "Use the new password the next time you sign in.",
+  "header.logout": "Sign out",
   "app.title": "{{name}}"
 }
