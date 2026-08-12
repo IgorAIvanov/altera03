@@ -1,6 +1,6 @@
 {
   "name": "@altera/tools",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "//": "Збіркові й дев-інструменти фреймворку: codegen SQL/реєстру, публікація, in-process клієнт застосунку. Знання про конкретний застосунок у пакет не зашите: codegen/publish отримують каталог аргументом, а AppClient — фабрику `createServer` інжекцією. Тонкі обгортки (api/smoke) живуть у застосунку й передають сюди свій createServer.",
   "exports": {
     "./generate-client-assets": "./generate-client-assets.ts",
