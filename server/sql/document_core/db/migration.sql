@@ -31,29 +31,7 @@ begin
 end
 $$;
 
--- ── Вимір «Банк»: код банку лежить у mfo, а не в code ───────────────────────
--- Сід виміру обіцяв колонку `code`, якої в app.bank немає й ніколи не було
--- (кодом банку є МФО — див. app/catalog/bank/db/struc.sql). Запит на субконто
--- app.doc_analytic_set будує ДИНАМІЧНО, тому розходження не видно ні при
--- публікації схеми, ні при записі документа — воно вилазить аж при проведенні
--- проводки по рахунках 311–314:
---   ERROR: column "code" does not exist
---
--- Міняємо адресно, і не лише за значенням, яке поклав сід, а за ФАКТОМ: колонки
--- `code` в таблиці немає, а `mfo` є. Без цієї перевірки правка ламала б рівно ті
--- установки, де вона не потрібна, — застосунок зі своїм `app.bank`, у якого
--- колонка `code` справжня, дістав би опис на неіснуючу `mfo`, і публікація впала б
--- на тригері. Установка, яка вже описала свій довідник по-своєму, теж лишається як є.
-update app.analytic_dimension
-set code_column = 'mfo'
-where code = 'bank'
-  and target_table = 'app.bank'
-  and code_column = 'code'
-  and not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'app' and table_name = 'bank' and column_name = 'code'
-  )
-  and exists (
-    select 1 from information_schema.columns
-    where table_schema = 'app' and table_name = 'bank' and column_name = 'mfo'
-  );
+-- Виправлення опису виміру «Банк» жило тут і переїхало в застосунок
+-- (`app/catalog/bank/db/migration.sql`): воно лікує рядок про ЙОГО довідник, а в
+-- пакеті ядра імені прикладної таблиці бути не має. Установка без банківського
+-- довідника не мусить навіть читати цей рядок.

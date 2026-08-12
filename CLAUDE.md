@@ -62,6 +62,14 @@ app/                        # застосунок: фронтенд-модул�
   # core-sql.generated.ts (deno task core:sql): text-імпорти не приймає JSR.
   # У меню в ядрі тільки структура й функції; сід (склад пунктів — маршрути цього
   # застосунку) лишається в app/admin/menu/db/data.sql, там же й екрани.
+  # Те саме правило і в субконто: ядро тримає механізм (analytic_dimension,
+  # chart_of_account_analytic, doc_analytic_set), а СКЛАД — застосунок. Вимір
+  # оголошує модель, чий довідник ним працює (app/catalog/bank/db/data.sql),
+  # прив'язку до рахунків — план рахунків (app/catalog/chart_of_account/db/data.sql),
+  # обидва з on conflict do nothing. Ознака неправильної межі проста: у пакеті
+  # ядра не має бути ані коду рахунку конкретного плану, ані імені таблиці
+  # застосунку. Порядок у sql.json через це значущий — модель, що оголошує
+  # вимір, стоїть ВИЩЕ за план рахунків.
   _generated/               # авто-генерація (deno task sql:registry): model-registry, ts-commands,
                             #   agent-routes, view-manifest
                             # model-registry — ЧИСТІ ДАНІ, ts-commands — статичні import модулів

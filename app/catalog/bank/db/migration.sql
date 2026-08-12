@@ -43,3 +43,34 @@ end $$;
 -- на першій же таблиці. Тут колонка є в обох випадках — і на новій базі
 -- (створена struc.sql), і на наявній (додана вище).
 create index if not exists ix_bank_is_deleted on app.bank (is_deleted);
+
+-- ── Вимір «Банк»: код банку лежить у mfo, а не в code ───────────────────────
+-- Переїхало з `@core/document_core`: рядок лікує опис ЦЬОГО довідника, тож і
+-- живе поруч з ним — установка без банку не мусить навіть його читати.
+--
+-- Сід виміру колись обіцяв колонку `code`, якої в app.bank немає й ніколи не
+-- було (кодом банку є МФО — див. struc.sql поруч). Запит на субконто
+-- app.doc_analytic_set будує ДИНАМІЧНО, тому розходження не видно ні при
+-- публікації схеми, ні при записі документа — воно вилазить аж при проведенні
+-- проводки по рахунках 311–314:
+--   ERROR: column "code" does not exist
+--
+-- Міняємо адресно, і не за значенням, яке поклав сід, а за ФАКТОМ: колонки
+-- `code` в таблиці немає, а `mfo` є. Без цієї перевірки правка ламала б рівно ті
+-- установки, де вона не потрібна, — застосунок зі своїм `app.bank`, у якого
+-- колонка `code` справжня, дістав би опис на неіснуючу `mfo`, і публікація
+-- впала б на тригері. Установка, яка вже описала свій довідник по-своєму, теж
+-- лишається як є.
+update app.analytic_dimension
+set code_column = 'mfo'
+where code = 'bank'
+  and target_table = 'app.bank'
+  and code_column = 'code'
+  and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'app' and table_name = 'bank' and column_name = 'code'
+  )
+  and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'app' and table_name = 'bank' and column_name = 'mfo'
+  );
