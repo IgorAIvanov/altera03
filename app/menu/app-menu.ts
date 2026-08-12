@@ -52,8 +52,22 @@ export class AppMenu extends LitElement {
     }
     .toggle-btn:hover { background: rgba(47,95,143,0.10); color: #1c3345; }
 
-    /* Список пунктов */
-    .menu { flex: 1; overflow-y: auto; overflow-x: hidden; }
+    /* Список пунктов.
+
+       min-height: 0 — не косметика, а условие прокрутки: flex-элемент по
+       умолчанию не бывает ниже своего содержимого (min-height: auto), поэтому
+       список рос за пределы меню, overflow-y не срабатывал вовсе, а хвост
+       пунктов молча срезал overflow: hidden на самом :host. */
+    .menu {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      /* Тонкая полоса: webkit-правилами ниже и стандартным свойством — иначе
+         в Firefox полоса штатной ширины отъедает место у названий пунктов. */
+      scrollbar-width: thin;
+      scrollbar-color: #b8c3cc transparent;
+    }
     .menu::-webkit-scrollbar { width: 4px; }
     .menu::-webkit-scrollbar-thumb { background: #b8c3cc; }
 
@@ -314,6 +328,11 @@ export class AppMenu extends LitElement {
     this.tooltip = null;
   }
 
+  private closePopups = () => {
+    this.tooltip = null;
+    this.flyout = null;
+  };
+
   private handleItemClick(e: MouseEvent, item: MenuItem) {
     const hasChildren = item.children && item.children.length > 0;
 
@@ -371,7 +390,10 @@ export class AppMenu extends LitElement {
         </div>
       </div>
 
-      <div class="menu">
+      <!-- Прокрутка закрывает всплывающие: и подсказка, и flyout стоят на
+           position: fixed с координатой, снятой в момент наведения, — уехавший
+           список оставил бы их указывать в пустоту. -->
+      <div class="menu" @scroll=${this.closePopups}>
         ${this.error
           ? html`<div class="menu-message" title="${this.error}">Меню недоступне</div>`
           : this.items.map(item => this.renderItem(item))}
