@@ -585,7 +585,14 @@ function srcExpr(f: Field, jsonVar: string): string {
   // jsonb-колонка: беремо піддерево (->), а не текст (->>), інакше значення
   // поїде в БД як рядок і впаде на типі.
   if (f.isJson) return `${jsonVar}->'${f.key}'`;
-  const g = `${jsonVar}->>'${f.key}'`;
+  // Ссылка приходить у двох виглядах, і обидва законні: голий id
+  // (`counterpartyId`) або сам об'єкт (`counterparty: {id, name}`) — саме його
+  // тримає форма, бо його ж віддає `get` і його ж приймає `<ui-picker>`.
+  // Розбирати це на клієнті означало б тримати в кожній формі пару полів і
+  // стежити, щоб вони не розійшлися.
+  const g = f.ref
+    ? `coalesce(${jsonVar}->>'${f.key}', ${jsonVar}->'${f.ref.as}'->>'id')`
+    : `${jsonVar}->>'${f.key}'`;
   if (f.isBigint) return `nullif(${g}, '')::bigint`;
   if (f.isInt) return `nullif(${g}, '')::int`;
   if (f.isNumeric) return `nullif(${g}, '')::numeric`;

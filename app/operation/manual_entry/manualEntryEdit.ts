@@ -15,6 +15,7 @@ import {
   type ManualEntryFormLine,
 } from "./manual_entry.schema.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-decimal.ts";
 import "@client/ui-kit/components/ui-date.ts";
 import "@client/ui-kit/tabular/ui-tabular-table.ts";
@@ -27,7 +28,6 @@ export const tagName = "manual-entry-edit";
 const MONEY_PRECISION = 2;
 const QTY_PRECISION = 3;
 
-type PickEvent = CustomEvent<{ id: string; label: string }>;
 type DecimalEvent = CustomEvent<{ value: string }>;
 type DateEvent = CustomEvent<{ value: string }>;
 type Side = "debit" | "credit";
@@ -282,13 +282,10 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
         ?disabled=${this.readonlyMode}
         cell
         url="catalog/chart_of_account"
-        fetch="lookup"
         display-field="code"
         hint-field="name"
-        .displayValue=${code ?? ""}
-        .selectedId=${code ?? ""}
-        @item-selected=${(e: PickEvent) => this.setAccount(index, side, e.detail.label)}
-        @item-cleared=${() => this.setAccount(index, side, "")}
+        .value=${code ? { id: code, code } : null}
+        @value-changed=${(e: PickerChangeEvent) => this.setAccount(index, side, String(e.detail.value?.code ?? ""))}
       ></ui-picker>
     `;
   }
@@ -311,14 +308,11 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
             cell
             title=${slot.dimensionName}
             url=${viewPath(slot.modelKey)}
-            fetch="lookup"
             placeholder=${slot.dimensionName}
-            .displayValue=${values[slot.dimensionCode]?.name ?? ""}
-            .selectedId=${values[slot.dimensionCode]?.id ?? ""}
             show-clear
-            @item-selected=${(e: PickEvent) =>
-              this.setAnalytic(index, side, slot.dimensionCode, { id: e.detail.id, name: e.detail.label })}
-            @item-cleared=${() => this.setAnalytic(index, side, slot.dimensionCode, null)}
+            .value=${values[slot.dimensionCode] ?? null}
+            @value-changed=${(e: PickerChangeEvent) =>
+              this.setAnalytic(index, side, slot.dimensionCode, e.detail.value as { id: string; name: string } | null)}
           ></ui-picker>
         `)}
       </div>
@@ -339,14 +333,14 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
         ?disabled=${this.readonlyMode}
         cell
         url="catalog/currency"
-        fetch="lookup"
         display-field="code"
         hint-field="name"
-        .displayValue=${line.currency?.name ?? ""}
-        .selectedId=${line.currencyId ?? ""}
-        @item-selected=${(e: PickEvent) =>
-          this.setLine(index, { currencyId: e.detail.id, currency: { id: e.detail.id, name: e.detail.label } })}
-        @item-cleared=${() => this.setLine(index, { currencyId: "", currency: null })}
+        .value=${line.currency ?? null}
+        @value-changed=${(e: PickerChangeEvent) =>
+          this.setLine(index, {
+            currencyId: String(e.detail.value?.id ?? ""),
+            currency: e.detail.value as { id: string; name: string } | null,
+          })}
       ></ui-picker>
     `;
   }
@@ -447,13 +441,8 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
               .label=${t("document.organization")}
               ?required=${this.isRequired("organizationId")}
               url="catalog/organization"
-              fetch="lookup"
-              .displayValue=${item.organization?.name ?? ""}
-              .selectedId=${item.organizationId ?? ""}
-              @item-selected=${(e: PickEvent) => {
-                this.setField("organizationId", e.detail.id);
-                this.$root.item = { ...this.$root.item, organization: { id: e.detail.id, name: e.detail.label } };
-              }}
+              .value=${item.organization ?? null}
+              @value-changed=${(e: PickerChangeEvent) => this.setRef("organization", e.detail.value)}
             ></ui-picker>
           </div>
 

@@ -77,8 +77,23 @@ export type CurrencyRateAtPayload = Static<typeof CurrencyRateAtPayloadSchema>;
 
 // ── 4. $root екранів ──────────────────────────────────────────────────────────
 
+/**
+ * Форма несе ще й сам об'єкт ссылки: пікер приймає `{ id, name }` цілком, а
+ * `save` бере з нього id. Поле транзієнтне — колонки під нього немає.
+ */
+export const CurrencyRateFormSchema = Type.Composite([
+  CurrencyRateItemSchema,
+  Type.Object({
+    currency: Type.Optional(Type.Union([
+      Type.Object({ id: Type.String(), name: Type.String() }),
+      Type.Null(),
+    ], { "x-transient": true })),
+  }),
+]);
+export type CurrencyRateForm = Static<typeof CurrencyRateFormSchema>;
+
 export const CurrencyRateEditRootSchema = Type.Object({
-  item: CurrencyRateItemSchema,
+  item: CurrencyRateFormSchema,
   options: Type.Object({}),
 });
 export type CurrencyRateEditRoot = Static<typeof CurrencyRateEditRootSchema>;

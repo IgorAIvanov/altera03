@@ -625,7 +625,8 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
    *     ${this.renderField(t("invoice.counterparty"), html`
    *       <ui-picker url="catalog/counterparty" fetch="lookup"
    *         .selectedId=${this.filterValue("counterpartyId") ?? ""}
-   *         @item-selected=${(e: CustomEvent) => this.setFilter("counterpartyId", e.detail.id)}>
+   *         .value=${this.filterValue("counterparty") ?? null}
+   *         @value-changed=${(e: PickerChangeEvent) => this.setFilter("counterparty", e.detail.value)}>
    *       </ui-picker>`)}
    *
    *     <label class="flex items-center gap-2">

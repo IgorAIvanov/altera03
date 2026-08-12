@@ -201,7 +201,7 @@ begin
     select
       v_id as id,
       v_number as number,
-      nullif(v_item->>'organizationId', '')::bigint as organization_id,
+      nullif(coalesce(v_item->>'organizationId', v_item->'organization'->>'id'), '')::bigint as organization_id,
       nullif(v_item->>'docDate', '')::timestamp as doc_date,
       nullif(v_item->>'total', '')::numeric as total,
       nullif(trim(coalesce(v_item->>'presentation', '')), '') as presentation,

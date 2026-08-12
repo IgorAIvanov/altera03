@@ -9,6 +9,7 @@ import type { InvoiceRow } from "./invoice.schema.ts";
 // й кожного діалогу підбору.
 import "@client/ui-kit/components/ui-period.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import { icons } from "@client/ui-kit/icons.ts";
 
 export const tagName = "invoice-list";
@@ -16,7 +17,6 @@ export const tagName = "invoice-list";
 /** Значення ссылочного фільтра: id вибирає записи, `name` показує пікер. */
 type FilterRef = { id: string; name: string };
 type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
-type PickEvent = CustomEvent<{ id: string; label: string }>;
 
 @customElement(tagName)
 export class InvoiceList extends ModelListBase<InvoiceRow> {
@@ -86,13 +86,9 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
       <ui-picker
         .label=${this.t("invoice.counterparty")}
         url="catalog/counterparty"
-        fetch="lookup"
         show-clear
-        .displayValue=${counterparty?.name ?? ""}
-        .selectedId=${counterparty?.id ?? ""}
-        @item-selected=${(e: PickEvent) =>
-          this.setFilter("counterparty", { id: e.detail.id, name: e.detail.label })}
-        @item-cleared=${() => this.setFilter("counterparty", null)}
+        .value=${counterparty ?? null}
+        @value-changed=${(e: PickerChangeEvent) => this.setFilter("counterparty", e.detail.value)}
       ></ui-picker>
 
       <label class="flex items-center gap-2">

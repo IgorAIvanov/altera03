@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { bus } from "@client/bus/bus.ts";
 import { tw } from "@client/shared/styles.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-select.ts";
 
 const testSelectOptions = [
@@ -37,15 +38,14 @@ export class HomeTab extends LitElement {
           <h4 class="text-sm font-semibold mb-3 text-muted">Тест ui-picker (bank)</h4>
           <ui-picker
             url="catalog/bank"
-            fetch="lookup"
             label="Банк"
             placeholder="Введіть назву або МФО..."
             ?show-clear=${true}
             label-position="left"
-            @item-selected=${(e: CustomEvent) => {
-              this.pickerResult = `id=${e.detail.id}, label=${e.detail.label}`;
+            @value-changed=${(e: PickerChangeEvent) => {
+              const v = e.detail.value;
+              this.pickerResult = v ? `id=${v.id}, label=${v.name}` : "";
             }}
-            @item-cleared=${() => { this.pickerResult = ""; }}
           ></ui-picker>
           ${this.pickerResult ? html`
             <div class="mt-2 text-xs text-success">${this.pickerResult}</div>

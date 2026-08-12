@@ -14,11 +14,11 @@ import {
   type ReportAnalytic,
 } from "./account_card.schema.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-period.ts";
 
 export const tagName = "account-card-report";
 
-type PickEvent = CustomEvent<{ id: string; label: string }>;
 type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
 /** Значення ссылочного фільтра: id вибирає записи, `name` показує пікер. */
 type Ref = { id: string; name: string };
@@ -208,24 +208,18 @@ export class AccountCardReport extends ReportBase<AccountCardRoot> {
             .label=${t("document.organization")}
             required
             url="catalog/organization"
-            fetch="lookup"
-            .displayValue=${org?.name ?? ""}
-            .selectedId=${org?.id ?? ""}
-            @item-selected=${(e: PickEvent) =>
-              this.setFilter("organization", { id: e.detail.id, name: e.detail.label })}
+            .value=${org ?? null}
+            @value-changed=${(e: PickerChangeEvent) => this.setFilter("organization", e.detail.value)}
           ></ui-picker>
 
           <ui-picker
             .label=${t("accountCard.account")}
             required
             url="catalog/chart_of_account"
-            fetch="lookup"
             display-field="code"
             hint-field="name"
-            .displayValue=${account}
-            .selectedId=${account}
-            @item-selected=${(e: PickEvent) => this.setFilter("accountCode", e.detail.label)}
-            @item-cleared=${() => this.setFilter("accountCode", "")}
+            .value=${account ? { id: account, code: account } : null}
+            @value-changed=${(e: PickerChangeEvent) => this.setFilter("accountCode", String(e.detail.value?.code ?? ""))}
           ></ui-picker>
 
           <ui-period

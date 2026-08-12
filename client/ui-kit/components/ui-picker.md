@@ -7,14 +7,17 @@
 ```html
 <ui-picker
   url="catalog/bank"
-  fetch="lookup"
   label="Банк"
   placeholder="Введіть назву..."
   show-clear
-  @item-selected=${(e) => console.log(e.detail)}
-  @item-cleared=${() => console.log('cleared')}
+  .value=${item.bank ?? null}
+  @value-changed=${(e) => this.setRef("bank", e.detail.value)}
 ></ui-picker>
 ```
+
+**Значення — об'єкт**, як його віддає база: `{ id, name }`. Той самий, що
+приходить у `get`, у рядку списку й в эху фільтра, — жодного розбирання на id
+і підпис.
 
 ## Властивості
 
@@ -24,7 +27,6 @@
 | `labelPosition` | `label-position` | `"top" \| "left"` | `"top"` | Положення підпису — зверху або зліва |
 | `placeholder` | `placeholder` | `string` | `""` | Підказка в полі введення |
 | `url` | `url` | `string` | `""` | Базовий шлях моделі, наприклад `catalog/bank` |
-| `fetch` | `fetch` | `string` | `"lookup"` | Команда для автодоповнення. POST на `/api/model/{model}/{fetch}` з `{ search }` |
 | `picker` | `picker` | `string` | `"picker"` | Вʼю для picker-діалогу. Відкривається через `bus.pick("{url}/{picker}")` |
 | `displayField` | `display-field` | `string` | `"name"` | Поле з рядків відповіді, яке виводиться як текст |
 | `idField` | `id-field` | `string` | `"id"` | Поле з рядків відповіді, яке зберігається як ідентифікатор |
@@ -32,8 +34,7 @@
 | `showClear` | `show-clear` | `boolean` | `false` | Показувати кнопку очищення поля |
 | `fetchParams` | `fetch-params` | `object` | `{}` | Додаткові параметри, що додаються до тіла fetch-запиту |
 | `pickerParams` | `picker-params` | `object` | `{}` | Параметри, що передаються у picker-діалог |
-| `displayValue` | `display-value` | `string` | `""` | Поточний текст у полі (читання / встановлення зовні) |
-| `selectedId` | `selected-id` | `string` | `""` | Поточний вибраний id (читання / встановлення зовні) |
+| `value` | — | `{id, …} \| null` | `null` | Вибрана ссылка цілком: ключ і підпис в одному об'єкті |
 | `width` | `width` | `string` | `""` | Ширина компонента, будь-яке CSS-значення (`200px`, `100%`). Без значення — займає доступний простір |
 | `disabled` | `disabled` | `boolean` | `false` | Блокує поле введення та всі кнопки |
 | `visible` | `visible` | `boolean` | `true` | Приховує компонент (`false` → порожній шаблон, місце не займає) |
@@ -44,8 +45,7 @@
 
 | Подія | `e.detail` | Опис |
 |---|---|---|
-| `item-selected` | `{ id, label, item }` | Користувач вибрав запис — з dropdown або через picker-діалог |
-| `item-cleared` | — | Користувач натиснув кнопку очищення |
+| `value-changed` | `{ value }` | Вибрано запис або очищено поле (`value === null`). Ім'я те саме, що в `ui-date` і `ui-decimal` |
 
 ## Як працює автодоповнення
 
@@ -77,7 +77,7 @@ Picker-вʼю повинне викликати `bus.emit({ type: "picker.select
 ### `url` — це маршрут вʼю, а не API-шлях
 
 ```html
-<ui-picker url="catalog/bank" fetch="lookup">   <!-- ✅ -->
+<ui-picker url="catalog/bank">                  <!-- ✅ -->
 <ui-picker url="/api/model/bank">               <!-- ❌ мовчки не працює -->
 ```
 
@@ -88,42 +88,36 @@ Picker-вʼю повинне викликати `bus.emit({ type: "picker.select
 Якщо передати API-шлях `/api/model/bank`, то:
 - 🔍 покличе `bus.pick("/api/model/bank/picker")` → після `split("/")` вийде
   `module=""`, `model="api"`, `view="model"` → `[picker-host] view не знайдено`, діалог не відкриється;
-- автодоповнення піде на `/api/model/bank/fetch`.
+- автодоповнення піде на `/api/model/bank/lookup` з невідомим іменем моделі.
 
 Ім'я моделі для API компонент бере окремо — останнім сегментом `url`, тож `catalog/bank` коректно
 дає `/api/model/bank/...`.
 
 ### Поле порожнє, хоча `get` значення повертає
 
-Ознака одна: заданий `selected-id` без `display-value`. Компонент нічого не
-довантажує — **підпис дає форма**, і робить це разом з id:
+Значить, форма передала не той об'єкт: пікер показує `value[displayField]`, а
+`displayField` за замовчуванням `name`. Довантажувати підпис компонент не буде —
+він уже приїхав разом із даними: `x-ref` кладе в кожну відповідь вкладений
+`{ id, name }`.
 
 ```html
-<ui-picker
-  url="catalog/currency"
-  .selectedId=${item.currencyId ?? ""}
-  .displayValue=${item.currencyName ?? ""}     <!-- ✅ без цього поле порожнє -->
-  @item-selected=${(e) => { … }}
-  @item-cleared=${() => { … }}
+<ui-picker url="catalog/currency"
+  .value=${item.currency ?? null}                 <!-- ✅ об'єкт цілком -->
+  @value-changed=${(e) => this.setRef("currency", e.detail.value)}
 ></ui-picker>
 ```
 
-Найчастіше причина за три шари від симптому — форма написала не ту властивість
-(`.valueId` / `.valueLabel`) або слухає не ту подію (`@pick` / `@clear`). Ані
-Lit, ані `deno check`, ані збірка про це не скажуть: невідома властивість просто
-лягає полем на екземпляр, а подія, якої компонент не шле, ніколи не настає. Тому
-компонент сам пише в консоль попередження, коли id є, а підпису немає —
-шукати причину в SQL не треба.
-
-Підпис у формі беруть із поля, яке віддає `get` (зазвичай `x-transient` поруч із
-самим id) — див. `app/catalog/currency/currencyEdit.ts`.
+`BaseUI.setRef()` пише і сам об'єкт, і `<name>Id` — розсинхронити їх нема як.
+Доти форма тримала пару прив'язок (`selected-id` + `display-value`), і забути
+можна було будь-яку: на екрані порожньо, симптом «дані не прийшли», причина за
+три шари.
 
 ### Команда автодоповнення
 
-Умовчання — `lookup`, тобто те, що дає генератор CRUD; писати `fetch="lookup"`
-більше не обов'язково. Модель із іншим ім'ям команди вказує його явно. Раніше
-умовчанням стояло `fetch`, і воно не працювало ні в кого: команди `{model}_fetch`
-немає — випадаючий список лишався порожнім без видимої помилки.
+Завжди `lookup` — саме її дає генератор CRUD. Налаштування імені прибрано:
+моделі з іншою назвою підбору не існує, а атрибут лише дозволяв помилитися
+(умовчанням колись стояло `fetch`, і воно не працювало ні в кого — випадаючий
+список лишався порожнім без видимої помилки).
 
 ## Приклади
 
@@ -131,26 +125,25 @@ Lit, ані `deno check`, ані збірка про це не скажуть: �
 <!-- Підпис зверху, кнопка очищення -->
 <ui-picker
   url="catalog/bank"
-  fetch="lookup"
   label="Банк"
   show-clear
   width="320px"
-  @item-selected=${(e) => { this.bankId = e.detail.id; }}
+  .value=${item.bank ?? null}
+  @value-changed=${(e) => this.setRef("bank", e.detail.value)}
+></ui-picker>
+
+<!-- Фільтр списку чи звіту: значення фільтра вже об'єкт -->
+<ui-picker
+  url="catalog/counterparty"
+  .value=${this.filterValue("counterparty") ?? null}
+  @value-changed=${(e) => this.setFilter("counterparty", e.detail.value)}
 ></ui-picker>
 
 <!-- Підпис зліва, заблоковано -->
 <ui-picker
   url="catalog/bank"
-  fetch="lookup"
   label="Банк"
   label-position="left"
   ?disabled=${this.readonly}
-></ui-picker>
-
-<!-- Прихований -->
-<ui-picker
-  url="catalog/bank"
-  fetch="lookup"
-  ?visible=${this.showBank}
 ></ui-picker>
 ```

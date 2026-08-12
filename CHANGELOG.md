@@ -11,6 +11,52 @@
 
 ### Потребує дії
 
+**`<ui-picker>` приймає ссылку ОБ'ЄКТОМ — контракт замінено, старий прибрано.**
+Значення тепер одне (`value`), а не пара «id окремо, підпис окремо», і подія
+одна (`value-changed`) — та сама, що в `ui-date` і `ui-decimal`:
+
+```html
+<!-- було -->
+<ui-picker url="catalog/counterparty" fetch="lookup"
+  .selectedId=${item.counterpartyId ?? ""}
+  .displayValue=${item.counterparty?.name ?? ""}
+  @item-selected=${(e) => { … два записи … }}
+  @item-cleared=${() => { … ще два … }}
+></ui-picker>
+
+<!-- стало -->
+<ui-picker url="catalog/counterparty"
+  .value=${item.counterparty ?? null}
+  @value-changed=${(e) => this.setRef("counterparty", e.detail.value)}
+></ui-picker>
+```
+
+Прибрано: `selectedId`, `displayValue`, `item-selected`, `item-cleared`,
+`fetch`. Забутий пікер тепер **ламається голосно** (властивості немає, подія не
+слухається), а не показує порожнє поле — саме заради цього старе прибрано, а не
+лишено «поки що працюючим».
+
+Чому об'єкт: підпис і так завжди приїжджав у відповіді — `x-ref` кладе вкладений
+`{ id, name }` у `get`, у рядок списку, в эхо фільтра й у `lookup`. Пікер тепер
+бере його як є, замість того щоб форма розбирала його на дві прив'язки й
+збирала назад.
+
+Що допомагає при переході:
+
+- **`BaseUI.setRef(key, value)`** пише і сам об'єкт, і `<name>Id` — розсинхронити
+  їх нема як. Ім'я id-поля виводиться як `<key>Id`, інакше третім аргументом;
+- **`save` приймає обидва вигляди** — `counterpartyId` як раніше або
+  `counterparty: {id}`. Тобто форма може тримати лише об'єкт;
+- **у фільтрах змін майже немає**: значення ссылочного фільтра вже об'єкт, тож
+  `.value=${this.filterValue("counterparty") ?? null}` і
+  `@value-changed=${(e) => this.setFilter("counterparty", e.detail.value)}`;
+- **у табличній частині — нічого**: колонку `picker` перевела сама база
+  (`fetchCommand` з опцій колонки прибрано за непотрібністю).
+
+Тип події експортується: `import type { PickerChangeEvent } from
+"@client/ui-kit/components/ui-picker.ts"` — локальні `type PickEvent = …` у
+формах більше не потрібні.
+
 **Періодичні дані генеруються з оголошення.** Ключ, дата, значення — четвертий
 типовий вид моделі після довідника, документа й регістру, і однаковий скрізь.
 Тепер він оголошується в манифесті регістру:

@@ -114,7 +114,7 @@ begin
   using (
     select
       nullif(v_item->>'id', '')::bigint as id,
-      nullif(v_item->>'currencyId', '')::bigint as currency_id,
+      nullif(coalesce(v_item->>'currencyId', v_item->'currency'->>'id'), '')::bigint as currency_id,
       nullif(v_item->>'period', '')::date as period,
       nullif(v_item->>'rate', '')::numeric as rate,
       nullif(v_item->>'multiplicity', '')::int as multiplicity
@@ -215,7 +215,7 @@ begin
     from app.currency_rate t
       left join app.currency r_currency on r_currency.id = t.currency_id
     where t.period <= v_on_date
-      and (payload->>'currencyId' is null or t.currency_id = nullif(payload->>'currencyId', '')::bigint)
+      and (payload->>'currencyId' is null or t.currency_id = nullif(coalesce(payload->>'currencyId', payload->'currency'->>'id'), '')::bigint)
     order by t.currency_id, t.period desc
   ) sub;
 
@@ -263,7 +263,7 @@ begin
     left join app.currency r_currency on r_currency.id = t.currency_id
     where (v_from is null or t.period >= v_from)
       and (v_to   is null or t.period <= v_to)
-      and (payload->>'currencyId' is null or t.currency_id = nullif(payload->>'currencyId', '')::bigint)
+      and (payload->>'currencyId' is null or t.currency_id = nullif(coalesce(payload->>'currencyId', payload->'currency'->>'id'), '')::bigint)
   ) sub;
 
   return jsonb_build_object(
@@ -296,7 +296,7 @@ begin
   merge into app.currency_rate t
   using (
     select
-      nullif(v_item->>'currencyId', '')::bigint as currency_id,
+      nullif(coalesce(v_item->>'currencyId', v_item->'currency'->>'id'), '')::bigint as currency_id,
       nullif(v_item->>'period', '')::date as period,
       nullif(v_item->>'rate', '')::numeric as rate,
       nullif(v_item->>'multiplicity', '')::int as multiplicity

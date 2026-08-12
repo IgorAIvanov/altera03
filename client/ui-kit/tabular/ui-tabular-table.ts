@@ -29,7 +29,7 @@ import "../components/ui-date.ts";
 import "../components/ui-select.ts";
 import { icons } from "../icons.ts";
 
-type PickEvent = CustomEvent<{ id: string; label: string }>;
+type PickEvent = CustomEvent<{ value: Record<string, unknown> | null }>;
 type ValueEvent = CustomEvent<{ value: string }>;
 
 /** Селектор редагованого контрола всередині комірки. */
@@ -213,20 +213,20 @@ export class UiTabularTable extends Base {
         const refKey = col.refKey ?? (key.endsWith("Id") ? key.slice(0, -2) : key);
         const ref = line[refKey] as { id?: string; name?: string } | null;
         const display = col.displayField ?? "name";
+        // Значення комірки — сам об'єкт ссылки; id рядок тримає окремо, бо
+        // саме його чекає `save` табличної частини. Пишуться обидва з ОДНІЄЇ
+        // події, тож розійтися їм нема як.
         return html`<ui-picker cell ?disabled=${section.readonly}
           url=${col.url ?? ""}
-          fetch=${col.fetchCommand ?? "lookup"}
           display-field=${display}
           hint-field=${col.hintField ?? ""}
           ?show-clear=${col.showClear ?? false}
-          .displayValue=${String((ref as Record<string, unknown> | null)?.[display] ?? "")}
-          .selectedId=${String(line[key] ?? "")}
-          @item-selected=${(e: PickEvent) =>
+          .value=${ref ?? null}
+          @value-changed=${(e: PickEvent) =>
             section.patch(index, {
-              [key]: e.detail.id,
-              [refKey]: { id: e.detail.id, [display]: e.detail.label },
+              [key]: String(e.detail.value?.id ?? ""),
+              [refKey]: e.detail.value,
             })}
-          @item-cleared=${() => section.patch(index, { [key]: "", [refKey]: null })}
         ></ui-picker>`;
       }
     }

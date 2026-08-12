@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import { generatedModelRegistry } from "../../_generated/model-registry.generated.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import {
   UserGroupEditRootSchema,
   type UserGroupEditRoot,
@@ -11,7 +12,6 @@ import {
 import { icons } from "@client/ui-kit/icons.ts";
 
 /** Подія вибору з `<ui-picker>`: id та підпис вибраного рядка. */
-type PickEvent = CustomEvent<{ id: string; label: string }>;
 
 export const tagName = "user-group-edit";
 
@@ -172,11 +172,12 @@ export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {
               <ui-picker
                 ?disabled=${this.readonlyMode}
                 url="admin/user"
-                fetch="lookup"
                 placeholder=${this.t("userGroup.addMember")}
-                .displayValue=${""}
-                .selectedId=${""}
-                @item-selected=${(e: PickEvent) => this.addMember(e.detail.id, e.detail.label)}
+                .value=${null}
+                @value-changed=${(e: PickerChangeEvent) => {
+                  const v = e.detail.value;
+                  if (v) this.addMember(String(v.id), String(v.name ?? ""));
+                }}
               ></ui-picker>
             </div>
 

@@ -12,12 +12,12 @@ import type { AuditLogRow } from "./audit_log.schema.ts";
 // них не знає, інакше вони їхали б у чанк кожного списку й кожного пікера.
 import "@client/ui-kit/components/ui-period.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-select.ts";
 
 export const tagName = "audit-log-list";
 
 type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
-type PickEvent = CustomEvent<{ id: string; label: string }>;
 type SelectEvent = CustomEvent<{ value: string }>;
 /** Значення ссылочного фільтра: id вибирає записи, `name` показує пікер. */
 type FilterRef = { id: string; name: string };
@@ -183,13 +183,9 @@ export class AuditLogList extends ModelListBase<AuditLogRow> {
       <ui-picker
         .label=${this.t("auditLog.user")}
         url="admin/user"
-        fetch="lookup"
         show-clear
-        .displayValue=${user?.name ?? ""}
-        .selectedId=${user?.id ?? ""}
-        @item-selected=${(e: PickEvent) =>
-          this.setFilter("user", { id: e.detail.id, name: e.detail.label })}
-        @item-cleared=${() => this.setFilter("user", null)}
+        .value=${user ?? null}
+        @value-changed=${(e: PickerChangeEvent) => this.setFilter("user", e.detail.value)}
       ></ui-picker>
 
       <ui-select

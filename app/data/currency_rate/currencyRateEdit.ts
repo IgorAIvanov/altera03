@@ -5,6 +5,7 @@ import { dateFormat } from "@client/shared/datetime.ts";
 import "@client/ui-kit/components/ui-date.ts";
 import "@client/ui-kit/components/ui-decimal.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import { type CurrencyRateEditRoot, CurrencyRateEditRootSchema } from "./currency_rate.schema.ts";
 
 export const tagName = "currency-rate-edit";
@@ -44,18 +45,9 @@ export class CurrencyRateEdit extends BaseUI<CurrencyRateEditRoot> {
           this.t("currencyRate.currency"),
           html`<ui-picker
             url="catalog/currency"
-            fetch="lookup"
-            .selectedId=${item.currencyId ?? ""}
-            .displayValue=${this.$root.item.currencyId ? undefined : ""}
             ?disabled=${this.readonlyMode}
-            @item-selected=${(e: CustomEvent<{ id: string }>) => {
-            item.currencyId = e.detail.id;
-            this.requestUpdate();
-          }}
-            @item-cleared=${() => {
-            item.currencyId = "";
-            this.requestUpdate();
-          }}
+            .value=${item.currency ?? null}
+            @value-changed=${(e: PickerChangeEvent) => this.setRef("currency", e.detail.value)}
           ></ui-picker>`,
           { field: "currencyId" },
         )}

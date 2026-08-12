@@ -190,9 +190,9 @@ protected override renderFilters() {
 
     <ui-picker
       .label=${t("invoice.counterparty")}
-      url="catalog/counterparty" fetch="lookup" show-clear
-      .selectedId=${this.filterValue("counterpartyId") ?? ""}
-      @item-selected=${(e: CustomEvent) => this.setFilter("counterpartyId", e.detail.id)}
+      url="catalog/counterparty" show-clear
+      .value=${this.filterValue("counterparty") ?? null}
+      @value-changed=${(e: PickerChangeEvent) => this.setFilter("counterparty", e.detail.value)}
       @item-cleared=${() => this.setFilter("counterpartyId", "")}
     ></ui-picker>
 
@@ -224,7 +224,7 @@ protected override renderFilters() {
 два подряд `setFilter` дали бы два запроса, второй из которых отменил бы первый.
 `debounce` — для того, что набирают руками; для выбора, даты и флажка задержка не нужна.
 
-Компоненты ui-kit не одинаковы по событиям (`value-changed`, `item-selected`, своя
+Компоненты ui-kit не одинаковы по событиям (`value-changed`, своя
 структура `detail`), поэтому их экран связывает сам через `setFilter`. `bindFilter`
 покрывает только нативные контролы — ровно как `BaseUI.bindTo` для полей формы.
 

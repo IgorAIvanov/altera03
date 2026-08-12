@@ -11,11 +11,11 @@ import {
   type TurnoverBalanceRow,
 } from "./turnover_balance.schema.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-period.ts";
 
 export const tagName = "turnover-balance-report";
 
-type PickEvent = CustomEvent<{ id: string; label: string }>;
 type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
 /** Значення ссылочного фільтра: id вибирає записи, `name` показує пікер. */
 type Ref = { id: string; name: string };
@@ -132,11 +132,8 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
             .label=${t("document.organization")}
             required
             url="catalog/organization"
-            fetch="lookup"
-            .displayValue=${org?.name ?? ""}
-            .selectedId=${org?.id ?? ""}
-            @item-selected=${(e: PickEvent) =>
-              this.setFilter("organization", { id: e.detail.id, name: e.detail.label })}
+            .value=${org ?? null}
+            @value-changed=${(e: PickerChangeEvent) => this.setFilter("organization", e.detail.value)}
           ></ui-picker>
 
           <ui-period

@@ -1,10 +1,19 @@
 import { GlobalStyledLitElement } from "../base/gsle.ts";
-import { html, type TemplateResult } from "lit";
+import { html, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { apiFetch } from "../../data/api.ts";
 import { placePopover } from "../popover.ts";
 import { icons } from "../icons.ts";
+
+/**
+ * Значення пікера — ссылка як її віддає база: ключ і підпис в одному об'єкті
+ * (`{ id, name }`). `null` — не вибрано.
+ */
+export type PickerValue = Record<string, unknown> | null;
+
+/** Подія зміни: та сама, що в решти контролів набору. */
+export type PickerChangeEvent = CustomEvent<{ value: PickerValue }>;
 
 @customElement("ui-picker")
 export class UiPicker extends GlobalStyledLitElement {
@@ -24,13 +33,6 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: String }) placeholder = "";
   @property({ type: Boolean }) disabled = false;
   @property({ type: String }) url = "";
-  /**
-   * Команда моделі, якою шукається підказка при вводі. Умовчання — `lookup`:
-   * саме її дає генератор CRUD і саме її оголошують моделі. Доти тут стояло
-   * `fetch`, тобто умовчання не працювало НІ РАЗУ — команди з таким іменем
-   * немає ні в кого, і пікер без явного атрибута мовчки нічого не знаходив.
-   */
-  @property({ type: String }) fetch = "lookup";
   @property({ type: String }) picker = "picker";
   @property({ type: String, attribute: "display-field" }) displayField = "name";
   @property({ type: String, attribute: "id-field" }) idField = "id";
@@ -44,8 +46,17 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: Boolean, attribute: "show-clear" }) showClear = false;
   @property({ type: Object, attribute: "picker-params" }) pickerParams: Record<string, unknown> = {};
   @property({ type: Object, attribute: "fetch-params" }) fetchParams: Record<string, unknown> = {};
-  @property({ type: String, attribute: "display-value" }) displayValue = "";
-  @property({ type: String, attribute: "selected-id" }) selectedId = "";
+  /**
+   * Значення — ОБ'ЄКТ, як його віддає база: `{ id, name }`. Одна прив'язка на
+   * поле, а не пара «id окремо, підпис окремо».
+   *
+   * Доти форма тримала два поля й дві прив'язки (`selected-id` +
+   * `display-value`), і забути можна було будь-яку з них: на екрані порожньо,
+   * симптом «дані не прийшли», причина за три шари. При цьому підпис ЗАВЖДИ вже
+   * був у відповіді — `get`, рядок списку, эхо фільтра й `lookup` віддають
+   * вкладений об'єкт через `x-ref`. Пікер тепер бере його як є.
+   */
+  @property({ type: Object }) value: PickerValue = null;
   @property({ type: String }) width = "";
   /**
    * Режим комірки табличної частини: контрол заповнює `<td>` цілком —
@@ -60,9 +71,24 @@ export class UiPicker extends GlobalStyledLitElement {
   @query("ul") private _popover?: HTMLUListElement;
   @query("input") private _input?: HTMLInputElement;
 
+  /**
+   * Набране руками — доки не вибрали рядок. `null` означає «показуй підпис
+   * значення»: інакше зовнішня зміна `value` не витиснула б із поля недобитий
+   * фрагмент пошуку.
+   */
+  #typed: string | null = null;
+
+  /** Текст у полі: набране має перевагу, інакше підпис із значення. */
+  get #text(): string {
+    return this.#typed ?? String(this.value?.[this.displayField] ?? "");
+  }
+
+  protected override willUpdate(changed: PropertyValues) {
+    if (changed.has("value")) this.#typed = null;
+  }
+
   // синхронизируем состояние popover с _items
   protected override updated() {
-    this.#warnMissingLabel();
     if (!this._popover) return;
     const open = this._popover.matches(":popover-open");
     if (this._items.length > 0 && !open) {
@@ -74,37 +100,6 @@ export class UiPicker extends GlobalStyledLitElement {
       this._popover.querySelector<HTMLElement>(`[data-index="${this._activeIndex}"]`)
         ?.scrollIntoView({ block: "nearest" });
     }
-  }
-
-  /** Попереджаємо один раз на елемент: інакше кожен перемальовок дав би рядок. */
-  #labelWarned = false;
-
-  /**
-   * Заповнений `selected-id` без `display-value` — це завжди недомовка форми, а
-   * на екрані вона виглядає як «дані не прийшли»: поле порожнє, і шукати йдуть у
-   * SQL. Причина ж, як правило, за три шари звідти — форма написала не ту
-   * властивість (`.valueId`/`.valueLabel` замість `.selectedId`/`.displayValue`)
-   * або слухає не ту подію. Lit присвоює невідому властивість екземпляру
-   * мовчки, невідома подія просто ніколи не настає, `deno check` цього не
-   * бачить, збірка зелена — жоден звичний канал про це не скаже.
-   *
-   * Затримка перед самим рядком потрібна проти хибних спрацювань: підпис
-   * інколи приїжджає окремим запитом, на кадр-два пізніше за id.
-   */
-  #warnMissingLabel() {
-    if (this.#labelWarned || !this.selectedId || this.displayValue) return;
-    this.#labelWarned = true;
-
-    setTimeout(() => {
-      if (!this.selectedId || this.displayValue) return;
-      console.warn(
-        `[ui-picker url="${this.url}"] selected-id="${this.selectedId}" заданий, ` +
-          `а display-value порожній — поле покажеться порожнім. Підпис дає форма: ` +
-          `.displayValue (атрибут display-value). Контракт компонента — ` +
-          `.selectedId / .displayValue / @item-selected / @item-cleared.`,
-        this,
-      );
-    }, 300);
   }
 
   /**
@@ -136,7 +131,10 @@ export class UiPicker extends GlobalStyledLitElement {
   private async _fetch(fragment: string) {
     if (!this.url) return;
     try {
-      const res = await apiFetch(`/api/model/${this._modelName}/${this.fetch}`, {
+      // Команда завжди `lookup` — саме її дає генератор CRUD і саме її
+      // оголошують моделі. Налаштування імені прибрано: моделі з іншою назвою
+      // підбору не існує, а атрибут лише дозволяв помилитися.
+      const res = await apiFetch(`/api/model/${this._modelName}/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ search: fragment, ...this.fetchParams }),
@@ -152,8 +150,15 @@ export class UiPicker extends GlobalStyledLitElement {
 
   private _onInput(e: Event) {
     const val = (e.target as HTMLInputElement).value;
-    this.displayValue = val;
-    if (!val) { this.selectedId = ""; this._items = []; this._activeIndex = -1; this._emitCleared(); return; }
+    this.#typed = val;
+    // Стерли текст — стерли й значення: поле з підписом, за яким нічого не
+    // стоїть, обманює найгірше з можливого.
+    if (!val) {
+      this._items = [];
+      this._activeIndex = -1;
+      this.#commit(null);
+      return;
+    }
     this._fetch(val);
   }
 
@@ -197,17 +202,20 @@ export class UiPicker extends GlobalStyledLitElement {
   }
 
   private _onSelect(item: Record<string, unknown>) {
-    this.displayValue = String(item[this.displayField] ?? "");
-    this.selectedId   = String(item[this.idField] ?? "");
     this._items = [];
     this._popover?.hidePopover();
-    this._emit(item);
+    // Віддаємо рівно ключ і підпис, а не весь рядок підбору: значення пікера
+    // їде у форму й далі в `save`, і зайві колонки там нікому не потрібні.
+    this.#commit({
+      [this.idField]: String(item[this.idField] ?? ""),
+      [this.displayField]: String(item[this.displayField] ?? ""),
+    });
   }
 
   private _onClear() {
-    this.displayValue = ""; this.selectedId = ""; this._items = [];
+    this._items = [];
     this._popover?.hidePopover();
-    this._emitCleared();
+    this.#commit(null);
   }
 
   private async _onBrowse() {
@@ -217,21 +225,26 @@ export class UiPicker extends GlobalStyledLitElement {
       Object.keys(this.pickerParams).length ? this.pickerParams : undefined,
     );
     if (result) {
-      this.displayValue = result.label;
-      this.selectedId   = result.id;
-      this._emit({ [this.idField]: result.id, [this.displayField]: result.label });
+      this.#commit({ [this.idField]: result.id, [this.displayField]: result.label });
     }
   }
 
-  private _emit(item: Record<string, unknown>) {
-    this.dispatchEvent(new CustomEvent("item-selected", {
-      detail: { id: this.selectedId, label: this.displayValue, item },
-      bubbles: true, composed: true,
+  /**
+   * Нове значення — і назовні однією подією.
+   *
+   * Ім'я те саме, що в решти контролів набору (`ui-date`, `ui-decimal`):
+   * `value-changed` з `detail.value`. Доти пікер мав власну пару
+   * `item-selected` / `item-cleared`, тобто форма мусила слухати два різні
+   * канали для однієї зміни — і невідома подія просто ніколи не наставала.
+   */
+  #commit(next: PickerValue) {
+    this.value = next;
+    this.#typed = null;
+    this.dispatchEvent(new CustomEvent("value-changed", {
+      detail: { value: next },
+      bubbles: true,
+      composed: true,
     }));
-  }
-
-  private _emitCleared() {
-    this.dispatchEvent(new CustomEvent("item-cleared", { bubbles: true, composed: true }));
   }
 
   override render(): TemplateResult {
@@ -248,7 +261,7 @@ export class UiPicker extends GlobalStyledLitElement {
         <input
           type="text"
           class="input join-item flex-1 min-w-0"
-          .value=${this.displayValue}
+          .value=${this.#text}
           placeholder="${this.placeholder}"
           ?disabled=${this.disabled}
           @input=${this._onInput}
@@ -256,7 +269,7 @@ export class UiPicker extends GlobalStyledLitElement {
         />
         ${this.showClear ? html`
           <button class="btn btn-square btn-sm join-item"
-            title="Очистити" ?disabled=${this.disabled || !this.displayValue} @click=${this._onClear}>
+            title="Очистити" ?disabled=${this.disabled || !this.#text} @click=${this._onClear}>
             ${icons.clear}
           </button>
         ` : ""}

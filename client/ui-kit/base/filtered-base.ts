@@ -72,8 +72,8 @@ export abstract class FilteredBase<Root extends Record<string, unknown>> extends
   /**
    * Поточне значення фільтра. `undefined` — не заданий.
    *
-   * У ссылочного фільтра це об'єкт `{ id, <display> }`, тож пікер бере з нього
-   * і `selectedId`, і `displayValue`.
+   * У ссылочного фільтра це об'єкт `{ id, <display> }` — рівно те, що приймає
+   * `<ui-picker>` властивістю `value`.
    */
   protected filterValue<T = unknown>(key: string): T | undefined {
     return this.filters[key] as T | undefined;
@@ -116,7 +116,7 @@ export abstract class FilteredBase<Root extends Record<string, unknown>> extends
    * Прив'язка НАТИВНОГО контрола до фільтра — рівно як `BaseUI.bindTo` для
    * полів форми: `@input=${this.bindFilter("number", { debounce: true })}`.
    *
-   * Компоненти ui-kit подіями не однакові (`value-changed`, `item-selected`,
+   * Компоненти ui-kit подіями не однакові (`value-changed`,
    * `period-changed`, у кожного своя структура `detail`), тому їх екран
    * зв'язує сам через `setFilter`.
    */

@@ -137,7 +137,7 @@ Both shared controls take a boolean `cell` attribute, which switches them to the
 contract (drops the label wrapper and applies `cell-control`):
 
 - `<ui-decimal cell>` — decimal input; `scale` sets the number of decimals
-- `<ui-picker cell url="catalog/bank" fetch="lookup">` — picker field; `url` is the
+- `<ui-picker cell url="catalog/bank">` — picker field; `url` is the
   **view route** (`family/model`), not an API path
 
 When adding a **new** control that will be used in tabular sections, give it the

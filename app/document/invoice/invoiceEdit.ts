@@ -11,6 +11,7 @@ import {
 import { dateFormat } from "@client/shared/datetime.ts";
 import { currentOrg } from "@shared/current-organization.ts";
 import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-date.ts";
 import "@client/ui-kit/components/ui-attachments.ts";
 import "@client/ui-kit/tabular/ui-tabular-table.ts";
@@ -33,7 +34,6 @@ interface PrintPdfExtra {
   pdfBase64?: string;
 }
 
-type PickEvent = CustomEvent<{ id: string; label: string }>;
 type DateEvent = CustomEvent<{ value: string }>;
 
 @customElement(tagName)
@@ -280,13 +280,8 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
               .label=${t("document.organization")}
               ?required=${this.isRequired("organizationId")}
               url="catalog/organization"
-              fetch="lookup"
-              .displayValue=${item.organization?.name ?? ""}
-              .selectedId=${item.organizationId ?? ""}
-              @item-selected=${(e: PickEvent) => {
-                this.setField("organizationId", e.detail.id);
-                this.$root.item = { ...this.$root.item, organization: { id: e.detail.id, name: e.detail.label } };
-              }}
+              .value=${item.organization ?? null}
+              @value-changed=${(e: PickerChangeEvent) => this.setRef("organization", e.detail.value)}
             ></ui-picker>
 
             <ui-picker
@@ -294,18 +289,9 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
               .label=${t("invoice.counterparty")}
               ?required=${this.isRequired("counterpartyId")}
               url="catalog/counterparty"
-              fetch="lookup"
-              .displayValue=${item.counterparty?.name ?? ""}
-              .selectedId=${item.counterpartyId ?? ""}
               show-clear
-              @item-selected=${(e: PickEvent) => {
-                this.setField("counterpartyId", e.detail.id);
-                this.$root.item = { ...this.$root.item, counterparty: { id: e.detail.id, name: e.detail.label } };
-              }}
-              @item-cleared=${() => {
-                this.setField("counterpartyId", "");
-                this.$root.item = { ...this.$root.item, counterparty: null };
-              }}
+              .value=${item.counterparty ?? null}
+              @value-changed=${(e: PickerChangeEvent) => this.setRef("counterparty", e.detail.value)}
             ></ui-picker>
           </div>
 

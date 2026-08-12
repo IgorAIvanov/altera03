@@ -67,7 +67,6 @@ export interface TabularColumn<Line extends object> {
 
   /** picker: маршрут в'ю (family/model), як у `<ui-picker url>`. */
   url?: string;
-  fetchCommand?: string;
   displayField?: string;
   hintField?: string;
   showClear?: boolean;

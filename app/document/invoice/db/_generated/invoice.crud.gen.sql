@@ -215,7 +215,7 @@ begin
     select
       v_id as id,
       v_number as number,
-      nullif(v_item->>'organizationId', '')::bigint as organization_id,
+      nullif(coalesce(v_item->>'organizationId', v_item->'organization'->>'id'), '')::bigint as organization_id,
       nullif(v_item->>'docDate', '')::timestamp as doc_date,
       nullif(v_item->>'total', '')::numeric as total,
       nullif(trim(coalesce(v_item->>'presentation', '')), '') as presentation,
@@ -239,7 +239,7 @@ begin
   using (
     select
       v_id as document_id,
-      nullif(v_item->>'counterpartyId', '')::bigint as counterparty_id
+      nullif(coalesce(v_item->>'counterpartyId', v_item->'counterparty'->>'id'), '')::bigint as counterparty_id
   ) s
     on t.document_id = s.document_id
   when matched then update set
@@ -253,7 +253,7 @@ begin
       nullif(e->>'id', '')::bigint as id,
       v_id as document_id,
       nullif(e->>'lineNo', '')::int as line_no,
-      nullif(e->>'bankId', '')::bigint as bank_id,
+      nullif(coalesce(e->>'bankId', e->'bank'->>'id'), '')::bigint as bank_id,
       nullif(e->>'qty', '')::numeric as qty,
       nullif(e->>'price', '')::numeric as price
     from jsonb_array_elements(coalesce(v_item->'lines', '[]'::jsonb)) e

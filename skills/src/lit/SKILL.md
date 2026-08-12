@@ -33,8 +33,6 @@ metadata:
 @property({ type: String, attribute: "id-field" }) idField = "id";
 @property({ type: Object, attribute: "picker-params" }) pickerParams = {};
 @property({ type: Object, attribute: "fetch-params" }) fetchParams = {};
-@property({ type: String, attribute: "display-value" }) displayValue = "";
-@property({ type: String, attribute: "selected-id" }) selectedId = "";
 
 // Однословні — attribute не потрібний (lowercase вже збігається)
 @property({ type: String }) label = "";

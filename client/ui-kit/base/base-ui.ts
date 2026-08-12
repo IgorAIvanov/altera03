@@ -9,6 +9,7 @@ import { bus } from "@client/bus/bus.ts";
 import { can } from "@client/auth/session.ts";
 import { icons } from "../icons.ts";
 import { GlobalStyledLitElement } from "./gsle.ts";
+import type { PickerValue } from "../components/ui-picker.ts";
 
 /** Одне повідомлення з конверта відповіді сервера. */
 export interface Message {
@@ -623,6 +624,31 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     return (e: Event) => {
       obj[field] = (e.target as HTMLInputElement).value as O[keyof O];
     };
+  }
+
+  /**
+   * Записати ссылку, вибрану пікером: сам об'єкт і його id — з одного значення.
+   *
+   * `<ui-picker>` віддає ссылку так, як її віддає база (`{ id, name }`), а в
+   * даних вона живе двома полями: об'єкт для показу й `<name>Id` для `save`.
+   * Тримати обидва в кожній формі — це рівно та пара, яку раніше треба було
+   * писати руками й можна було розсинхронити; тепер вони пишуться разом.
+   *
+   * ```ts
+   * .value=${item.counterparty ?? null}
+   * @value-changed=${(e: PickerChangeEvent) => this.setRef("counterparty", e.detail.value)}
+   * ```
+   *
+   * Ім'я id-поля виводиться як `<key>Id`; коли конвенція не діє — третім
+   * аргументом.
+   */
+  protected setRef(key: string, value: PickerValue, idKey = `${key}Id`): void {
+    const entity = (this.$root as Record<string, unknown>)[this.primaryKey ?? "item"] as
+      | Record<string, unknown>
+      | null;
+    if (!entity) return;
+    entity[key] = value;
+    entity[idKey] = value?.id == null ? "" : String(value.id);
   }
 
   /**

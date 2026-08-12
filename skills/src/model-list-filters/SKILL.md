@@ -63,7 +63,7 @@ that, "how many filters are active" and "what to send" are both just the content
 | `resetFilters()` | clear everything |
 
 `bindFilter` covers native controls only. ui-kit components differ in their events
-(`value-changed`, `item-selected`, `period-changed`, each with its own `detail`), so the
+(`value-changed`, `period-changed`, each with its own `detail`), so the
 screen wires those itself through `setFilter` — exactly like `BaseUI.bindTo` for fields.
 
 ## The annotation
@@ -155,12 +155,9 @@ export class InvoiceList extends ModelListBase<InvoiceRow> {
       <!-- Reference: one key, object value. Clearing writes null → key deleted. -->
       <ui-picker
         .label=${this.t("invoice.counterparty")}
-        url="catalog/counterparty" fetch="lookup" show-clear
-        .displayValue=${counterparty?.name ?? ""}
-        .selectedId=${counterparty?.id ?? ""}
-        @item-selected=${(e: PickEvent) =>
-          this.setFilter("counterparty", { id: e.detail.id, name: e.detail.label })}
-        @item-cleared=${() => this.setFilter("counterparty", null)}
+        url="catalog/counterparty" show-clear
+        .value=${counterparty ?? null}
+        @value-changed=${(e: PickerChangeEvent) => this.setFilter("counterparty", e.detail.value)}
       ></ui-picker>
 
       <!-- Closed set of values: ui-select, placeholder is the "any" option.
