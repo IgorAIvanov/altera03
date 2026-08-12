@@ -46,8 +46,8 @@
   "imports": {
     "@altera/client": "jsr:@altera/client@^0.11.1",
     "@client/": "jsr:/@altera/client@^0.11.1/",
-    "@altera/server": "jsr:@altera/server@^0.14.0",
-    "@altera/server/sql": "jsr:/@altera/server@^0.14.0/sql",
+    "@altera/server": "jsr:@altera/server@^0.15.0",
+    "@altera/server/sql": "jsr:/@altera/server@^0.15.0/sql",
     "@altera/tools/": "jsr:/@altera/tools@^0.11.0/",
     "@std/path": "jsr:@std/path@^1.1.2",
     "@app/": "./app/",
