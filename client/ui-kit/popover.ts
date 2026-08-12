@@ -16,6 +16,21 @@
  * `shell/shortcuts.ts`: чиста функція перевіряється пробами, а не очима.
  */
 
+/**
+ * Обов'язковий скид для елемента з атрибутом `popover`, який розміщує автор.
+ *
+ * Без нього браузер центрує вікно у в'юпорті власними `inset: 0` + `margin:
+ * auto`, і задані `top`/`left` не діють узагалі — тобто `placePopover()`
+ * відпрацює, а вікно лишиться посередині екрана. Домовленість, без якої
+ * розрахунок не має сенсу, тому вона живе тут, поруч із ним, а не в трьох
+ * розмітках, переписаних слово в слово.
+ *
+ * ```ts
+ * html`<div popover="manual" style=${POPOVER_ANCHORED_STYLE + "width:20rem;"}>`
+ * ```
+ */
+export const POPOVER_ANCHORED_STYLE = "position:fixed; margin:0; inset:unset;";
+
 export interface Rect {
   top: number;
   left: number;

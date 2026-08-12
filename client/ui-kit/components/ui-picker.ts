@@ -3,7 +3,7 @@ import { html, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { apiFetch } from "../../data/api.ts";
-import { placePopover } from "../popover.ts";
+import { placePopover, POPOVER_ANCHORED_STYLE } from "../popover.ts";
 import { icons } from "../icons.ts";
 
 /**
@@ -314,7 +314,7 @@ export class UiPicker extends GlobalStyledLitElement {
         @toggle=${this._onPopoverToggle}
         @keydown=${this._onKeyDown}
         class="menu rounded-box shadow-md overflow-y-auto p-1"
-        style="position:fixed; margin:0; inset:unset; background:#ffffff; border:1px solid var(--color-base-300,#d1d5db); flex-direction:column; flex-wrap:nowrap;${this._items.length === 0 ? "display:none;" : ""}"
+        style=${`${POPOVER_ANCHORED_STYLE} background:#ffffff; border:1px solid var(--color-base-300,#d1d5db); flex-direction:column; flex-wrap:nowrap;${this._items.length === 0 ? "display:none;" : ""}`}
       >
         ${this._items.map((item, index) => html`
           <li>

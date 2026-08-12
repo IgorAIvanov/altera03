@@ -2,7 +2,7 @@ import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { getLocale, t } from "../../locale.ts";
-import { placePopover } from "../popover.ts";
+import { placePopover, POPOVER_ANCHORED_STYLE } from "../popover.ts";
 import {
   dateFormat,
   daysInMonth,
@@ -380,7 +380,7 @@ export class UiDate extends GlobalStyledLitElement {
         popover
         @toggle=${this._onPopoverToggle}
         class="rounded-box shadow-lg p-2"
-        style="position:fixed; margin:0; inset:unset; width:16rem; background:var(--color-base-100,#ffffff); border:1px solid var(--color-base-300,#d1d5db);"
+        style=${`${POPOVER_ANCHORED_STYLE} width:16rem; background:var(--color-base-100,#ffffff); border:1px solid var(--color-base-300,#d1d5db);`}
       >
         ${this._open ? this._renderCalendar() : ""}
       </div>

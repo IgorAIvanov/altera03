@@ -3,7 +3,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { t } from "../../locale.ts";
 import { dateFormat } from "../../shared/datetime.ts";
-import { placePopover } from "../popover.ts";
+import { placePopover, POPOVER_ANCHORED_STYLE } from "../popover.ts";
 import {
   type Period,
   periodLabel,
@@ -132,7 +132,7 @@ export class UiPeriod extends GlobalStyledLitElement {
         popover
         @toggle=${this._onPopoverToggle}
         class="rounded-box shadow-lg p-2"
-        style="position:fixed; margin:0; inset:unset; width:19rem; background:var(--color-base-100,#ffffff); border:1px solid var(--color-base-300,#d1d5db);"
+        style=${`${POPOVER_ANCHORED_STYLE} width:19rem; background:var(--color-base-100,#ffffff); border:1px solid var(--color-base-300,#d1d5db);`}
       >
         ${this._open ? this._renderPopoverBody() : ""}
       </div>
