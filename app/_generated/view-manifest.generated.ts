@@ -17,6 +17,8 @@ export const viewManifest = [
   { route: "catalog/currency/list", moduleFile: "app/catalog/currency/currencyList.ts", titleKey: "currency.titleMany" },
   { route: "catalog/currency/edit", moduleFile: "app/catalog/currency/currencyEdit.ts", titleKey: "currency.titleOne" },
   { route: "catalog/currency/picker", moduleFile: "app/catalog/currency/currencyPicker.ts", titleKey: "currency.titleMany" },
+  { route: "data/currency_rate/list", moduleFile: "app/data/currency_rate/currencyRateList.ts", titleKey: "currencyRate.titleMany" },
+  { route: "data/currency_rate/edit", moduleFile: "app/data/currency_rate/currencyRateEdit.ts", titleKey: "currencyRate.titleOne" },
   { route: "report/document_movements/list", moduleFile: "app/report/document_movements/documentMovementsReport.ts", titleKey: "documentMovements.title" },
   { route: "document/invoice/list", moduleFile: "app/document/invoice/invoiceList.ts", titleKey: "invoice.titleMany" },
   { route: "document/invoice/edit", moduleFile: "app/document/invoice/invoiceEdit.ts", titleKey: "invoice.titleOne" },

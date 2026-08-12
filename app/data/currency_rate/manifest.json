@@ -1,0 +1,16 @@
+{
+  "model": "currency_rate",
+  "type": "register",
+  "schema": "app",
+  "periodic": { "key": ["currencyId"], "period": "period" },
+  "views": {
+    "list": {
+      "module": "./currencyRateList.ts",
+      "titleKey": "currencyRate.titleMany"
+    },
+    "edit": {
+      "module": "./currencyRateEdit.ts",
+      "titleKey": "currencyRate.titleOne"
+    }
+  }
+}

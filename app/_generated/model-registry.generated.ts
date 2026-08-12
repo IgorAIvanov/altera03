@@ -44,6 +44,20 @@ export const generatedModelRegistry = {
     type: "catalog",
     schema: "app"
   },
+  "currency_rate": {
+    type: "register",
+    schema: "app",
+    sqlCommands: {
+    "at": {  },
+    "history": {  },
+    "set": {  }
+    },
+    access: {
+    "at": "view",
+    "history": "view",
+    "set": "edit"
+    }
+  },
   "document_movements": {
     type: "report",
     schema: "app",

@@ -1,0 +1,8 @@
+{
+  "currencyRate.titleOne": "Exchange rate",
+  "currencyRate.titleMany": "Exchange rates",
+  "currencyRate.currency": "Currency",
+  "currencyRate.period": "Effective from",
+  "currencyRate.rate": "Rate",
+  "currencyRate.multiplicity": "Per units"
+}

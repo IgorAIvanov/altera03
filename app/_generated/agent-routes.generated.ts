@@ -34,6 +34,11 @@ export const agentModelRoutes = {
     listPath: "/catalog/currency/list",
     type: "catalog"
   },
+  "currency_rate": {
+    editPath: "/data/currency_rate/edit",
+    listPath: "/data/currency_rate/list",
+    type: "register"
+  },
   "document_movements": {
     listPath: "/report/document_movements/list",
     type: "report"

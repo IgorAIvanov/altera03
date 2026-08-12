@@ -80,6 +80,17 @@ type FeatureManifest = {
    * сід через assemble-sql-package.ts.
    */
   numbering?: { field: string; template?: string; strategy?: string; period?: string; name?: string };
+  /**
+   * Періодичні дані (курси валют, ціни, ставки податків): ключ плюс дата, на
+   * яку значення діє. Четвертий типовий вид моделі після довідника, документа
+   * й регістру — і однаковий скрізь, тому оголошується, а не пишеться.
+   *
+   * Дає, поверх звичайного CRUD регістру: `_at` (зріз останнього на дату),
+   * `_history` (як мінялося) і `_set` (перезапис значення на дату), плюс
+   * унікальний індекс `(ключ…, період desc)` — той самий, що робить зріз
+   * пошуком, а не скануванням.
+   */
+  periodic?: { key: string[]; period: string };
 };
 
 type Ref = {
@@ -201,6 +212,8 @@ type ModelSpec = {
    * підбір показує менше, ніж список, і тягти в нього зайву таблицю нема за що.
    */
   lookupJoins: string[];
+  /** Періодичні дані: поля ключа й поле періоду (див. FeatureManifest.periodic). */
+  periodic: { keyFields: Field[]; periodField: Field } | null;
   /**
    * Поле, яке заповнює нумератор (`code`), або null. Для документа тут завжди
    * null: номер шапки має власний шлях (app.doc_next_number), бо область
@@ -1452,6 +1465,184 @@ end;
 $$;`;
 }
 
+// ── періодичні дані: зріз на дату, історія, перезапис ───────────────────────
+//
+// Ключ, дата, значення — четвертий типовий вид моделі, і однаковий скрізь. Без
+// генерації кожен застосунок писав би той самий `distinct on` заново, і десятий
+// раз — без індексу (це вже заміряно: перший такий регістр коштував ≈130 рядків
+// рукописного SQL).
+//
+// Функції рахують ПОЛЯ СПИСКУ (`<Model>RowSchema`): зріз читають ті самі екрани
+// й ті самі команди, що й список, тож розходитися формі рядка нема за чим.
+
+/** `t.currency_id, t.period` — ключ плюс період, у порядку оголошення. */
+function periodicKeyCols(spec: ModelSpec): string {
+  return spec.periodic!.keyFields.map((f) => `t.${f.col}`).join(", ");
+}
+
+/** Відбір за ключем: незаданий ключ означає «усі», а не «жоден». */
+function periodicKeyFilter(spec: ModelSpec, indent: string): string {
+  return spec.periodic!.keyFields
+    .map((f) => `${indent}and (payload->>'${f.key}' is null or t.${f.col} = ${srcExpr(f, "payload")})`)
+    .join("\n");
+}
+
+function renderPeriodicAt(spec: ModelSpec): string {
+  const p = spec.periodic!;
+  const cols = fieldEntries(spec.listFields).map((e) => `        ${e}`).join(",\n");
+  const joins = spec.listJoins.length ? "\n      " + spec.listJoins.join("\n      ") : "";
+  return `drop function if exists ${spec.table}_at(bigint, jsonb);
+create function ${spec.table}_at(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_on_date date := coalesce(nullif(payload->>'onDate', '')::date, current_date);
+  v_rows    jsonb;
+begin
+  -- Зріз останнього: по одному рядку на ключ — найсвіжіший із тих, що не пізніші
+  -- за дату. Саме тут потрібен індекс (ключ…, період desc), інакше це скан.
+  select coalesce(jsonb_agg(sub.r), '[]'::jsonb) into v_rows
+  from (
+    select distinct on (${periodicKeyCols(spec)})
+      jsonb_build_object(
+${cols}
+      ) as r
+    from ${spec.fromClause}${joins}
+    where t.${p.periodField.col} <= v_on_date
+${periodicKeyFilter(spec, "      ")}
+    order by ${periodicKeyCols(spec)}, t.${p.periodField.col} desc
+  ) sub;
+
+  return ${
+    envelope([
+      `'rows',    v_rows`,
+      // Один рядок — значить ключ звузили до одного; тоді зріз зручніше читати
+      // як item, і форма отримує його тим самим ключем, що й get.
+      `'item',    case when jsonb_array_length(v_rows) = 1 then v_rows->0 else null end`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   jsonb_build_object('onDate', v_on_date)`,
+    ])
+  };
+end;
+$$;`;
+}
+
+function renderPeriodicHistory(spec: ModelSpec): string {
+  const p = spec.periodic!;
+  const cols = fieldEntries(spec.listFields).map((e) => `      ${e}`).join(",\n");
+  const joins = spec.listJoins.length ? "\n    " + spec.listJoins.join("\n    ") : "";
+  return `drop function if exists ${spec.table}_history(bigint, jsonb);
+create function ${spec.table}_history(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_from date := nullif(payload->>'dateFrom', '')::date;
+  v_to   date := nullif(payload->>'dateTo', '')::date;
+  v_rows jsonb;
+begin
+  -- Як значення мінялося: усі рядки ключа, свіжі зверху. Пагінації немає
+  -- навмисно — історія одного ключа коротка, а «остання сторінка» тут нічого
+  -- не означає.
+  select coalesce(jsonb_agg(sub.r order by sub.period desc), '[]'::jsonb) into v_rows
+  from (
+    select
+      t.${p.periodField.col} as period,
+      jsonb_build_object(
+${cols}
+      ) as r
+    from ${spec.fromClause}${joins}
+    where (v_from is null or t.${p.periodField.col} >= v_from)
+      and (v_to   is null or t.${p.periodField.col} <= v_to)
+${periodicKeyFilter(spec, "      ")}
+  ) sub;
+
+  return ${
+    envelope([
+      `'rows',    v_rows`,
+      `'item',    null`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   '{}'::jsonb`,
+    ])
+  };
+end;
+$$;`;
+}
+
+function renderPeriodicSet(spec: ModelSpec): string {
+  const p = spec.periodic!;
+  const writable = spec.itemFields.filter((f) => f.key !== "id");
+  const natural = new Set([...p.keyFields, p.periodField].map((f) => f.col));
+  const valueFields = writable.filter((f) => !natural.has(f.col));
+
+  const src = writable.map((f) => `      ${srcExpr(f, "v_item")} as ${f.col}`).join(",\n");
+  const onClause = [...p.keyFields, p.periodField].map((f) => `t.${f.col} = s.${f.col}`).join("\n     and ");
+  const update = [...valueFields.map((f) => updateSet(f, "t")), "updated_at = now()"].join(",\n    ");
+  const insCols = writable.map((f) => f.col).join(", ");
+  const insVals = writable.map((f) => insertVal(f)).join(", ");
+
+  return `drop function if exists ${spec.table}_set(bigint, jsonb);
+create function ${spec.table}_set(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_item jsonb := coalesce(payload->'item', payload);
+  v_id   bigint;
+begin
+  -- Перезапис значення НА ДАТУ: ключ тут природний (ключ + період), а не id.
+  -- Саме цим set відрізняється від save: імпорт курсів за датою не знає
+  -- ідентифікаторів рядків і не мусить їх шукати.
+  merge into ${spec.table} t
+  using (
+    select
+${src}
+  ) s
+    on ${onClause}
+  when matched then update set
+    ${update}
+  when not matched then insert (${insCols})
+    values (${insVals})
+  returning t.id into v_id;
+
+  return ${
+    envelope([
+      `'item',    (select ${spec.table}_get(user_id, jsonb_build_object('id', v_id::text)) -> 'data' -> 'item')`,
+      `'rows',    '[]'::jsonb`,
+      `'options', '{}'::jsonb`,
+      `'totals',  '{}'::jsonb`,
+      `'extra',   jsonb_build_object('id', v_id::text)`,
+    ])
+  };
+end;
+$$;`;
+}
+
+/**
+ * Унікальний індекс `(ключ…, період desc)` — один на дві потреби.
+ *
+ * Унікальність: два значення на одну дату для одного ключа — не дані, а
+ * помилка вводу, і `_set` без неї не мав би на що спиратися (`merge` шукає
+ * рядок саме за цією парою). Ім'я індексу — джерело поля у відмові
+ * (`uq_<model>_period` → `period`).
+ *
+ * Напрямок: `distinct on (ключ) order by ключ, період desc` бере індекс лише
+ * тоді, коли напрямки збігаються — btree сканується цілком уперед або цілком
+ * назад. Тому `desc` у самому індексі; на унікальність напрямок не впливає.
+ *
+ * DDL у генерованому файлі — виняток (структура належить struc.sql), і свідомий:
+ * індекс виводиться з того самого оголошення, що й функції, а забутий він не
+ * ламає нічого — просто зріз тихо стає скануванням.
+ */
+function renderPeriodicIndex(spec: ModelSpec): string {
+  const p = spec.periodic!;
+  const cols = [...p.keyFields.map((f) => f.col), `${p.periodField.col} desc`].join(", ");
+  return `create unique index if not exists uq_${spec.model}_period\n  on ${spec.table} (${cols});`;
+}
+
 function renderFile(spec: ModelSpec): string {
   const header = `-- ⚠ ЗГЕНЕРОВАНО deno task sql:gen — НЕ РЕДАГУВАТИ.\n` +
     `-- Джерело: ${spec.model}.schema.ts + manifest.json. Override — db/${spec.model}.custom.sql\n`;
@@ -1463,6 +1654,9 @@ function renderFile(spec: ModelSpec): string {
     renderDelete(spec),
     ...(spec.softDelete ? [renderUndelete(spec)] : []),
     ...(spec.isRegister ? [] : [renderLookup(spec)]),
+    ...(spec.periodic
+      ? [renderPeriodicIndex(spec), renderPeriodicAt(spec), renderPeriodicHistory(spec), renderPeriodicSet(spec)]
+      : []),
     ...(spec.isDocument ? [renderPost(spec), renderUnpost(spec)] : []),
     ...(spec.hierarchy
       ? [renderGroupTree(spec), renderGroupSave(spec), renderGroupDelete(spec), renderMoveToGroup(spec)]
@@ -1956,6 +2150,35 @@ async function buildSpec(
   );
   const listJoins = refJoins(listRefFields);
 
+  // Періодичні дані: ключ і період називаються ПОЛЯМИ схеми, а не колонками —
+  // так само, як numbering.field. Помилка в імені має бути видно на генерації,
+  // а не на першому виклику: без цієї перевірки `_at` мовчки різав би не по
+  // тому ключу.
+  const periodicMeta = manifest.periodic;
+  const fieldByKey = new Map(itemFields.map((f) => [f.key, f]));
+  const periodic = periodicMeta
+    ? {
+      keyFields: periodicMeta.key.map((name) => {
+        const field = fieldByKey.get(name);
+        if (!field) throw new Error(`${model}: periodic.key містить поле "${name}", якого немає в ItemSchema`);
+        return field;
+      }),
+      periodField: (() => {
+        const field = fieldByKey.get(periodicMeta.period);
+        if (!field) {
+          throw new Error(`${model}: periodic.period = "${periodicMeta.period}", але такого поля немає в ItemSchema`);
+        }
+        if (!field.isDate && !field.isTimestamp) {
+          throw new Error(`${model}: periodic.period = "${periodicMeta.period}" мусить бути датою (x-db-type: date)`);
+        }
+        return field;
+      })(),
+    }
+    : null;
+  if (periodic && periodic.keyFields.length === 0) {
+    throw new Error(`${model}: periodic.key порожній — без ключа зріз останнього не має сенсу`);
+  }
+
   // joins для lookup: ссылки у виводі підбору плюс ті, за якими він шукає.
   const lookupJoins = refJoins([
     ...lookupFields.filter((f) => f.ref),
@@ -2006,6 +2229,7 @@ async function buildSpec(
     lookupSort,
     listJoins,
     lookupJoins,
+    periodic,
     numberedField,
     hierarchy,
     groupTable: `${schemaName}.${model}_group`,

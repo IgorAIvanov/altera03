@@ -686,6 +686,58 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Періодичні дані: ключ, дата, значення. Перевіряємо не CRUD (він такий
+    // самий, як у решти регістрів), а те, заради чого блок `periodic` і
+    // з'явився: зріз на дату бере ПОПЕРЕДНЄ значення, а не найсвіжіше, і
+    // перезапис на ту саму дату не плодить другого рядка.
+    await t.step("періодичні дані: зріз на дату й перезапис", async () => {
+      const rates: string[] = [];
+      const currency = await client.model("currency", "save", {
+        item: { code: "SMK", name: "Smoke валюта" },
+      });
+      const cur = currency.body.data.item as { id: string } | null;
+      assertExists(cur);
+
+      const set = async (period: string, rate: number) => {
+        const res = await client.model("currency_rate", "set", {
+          item: { currencyId: cur.id, period, rate, multiplicity: 1 },
+        });
+        const row = res.body.data.item as { id: string; rate: number } | null;
+        if (row) rates.push(row.id);
+        return { ok: res.body.ok, row };
+      };
+
+      try {
+        const first = await set("2026-01-01", 41.5);
+        assertEquals(first.ok, true);
+        await set("2026-08-01", 43.2);
+
+        // Зріз на березень — січневий курс: те, що діяло НА ДАТУ.
+        const at = await client.model("currency_rate", "at", {
+          onDate: "2026-03-01",
+          currencyId: cur.id,
+        });
+        const slice = at.body.data.item as { period: string; rate: number } | null;
+        assertExists(slice);
+        assertEquals(slice.period, "2026-01-01");
+        assertEquals(Number(slice.rate), 41.5);
+
+        // Перезапис тієї самої дати — той самий рядок: ключ природний
+        // (валюта + період), а не id. Тримає це унікальний індекс, який
+        // генератор кладе поруч із функціями.
+        const again = await set("2026-01-01", 41.9);
+        assertExists(again.row);
+        assertEquals(again.row.id, first.row?.id);
+        assertEquals(Number(again.row.rate), 41.9);
+
+        const history = await client.model("currency_rate", "history", { currencyId: cur.id });
+        assertEquals((history.body.data.rows as unknown[]).length, 2);
+      } finally {
+        for (const id of rates) await purge("app.currency_rate", id);
+        await purge("app.currency", cur.id);
+      }
+    });
+
     // Забалансовий облік однобічний за визначенням: «Дт 021» не кореспондує ні
     // з чим. Обхід (парна проводка через допоміжний рахунок) псує самі дані —
     // у регістрі з'являється кореспонденція, якої в обліку немає. Тому ядро

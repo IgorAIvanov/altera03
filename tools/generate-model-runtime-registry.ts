@@ -38,6 +38,11 @@ type ManifestRecord = {
    * TS-команда `printPdf`.
    */
   prints?: Record<string, unknown>;
+  /**
+   * Періодичні дані. Блок читає `sql:gen` (він генерує `_at`/`_history`/`_set`);
+   * тут його наявність — ознака «ці три команди є», з якої виводяться права.
+   */
+  periodic?: unknown;
   commands?: {
     sql?: Record<string, ManifestSqlCommand>;
     ts?: Record<string, ManifestTsCommand>;
@@ -99,7 +104,15 @@ function renderSqlCommandConfig(commandName: string, definition: ManifestSqlComm
 
 function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
   const entries = manifests.flatMap(({ manifest }) => {
-    const sqlCommands = manifest.commands?.sql ?? {};
+    // Періодичні команди рантайм сам не виводить: авто-маршрут є лише в
+    // стандартної п'ятірки й у команд документа. Оголошуємо їх ТУТ, з того
+    // самого блока `periodic`, з якого `sql:gen` створює самі функції — інакше
+    // застосунок мусив би переписувати в манифест те, що вже там сказано, і
+    // забута трійка виглядала б як «команди немає» на першому виклику.
+    const periodicCommands = manifest.periodic
+      ? { at: {}, history: {}, set: {} } as Record<string, ManifestSqlCommand>
+      : {};
+    const sqlCommands = { ...periodicCommands, ...manifest.commands?.sql };
     const sqlCommandEntries = Object.entries(sqlCommands)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([commandName, definition]) => `    ${JSON.stringify(commandName)}: ${renderSqlCommandConfig(commandName, definition)}`);
@@ -110,6 +123,17 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
     const access: Record<string, string> = { ...manifest.commands?.access };
     if (Object.keys(manifest.prints ?? {}).length > 0 && !access.printPdf) {
       access.printPdf = "view";
+    }
+
+    // Періодичні команди генерує `sql:gen` з того самого блока `periodic`, тож
+    // і право їм виводиться звідти: `_at`/`_history` — читання, `_set` — запис.
+    // Вимагати повторного оголошення в `commands.access` означало б лишити
+    // рантайму 501 на команді, яку сам же фреймворк і створив. Явне оголошення
+    // в манифесті це перекриває.
+    if (manifest.periodic) {
+      if (!access.at) access.at = "view";
+      if (!access.history) access.history = "view";
+      if (!access.set) access.set = "edit";
     }
 
     const accessEntries = Object.entries(access)

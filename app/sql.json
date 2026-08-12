@@ -21,6 +21,7 @@
     "catalog/counterparty",
     "catalog/chart_of_account",
     "catalog/currency",
+    "data/currency_rate",
     "@core/numerator",
     "@core/document_core",
     "@core/help_content",
