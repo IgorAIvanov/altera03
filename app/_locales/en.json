@@ -36,6 +36,7 @@
   "menu.group.document": "Documents",
   "menu.group.report": "Reports",
   "menu.group.administration": "Administration",
+  "menu.group.bottom": "Menu bottom section",
   "menu.titleMany": "Menus",
   "menu.titleOne": "Menu",
   "menu.itemCount": "Items",

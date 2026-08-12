@@ -35,7 +35,12 @@ cross join (values
   ('catalog',        '@[menu.group.catalog]',        'catalog',  null::varchar(500), 10),
   ('document',       '@[menu.group.document]',       'document', null,               20),
   ('report',         '@[menu.group.report]',         'report',   null,               30),
-  ('administration', '@[menu.group.administration]', 'settings', null,               40)
+  ('administration', '@[menu.group.administration]', 'settings', null,               40),
+  -- Тека нижньої частини: оболонка малює її ВМІСТ закріпленим унизу меню, а
+  -- саму теку не показує (див. BOTTOM_CODE в app/menu/app-menu.ts). Порожня
+  -- вона не малює нічого — вона тут, щоб той, хто складає меню, бачив, куди
+  -- класти пункти, які мусять лишатися на очах при будь-якій довжині списку.
+  ('bottom',         '@[menu.group.bottom]',         'settings', null,               90)
 ) as v(code, name, icon_key, route_path, sort_order)
 where m.code = 'default'
 on conflict do nothing;

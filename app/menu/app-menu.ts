@@ -10,6 +10,24 @@ interface Flyout {
   y: number;
 }
 
+/**
+ * Код кореневої теки, вміст якої меню малює ЗАКРІПЛЕНИМ УНИЗУ — під списком, що
+ * прокручується. Сама тека на екран не йде: вона тут не розділ, а спосіб
+ * сказати «ці пункти внизу».
+ *
+ * Домовленість за кодом, а не колонка в `app.menu_item`: склад меню — справа
+ * застосунку, і закріплення внизу теж. Колонка означала б міграцію ядра й нове
+ * поле в редакторі меню заради того, що адміністратор і так може виразити
+ * структурою, яку він вже редагує.
+ *
+ * Зворотний бік — домовленість тримається на коді теки, і в редакторі меню її
+ * нічим не видно. Тому тека є в сіді (`app/admin/menu/db/data.sql`): порожня
+ * вона нічого не малює, але видна тому, хто складає меню.
+ *
+ * `id` кореня дорівнює його `code` — `menu_current` віддає шлях від кореня.
+ */
+const BOTTOM_CODE = "bottom";
+
 @customElement("app-menu")
 export class AppMenu extends LitElement {
   static override styles = css`
@@ -58,9 +76,19 @@ export class AppMenu extends LitElement {
        умолчанию не бывает ниже своего содержимого (min-height: auto), поэтому
        список рос за пределы меню, overflow-y не срабатывал вовсе, а хвост
        пунктов молча срезал overflow: hidden на самом :host. */
-    .menu {
-      flex: 1;
-      min-height: 0;
+    .menu { flex: 1; min-height: 0; }
+
+    /* Нижняя часть — содержимое теки BOTTOM_CODE. Не прокручивается вместе со
+       списком: она и нужна затем, чтобы эти пункты были на виду при любой
+       длине меню. Своя прокрутка и потолок высоты — на случай, когда внизу
+       раскрыли группу: иначе нижний блок выдавил бы верхний список. */
+    .menu-bottom {
+      flex-shrink: 0;
+      max-height: 50%;
+      border-top: 1px solid #adb9c3;
+    }
+
+    .menu, .menu-bottom {
       overflow-y: auto;
       overflow-x: hidden;
       /* Тонкая полоса: webkit-правилами ниже и стандартным свойством — иначе
@@ -68,8 +96,10 @@ export class AppMenu extends LitElement {
       scrollbar-width: thin;
       scrollbar-color: #b8c3cc transparent;
     }
-    .menu::-webkit-scrollbar { width: 4px; }
-    .menu::-webkit-scrollbar-thumb { background: #b8c3cc; }
+    .menu::-webkit-scrollbar,
+    .menu-bottom::-webkit-scrollbar { width: 4px; }
+    .menu::-webkit-scrollbar-thumb,
+    .menu-bottom::-webkit-scrollbar-thumb { background: #b8c3cc; }
 
     .menu-message {
       padding: 8px;
@@ -383,6 +413,16 @@ export class AppMenu extends LitElement {
   }
 
   override render() {
+    // Тека нижней части и её содержимое: сама тека на экран не идёт, поэтому
+    // из верхнего списка убираем её целиком, а не только её детей.
+    //
+    // Условие про детей — не перестраховка: пункт с этим кодом может оказаться
+    // ЛИСТОМ (у корня проставили маршрут). Без проверки он исчезал бы с экрана
+    // совсем — из верхнего списка убран, а показать под чертой нечего.
+    const bottom = this.items.find(item => item.id === BOTTOM_CODE && item.children?.length);
+    const top = bottom ? this.items.filter(item => item !== bottom) : this.items;
+    const bottomItems = bottom?.children ?? [];
+
     return html`
       <div class="toggle">
         <div class="toggle-btn" @click=${this.toggle} title=${this.collapsed ? t("nav.expand") : t("nav.collapse")}>
@@ -396,8 +436,14 @@ export class AppMenu extends LitElement {
       <div class="menu" @scroll=${this.closePopups}>
         ${this.error
           ? html`<div class="menu-message" title="${this.error}">Меню недоступне</div>`
-          : this.items.map(item => this.renderItem(item))}
+          : top.map(item => this.renderItem(item))}
       </div>
+
+      ${bottomItems.length ? html`
+        <div class="menu-bottom" @scroll=${this.closePopups}>
+          ${bottomItems.map(item => this.renderItem(item))}
+        </div>
+      ` : ""}
 
       ${this.tooltip ? html`
         <div class="tooltip" style="top: ${this.tooltip.y}px">${this.tooltip.label}</div>
