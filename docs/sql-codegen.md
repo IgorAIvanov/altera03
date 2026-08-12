@@ -297,8 +297,16 @@ Master-detail. `InvoiceLineSchema` — звичайна TypeBox-об'єктна 
 
 - **`<Model>ItemSchema` описує лише власні реквізити документа.** Спільні поля
   (`organizationId`, `number`, `docDate`, `total`, `presentation`, `isPosted`…)
-  генератор підмішує сам із `DocumentHeaderSchema` (`client/shared/schema.ts`).
+  генератор підмішує сам із `DocumentHeaderSchema` (`@client/shared/schema.ts`).
   Описати їх у схемі моделі — помилка збірки, а не тихе дублювання.
+
+  **Шлях до шапки резолвиться через карту імпортів застосунку** — ключ
+  `@client/` (а без аліаса `@altera/client`) з його `deno.json`. Тобто версію
+  контракту називає застосунок: у монорепо це сусідній каталог, у встановленому
+  застосунку — пакет із реєстру. Залежністю `tools` клієнт не тягне навмисно —
+  тоді в застосунку опинилися б дві його версії. Доти тут стояв шлях
+  `app/../client/shared/schema.ts`, і `type: "document"` генерувався лише в
+  монорепозиторії; перевіряє резолв `tools/generate-model-sql_test.ts`.
 - `list`/`get`/`lookup` читають `app.document h join app.<model> t` і завжди
   відсікають `is_deleted`.
 - `save` робить два MERGE: спершу шапка (вона повертає `id`), потім реквізити,

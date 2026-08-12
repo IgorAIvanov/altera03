@@ -9,6 +9,7 @@
 // Запуск:  deno run -A ./scripts/generate-model-sql.ts ./app [catalog/bank] --verbose
 
 import { basename, join, resolve, toFileUrl } from "@std/path";
+import { parse as parseJsonc } from "@std/jsonc";
 
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 
@@ -1713,12 +1714,86 @@ async function modelManifest(appRoot: string, modelPath: string): Promise<Featur
  * `client/` — сусід `app/`; коли scripts стануть пакетом (борг 3.4), шлях
  * резолвитиметься через залежність.
  */
+/**
+ * Схема спільної шапки документа — контракт ФРЕЙМВОРКУ, тож береться звідти ж,
+ * звідки її бере сам застосунок: з його карти імпортів.
+ *
+ * Доти тут стояв шлях `appRoot/../client/shared/schema.ts` — розкладка
+ * МОНОРЕПОЗИТОРІЮ, зашита в інструмент, який роздається з JSR. У встановленому
+ * застосунку каталогу `client/` немає й бути не може (фреймворк лежить у
+ * `vendor/jsr.io/@altera/client/<версія>`, а `@client/` — аліас), тому
+ * `type: "document"` там не генерувався взагалі: `Module not found`. Помітно це
+ * ставало не одразу — документи приїжджали в застосунок готовими файлами з
+ * монорепозиторію, — а далі кожна правка схеми документа означала повернення до
+ * копіювання між деревами, від якого й пішли.
+ *
+ * Версію бере ЗАСТОСУНОК, а не інструмент: якби `tools` імпортував
+ * `@altera/client` своєю залежністю, у застосунку опинилися б дві версії
+ * клієнта — рівно та пастка, що вже стріляла з `@altera/server` (див. CLAUDE.md,
+ * «Версію фреймворку теж називає застосунок»).
+ */
 async function loadDocumentHeaderSchema(appRoot: string): Promise<TSchema> {
-  const schemaPath = join(appRoot, "..", "client", "shared", "schema.ts");
-  const mod = await importSchema(schemaPath);
+  const specifier = await documentHeaderSpecifier(appRoot);
+  const mod = await import(specifier) as Record<string, TSchema>;
   const schema = mod["DocumentHeaderSchema"];
-  if (!schema) throw new Error(`${schemaPath}: немає DocumentHeaderSchema`);
+  if (!schema) throw new Error(`${specifier}: немає DocumentHeaderSchema`);
   return schema;
+}
+
+/**
+ * Куди веде `@client/shared/schema.ts` у ЦЬОМУ застосунку.
+ *
+ * Експортована заради проби: сам імпорт схеми перевіряється лише повним
+ * прогоном генерації, а зламався тут саме РЕЗОЛВ — і зламався тихо, бо в
+ * монорепозиторії обидві гілки ведуть в одне місце.
+ */
+export async function documentHeaderSpecifier(appRoot: string): Promise<string> {
+  const SUBPATH = "shared/schema.ts";
+  const configDir = resolve(appRoot, "..");
+
+  // Карта імпортів застосунку — джерело істини: у монорепо `@client/` веде на
+  // сусідній каталог, у встановленому застосунку — на пакет із реєстру, і
+  // обидва випадки закриває той самий рядок.
+  const prefix = await clientPrefix(configDir);
+  if (prefix) {
+    // `jsr:/@altera/client@^0.9.1/` — форма для КАРТИ імпортів; як специфікатор
+    // імпорту скісна після схеми зайва.
+    if (/^(jsr|npm|https?):/.test(prefix)) return `${prefix.replace(/^jsr:\//, "jsr:")}${SUBPATH}`;
+    return toFileUrl(resolve(configDir, prefix, SUBPATH)).href;
+  }
+
+  // Карти немає (чужа розкладка) — лишається сусідній каталог монорепозиторію.
+  const neighbour = join(configDir, "client", SUBPATH);
+  try {
+    await Deno.stat(neighbour);
+    return toFileUrl(neighbour).href;
+  } catch {
+    throw new Error(
+      `шапку документа не знайдено: у ${configDir}/deno.json немає імпорту "@client/", ` +
+        `а ${neighbour} не існує. Тип "document" генерується зі схеми фреймворку — ` +
+        `оголоси @client/ у карті імпортів застосунку`,
+    );
+  }
+}
+
+/** Значення `@client/` (або `@altera/client`) з deno.json застосунку. */
+async function clientPrefix(configDir: string): Promise<string | undefined> {
+  for (const name of ["deno.json", "deno.jsonc"]) {
+    let text: string;
+    try {
+      text = await Deno.readTextFile(join(configDir, name));
+    } catch {
+      continue;
+    }
+    // Конфіг Deno — JSONC: рядкові коментарі в ньому законні (у шаблоні вони є).
+    const imports = (parseJsonc(text) as { imports?: Record<string, string> }).imports ?? {};
+    const alias = imports["@client/"];
+    if (alias) return alias.endsWith("/") ? alias : `${alias}/`;
+    // Без аліаса — саме ім'я пакета: `jsr:@altera/client@^0.9.1` → підшлях.
+    const pkg = imports["@altera/client"];
+    if (pkg) return `${pkg}/`;
+  }
+  return undefined;
 }
 
 // перший прохід: карта моделей для резолву x-ref
