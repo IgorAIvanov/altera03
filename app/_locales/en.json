@@ -175,6 +175,8 @@
   "printTemplate.cellTextWins": "Text, when set, overrides the binding",
   "printTemplate.cellSelectHint": "Click selects a cell, Shift+click a range",
   "printTemplate.tableNoColumns": "Add a column",
+  "printTemplate.formatNone": "No format",
+  "printTemplate.formatAmountInWords": "Amount in words",
   "setting.titleOne": "Settings",
   "setting.titleMany": "Settings",
   "setting.saved": "Settings saved",

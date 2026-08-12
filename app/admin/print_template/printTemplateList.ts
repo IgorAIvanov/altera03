@@ -1,7 +1,7 @@
 import { html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
-import type { PrintTemplateRow } from "./printTemplate.schema.ts";
+import type { PrintTemplateRow } from "./print_template.schema.ts";
 import { icons } from "@client/ui-kit/icons.ts";
 
 export const tagName = "print-template-list";

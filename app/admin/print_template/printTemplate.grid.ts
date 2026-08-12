@@ -36,6 +36,7 @@ export function createCell(patch: Partial<PrintTemplateTableCell> = {}): PrintTe
     key: crypto.randomUUID(),
     text: "",
     path: "",
+    format: "",
     colSpan: 1,
     rowSpan: 1,
     align: "left",

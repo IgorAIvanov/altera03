@@ -75,6 +75,12 @@ type FeatureManifest = {
   /** `generate: false` — CRUD написаний руками, генератор моделі не торкається. */
   sql?: { generate?: boolean };
   /**
+   * Ім'я таблиці, коли воно не збігається з ключем моделі: модель `user` живе в
+   * `app.users`. Потрібне тим, на кого ПОСИЛАЮТЬСЯ: без нього `x-ref` збудував
+   * би join у неіснуючу `app.user`.
+   */
+  table?: string;
+  /**
    * Автонумерація (@core/numerator). Правило й лічильник живуть у базі, тут —
    * лише те, що потрібно генератору: яке поле заповнювати. Сам шаблон їде в
    * сід через assemble-sql-package.ts.
@@ -226,7 +232,7 @@ type ModelSpec = {
   rowHasGroupName: boolean; // Row оголошує groupName → list віддає ім'я групи
 };
 
-type ModelMeta = { schema: string; model: string; pk: string; displayCol: string };
+type ModelMeta = { schema: string; model: string; table: string; pk: string; displayCol: string };
 type ModelMetaMap = Map<string, ModelMeta>;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -323,7 +329,7 @@ function toField(
       as,
       display: xref.display ?? target.displayCol,
       targetSchema: target.schema,
-      targetTable: target.model,
+      targetTable: target.table,
       targetPk: target.pk,
       alias: `r_${as}`,
       sortable: xref.sortable === true,
@@ -1790,7 +1796,7 @@ async function buildReportSpec(
         normKey: `${key}Id`,
         required: required.has(key),
         ref: {
-          table: `${target.schema}.${target.model}`,
+          table: `${target.schema}.${target.table}`,
           pk: target.pk,
           display: xref.display ?? target.displayCol,
         },
@@ -2030,19 +2036,58 @@ async function clientPrefix(configDir: string): Promise<string | undefined> {
   return undefined;
 }
 
+/**
+ * Каталоги моделей — усе, що оголосило себе манифестом.
+ *
+ * Той самий обхід, що будує реєстр рантайму, і з тим самим доводом: у
+ * `sql.json` лежать моделі, які везуть СВІЙ SQL, а посилатися можна й на ту,
+ * чий SQL лежить у ядрі (`admin/user` — це `app.users` із `@core/access`).
+ * «Мій SQL пишуть інші» і «на мене не можна посилатися» — різні речі, і доти
+ * вони були одним.
+ */
+export async function collectModelDirs(appRoot: string): Promise<string[]> {
+  const dirs: string[] = [];
+
+  const visit = async (dir: string) => {
+    try {
+      await Deno.stat(join(dir, "manifest.json"));
+      dirs.push(dir);
+    } catch {
+      // Каталог без манифеста — не модель; спускаємося далі.
+    }
+    for await (const entry of Deno.readDir(dir)) {
+      if (!entry.isDirectory || entry.name.startsWith("_")) continue;
+      await visit(join(dir, entry.name));
+    }
+  };
+
+  await visit(appRoot);
+  return dirs;
+}
+
 // перший прохід: карта моделей для резолву x-ref
-async function buildModelMap(appRoot: string, models: string[]): Promise<ModelMetaMap> {
+async function buildModelMap(appRoot: string, verbose: boolean): Promise<ModelMetaMap> {
   const map: ModelMetaMap = new Map();
-  for (const modelPath of models) {
-    const { model, path } = schemaModuleFor(appRoot, modelPath);
+
+  for (const dir of await collectModelDirs(appRoot)) {
+    const manifest = JSON.parse(
+      await Deno.readTextFile(join(dir, "manifest.json")),
+    ) as FeatureManifest;
+    const model = manifest.model?.trim() || basename(dir);
+    const path = join(dir, `${model}.schema.ts`);
+
     try {
       await Deno.stat(path);
     } catch {
+      // Мовчазний пропуск тут коштував найдорожче: модель зникала з карти без
+      // сліду, а вилазило це за два кроки — «модель не знайдена (x-ref)» на
+      // ЧУЖОМУ полі. Тепер причина названа в місці, де вона виникла.
+      if (verbose) {
+        console.log(`· ${model}: немає ${model}.schema.ts — на модель не можна послатися (x-ref)`);
+      }
       continue;
     }
-    const manifest = JSON.parse(
-      await Deno.readTextFile(join(appRoot, modelPath, "manifest.json")),
-    ) as FeatureManifest;
+
     const schemaName = manifest.schema ?? "app";
     const mod = await importSchema(path);
     const item = mod[`${pascalCase(model)}ItemSchema`];
@@ -2054,8 +2099,16 @@ async function buildModelMap(appRoot: string, models: string[]): Promise<ModelMe
         break;
       }
     }
-    map.set(model, { schema: schemaName, model, pk: "id", displayCol });
+
+    map.set(model, {
+      schema: schemaName,
+      model,
+      table: manifest.table?.trim() || model,
+      pk: "id",
+      displayCol,
+    });
   }
+
   return map;
 }
 
@@ -2291,8 +2344,11 @@ async function main() {
   ) as SqlManifest;
   const allModels = sqlManifest.models ?? [];
 
-  // 1) карта всіх моделей (для x-ref), 2) генерація
-  const map = await buildModelMap(appRoot, allModels);
+  // 1) карта всіх моделей (для x-ref), 2) генерація.
+  //
+  // Карта — з манифестів усього дерева, а генерація — з `sql.json`: посилатися
+  // можна на ширше коло, ніж те, чий SQL збирається.
+  const map = await buildModelMap(appRoot, verbose);
   if (verbose) console.log(`· карта моделей: [${[...map.keys()]}]`);
 
   const models = allModels.filter((m) => !filter || m === filter);

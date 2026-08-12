@@ -10,6 +10,7 @@ import type {
   PrintTemplateBlockPlacement,
   PrintTemplateBlockTextOptions,
   PrintTemplateBlockType,
+  PrintTemplateFieldListItem,
   PrintTemplateTableColumn,
 } from "@altera/server/print";
 import { createCell, createRow } from "./printTemplate.grid.ts";
@@ -60,8 +61,8 @@ export function createTableColumn(): PrintTemplateTableColumn {
   return { key: newKey(), widthPercent: "20" };
 }
 
-export function createFieldItem(index: number) {
-  return { key: newKey(), label: `Поле ${index}`, path: "" };
+export function createFieldItem(index: number): PrintTemplateFieldListItem {
+  return { key: newKey(), label: `Поле ${index}`, path: "", format: "" };
 }
 
 export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {

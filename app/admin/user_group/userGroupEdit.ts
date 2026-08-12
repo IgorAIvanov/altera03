@@ -8,7 +8,7 @@ import {
   UserGroupEditRootSchema,
   type UserGroupEditRoot,
   type UserGroupPermission,
-} from "./userGroup.schema.ts";
+} from "./user_group.schema.ts";
 import { icons } from "@client/ui-kit/icons.ts";
 
 /** Подія вибору з `<ui-picker>`: id та підпис вибраного рядка. */

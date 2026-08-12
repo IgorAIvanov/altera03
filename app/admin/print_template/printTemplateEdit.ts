@@ -10,7 +10,7 @@ import {
   PrintTemplateEditRootSchema,
   type PrintTemplateEditRoot,
   type PrintTemplateItem,
-} from "./printTemplate.schema.ts";
+} from "./print_template.schema.ts";
 import {
   BARCODE_SYMBOLOGIES,
   BLOCK_TYPES,
@@ -44,6 +44,7 @@ import type {
   PrintTemplateTableCell,
   PrintTemplateTableRow,
   PrintTemplateTableSectionName,
+  PrintTemplateValueFormat,
 } from "@altera/server/print";
 
 export const tagName = "print-template-edit";
@@ -1157,6 +1158,19 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                 ? { ...b, items: b.items.map((entry) => (entry.key === fieldItem.key ? { ...entry, path: v } : entry)) }
                 : b
             )))}
+            <select class="select select-bordered select-sm w-full"
+              .value=${fieldItem.format || ""}
+              @change=${(e: Event) => {
+                const v = (e.target as HTMLSelectElement).value as PrintTemplateValueFormat;
+                this.updateBlock(block.key, (b) => (
+                  b.type === "field-list"
+                    ? { ...b, items: b.items.map((entry) => (entry.key === fieldItem.key ? { ...entry, format: v } : entry)) }
+                    : b
+                ));
+              }}>
+              <option value="">${t("printTemplate.formatNone")}</option>
+              <option value="amountInWords">${t("printTemplate.formatAmountInWords")}</option>
+            </select>
           </div>
         `)}
       </div>

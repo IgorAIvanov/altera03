@@ -1,6 +1,6 @@
 {
   "name": "@altera/create",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "//": "Scaffold застосунку: deno run -A jsr:@altera/create my-erp. Дерево шаблону лежить у create/template/ як звичайні файли, а в пакет їде згенерованою мапою (template.generated.ts) — команду запускають без установки, тож віддати пакет може тільки модулі.",
   "exports": "./main.ts",
   "license": "MIT",
@@ -10,7 +10,7 @@
   },
   "//imports": "Скіли scaffold не копіює своїми руками, а кличе @altera/skills — той самий виклик, що стоїть у `deno task skills:sync` створеного застосунку. Пакет скілів публікується ПЕРШИМ: поки нової версії немає в реєстрі, ця залежність нерозв'язна.",
   "imports": {
-    "@altera/skills": "jsr:@altera/skills@^0.1.12",
+    "@altera/skills": "jsr:@altera/skills@^0.1.13",
     "@std/path": "jsr:@std/path@^1.1.2"
   },
   "compilerOptions": {

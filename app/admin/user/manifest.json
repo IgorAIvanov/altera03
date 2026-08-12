@@ -2,6 +2,8 @@
   "model": "user",
   "type": "catalog",
   "schema": "app",
+  "//table": "Таблиця ядра називається app.users, а не app.user: `user` — зарезервоване слово, і в схемі воно з давніх пір у множині. Потрібно тим, хто на модель ПОСИЛАЄТЬСЯ — без цього x-ref збудував би join у неіснуючу app.user.",
+  "table": "users",
   "commands": {
     "ts": {
       "setPassword": {

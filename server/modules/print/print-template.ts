@@ -9,6 +9,7 @@
 
 import { normalizeBarcodeSymbology } from "./barcode/symbology.ts";
 import type { BarcodeSymbology } from "./barcode/symbology.ts";
+import { amountInWords } from "./money/money-in-words.ts";
 
 export type { BarcodeSymbology } from "./barcode/symbology.ts";
 
@@ -50,10 +51,27 @@ interface PrintTemplateBlockBase {
   text: PrintTemplateBlockTextOptions;
 }
 
+/**
+ * Формат значення поля. Порожній — значення йде як є (правило «рендерер не
+ * форматує» лишається чинним за умовчанням).
+ *
+ * `amountInWords` — виняток, зроблений свідомо: сума прописом потрібна на
+ * регламентованих бланках, і правило її написання належить МОВІ, а не
+ * застосунку. Тримати перетворення тут, а не в команді даних, правильніше з
+ * двох причин: шаблон уже знає мову (на кожну мову свій бланк), а команда даних
+ * лишається без подання — те саме число друкується і цифрами, і словами, не
+ * знаючи про це.
+ *
+ * Перелік закритий навмисно: «дата прописом», «кількість прописом» і решта
+ * сюди не додаються — одна поступка тут тягне за собою п'ять.
+ */
+export type PrintTemplateValueFormat = "" | "amountInWords";
+
 export interface PrintTemplateFieldListItem {
   key: string;
   label: string;
   path: string;
+  format: PrintTemplateValueFormat;
 }
 
 /**
@@ -76,6 +94,7 @@ export interface PrintTemplateTableCell {
   key: string;
   text: string;
   path: string;
+  format: PrintTemplateValueFormat;
   colSpan: number;
   rowSpan: number;
   align: PrintTemplateColumnAlign;
@@ -191,6 +210,17 @@ export type PrintTemplateBlock =
 
 export interface PrintTemplateSchema {
   schemaVersion: 2;
+  /**
+   * Мова бланка й валюта, у якій він виписаний, — від них залежить формат
+   * `amountInWords`.
+   *
+   * Живуть у самому шаблоні, а не в колонці таблиці: регламентована форма
+   * заводиться окремим шаблоном на кожну мову, тож мова — властивість бланка,
+   * а не запису про нього. Порожні означають умовчання (`uk`, `UAH`), тож
+   * шаблони, зроблені до появи формату, лишаються чинними без міграції.
+   */
+  locale: string;
+  currency: string;
   blocks: PrintTemplateBlock[];
 }
 
@@ -237,6 +267,11 @@ function normalizeTextStyle(value: unknown): PrintTemplateTextStyle {
 
 function normalizeColumnAlign(value: unknown): PrintTemplateColumnAlign {
   return value === "right" || value === "center" || value === "left" ? value : "left";
+}
+
+/** Невідомий формат — це «як є», а не помилка: шаблон міг приїхати з новішої версії. */
+function normalizeValueFormat(value: unknown): PrintTemplateValueFormat {
+  return value === "amountInWords" ? value : "";
 }
 
 function normalizeFontWeight(value: unknown): PrintTemplateFontWeight {
@@ -340,6 +375,7 @@ function normalizeFieldListItem(value: unknown): PrintTemplateFieldListItem | nu
     key: normalizeString(value.key),
     label: normalizeString(value.label),
     path: normalizeString(value.path),
+    format: normalizeValueFormat(value.format),
   };
 }
 
@@ -378,6 +414,7 @@ function normalizeTableCell(value: unknown): PrintTemplateTableCell | null {
     key: normalizeString(value.key) || crypto.randomUUID(),
     text: normalizeString(value.text),
     path: normalizeString(value.path),
+    format: normalizeValueFormat(value.format),
     colSpan: normalizeSpan(value.colSpan),
     rowSpan: normalizeSpan(value.rowSpan),
     align: normalizeColumnAlign(value.align),
@@ -408,6 +445,7 @@ function createTableCell(patch: Partial<PrintTemplateTableCell>): PrintTemplateT
     key: crypto.randomUUID(),
     text: "",
     path: "",
+    format: "",
     colSpan: 1,
     rowSpan: 1,
     align: "left",
@@ -573,6 +611,8 @@ export function normalizePrintTemplateSchema(schema: unknown): PrintTemplateSche
 
   return {
     schemaVersion: 2,
+    locale: normalizeString(schema.locale) || "uk",
+    currency: (normalizeString(schema.currency) || "UAH").toUpperCase(),
     blocks,
   };
 }
@@ -604,16 +644,40 @@ export function resolvePrintTemplatePath(source: unknown, path: string): unknown
   }, source);
 }
 
-export function stringifyPrintTemplateValue(value: unknown): string {
+/** Мова й валюта бланка — усе, що формат значення знає про оточення. */
+export interface PrintTemplateValueContext {
+  locale?: string;
+  currency?: string;
+}
+
+export function stringifyPrintTemplateValue(
+  value: unknown,
+  format: PrintTemplateValueFormat = "",
+  context: PrintTemplateValueContext = {},
+): string {
   if (value === null || value === undefined || value === "") {
     return "-";
   }
 
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+    return "-";
   }
 
-  return "-";
+  if (format === "amountInWords") {
+    try {
+      return amountInWords(typeof value === "boolean" ? String(value) : value, {
+        locale: context.locale,
+        currency: context.currency,
+      });
+    } catch {
+      // Те саме рішення, що в штрих-кода поруч: помилкове значення друкується
+      // текстом, а не валить увесь документ. Друк — остання ланка, і людина,
+      // яка натиснула «Друк», однаково не полагодить ні валюту, ні число.
+      return String(value);
+    }
+  }
+
+  return String(value);
 }
 
 /**

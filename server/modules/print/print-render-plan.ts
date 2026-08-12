@@ -21,6 +21,7 @@ import type {
   PrintTemplateFontWeight,
   PrintTemplateSchema,
   PrintTemplateTableRow,
+  PrintTemplateValueContext,
   ResolvedPrintTemplateBlockPlacement,
   ResolvedPrintTemplateBlockTextOptions,
   ResolvedPrintTemplateLineOptions,
@@ -141,13 +142,20 @@ export type PrintTemplateRenderBlock =
  * `scope` — корінь, від якого рахуються шляхи комірок: для шапки й підвалу це
  * всі дані друку, для рядка тіла — конкретний запис.
  */
-function buildSectionRows(rows: PrintTemplateTableRow[], scope: unknown): PrintTemplateRenderTableRow[] {
+function buildSectionRows(
+  rows: PrintTemplateTableRow[],
+  scope: unknown,
+  context: PrintTemplateValueContext,
+): PrintTemplateRenderTableRow[] {
   return rows.map((row) => ({
     key: row.key,
     cells: row.cells.map((cell) => ({
       key: cell.key,
       // Статичний текст має пріоритет: підпис у шапці не має залежати від даних.
-      value: cell.text || (cell.path ? stringifyPrintTemplateValue(resolvePrintTemplatePath(scope, cell.path)) : ""),
+      value: cell.text ||
+        (cell.path
+          ? stringifyPrintTemplateValue(resolvePrintTemplatePath(scope, cell.path), cell.format, context)
+          : ""),
       colSpan: cell.colSpan,
       rowSpan: cell.rowSpan,
       align: cell.align,
@@ -159,6 +167,10 @@ function buildSectionRows(rows: PrintTemplateTableRow[], scope: unknown): PrintT
 }
 
 export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source: unknown): PrintTemplateRenderBlock[] {
+  // Мова й валюта бланка — з самого шаблону: регламентована форма заводиться
+  // окремим шаблоном на кожну мову, тож питати їх у даних нема потреби.
+  const context: PrintTemplateValueContext = { locale: schema.locale, currency: schema.currency };
+
   return getRenderablePrintTemplateBlocks(schema).flatMap<PrintTemplateRenderBlock>((block: PrintTemplateSchema["blocks"][number]) => {
     if (block.type === "text") {
       return [{
@@ -177,7 +189,11 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         items: block.items.map((item: typeof block.items[number]) => ({
           key: item.key,
           label: item.label,
-          value: stringifyPrintTemplateValue(resolvePrintTemplatePath(source, item.path)),
+          value: stringifyPrintTemplateValue(
+            resolvePrintTemplatePath(source, item.path),
+            item.format,
+            context,
+          ),
         })),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
@@ -193,9 +209,9 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         type: "table",
         title: block.title,
         columns: getRenderablePrintTemplateTableColumns(block.columns),
-        header: buildSectionRows(block.sections.header, source),
-        body: items.map((record) => buildSectionRows(block.sections.row, record)),
-        footer: buildSectionRows(block.sections.footer, source),
+        header: buildSectionRows(block.sections.header, source, context),
+        body: items.map((record) => buildSectionRows(block.sections.row, record, context)),
+        footer: buildSectionRows(block.sections.footer, source, context),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];

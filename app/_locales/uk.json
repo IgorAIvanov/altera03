@@ -175,6 +175,8 @@
   "printTemplate.cellTextWins": "Заповнений текст перекриває прив'язку",
   "printTemplate.cellSelectHint": "Клік — вибір комірки, Shift+клік — діапазон",
   "printTemplate.tableNoColumns": "Додайте колонку",
+  "printTemplate.formatNone": "Без формату",
+  "printTemplate.formatAmountInWords": "Сума прописом",
   "setting.titleOne": "Налаштування",
   "setting.titleMany": "Налаштування",
   "setting.saved": "Налаштування збережено",

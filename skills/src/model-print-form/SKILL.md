@@ -168,6 +168,35 @@ in % of the print area = A4 minus 40pt margins) and `text` (fontSize, align, fon
 | cell `path` in section `row` | **one array record** | `name` — never `document.lines.name` |
 | cell `path` in `header` / `footer` | `data.item` | `document.total` |
 
+### Amount in words
+
+A regulated blank needs the sum spelled out, and that sentence belongs to the **language**,
+not to your application. Do not compute it in the data command — bind the number and let the
+template say how to print it:
+
+```json
+{ "type": "field-list", "items": [
+  { "key": "sum", "label": "Сума словами", "path": "document.total", "format": "amountInWords" }
+]}
+```
+
+`format` works on a `field-list` item and on a table cell. The same number can be bound twice
+— once plain, once in words — because the data command knows nothing about presentation.
+
+Language and currency come from the **template**, not from the data:
+
+```json
+{ "schemaVersion": 2, "locale": "uk", "currency": "UAH", "blocks": [ … ] }
+```
+
+Defaults are `uk` / `UAH`, so older templates keep working. Locales: `uk`, `ru`, `en`.
+A currency whose word forms are not declared is refused — and, like a broken barcode value,
+a refusal prints the plain number instead of killing the document, so **check the printed
+result** rather than assuming it worked.
+
+Output: `Одна тисяча двісті тридцять чотири гривні 56 коп.` — capital first letter, kopecks
+in digits, as blanks require.
+
 ### Table = column grid + three sections
 
 Columns carry **only** `key` and `widthPercent`. Titles live in cells, because one column
