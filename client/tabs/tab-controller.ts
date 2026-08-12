@@ -17,10 +17,21 @@ const HOME_TAB_ID = "home";
 const TAB_STORAGE_KEY = "altera.open-tabs";
 /** Скільки тримати повідомлення про невдале відкриття, мс. */
 const NOTICE_TIMEOUT_MS = 8000;
+/** Ключ кнопки історії у вимірювальному рядку — вона не вкладка й id не має. */
+const OVERFLOW_KEY = "__overflow";
+/** Мусять збігатися з `gap` і `padding` у стилях `.tab-bar` нижче. */
+const TAB_GAP = 2;
+const TAB_BAR_PADDING = 8;
 
 const iconHome = svg`
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
     <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+  </svg>
+`;
+
+const iconHistory = svg`
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M13 3a9 9 0 0 0-9 9H1l3.9 3.9.07.14L9 12H6a7 7 0 1 1 2.05 4.94l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/>
   </svg>
 `;
 
@@ -33,6 +44,17 @@ interface Tab {
   element: HTMLElement | null;
   lastUsedAt: number;
   permanent?: boolean;
+  /**
+   * Вкладка, з якої цю відкрили. Потрібна одному — куди повернутися після
+   * закриття: нова вкладка стає ОСТАННЬОЮ в смузі, тож сусід ліворуч це
+   * випадкова вкладка, а не та, звідки прийшли. Список → об'єкт → закрили має
+   * повертати в той самий список, у якому лишився відбір і позиція курсора.
+   *
+   * У сховище не їде навмисно: id вкладок генеруються заново при відновленні,
+   * тож після перезавантаження зв'язок все одно був би вигаданим — там
+   * лишається позиційний запасний варіант.
+   */
+  openerId?: string;
   /**
    * Незбережені зміни — для «*» у заголовку. Дублює `element.isDirty`
    * навмисно: смуга вкладок перемальовується лише зі зміною `tabs`, а про
@@ -173,6 +195,8 @@ export class TabController extends LitElement {
       height: 100%;
       font-family: "Roboto", sans-serif;
       font-size: var(--default-font-size, 0.875rem);
+      /* Точка відліку для вимірювального рядка (.tab-measure). */
+      position: relative;
     }
     .tab-bar {
       display: flex;
@@ -180,13 +204,19 @@ export class TabController extends LitElement {
       gap: 2px;
       padding: 4px 4px 0;
       background: var(--color-primary, #2f5f8f);
-      overflow-x: auto;
+      /* Не auto: прокрутки в смузі більше немає — те, що не вміщається,
+         ховається під кнопку історії. Прокрутка тут означала б, що вкладку
+         не видно й закрити її нема чим (кнопки «Закрити» у формі теж немає). */
+      overflow: hidden;
       flex-shrink: 0;
     }
     .tab {
       display: flex;
       align-items: center;
       gap: 4px;
+      /* Ярлики не стискаються: інакше вони «здувалися» б до нечитабельних
+         замість того, щоб піти в історію. */
+      flex: 0 0 auto;
       padding: 3px 6px 3px 10px;
       border-radius: 2px 2px 0 0;
       background: var(--color-secondary, #4a7ab5);
@@ -204,6 +234,49 @@ export class TabController extends LitElement {
       font-weight: 500;
     }
     .tab.home { padding: 3px 8px; }
+    /* Кнопка історії — завжди в правому кінці смуги, скільки б ярликів не
+       лишилося видимими. min-width тримає ширину сталою: за нею рахується
+       вміщення ще ДО того, як стане відома кількість прихованих, тож ширина,
+       що стрибає від «1» до «12», зіпсувала б сам розрахунок. */
+    .tab-history {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      flex: 0 0 auto;
+      margin-left: auto;
+      min-width: 3.5rem;
+      padding: 3px 8px;
+      border-radius: 2px 2px 0 0;
+      background: var(--color-secondary, #4a7ab5);
+      color: #d0e0f5;
+      border: 1px solid #244b71;
+      border-bottom: none;
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .tab-history:hover { color: #fff; }
+    /* Вимірювальний рядок: ті самі ярлики поза розкладкою й поза кліками.
+       Без нього ширину прихованої вкладки не дізнатися — її немає в DOM, а
+       рішення «влізе чи ні» треба ухвалити ДО того, як її намалювати. */
+    .tab-measure {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      padding: 4px 4px 0;
+      visibility: hidden;
+      pointer-events: none;
+      white-space: nowrap;
+      /* Рядок ширший за вікно — і без обрізання це виїхало б у горизонтальну
+         прокрутку САМОЇ СТОРІНКИ (body нічого не обрізає). На виміри це не
+         впливає: обрізання — то малювання, а геометрію ярликів рахує розкладка. */
+      max-width: 100%;
+      overflow: hidden;
+    }
     .tab-close {
       display: flex;
       align-items: center;
@@ -296,6 +369,16 @@ export class TabController extends LitElement {
       white-space: nowrap;
     }
     .tab-menu-item:hover { background: #e3eaf3; }
+    /* Перелік прихованих вкладок. Довший за контекстне меню ярлика — під
+       кнопкою може бути й два десятки рядків, тож своя прокрутка. */
+    .history-menu { max-height: 60vh; overflow-y: auto; }
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .history-item .tab-close { color: inherit; }
 
     /* Друк: на папір іде тільки активна вкладка.
        Панель на екрані — абсолютна й із власною прокруткою; лишити її такою
@@ -308,6 +391,7 @@ export class TabController extends LitElement {
       :host { display: block; height: auto; }
       .shell-chrome,
       .tab-bar,
+      .tab-measure,
       .loading-bar,
       picker-host,
       confirm-host,
@@ -327,9 +411,19 @@ export class TabController extends LitElement {
   @state() private noticeKind: "error" | "info" = "error";
   /** Відкрите контекстне меню ярлика: координати у в'юпорті + чия вкладка. */
   @state() private tabMenu: { x: number; y: number; tabId: string } | null = null;
+  /**
+   * Вкладки, що не вмістилися в смугу, — у порядку смуги.
+   *
+   * Вони лишаються ЖИВИМИ: панель у DOM, дані завантажені, ліміт відкритих
+   * (`MAX_TABS`) і витіснення рахуються по всіх однаково. Ховається лише ярлик.
+   */
+  @state() private hiddenIds: string[] = [];
+  /** Відкритий перелік прихованих вкладок: відступ справа + низ кнопки. */
+  @state() private historyMenu: { right: number; y: number } | null = null;
 
   // ReturnType, а не number — див. коментар у shell/server-unavailable.ts.
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  private barObserver: ResizeObserver | null = null;
   private unsubs: Array<() => void> = [];
   /** Під час відновлення не пишемо у сховище — інакше частковий стан перетре збережений. */
   private restoring = false;
@@ -394,13 +488,13 @@ export class TabController extends LitElement {
 
     // Контекстне меню ярлика закривається так само, як будь-яке інше: клацнув
     // повз — зникло. Слухачі на вікні, бо клац може бути й поза цим елементом.
-    globalThis.addEventListener("pointerdown", this.#closeTabMenu, true);
+    globalThis.addEventListener("pointerdown", this.#closeMenus, true);
     globalThis.addEventListener("keydown", this.#onWindowKeyDown);
-    globalThis.addEventListener("resize", this.#closeTabMenu);
+    globalThis.addEventListener("resize", this.#closeMenus);
     this.unsubs.push(
-      () => globalThis.removeEventListener("pointerdown", this.#closeTabMenu, true),
+      () => globalThis.removeEventListener("pointerdown", this.#closeMenus, true),
       () => globalThis.removeEventListener("keydown", this.#onWindowKeyDown),
-      () => globalThis.removeEventListener("resize", this.#closeTabMenu),
+      () => globalThis.removeEventListener("resize", this.#closeMenus),
     );
 
     // Адреса з посиланням на вкладку — після відновлення збережених: якщо така
@@ -426,16 +520,107 @@ export class TabController extends LitElement {
     void this.hydrateTabs(placeholders.map(t => t.id), activeTab?.id);
   }
 
+  override firstUpdated() {
+    const bar = this.renderRoot.querySelector(".tab-bar");
+    if (bar && typeof ResizeObserver !== "undefined") {
+      this.barObserver = new ResizeObserver(() => this.#syncOverflow());
+      this.barObserver.observe(bar);
+    }
+    // Перший вимір може випасти на системний шрифт: із Roboto ярлики іншої
+    // ширини, а смуга лишається тієї самої — тобто сама вона про це не скаже.
+    document.fonts?.ready.then(() => this.#syncOverflow());
+  }
+
   override updated(changed: PropertyValues) {
-    if (changed.has("tabs") || changed.has("activeTabId")) this.persistTabs();
+    if (changed.has("tabs") || changed.has("activeTabId")) {
+      this.persistTabs();
+      // Свідомо не на кожен апдейт: `_loadingCount` смикається на кожен запит,
+      // а вимірювання читає геометрію — тобто змушує браузер рахувати розкладку.
+      //
+      // І в микротаску — з тієї ж причини, що й лічильник завантаження вище:
+      // присвоєння реактивної властивості прямо в `updated()` дає Lit-warning
+      // «change-in-update». Микротаска виконується вже після коміту апдейта,
+      // але до відмальовування, тож блимання не з'являється.
+      queueMicrotask(() => this.#syncOverflow());
+    }
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
     this.unsubs.forEach(fn => fn());
     this.unsubs = [];
+    this.barObserver?.disconnect();
+    this.barObserver = null;
     this.dismissNotice();
   }
+
+  // ── Смуга вкладок: що видно, а що під кнопкою історії ──────────────────────
+
+  /**
+   * Перерахувати, які ярлики вміщаються в смугу.
+   *
+   * Ховається **найдавніше вживане** — той самий порядок, що й у витісненні
+   * (`evictLru`), тож вкладка спершу йде під кнопку історії й лише потім, коли
+   * впреться ліміт, закривається зовсім. Активна не ховається ніколи: вона
+   * перша в черзі за побудовою `rank`.
+   *
+   * Ширини беруться з вимірювального рядка, де намальовані ВСІ ярлики, тому
+   * результат не залежить від того, що зараз видно, — інакше показ і ховання
+   * ганяли б одну вкладку туди-сюди на кожному апдейті.
+   */
+  #syncOverflow() {
+    const bar = this.renderRoot.querySelector(".tab-bar");
+    const measure = this.renderRoot.querySelector(".tab-measure");
+    if (!bar || !measure) return;
+    // Нуль означає, що смуги зараз немає в розкладці (друк, схована вкладка
+    // браузера) — міряти нічого, а перерахунок за нульовою шириною сховав би все.
+    const barWidth = bar.clientWidth;
+    if (!barWidth) return;
+
+    const width = new Map<string, number>();
+    for (const el of measure.querySelectorAll<HTMLElement>("[data-tab]")) {
+      const key = el.dataset.tab;
+      if (key) width.set(key, el.getBoundingClientRect().width);
+    }
+
+    const open = this.tabs.filter(t => !t.permanent);
+    const free = barWidth - TAB_BAR_PADDING - (width.get(HOME_TAB_ID) ?? 0);
+    const rank = (tab: Tab) => tab.id === this.activeTabId ? Number.POSITIVE_INFINITY : tab.lastUsedAt;
+    const order = [...open].sort((a, b) => rank(b) - rank(a));
+
+    const fit = (reserve: number): Set<string> => {
+      const set = new Set<string>();
+      let used = 0;
+      for (const tab of order) {
+        const need = (width.get(tab.id) ?? 0) + TAB_GAP;
+        // Першу (активну) лишаємо беззастережно: порожня смуга у вузькому
+        // вікні гірша за один обрізаний ярлик.
+        if (set.size && used + need + reserve > free) break;
+        used += need;
+        set.add(tab.id);
+      }
+      return set;
+    };
+
+    // Спершу пробуємо без кнопки — вона не потрібна, коли вміщаються всі.
+    let visible = fit(0);
+    if (visible.size < open.length) visible = fit((width.get(OVERFLOW_KEY) ?? 0) + TAB_GAP);
+
+    const hidden = open.filter(t => !visible.has(t.id)).map(t => t.id);
+    const same = hidden.length === this.hiddenIds.length &&
+      hidden.every((id, i) => id === this.hiddenIds[i]);
+    if (!same) this.hiddenIds = hidden;
+  }
+
+  #toggleHistory = (e: MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    this.tabMenu = null;
+    // Прив'язуємо праву межу, а не ліву: ширина переліку залежить від назв
+    // вкладок, тож при лівій прив'язці меню вилазило б за край вікна.
+    this.historyMenu = this.historyMenu
+      ? null
+      : { right: Math.max(4, globalThis.innerWidth - rect.right), y: rect.bottom + 2 };
+  };
 
   // ── Посилання на вкладку ───────────────────────────────────────────────────
 
@@ -471,6 +656,7 @@ export class TabController extends LitElement {
     if (tab.permanent) return;
     e.preventDefault();
     this.activateTab(tab.id);
+    this.historyMenu = null;
     this.tabMenu = { x: e.clientX, y: e.clientY, tabId: tab.id };
   }
 
@@ -486,13 +672,18 @@ export class TabController extends LitElement {
    * `composedPath()` потрібен саме тому, що меню живе в shadow root: у
    * `target` подія приходить ретаргетнутою на host.
    */
-  #closeTabMenu = (e?: Event) => {
-    if (!this.tabMenu) return;
-    const inMenu = e?.composedPath().some((node) =>
-      node instanceof HTMLElement && node.classList.contains("tab-menu")
+  #closeMenus = (e?: Event) => {
+    if (!this.tabMenu && !this.historyMenu) return;
+    // Кнопка історії виключена разом із меню: інакше вона не закривалася б
+    // повторним кліком — pointerdown гасив би перелік, а click одразу
+    // відкривав його знову.
+    const keep = e?.composedPath().some((node) =>
+      node instanceof HTMLElement &&
+      (node.classList.contains("tab-menu") || node.classList.contains("tab-history"))
     );
-    if (inMenu) return;
+    if (keep) return;
     this.tabMenu = null;
+    this.historyMenu = null;
   };
 
   /**
@@ -517,9 +708,9 @@ export class TabController extends LitElement {
     // решта інтерфейсу для клавіатури не існує — включно з меню ярлика.
     if (modalDialogInPath(e.composedPath())) return;
 
-    if (e.code === "Escape" && this.tabMenu) {
+    if (e.code === "Escape" && (this.tabMenu || this.historyMenu)) {
       e.preventDefault();
-      this.#closeTabMenu();
+      this.#closeMenus();
       return;
     }
 
@@ -561,6 +752,7 @@ export class TabController extends LitElement {
 
   private async copyTabUrl(tabId: string) {
     this.tabMenu = null;
+    this.historyMenu = null;
     const tab = this.tabs.find((t) => t.id === tabId);
     if (!tab) return;
     const url = this.tabUrl(tab);
@@ -615,6 +807,11 @@ export class TabController extends LitElement {
    * `lastUsedAt` оновлюється і при вході у вкладку, і при виході з неї
    * (див. `activateTab`), тому «найменше значення» справді означає «найдовше не
    * відкривали». Активна й домашня вкладки під витіснення не потрапляють.
+   *
+   * Той самий порядок, що й у `#syncOverflow`, і це навмисно: вкладка спершу
+   * зникає зі смуги під кнопку історії й лише потім, дійшовши до `MAX_TABS`,
+   * закривається зовсім. Тобто закривається завжди щось із хвоста історії, а
+   * не ярлик, який щойно був на очах.
    */
   private evictLru() {
     // Вкладки з незбереженими змінами під витіснення не потрапляють: LRU не
@@ -688,7 +885,9 @@ export class TabController extends LitElement {
     const leaving = this.activeTabId;
     this.tabs = [
       ...this.tabs.map(t => (t.id === leaving ? { ...t, lastUsedAt: now } : t)),
-      tab,
+      // Звідки прийшли — запам'ятовуємо тут, бо це єдине місце, де вкладка
+      // справді народжується з іншої (`activateTab` лише перемикає).
+      { ...tab, openerId: leaving },
     ];
     this.activeTabId = tab.id;
   }
@@ -791,7 +990,12 @@ export class TabController extends LitElement {
     const idx = this.tabs.indexOf(tab);
     this.tabs = this.tabs.filter(t => t.id !== tab.id);
     if (this.activeTabId === tab.id) {
-      const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? this.tabs[0];
+      // Спершу — вкладка, з якої цю відкривали (якщо ще жива), і лише потім
+      // сусід по смузі. Позиція тут нічого не означає: вкладки додаються в
+      // кінець, тож сусід закритої — це те, що відкривали перед нею, а не те,
+      // куди користувач збирається повернутися.
+      const opener = tab.openerId ? this.tabs.find(t => t.id === tab.openerId) : undefined;
+      const next = opener ?? this.tabs[idx] ?? this.tabs[idx - 1] ?? this.tabs[0];
       this.activateTab(next?.id ?? HOME_TAB_ID);
     }
     bus.emit({ type: "tab.closed", tabId: tab.id, route: tab.route, id: tab.modelId });
@@ -819,26 +1023,82 @@ export class TabController extends LitElement {
     `;
   }
 
+  /**
+   * Ярлик вкладки. Той самий шаблон малюється двічі — у смузі й у
+   * вимірювальному рядку: рахувати вміщення за приблизною шириною не можна,
+   * а активний ярлик, наприклад, жирніший за решту.
+   */
+  private renderTabChip(tab: Tab): TemplateResult {
+    const active = tab.id === this.activeTabId ? "active" : "";
+    return tab.permanent
+      ? html`<div class="tab home ${active}" data-tab=${tab.id}
+          @click=${() => this.activateTab(tab.id)} title="Home">${iconHome}</div>`
+      : html`<div class="tab ${active}" data-tab=${tab.id}
+          @click=${() => this.activateTab(tab.id)}
+          @contextmenu=${(e: MouseEvent) => this.#onTabContextMenu(e, tab)}>
+          <span>${this.tabTitle(tab)}</span>
+          <span class="tab-close"
+            @click=${(e: Event) => { e.stopPropagation(); this.handleClose(tab.id); }}>×</span>
+        </div>`;
+  }
+
+  /** Кнопка історії. `count` беззастережно: у вимірювальному рядку вона теж потрібна. */
+  private renderHistoryButton(): TemplateResult {
+    // «*» — серед прихованих є вкладка з незбереженими змінами: свій ярлик із
+    // зірочкою вона зараз не показує, а знати про це користувач мусить.
+    const dirty = this.hiddenIds.some(id => this.tabs.find(t => t.id === id)?.dirty);
+    return html`
+      <div class="tab-history" data-tab=${OVERFLOW_KEY} title=${t("tabs.hidden")}
+        @click=${this.#toggleHistory}>
+        ${iconHistory}<span>${dirty ? "*" : ""}${this.hiddenIds.length}</span>
+      </div>`;
+  }
+
+  /** Перелік прихованих вкладок — від найсвіжішої до найдавнішої. */
+  private renderHistoryMenu(menu: { right: number; y: number }): TemplateResult {
+    const items = this.hiddenIds
+      .map(id => this.tabs.find(t => t.id === id))
+      .filter((tab): tab is Tab => !!tab)
+      .sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+    return html`
+      <div class="tab-menu history-menu" style="right:${menu.right}px; top:${menu.y}px">
+        ${items.map(tab => html`
+          <div class="tab-menu-item history-item"
+            @click=${() => { this.historyMenu = null; this.activateTab(tab.id); }}>
+            <span>${this.tabTitle(tab)}</span>
+            <span class="tab-close"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                this.historyMenu = null;
+                this.handleClose(tab.id);
+              }}>×</span>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
   override render(): TemplateResult {
+    const hidden = new Set(this.hiddenIds);
+    const visible = this.tabs.filter(tab => tab.permanent || !hidden.has(tab.id));
     return html`
       ${this.headerEl}
       <div class="tab-bar">
-        ${repeat(this.tabs, tab => tab.id, tab => tab.permanent
-          ? html`<div class="tab home ${tab.id === this.activeTabId ? "active" : ""}"
-              @click=${() => this.activateTab(tab.id)} title="Home">${iconHome}</div>`
-          : html`<div class="tab ${tab.id === this.activeTabId ? "active" : ""}"
-              @click=${() => this.activateTab(tab.id)}
-              @contextmenu=${(e: MouseEvent) => this.#onTabContextMenu(e, tab)}>
-              <span>${this.tabTitle(tab)}</span>
-              <span class="tab-close"
-                @click=${(e: Event) => { e.stopPropagation(); this.handleClose(tab.id); }}>×</span>
-            </div>`
-        )}
+        ${repeat(visible, tab => tab.id, tab => this.renderTabChip(tab))}
+        ${this.hiddenIds.length ? this.renderHistoryButton() : ""}
+      </div>
+      <!-- Вимірювальний рядок: ВСІ ярлики плюс кнопка, поза розкладкою й поза
+           кліками. Ширини звідси — єдине джерело для #syncOverflow; міряти по
+           смузі не можна, бо в ній немає саме тих ярликів, про які й питання. -->
+      <div class="tab-measure" aria-hidden="true">
+        ${this.tabs.map(tab => this.renderTabChip(tab))}
+        ${this.renderHistoryButton()}
       </div>
       <div class="loading-bar">
         ${this._loadingCount > 0 ? html`<div class="loading-bar-inner"></div>` : ""}
       </div>
       ${this.tabMenu ? this.renderTabMenu(this.tabMenu) : ""}
+      ${this.historyMenu ? this.renderHistoryMenu(this.historyMenu) : ""}
       <picker-host></picker-host>
       <confirm-host></confirm-host>
       <div class="workspace">

@@ -75,6 +75,7 @@
   "tabular.down": "Down",
   "tabular.total": "Total",
   "tabular.row": "Row",
+  "tabs.hidden": "Tabs that did not fit",
   "tabs.copyUrl": "Copy tab URL",
   "tabs.urlCopied": "URL copied",
   "tabs.copyFailed": "Could not copy — here is the address:",
