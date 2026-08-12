@@ -686,6 +686,37 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Відбір підбору. Половина механізму була давно — параметри доїжджали в
+    // payload, — а друга ні: фільтри збиралися лише для `list`, тож у `lookup`
+    // вони МОВЧКИ ігнорувалися. Мовчання й перевіряємо: звужений підбір мусить
+    // віддати менше, а невідомий ключ — відмову, а не повний перелік.
+    await t.step("підбір: відбір звужує, невідомий ключ відхиляється", async () => {
+      const all = await client.model("invoice", "lookup", {});
+      assertEquals(all.body.ok, true);
+
+      const narrowed = await client.model("invoice", "lookup", {
+        // Ссылочний фільтр приходить об'єктом — так само, як у списку.
+        filters: { counterparty: { id: "-1" } },
+      });
+      assertEquals(narrowed.body.ok, true);
+      assertEquals((narrowed.body.data.rows as unknown[]).length, 0);
+
+      const unknown = await client.model("invoice", "lookup", { filters: { partner: { id: "1" } } });
+      assertEquals(unknown.body.ok, false);
+      assertEquals(
+        unknown.body.messages.some((m) => JSON.stringify(m).includes("lookupUnknownFilter")),
+        true,
+      );
+
+      // Модель без оголошених фільтрів мовчати теж не має права.
+      const noFilters = await client.model("bank", "lookup", { filters: { mfo: "300" } });
+      assertEquals(noFilters.body.ok, false);
+      assertEquals(
+        noFilters.body.messages.some((m) => JSON.stringify(m).includes("lookupNoFilters")),
+        true,
+      );
+    });
+
     // Періодичні дані: ключ, дата, значення. Перевіряємо не CRUD (він такий
     // самий, як у решти регістрів), а те, заради чого блок `periodic` і
     // з'явився: зріз на дату бере ПОПЕРЕДНЄ значення, а не найсвіжіше, і

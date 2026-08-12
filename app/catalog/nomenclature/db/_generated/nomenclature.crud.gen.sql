@@ -274,6 +274,11 @@ begin
     v_sort_by := 'name';
   end if;
 
+  if payload ? 'filters' and payload->'filters' <> '{}'::jsonb then
+    raise exception '@[core.lookupNoFilters]%',
+      jsonb_build_object('model', 'nomenclature')::text;
+  end if;
+
   select count(*)::int into v_total
   from app.nomenclature t
   where not t.is_deleted

@@ -102,6 +102,8 @@
   "core.subcontoRequired": "Не заповнено субконто «{dimension}» рахунку {account} ({side})",
   "core.documentNotFound": "Документ {id} не знайдено",
   "core.documentDeleted": "Документ {id} позначено на видалення — проведення неможливе",
+  "core.lookupUnknownFilter": "Підбір «{model}» не знає відбору «{filter}»",
+  "core.lookupNoFilters": "Підбір «{model}» відборів не оголошує — додайте x-filter у схему моделі",
   "core.entryNoAccount": "Проводка {line}: не задано жодного рахунку",
   "core.entryOneSidedNotOffBalance": "Проводка {line}: однобічною буває лише проводка на забалансовому рахунку, а «{account}» балансовий",
   "core.entryZeroAmount": "Проводка {line} документа {document}: нульова сума",

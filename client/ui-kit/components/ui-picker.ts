@@ -47,6 +47,19 @@ export class UiPicker extends GlobalStyledLitElement {
   @property({ type: Object, attribute: "picker-params" }) pickerParams: Record<string, unknown> = {};
   @property({ type: Object, attribute: "fetch-params" }) fetchParams: Record<string, unknown> = {};
   /**
+   * Відбір підбору — те, чим форма ЗВУЖУЄ перелік: рахунки цієї організації,
+   * договори цього контрагента, номенклатура цього складу.
+   *
+   * Одна властивість на обидва шляхи вибору — випадний список і діалог: підбір,
+   * звужений в одному й повний у другому, гірший за незвужений, бо помилку в
+   * ньому не видно. Ключі — оголошені `x-filter` моделі; невідомий ключ підбір
+   * ВІДХИЛЯЄ, а не ігнорує.
+   *
+   * Це не те саме, що фільтри списку: там відбір задає користувач панеллю, тут —
+   * форма, і зняти його користувач не може.
+   */
+  @property({ type: Object }) filters: Record<string, unknown> | null = null;
+  /**
    * Значення — ОБ'ЄКТ, як його віддає база: `{ id, name }`. Одна прив'язка на
    * поле, а не пара «id окремо, підпис окремо».
    *
@@ -137,7 +150,11 @@ export class UiPicker extends GlobalStyledLitElement {
       const res = await apiFetch(`/api/model/${this._modelName}/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ search: fragment, ...this.fetchParams }),
+        body: JSON.stringify({
+          search: fragment,
+          ...(this.filters ? { filters: this.filters } : {}),
+          ...this.fetchParams,
+        }),
       });
       const data = await res.json();
       const rows = data?.data?.rows ?? data?.rows ?? [];
@@ -220,9 +237,15 @@ export class UiPicker extends GlobalStyledLitElement {
 
   private async _onBrowse() {
     if (!this.url) return;
+    // Діалогу відбір іде тим самим ключем: список підбору читає `filters` так
+    // само, як список моделі.
+    const params = {
+      ...(this.filters ? { filters: this.filters } : {}),
+      ...this.pickerParams,
+    };
     const result = await bus.pick(
       `${this.url}/${this.picker}`,
-      Object.keys(this.pickerParams).length ? this.pickerParams : undefined,
+      Object.keys(params).length ? params : undefined,
     );
     if (result) {
       this.#commit({ [this.idField]: result.id, [this.displayField]: result.label });

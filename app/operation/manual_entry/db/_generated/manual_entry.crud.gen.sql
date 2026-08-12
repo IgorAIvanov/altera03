@@ -383,11 +383,26 @@ declare
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 10), 1);
   v_sort_by   text := coalesce(payload->>'sortBy', 'number');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
+  v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);
+  v_unknown   text;
+  v_f_date_from date := nullif(v_filters->>'dateFrom', '')::date;
+  v_f_date_to date := nullif(v_filters->>'dateTo', '')::date;
+  v_f_is_posted boolean := (v_filters->>'isPosted')::boolean;
   v_rows      jsonb;
   v_total     int;
 begin
   if v_sort_by not in ('number', 'docDate') then
     v_sort_by := 'number';
+  end if;
+
+  select k into v_unknown
+  from jsonb_object_keys(v_filters) k
+  where k not in ('dateFrom', 'dateTo', 'isPosted')
+  limit 1;
+
+  if v_unknown is not null then
+    raise exception '@[core.lookupUnknownFilter]%',
+      jsonb_build_object('filter', v_unknown, 'model', 'manual_entry')::text;
   end if;
 
   select count(*)::int into v_total
@@ -400,7 +415,10 @@ begin
     or r_organization.name ilike '%' || (payload->>'search') || '%'
     or h.number ilike '%' || (payload->>'search') || '%'
     or h.presentation ilike '%' || (payload->>'search') || '%'
-  );
+  )
+  and (v_f_date_from is null or h.doc_date >= v_f_date_from)
+  and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
+  and (v_f_is_posted is null or h.is_posted = v_f_is_posted);
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
@@ -419,6 +437,9 @@ begin
       or h.number ilike '%' || (payload->>'search') || '%'
       or h.presentation ilike '%' || (payload->>'search') || '%'
     )
+    and (v_f_date_from is null or h.doc_date >= v_f_date_from)
+    and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
+    and (v_f_is_posted is null or h.is_posted = v_f_is_posted)
     order by
       case when v_sort_by = 'number' and v_sort_dir = 'asc'  then h.number end asc,
       case when v_sort_by = 'number' and v_sort_dir = 'desc' then h.number end desc,

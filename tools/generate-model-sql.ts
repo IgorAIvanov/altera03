@@ -1249,6 +1249,39 @@ function renderLookup(spec: ModelSpec): string {
   const sortGuard = spec.lookupSort.length
     ? `  if v_sort_by not in (${whitelist(spec.lookupSort)}) then\n    v_sort_by := '${defaultSort}';\n  end if;\n\n`
     : "";
+  // Відбір підбору — ті самі оголошення `x-filter`, що й у списку. Половина
+  // механізму була давно (пікер слав параметри в payload), а друга ні: фільтри
+  // збиралися лише для `_list`, тож параметри доходили до SQL і там МОВЧКИ
+  // ігнорувалися — на екрані це виглядало як «відбір не працює».
+  //
+  // Різниця зі списком лише в тому, ХТО задає відбір: у списку користувач
+  // панеллю, у підборі — форма, і звузити його користувач не має права (рахунок
+  // організації в полі «рахунок платника» це не звужений вибір, а помилка
+  // вводу). Для SQL це та сама умова, тому й опис один.
+  const hasFilters = spec.filters.length > 0;
+  const filterDecl = hasFilters
+    ? `  v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);\n  v_unknown   text;\n` +
+      spec.filters.map((f) => f.decl).join("\n") + "\n"
+    : "";
+  const filterCond = (indent: string) =>
+    hasFilters ? "\n" + spec.filters.map((f) => `${indent}and ${f.cond}`).join("\n") : "";
+  // Невідомий ключ — відмова, а не тиша. Форма, яка звужує підбір, вважає, що
+  // звузила його; мовчазне ігнорування друкарської помилки в імені лишає на
+  // екрані повний перелік і жодного сліду. Модель без оголошених фільтрів
+  // відмовляє на будь-якому наборі — з тієї самої причини.
+  const filterGuard = hasFilters
+    ? `  select k into v_unknown\n` +
+      `  from jsonb_object_keys(v_filters) k\n` +
+      `  where k not in (${spec.filters.map((f) => `'${f.key}'`).join(", ")})\n` +
+      `  limit 1;\n\n` +
+      `  if v_unknown is not null then\n` +
+      `    raise exception '@[core.lookupUnknownFilter]%',\n` +
+      `      jsonb_build_object('filter', v_unknown, 'model', '${spec.model}')::text;\n` +
+      `  end if;\n\n`
+    : `  if payload ? 'filters' and payload->'filters' <> '{}'::jsonb then\n` +
+      `    raise exception '@[core.lookupNoFilters]%',\n` +
+      `      jsonb_build_object('model', '${spec.model}')::text;\n` +
+      `  end if;\n\n`;
   return `drop function if exists ${spec.table}_lookup(bigint, jsonb);
 create function ${spec.table}_lookup(user_id bigint, payload jsonb)
 returns jsonb
@@ -1259,14 +1292,14 @@ declare
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 10), 1);
   v_sort_by   text := coalesce(payload->>'sortBy', '${defaultSort}');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
-  v_rows      jsonb;
+${filterDecl}  v_rows      jsonb;
   v_total     int;
 begin
-${sortGuard}  select count(*)::int into v_total
+${sortGuard}${filterGuard}  select count(*)::int into v_total
   from ${spec.fromClause}${joinsCount}
   where ${activeFilterCount}(
 ${searchClause(spec.searchExprsLookup, "    ")}
-  );
+  )${filterCond("  ")};
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
@@ -1276,7 +1309,7 @@ ${cols}
     from ${spec.fromClause}${joinsRows}
     where ${activeFilter}(
 ${searchClause(spec.searchExprsLookup, "      ")}
-    )
+    )${filterCond("    ")}
     order by
 ${orderLadder(spec.lookupSort, "      ", spec.pkExpr)}
     limit v_page_size

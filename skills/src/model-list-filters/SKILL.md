@@ -310,3 +310,32 @@ on a table screen.
 - [typebox-model-schema](../typebox-model-schema/SKILL.md) — the `x-filter` annotation.
 - [db-function-contract](../db-function-contract/SKILL.md) — the `list` payload and envelope.
 - [screen-design-rules](../screen-design-rules/SKILL.md) — captions, widths, empty states.
+
+## Narrowing a picker is the same declaration, not a new one
+
+A form often needs a picker to show a subset: accounts of *this* organization,
+contracts of *this* counterparty, goods of *this* warehouse. That narrowing uses
+the very `x-filter` declarations this skill is about — the generator now builds
+them for `lookup` as well as for `list`:
+
+```html
+<ui-picker url="catalog/bank_account"
+  .filters=${{ organizationId: item.organizationId }}
+  .value=${item.bankAccount ?? null}
+  @value-changed=${(e) => this.setRef("bankAccount", e.detail.value)}
+></ui-picker>
+```
+
+One property drives both ways of choosing — the dropdown and the 🔍 dialog. A
+picker narrowed in one and complete in the other is worse than one that is not
+narrowed at all, because the mistake is invisible.
+
+**This is not a list filter, even though it reuses the declaration.** In a list
+the user sets the filter from the panel and may clear it; here the form sets it
+and the user must not be able to: an account of your own organization in the
+"payer's account" field is not a narrowed choice, it is a data entry error.
+
+**An unknown key is refused, not ignored.** A form that narrowed a picker
+believes it narrowed it; silently dropping a mistyped filter name leaves the full
+list on screen and no trace anywhere. A model that declares no filters refuses
+any set at all, for the same reason.

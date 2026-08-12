@@ -239,6 +239,11 @@ begin
     v_sort_by := 'code';
   end if;
 
+  if payload ? 'filters' and payload->'filters' <> '{}'::jsonb then
+    raise exception '@[core.lookupNoFilters]%',
+      jsonb_build_object('model', 'currency')::text;
+  end if;
+
   select count(*)::int into v_total
   from app.currency t
   where not t.is_deleted

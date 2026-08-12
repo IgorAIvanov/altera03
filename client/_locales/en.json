@@ -102,6 +102,8 @@
   "core.subcontoRequired": "Analytics «{dimension}» is required for account {account} ({side})",
   "core.documentNotFound": "Document {id} not found",
   "core.documentDeleted": "Document {id} is marked for deletion — it cannot be posted",
+  "core.lookupUnknownFilter": "The «{model}» picker knows no filter named «{filter}»",
+  "core.lookupNoFilters": "The «{model}» picker declares no filters — add x-filter to the model schema",
   "core.entryNoAccount": "Entry {line}: no account on either side",
   "core.entryOneSidedNotOffBalance": "Entry {line}: only an off-balance account may stand alone, and «{account}» is a balance one",
   "core.entryZeroAmount": "Entry {line} of document {document}: the amount is zero",
