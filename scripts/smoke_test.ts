@@ -845,6 +845,103 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Розріз за субконто мусить давати ту саму суму, що й рахунок цілком.
+    //
+    // Проба тут, а не в юніт-пробах, бо перевіряється домовленість БАЗИ, і
+    // ламається вона мовчки: `cross join lateral` викидав рухи без цього
+    // виміру, кожен рядок лишався правильним, а неправильною ставала тільки
+    // ЇХНЯ СУМА — величина, якої ніхто не звіряє. Саме тому потрібен сторож:
+    // помилка не має жодного способу виявитися сама.
+    await t.step("регістр: розріз за субконто не губить рухів без нього", async () => {
+      const before = await numeratorSnapshot("manual_entry");
+      const beforeOrg = await numeratorSnapshot("organization");
+      const beforeParty = await numeratorSnapshot("counterparty");
+
+      const organization = await client.model("organization", "save", {
+        item: { name: "Smoke розріз організація", prefix: "SMD" },
+      });
+      const org = organization.body.data.item as { id: string } | null;
+      assertExists(org);
+
+      const party = await client.model("counterparty", "save", {
+        item: { name: "Smoke розріз контрагент" },
+      });
+      const counterparty = party.body.data.item as { id: string; name: string } | null;
+      assertExists(counterparty);
+
+      const docs: string[] = [];
+      const post = async (analytics: Record<string, { id: string; name: string }>) => {
+        const res = await client.model("manual_entry", "save", {
+          item: {
+            organizationId: org.id,
+            docDate: "2026-08-12T00:00:00",
+            entries: [{
+              lineNo: 1,
+              debitAccount: "0SMKD",
+              debitAnalytics: analytics,
+              creditAccount: "0SMKC",
+              creditAnalytics: {},
+              amount: "100.00",
+            }],
+          },
+        });
+        const doc = res.body.data.item as { id: string } | null;
+        assertExists(doc, JSON.stringify(res.body.messages));
+        docs.push(doc.id);
+        const posted = await client.model("manual_entry", "post", { id: doc.id });
+        assertEquals(posted.body.ok, true, JSON.stringify(posted.body.messages));
+      };
+
+      try {
+        // Рахунки свої: чужі правила аналітики можуть змінитися, а проба має
+        // перевіряти шар читання, а не склад плану рахунків.
+        //
+        // Слот НЕОБОВ'ЯЗКОВИЙ (`is_required = false`) — і це суть випадку: ядро
+        // саме дозволяє рух без цього субконто, а шар читання його викидав.
+        await withDb((sql) => sql`
+          insert into app.chart_of_account (code, name, account_type, is_group)
+          values ('0SMKD', 'Smoke розріз Дт', 'active', false),
+                 ('0SMKC', 'Smoke розріз Кт', 'passive', false)
+          on conflict (code) do nothing`);
+        await withDb((sql) => sql`
+          insert into app.chart_of_account_analytic (account_code, slot_no, dimension_code, is_required)
+          values ('0SMKD', 1, 'counterparty', false)
+          on conflict (account_code, slot_no) do nothing`);
+
+        // Два рухи на ОДНОМУ рахунку: з субконто й без нього. Другий — не
+        // екзотика, а буденність: уведення залишків, закриття, коригування.
+        await post({ counterparty: { id: counterparty.id, name: counterparty.name } });
+        await post({});
+
+        const [total] = await withDb((sql) =>
+          sql<{ debit: string }[]>`
+            select debit from app.acc_balance_turnover(${org.id}::bigint, null, null, array['0SMKD']::varchar[], null)`
+        );
+        const rows = await withDb((sql) =>
+          sql<{ value_id: string | null; debit: string }[]>`
+            select value_id, debit
+            from app.acc_balance_turnover_by_dim(
+              ${org.id}::bigint, null, null, array['0SMKD']::varchar[], null, 'counterparty'::varchar)`
+        );
+
+        assertExists(total);
+        const sum = rows.reduce((acc, r) => acc + Number(r.debit), 0);
+        assertEquals(sum, Number(total.debit));
+        // Рух без виміру приходить окремим рядком, а не зникає й не приклеюється
+        // до чужого значення.
+        assertEquals(rows.some((r) => r.value_id === null && Number(r.debit) === 100), true);
+      } finally {
+        for (const id of docs) await purge("app.document", id);
+        await purge("app.counterparty", counterparty.id);
+        await purge("app.organization", org.id);
+        // Слот аналітики зникає разом із рахунком (on delete cascade).
+        await withDb((sql) => sql`delete from app.chart_of_account where code in ('0SMKD', '0SMKC')`);
+        await numeratorRestore("manual_entry", before);
+        await numeratorRestore("counterparty", beforeParty);
+        await numeratorRestore("organization", beforeOrg);
+      }
+    });
+
     // Екран нумераторів: прапорець is_editable — не мертвий перемикач, а
     // серверна заборона. Вимкнений — ручний код відхиляється з прив'язкою до
     // поля; запис при цьому не створюється. Знімок правила повертається у
