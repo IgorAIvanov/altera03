@@ -12,6 +12,6 @@
   "manualEntry.currency": "Валюта",
   "manualEntry.currencyAmount": "Сума вал.",
   "manualEntry.quantity": "Кількість",
-  "manualEntry.lineNoAccount": "Рядок {line}: не заповнено рахунок дебету або кредиту",
+  "manualEntry.lineNoAccount": "Рядок {line}: не заповнено жодного рахунку",
   "manualEntry.postNoEntries": "Операція без проводок — проведення неможливе"
 }

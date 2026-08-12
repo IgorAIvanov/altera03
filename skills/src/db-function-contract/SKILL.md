@@ -364,3 +364,27 @@ end $$;
   believe the rule is in force.
 - one function per database, not per model — that is the point: it holds for
   models that do not exist yet.
+
+## One-sided entries: off-balance accounts
+
+`app.doc_entry_add` accepts an empty side — `null` for `debit_account` or for
+`credit_account`, but not both. This is what off-balance accounting is: in the
+Ukrainian chart of accounts «Дт 021» corresponds to nothing, and pairing it with
+a helper account to satisfy double entry corrupts the data — the register gains a
+correspondence that does not exist in the books, and every correspondence report
+starts showing links that were never there.
+
+The core requires the surviving account to be `is_off_balance`. On a balance
+account an empty side is not a design, it is an unfinished line: accepting it
+silently would put a discrepancy into the balance sheet that people look for in
+the documents rather than in the entry.
+
+If you write your own `<model>_post_entries`, two consequences:
+
+- pass `null` for the side that does not exist, rather than inventing an account;
+- **check every query of yours over `app.journal_entry`.** A `union all` of the
+  two sides now collects the empty one as an account named `null`, whose amount
+  makes the totals look balanced. Add `where … is not null` to each side, and
+  decide what off-balance accounts do to your totals — in this repository's
+  turnover sheet they stay as rows but are left out of the sum, because otherwise
+  "the balance adds up" stops meaning anything.

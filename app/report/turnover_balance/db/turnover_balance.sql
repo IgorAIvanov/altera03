@@ -28,12 +28,17 @@ as $$
   -- Рухи по рахунку з обох сторін проводки, зведені в один потік.
   -- Організація тут не перевіряється: обов'язковість фільтра оголошена в
   -- схемі, і відмовляє обгортка — до тіла звіт без організації не доходить.
+  -- Порожній бік рядка не дає: проводка на забалансовому рахунку однобічна
+  -- («Дт 021» не кореспондує ні з чим), і без цієї умови її порожня сторона
+  -- збиралася б у звіт окремим рахунком «null» — з сумою, яка робить підсумки
+  -- зведеними, хоча такого рахунку немає.
   moves as (
     select je.debit_account as account, d.doc_date, je.amount as debit, 0::numeric as credit
     from params p
     join app.document d
       on d.organization_id = p.org_id and d.is_posted and not d.is_deleted
     join app.journal_entry je on je.document_id = d.id
+    where je.debit_account is not null
 
     union all
 
@@ -42,6 +47,7 @@ as $$
     join app.document d
       on d.organization_id = p.org_id and d.is_posted and not d.is_deleted
     join app.journal_entry je on je.document_id = d.id
+    where je.credit_account is not null
   ),
   agg as (
     select
@@ -78,6 +84,11 @@ as $$
     select
       a.account                                   as "accountCode",
       coalesce(coa.name, '')                      as "accountName",
+      -- Забалансовий рахунок у підсумок не входить (нижче): він однобічний за
+      -- визначенням, тож дебет із кредитом на ньому не зводяться — і підсумок,
+      -- який його враховує, перестає означати «баланс зійшовся». Рядок при
+      -- цьому лишається: подивитися на забалансові залишки треба саме тут.
+      coalesce(coa.is_off_balance, false)          as "isOffBalance",
       greatest(a.opening_net, 0::numeric)         as "openingDebit",
       greatest(-a.opening_net, 0::numeric)        as "openingCredit",
       a.turnover_debit                            as "turnoverDebit",
@@ -101,6 +112,7 @@ as $$
         'closingCredit',  coalesce(sum("closingCredit"), 0)
       )
       from rows
+      where not "isOffBalance"
     )
   );
 $$;

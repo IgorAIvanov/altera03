@@ -12,6 +12,6 @@
   "manualEntry.currency": "Currency",
   "manualEntry.currencyAmount": "Cur. amount",
   "manualEntry.quantity": "Quantity",
-  "manualEntry.lineNoAccount": "Line {line}: the debit or the credit account is empty",
+  "manualEntry.lineNoAccount": "Line {line}: neither account is filled in",
   "manualEntry.postNoEntries": "An operation with no entries cannot be posted"
 }

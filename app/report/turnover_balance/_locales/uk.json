@@ -1,4 +1,5 @@
 {
   "turnoverBalance.title": "Оборотно-сальдова відомість",
-  "turnoverBalance.drillHint": "Клік на рахунку відкриває картку рахунку за той самий період"
+  "turnoverBalance.drillHint": "Клік на рахунку відкриває картку рахунку за той самий період",
+  "turnoverBalance.offBalance": "поза балансом, у підсумок не входить"
 }

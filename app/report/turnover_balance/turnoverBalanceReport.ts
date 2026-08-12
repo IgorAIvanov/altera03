@@ -104,7 +104,15 @@ export class TurnoverBalanceReport extends ReportBase<TurnoverBalanceRoot> {
             ${row.accountCode}
           </button>
         </td>
-        <td title=${row.accountName}>${row.accountName}</td>
+        <td title=${row.accountName}>
+          ${row.accountName}
+          <!-- Забалансовий рядок у підсумок не входить, і сказати про це треба
+               словом: інакше в підвалі стоїть сума, яка не збігається з тим, що
+               видно на екрані, і пояснення цьому ніде немає. -->
+          ${row.isOffBalance
+            ? html`<span class="text-muted">· ${t("turnoverBalance.offBalance")}</span>`
+            : ""}
+        </td>
         <td class="text-right tabular-nums">${amount(row.openingDebit)}</td>
         <td class="text-right tabular-nums">${amount(row.openingCredit)}</td>
         <td class="text-right tabular-nums">${amount(row.turnoverDebit)}</td>

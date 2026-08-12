@@ -20,6 +20,8 @@ const refFilter = (model: string) =>
 export const TurnoverBalanceRowSchema = Type.Object({
   accountCode:    Type.String(),
   accountName:    Type.String(),
+  /** Забалансовий рахунок: у підсумок не входить — він однобічний за визначенням. */
+  isOffBalance:   Type.Optional(Type.Boolean()),
   openingDebit:   Type.Number(),
   openingCredit:  Type.Number(),
   turnoverDebit:  Type.Number(),

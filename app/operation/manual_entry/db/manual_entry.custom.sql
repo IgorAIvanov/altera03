@@ -43,7 +43,10 @@ begin
     where l.document_id = manual_entry_post_entries.document_id
     order by l.line_no, l.id
   loop
-    if v_line.debit_account is null or v_line.credit_account is null then
+    -- Порожній ОДИН бік — законна проводка забалансового рахунку, і ядро саме
+    -- перевірить, що рахунок справді забалансовий. Тут лишається порожній
+    -- рядок: у ньому немає нічого, що можна було б провести.
+    if v_line.debit_account is null and v_line.credit_account is null then
       raise exception '@[manualEntry.lineNoAccount]%', jsonb_build_object('line', v_line.line_no)::text;
     end if;
 

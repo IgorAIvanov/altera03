@@ -1,4 +1,5 @@
 {
   "turnoverBalance.title": "Turnover and balance sheet",
-  "turnoverBalance.drillHint": "Click an account to open its card for the same period"
+  "turnoverBalance.drillHint": "Click an account to open its card for the same period",
+  "turnoverBalance.offBalance": "off balance, not in the total"
 }

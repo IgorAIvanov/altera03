@@ -35,3 +35,21 @@ $$;
 -- (`app/catalog/bank/db/migration.sql`): воно лікує рядок про ЙОГО довідник, а в
 -- пакеті ядра імені прикладної таблиці бути не має. Установка без банківського
 -- довідника не мусить навіть читати цей рядок.
+
+-- ── Однобічна проводка: забалансовий облік ──────────────────────────────────
+-- `create table if not exists` наявну таблицю не змінює, тож послаблення
+-- обов'язковості робиться тут. Послаблення, а не звуження: усе, що проходило
+-- раніше, проходить і тепер, і на наявних даних міграція безпечна.
+alter table if exists app.journal_entry alter column debit_account  drop not null;
+alter table if exists app.journal_entry alter column credit_account drop not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'app.journal_entry'::regclass and conname = 'ck_journal_entry_sides'
+  ) then
+    alter table app.journal_entry
+      add constraint ck_journal_entry_sides check (num_nonnulls(debit_account, credit_account) >= 1);
+  end if;
+end $$;

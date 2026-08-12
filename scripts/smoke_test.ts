@@ -686,6 +686,82 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Забалансовий облік однобічний за визначенням: «Дт 021» не кореспондує ні
+    // з чим. Обхід (парна проводка через допоміжний рахунок) псує самі дані —
+    // у регістрі з'являється кореспонденція, якої в обліку немає. Тому ядро
+    // приймає порожній бік, але рівно там, де це задум, а не недописаний рядок.
+    await t.step("проводка: однобічна лише на забалансовому рахунку", async () => {
+      const before = await numeratorSnapshot("manual_entry");
+      const beforeOrg = await numeratorSnapshot("organization");
+
+      const organization = await client.model("organization", "save", {
+        item: { name: "Smoke забаланс організація", prefix: "SMB" },
+      });
+      const org = organization.body.data.item as { id: string } | null;
+      assertExists(org);
+
+      const docs: string[] = [];
+      const entry = async (account: string, amount: number) => {
+        const res = await client.model("manual_entry", "save", {
+          item: {
+            organizationId: org.id,
+            docDate: "2026-08-12T00:00:00",
+            entries: [{
+              lineNo: 1,
+              debitAccount: account,
+              debitAnalytics: {},
+              creditAccount: null,
+              creditAnalytics: {},
+              amount,
+            }],
+          },
+        });
+        const doc = res.body.data.item as { id: string } | null;
+        if (doc) docs.push(doc.id);
+        return doc;
+      };
+
+      try {
+        // Рахунок свій: у порожній базі CI забалансових немає, а спиратися на
+        // чужі рядки проба не має права.
+        await withDb((sql) => sql`
+          insert into app.chart_of_account (code, name, account_type, is_group, is_off_balance)
+          values ('0SMOKE', 'Smoke забалансовий', 'active', false, true)
+          on conflict (code) do nothing`);
+
+        const offBalance = await entry("0SMOKE", 1500);
+        assertExists(offBalance);
+        assertEquals((await client.model("manual_entry", "post", { id: offBalance.id })).body.ok, true);
+
+        const posted = await withDb((sql) =>
+          sql<{ debit_account: string | null; credit_account: string | null }[]>`
+            select debit_account, credit_account from app.journal_entry
+            where document_id = ${offBalance.id}`
+        );
+        assertEquals(posted.length, 1);
+        assertEquals(posted[0].debit_account, "0SMOKE");
+        assertEquals(posted[0].credit_account, null);
+
+        // А на балансовому рахунку порожній бік — це недописаний рядок, і
+        // мовчки прийняти його не можна: у балансі він дасть розходження, яке
+        // шукатимуть у документах, а не в проводці.
+        const balance = await entry("301", 10);
+        assertExists(balance);
+        const refused = await client.model("manual_entry", "post", { id: balance.id });
+        assertEquals(refused.body.ok, false);
+        assertEquals(
+          refused.body.messages.some((m) => JSON.stringify(m).includes("entryOneSidedNotOffBalance")),
+          true,
+        );
+      } finally {
+        for (const id of docs) await purge("app.document", id);
+        await withDb((sql) => sql`delete from app.chart_of_account where code = '0SMOKE'`);
+        await purge("app.organization", org.id);
+        await numeratorRestore("manual_entry", before);
+        await numeratorRestore("organization", beforeOrg);
+      }
+    });
+
     // Екран нумераторів: прапорець is_editable — не мертвий перемикач, а
     // серверна заборона. Вимкнений — ручний код відхиляється з прив'язкою до
     // поля; запис при цьому не створюється. Знімок правила повертається у

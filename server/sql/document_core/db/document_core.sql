@@ -220,8 +220,17 @@ language plpgsql
 as $$
 declare
   v_entry_id bigint;
-  v_debit    record;
-  v_credit   record;
+  -- Ознаки рахунків — скалярами, а не record'ами: бік проводки може бути
+  -- порожнім, і тоді `select … into` для нього не виконується взагалі, а
+  -- звернення до неприсвоєного record'а в PL/pgSQL — це помилка виконання
+  -- («record is not assigned yet»), а не null.
+  v_is_group        boolean;
+  v_debit_currency  boolean := false;
+  v_debit_quantity  boolean := false;
+  v_debit_off       boolean := false;
+  v_credit_currency boolean := false;
+  v_credit_quantity boolean := false;
+  v_credit_off      boolean := false;
   v_needs_currency  boolean;
   v_needs_quantity  boolean;
   v_currency_id     bigint;
@@ -232,24 +241,46 @@ begin
     raise exception '@[core.entryZeroAmount]%', jsonb_build_object('line', p_line_no, 'document', p_document_id)::text;
   end if;
 
-  select is_group, is_currency, is_quantitative into v_debit
-  from app.chart_of_account where code = p_debit_account;
-  if v_debit is null then
-    raise exception '@[core.debitAccountNotFound]%', jsonb_build_object('account', p_debit_account)::text;
-  elsif v_debit.is_group then
-    raise exception '@[core.debitAccountIsGroup]%', jsonb_build_object('account', p_debit_account)::text;
+  -- Рівно один бік може бути порожнім: це забалансовий облік (див. коментар до
+  -- таблиці). Жодного рахунку — не рух, а порожній рядок.
+  if p_debit_account is null and p_credit_account is null then
+    raise exception '@[core.entryNoAccount]%', jsonb_build_object('line', p_line_no)::text;
   end if;
 
-  select is_group, is_currency, is_quantitative into v_credit
-  from app.chart_of_account where code = p_credit_account;
-  if v_credit is null then
-    raise exception '@[core.creditAccountNotFound]%', jsonb_build_object('account', p_credit_account)::text;
-  elsif v_credit.is_group then
-    raise exception '@[core.creditAccountIsGroup]%', jsonb_build_object('account', p_credit_account)::text;
+  if p_debit_account is not null then
+    select is_group, is_currency, is_quantitative, is_off_balance
+      into v_is_group, v_debit_currency, v_debit_quantity, v_debit_off
+    from app.chart_of_account where code = p_debit_account;
+    if not found then
+      raise exception '@[core.debitAccountNotFound]%', jsonb_build_object('account', p_debit_account)::text;
+    elsif v_is_group then
+      raise exception '@[core.debitAccountIsGroup]%', jsonb_build_object('account', p_debit_account)::text;
+    end if;
   end if;
 
-  v_needs_currency := v_debit.is_currency or v_credit.is_currency;
-  v_needs_quantity := v_debit.is_quantitative or v_credit.is_quantitative;
+  if p_credit_account is not null then
+    select is_group, is_currency, is_quantitative, is_off_balance
+      into v_is_group, v_credit_currency, v_credit_quantity, v_credit_off
+    from app.chart_of_account where code = p_credit_account;
+    if not found then
+      raise exception '@[core.creditAccountNotFound]%', jsonb_build_object('account', p_credit_account)::text;
+    elsif v_is_group then
+      raise exception '@[core.creditAccountIsGroup]%', jsonb_build_object('account', p_credit_account)::text;
+    end if;
+  end if;
+
+  -- Однобічною проводка буває лише на забалансовому рахунку. Інакше порожній бік
+  -- — це не задум, а недописаний рядок, і мовчки прийняти його не можна: у
+  -- балансі він дасть розходження, яке шукатимуть у документах, а не тут.
+  if (p_debit_account is null or p_credit_account is null)
+     and not (v_debit_off or v_credit_off) then
+    raise exception '@[core.entryOneSidedNotOffBalance]%',
+      jsonb_build_object('line', p_line_no,
+        'account', coalesce(p_debit_account, p_credit_account))::text;
+  end if;
+
+  v_needs_currency := v_debit_currency or v_credit_currency;
+  v_needs_quantity := v_debit_quantity or v_credit_quantity;
 
   if v_needs_currency then
     if p_currency_id is null or p_currency_amount is null then
@@ -276,8 +307,14 @@ begin
   )
   returning id into v_entry_id;
 
-  perform app.doc_analytic_set(v_entry_id, 'debit',  p_debit_account,  p_debit_analytics);
-  perform app.doc_analytic_set(v_entry_id, 'credit', p_credit_account, p_credit_analytics);
+  -- Порожній бік аналітики не має за визначенням: субконто веде РАХУНОК, а його
+  -- тут немає.
+  if p_debit_account is not null then
+    perform app.doc_analytic_set(v_entry_id, 'debit', p_debit_account, p_debit_analytics);
+  end if;
+  if p_credit_account is not null then
+    perform app.doc_analytic_set(v_entry_id, 'credit', p_credit_account, p_credit_analytics);
+  end if;
 
   return v_entry_id;
 end;
