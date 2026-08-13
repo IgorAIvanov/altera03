@@ -691,3 +691,131 @@ as $$
     'messages', '[]'::jsonb
   );
 $$;
+
+-- ── Персональні токени доступу ──────────────────────────────────────────────
+--
+-- Усі три функції працюють ТІЛЬКИ з токенами того, хто викликає: `user_id`
+-- приходить від рантайму, а не з payload, тож чужий токен не побачити й не
+-- відкликати навіть знаючи його id. Це не «перевірка права», а властивість
+-- запиту — окремого права на «свої токени» не існує й не потрібне.
+
+drop function if exists app.access_token_list(bigint, jsonb);
+create function app.access_token_list(user_id bigint, payload jsonb)
+returns jsonb
+language sql
+stable
+as $$
+  with rows_ as (
+    select
+      t.id::text                       as id,
+      t.name                           as name,
+      t.is_read_only                   as "isReadOnly",
+      to_char(t.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') as "createdAt",
+      to_char(t.expires_at, 'YYYY-MM-DD"T"HH24:MI:SS') as "expiresAt",
+      to_char(t.last_used_at, 'YYYY-MM-DD"T"HH24:MI:SS') as "lastUsedAt",
+      -- Стан рахується тут, а не на клієнті: «протермінований» і «відкликаний»
+      -- це різні причини, і людина мусить бачити, яку саме кнопку тиснути.
+      case
+        when t.revoked_at is not null then 'revoked'
+        when t.expires_at is not null and t.expires_at <= now() then 'expired'
+        else 'active'
+      end                              as status
+    from app.access_token t
+    where t.user_id = access_token_list.user_id
+    order by t.revoked_at is not null, t.created_at desc
+  )
+  select jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', null,
+      'rows', coalesce((select jsonb_agg(row_to_json(rows_)) from rows_), '[]'::jsonb),
+      'options', '{}'::jsonb,
+      'totals', jsonb_build_object('count', (select count(*) from rows_))
+    ),
+    'messages', '[]'::jsonb
+  );
+$$;
+
+-- Запис токена. Сам токен генерує TS-команда (`runtime.accessTokenCreate`):
+-- випадкові байти має видавати той самий код, що й для сесій, а в базу лягає
+-- лише хеш. Сюди приходить готовий хеш — функція не бачить значення взагалі.
+drop function if exists app.access_token_add(bigint, jsonb);
+create function app.access_token_add(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_name text := nullif(trim(payload->>'name'), '');
+  v_hash text := nullif(payload->>'tokenHash', '');
+  v_days int  := nullif(payload->>'expiresInDays', '')::int;
+  v_id   bigint;
+begin
+  if v_name is null then
+    return jsonb_build_object(
+      'ok', false, 'data', app.access_empty_data(),
+      'messages', jsonb_build_array(jsonb_build_object(
+        'type', 'error', 'text', '@[core.accessTokenNameRequired]', 'field', 'name'))
+    );
+  end if;
+
+  if v_hash is null then
+    raise exception 'tokenHash обов''язковий';
+  end if;
+
+  insert into app.access_token (user_id, name, token_hash, is_read_only, expires_at)
+  values (
+    access_token_add.user_id,
+    v_name,
+    v_hash,
+    coalesce((payload->>'isReadOnly')::boolean, false),
+    case when v_days is null then null else now() + make_interval(days => v_days) end
+  )
+  returning id into v_id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', jsonb_build_object('id', v_id::text),
+      'rows', '[]'::jsonb, 'options', '{}'::jsonb, 'totals', '{}'::jsonb
+    ),
+    'messages', '[]'::jsonb
+  );
+end;
+$$;
+
+-- Відкликання. Рядок лишається: відкликаний токен — це слід, а не сміття, і
+-- «коли саме перестав працювати» буває єдиною відповіддю на питання про збій.
+drop function if exists app.access_token_delete(bigint, jsonb);
+create function app.access_token_delete(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_id bigint := nullif(payload->>'id', '')::bigint;
+  v_found bigint;
+begin
+  update app.access_token t
+     set revoked_at = coalesce(t.revoked_at, now()),
+         updated_at = now()
+   where t.id = v_id
+     and t.user_id = access_token_delete.user_id
+  returning t.id into v_found;
+
+  if v_found is null then
+    return jsonb_build_object(
+      'ok', false, 'data', app.access_empty_data(),
+      'messages', jsonb_build_array(jsonb_build_object(
+        'type', 'error', 'text', '@[core.accessTokenNotFound]'))
+    );
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', jsonb_build_object('id', v_found::text),
+      'rows', '[]'::jsonb, 'options', '{}'::jsonb, 'totals', '{}'::jsonb
+    ),
+    'messages', '[]'::jsonb
+  );
+end;
+$$;

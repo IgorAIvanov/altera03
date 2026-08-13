@@ -60,12 +60,58 @@ export class RequestUserService {
       return this.assertClaimedUser(request, session);
     }
 
+    // Персональний токен — те саме `Authorization: Bearer`, лише інша таблиця.
+    // Порядок саме такий: сесія коштує того самого запиту, а буває на порядки
+    // частіше, і платити за неї другим походом у базу не хочеться.
+    const token = await this.resolveAccessToken(request);
+    if (token) {
+      return this.assertClaimedUser(request, token);
+    }
+
     const devBypassUserId = await this.resolveDevBypassUserId(request);
     if (devBypassUserId) {
       return this.assertClaimedUser(request, { userId: devBypassUserId, sessionId: "" });
     }
 
     throw new AuthenticationRequiredError();
+  }
+
+  /**
+   * Персональний токен доступу — облікові дані для МАШИНИ.
+   *
+   * Тільки `Bearer`, ніколи cookie: cookie ставить браузер, і токен, який туди
+   * потрапив, ходив би з кожним запитом сторінки повз CSRF-захист. Агент шле
+   * заголовок свідомо, і це єдиний спосіб, у який токен має вживатися.
+   *
+   * Сесії токен не створює (`sessionId: ""`) — і це не спрощення: токен живе
+   * місяцями, а сесія має вмирати з виходом користувача. Наслідок уже описаний
+   * у `RequestAuthContext`: токени вкладень тоді не прив'язані до сесії.
+   *
+   * `last_used_at` пишеться тим самим запитом, що й перевірка. Зайвий похід у
+   * базу тут коштував би на кожному виклику агента, а знати, чи токен ще
+   * живий, треба — інакше відкликати нічого, крім навмання.
+   */
+  private async resolveAccessToken(request: HttpRequest): Promise<RequestAuthContext | null> {
+    const resolved = resolveSessionToken(request);
+    if (!resolved || resolved.source !== "bearer") {
+      return null;
+    }
+
+    const rows = await this.db.sql<Array<{ user_id: string }>>`
+      UPDATE app.access_token t
+         SET last_used_at = NOW(),
+             updated_at = NOW()
+        FROM app.users u
+       WHERE t.token_hash = ${await hashToken(resolved.token)}
+         AND t.revoked_at IS NULL
+         AND (t.expires_at IS NULL OR t.expires_at > NOW())
+         AND u.id = t.user_id
+         AND u.is_active = true
+      RETURNING t.user_id::text AS user_id
+    `;
+
+    const row = rows[0];
+    return row ? { userId: row.user_id, sessionId: "" } : null;
   }
 
   /**

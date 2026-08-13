@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Req } from "@danet/core";
+import { AccessTokenService } from "./access-token.service.ts";
 import { AuthBootstrapService } from "./auth-bootstrap.service.ts";
 import { AuthFlowService } from "./auth-flow.service.ts";
 import { AuthSessionService } from "./auth-session.service.ts";
@@ -48,6 +49,7 @@ function withAuthError(path: string, message: string): string {
 @Controller("api/auth")
 export class AuthController {
   constructor(
+    private accessTokenService: AccessTokenService,
     private authBootstrapService: AuthBootstrapService,
     private authFlowService: AuthFlowService,
     private authSessionService: AuthSessionService,
@@ -204,6 +206,63 @@ export class AuthController {
 
     await this.authService.changeOwnPassword(sessionUser.user.id, await hashPassword(newPassword));
     return ok({ changed: true });
+  }
+
+  // ── Персональні токени доступу ────────────────────────────────────────────
+  //
+  // Тут, а не моделлю: токен — це «моє», як власний пароль. Модель вимагала б
+  // прав на неї в кожного користувача, і забутий адміністратором доступ означав
+  // би «агента не завести».
+  //
+  // Усі три дії доступні ЛИШЕ по сесії (`resolveSessionUser`), тобто з
+  // браузера. Це навмисно: агент, який тримає токен, не має карбувати собі
+  // нові — вкрадений токен інакше відтворював би себе нескінченно.
+
+  @Get("tokens")
+  async listTokens(@Req() req: HttpRequest) {
+    const sessionUser = await this.authSessionService.resolveSessionUser(req);
+    if (!sessionUser) {
+      return jsonResponse(err("Необхідна авторизація"), 401);
+    }
+    return await this.accessTokenService.list(sessionUser.user.id);
+  }
+
+  @Post("tokens")
+  async createToken(@Req() req: HttpRequest) {
+    const sessionUser = await this.authSessionService.resolveSessionUser(req);
+    if (!sessionUser) {
+      return jsonResponse(err("Необхідна авторизація"), 401);
+    }
+
+    // Тіло читаємо з запиту, а не через `@Body()`: цей контролер уже приймає
+    // multipart і redirect-потоки, і розбір тіла тут скрізь свій.
+    const body = await req.json().catch(() => ({})) as {
+      name?: string;
+      isReadOnly?: boolean;
+      expiresInDays?: number;
+    };
+
+    return await this.accessTokenService.create(sessionUser.user.id, {
+      name: typeof body.name === "string" ? body.name.trim() : "",
+      isReadOnly: body.isReadOnly === true,
+      expiresInDays: typeof body.expiresInDays === "number" ? body.expiresInDays : null,
+    });
+  }
+
+  @Post("tokens/revoke")
+  async revokeToken(@Req() req: HttpRequest) {
+    const sessionUser = await this.authSessionService.resolveSessionUser(req);
+    if (!sessionUser) {
+      return jsonResponse(err("Необхідна авторизація"), 401);
+    }
+
+    const body = await req.json().catch(() => ({})) as { id?: string };
+    const id = typeof body.id === "string" ? body.id.trim() : "";
+    if (!id) {
+      return jsonResponse(err("id обов'язковий"), 400);
+    }
+
+    return await this.accessTokenService.revoke(sessionUser.user.id, id);
   }
 
   @Post("logout")

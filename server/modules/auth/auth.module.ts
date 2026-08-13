@@ -1,4 +1,5 @@
 import { Module } from "@danet/core";
+import { AccessTokenService } from "./access-token.service.ts";
 import { AuthBootstrapService } from "./auth-bootstrap.service.ts";
 import { AuthController } from "./auth.controller.ts";
 import { AuthFlowService } from "./auth-flow.service.ts";
@@ -14,6 +15,7 @@ import { PasswordAuthMethod } from "./password-auth.method.ts";
   controllers: [AuthController],
   injectables: [
     AuthService,
+    AccessTokenService,
     AuthBootstrapService,
     AuthTokenService,
     AuthSessionService,

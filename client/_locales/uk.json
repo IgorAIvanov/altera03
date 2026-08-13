@@ -118,6 +118,8 @@
   "core.entryNeedsCurrency": "Проводка {line}: валютний рахунок вимагає валюту й суму у валюті",
   "core.entryNeedsQuantity": "Проводка {line}: кількісний рахунок вимагає кількість",
   "core.numeratorMissing": "Нумератор моделі «{model}» не налаштовано",
+  "core.accessTokenNameRequired": "Вкажіть назву токена — інакше не буде що відкликати",
+  "core.accessTokenNotFound": "Токен не знайдено або він вам не належить",
   "core.userDeactivatedNotDeleted": "Користувач має пов'язані документи — його деактивовано, а не видалено",
   "core.sqlTooLong": "Значення задовге для поля.",
   "core.sqlNumericRange": "Число виходить за дозволені межі.",

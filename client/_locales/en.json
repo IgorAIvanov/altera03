@@ -118,6 +118,8 @@
   "core.entryNeedsCurrency": "Entry {line}: a currency account requires the currency and the amount in it",
   "core.entryNeedsQuantity": "Entry {line}: a quantitative account requires the quantity",
   "core.numeratorMissing": "No numerator is configured for model «{model}»",
+  "core.accessTokenNameRequired": "Give the token a name, or there will be nothing to revoke",
+  "core.accessTokenNotFound": "Token not found, or it is not yours",
   "core.userDeactivatedNotDeleted": "The user has related documents — they were deactivated rather than deleted",
   "core.sqlUnique": "Such a record already exists: the value must be unique.",
   "core.sqlForeignKey": "The record is linked to other data: it is used by other records, or it points to one that does not exist.",

@@ -65,7 +65,7 @@ RUN deno install --allow-scripts $DENO_INSTALL_FLAGS --entrypoint ./app/server.t
 # Інструменти — окремо й «як вийде»: оновлення тягне `jsr:@altera/tools@…`, і
 # без кешу перший `solution:update` полізе в мережу. Збірку це валити не має
 # (версія могла ще не з'явитися в реєстрі), але й мовчати не можна.
-RUN deno cache $DENO_INSTALL_FLAGS "jsr:@altera/tools@0.13.3/update-solution" \
+RUN deno cache $DENO_INSTALL_FLAGS "jsr:@altera/tools@0.13.4/update-solution" \
  || echo "⚠ інструменти не закешовані — перше оновлення піде в мережу"
 
 # ── Рантайм ──────────────────────────────────────────────────────────────────
