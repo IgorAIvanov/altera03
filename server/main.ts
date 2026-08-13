@@ -18,7 +18,6 @@ export { findProductionMarker, isProductionEnvironment } from "./config/config-f
 export { isLocalDatabaseHost } from "./config/config-from-env.ts";
 
 export type {
-  AgentConfig,
   AuthConfig,
   BlobConfig,
   BootstrapUserConfig,

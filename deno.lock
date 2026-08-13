@@ -997,7 +997,7 @@
       },
       "tools": {
         "dependencies": [
-          "jsr:@altera/server@~0.17.6",
+          "jsr:@altera/server@0.18",
           "jsr:@std/jsonc@^1.0.2",
           "jsr:@std/path@^1.1.2",
           "jsr:@std/tar@~0.1.10",

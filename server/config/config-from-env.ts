@@ -6,7 +6,6 @@
  * оркестратора чи з коду, — і бачить повний перелік у типах.
  */
 import type {
-  AgentConfig,
   AuthConfig,
   BlobConfig,
   DatabaseConfig,
@@ -19,7 +18,6 @@ export interface EnvDerivedConfig {
   database: DatabaseConfig;
   auth: AuthConfig;
   blob: BlobConfig;
-  agent: AgentConfig;
 }
 
 const BIGINT_ID_PATTERN = /^\d+$/;
@@ -301,11 +299,6 @@ export function configFromEnv(): EnvDerivedConfig {
       tokenSecret: readBlobTokenSecret(),
       tokenTtlHours: readPositiveInt("BLOB_TOKEN_TTL_HOURS", 12),
       maxSizeMb: readPositiveInt("BLOB_MAX_SIZE_MB", 10),
-    },
-    agent: {
-      openAiApiKey: readTrimmed("OPENAI_API_KEY"),
-      model: Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini",
-      routerModel: Deno.env.get("OPENAI_ROUTER_MODEL") || "gpt-4o-mini",
     },
   };
 }

@@ -115,13 +115,6 @@ export interface BlobConfig {
   maxSizeMb: number;
 }
 
-export interface AgentConfig {
-  /** `null` — LLM-агент вимкнений і чесно про це каже. */
-  openAiApiKey: string | null;
-  model: string;
-  routerModel: string;
-}
-
 export interface ModelsConfig {
   registry: Record<string, ModelBackendConfig>;
   tsCommands: GeneratedTsCommandBinding[];
@@ -163,7 +156,6 @@ export interface ServerOptions {
   agentTools?: Record<string, unknown>;
   auth?: Partial<AuthConfig>;
   blob?: Partial<BlobConfig>;
-  agent?: Partial<AgentConfig>;
 }
 
 /** Повна конфігурація після застосування дефолтів. Такою її бачать сервіси. */
@@ -175,7 +167,6 @@ export interface ServerConfig {
   agentTools: Record<string, unknown>;
   auth: AuthConfig;
   blob: BlobConfig;
-  agent: AgentConfig;
 }
 
 const DEFAULT_AUTH: AuthConfig = {
@@ -194,12 +185,6 @@ const DEFAULT_BLOB: BlobConfig = {
   maxSizeMb: 10,
 };
 
-const DEFAULT_AGENT: AgentConfig = {
-  openAiApiKey: null,
-  model: "gpt-4o-mini",
-  routerModel: "gpt-4o-mini",
-};
-
 /** Доповнює необов'язкові блоки дефолтами. */
 export function resolveServerConfig(options: ServerOptions): ServerConfig {
   return {
@@ -213,7 +198,6 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
     agentTools: options.agentTools ?? {},
     auth: { ...DEFAULT_AUTH, ...options.auth },
     blob: { ...DEFAULT_BLOB, ...options.blob },
-    agent: { ...DEFAULT_AGENT, ...options.agent },
   };
 }
 

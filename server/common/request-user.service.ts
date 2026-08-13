@@ -55,10 +55,6 @@ async function hashToken(token: string): Promise<string> {
 export class RequestUserService {
   constructor(private db: DatabaseService) {}
 
-  async resolveUserId(request: HttpRequest, payload?: unknown): Promise<string> {
-    return (await this.resolveAuthContext(request, payload)).userId;
-  }
-
   /**
    * Користувач + сесія. Сесія потрібна там, де право доступу переїжджає в
    * URL (токени вкладень): такий токен має вмирати разом із сесією.

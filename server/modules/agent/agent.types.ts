@@ -40,13 +40,9 @@ export interface AgentCommandResult {
   data?: unknown;
 }
 
-export interface AgentLlmChatResult {
-  threadId: string;
-}
-
 export interface AgentResponse {
   ok: boolean;
-  result: AgentCommandResult | AgentLlmChatResult | null;
+  result: AgentCommandResult | null;
   uiActions: AgentUiAction[];
   messages: string[];
 }
