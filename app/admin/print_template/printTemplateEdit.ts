@@ -1229,8 +1229,10 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                 ? { ...b, items: b.items.map((entry) => (entry.key === fieldItem.key ? { ...entry, path: v } : entry)) }
                 : b
             )))}
+            <!-- Вибране позначає сам пункт: прив'язка значення на select лит
+                 комітить раніше, ніж додає пункти, і формат «сума прописом»
+                 показувався б як «без формату». -->
             <select class="select select-bordered select-sm w-full"
-              .value=${fieldItem.format || ""}
               @change=${(e: Event) => {
                 const v = (e.target as HTMLSelectElement).value as PrintTemplateValueFormat;
                 this.updateBlock(block.key, (b) => (
@@ -1239,8 +1241,8 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                     : b
                 ));
               }}>
-              <option value="">${t("printTemplate.formatNone")}</option>
-              <option value="amountInWords">${t("printTemplate.formatAmountInWords")}</option>
+              <option value="" ?selected=${!fieldItem.format}>${t("printTemplate.formatNone")}</option>
+              <option value="amountInWords" ?selected=${fieldItem.format === "amountInWords"}>${t("printTemplate.formatAmountInWords")}</option>
             </select>
             ${this.field(t("printTemplate.visibleWhen"), this.pathSelect(fieldItem.visibleWhen, scalarPaths, (v) => this.updateBlock(block.key, (b) => (
               b.type === "field-list"

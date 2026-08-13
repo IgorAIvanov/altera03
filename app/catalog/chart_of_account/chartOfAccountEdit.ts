@@ -69,11 +69,16 @@ export class ChartOfAccountEdit extends BaseUI<ChartOfAccountEditRoot> {
             ${this.renderField(
               this.t("chartOfAccount.accountType"),
               html`
-                <select class="select select-bordered w-full" .value=${item.accountType ?? "active"}
+                <!-- Вибране позначає САМ ПУНКТ. Прив'язка значення на select
+                     тут не працює: лит комітить прив'язки елемента раніше, ніж
+                     додає його дітей, тож значення присвоювалося, коли жодного
+                     пункту ще не було, — і рахунок, збережений як пасивний,
+                     показувався активним. -->
+                <select class="select select-bordered w-full"
                   @change=${this.bindTo(item, "accountType")}>
-                  <option value="active">${this.t("chartOfAccount.type.active")}</option>
-                  <option value="passive">${this.t("chartOfAccount.type.passive")}</option>
-                  <option value="active_passive">${this.t("chartOfAccount.type.activePassive")}</option>
+                  <option value="active" ?selected=${(item.accountType ?? "active") === "active"}>${this.t("chartOfAccount.type.active")}</option>
+                  <option value="passive" ?selected=${item.accountType === "passive"}>${this.t("chartOfAccount.type.passive")}</option>
+                  <option value="active_passive" ?selected=${item.accountType === "active_passive"}>${this.t("chartOfAccount.type.activePassive")}</option>
                 </select>`,
               { class: "flex-1", field: "accountType" },
             )}

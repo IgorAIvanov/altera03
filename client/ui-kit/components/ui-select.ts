@@ -54,6 +54,35 @@ export class UiSelect extends GlobalStyledLitElement {
     this._set((e.target as HTMLSelectElement).value);
   }
 
+  /**
+   * Значення доставляється ПІСЛЯ рендера, а не прив'язкою в шаблоні.
+   *
+   * У лита прив'язки елемента комітяться раніше, ніж додаються його діти, тож
+   * `.value=${this.value}` присвоювалося, коли жодного `<option>` ще не було.
+   * Браузер таке значення відкидає (немає з чого вибирати), а щойно пункти
+   * з'являлися — ставав на ПЕРШИЙ. Далі лит `.value` уже не чіпав: воно
+   * дорівнювало тому, що він сам поставив минулого разу, — і контрол лишався
+   * на першому пункті назавжди.
+   *
+   * Найгірше в цьому було не саме зміщення, а те, як воно виглядає. Помилку
+   * видно ЛИШЕ коли збережене значення не збігається з першим пунктом, а в
+   * половини списків перший пункт — найчастіший («20%», «покупка»). Тобто
+   * екран правильний, доки хтось не вибере інше; а коли вибере, побачить не
+   * «показано не те», а «не збереглося»: після взаємодії контрол тримає
+   * вибране, і різниця вилазить аж після перезаходу.
+   *
+   * Присвоєння ВЛАСТИВОСТІ, а не `?selected` на пункті: атрибут діє лише доки
+   * в option не зведено прапорець «брудності», а в цього компонента значення
+   * міняється й програмно — кнопкою очищення, — тобто вже після взаємодії.
+   * Значення поза переліком лишає select порожнім, і це чесніше за мовчазне
+   * зміщення на перший пункт.
+   */
+  protected override updated(changed: Map<string, unknown>) {
+    super.updated?.(changed);
+    const select = this.renderRoot.querySelector("select");
+    if (select && select.value !== this.value) select.value = this.value;
+  }
+
   override render(): TemplateResult {
     if (!this.visible) return html``;
 
@@ -66,7 +95,6 @@ export class UiSelect extends GlobalStyledLitElement {
             ? "join-item flex-1 min-w-0"
             : this.cell ? "cell-control" : "select-bordered"
         }"
-        .value=${this.value}
         ?disabled=${this.disabled || this.readonly}
         @change=${this._onChange}
       >
