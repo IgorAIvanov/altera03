@@ -65,6 +65,18 @@ type AuditLevel = "none" | "changes" | "all";
 const CHANGING_ACTIONS = new Set(["create", "edit", "delete", "post", "unpost"]);
 
 /**
+ * Дії, які агент мусить підтвердити словом (`"confirm": true` у payload).
+ *
+ * Не всі зміни, а лише ті, що міняють СТАН документа або ховають запис:
+ * створити чернетку можна й помилково — її видно й виправно, а проведений
+ * заднім числом документ уже вплинув на облік.
+ *
+ * Людини це не стосується: вона підтвердила натисканням кнопки. Тому перевірка
+ * діє лише на виклики персональним токеном.
+ */
+const CONFIRM_REQUIRED_ACTIONS = new Set(["delete", "post", "unpost"]);
+
+/**
  * Скільки живе прочитаний перелік рівнів.
  *
  * Кеш тут є, хоча в перевірці ПРАВ його свідомо немає: право стосується одного
@@ -228,6 +240,46 @@ function getSqlCommandConfig(
  * навмисно послабити `list` до `authenticated` (як `menu/current`, яку кличе
  * кожен вхід) або посилити його.
  */
+/** Хто викликає команду. Порожньо — застосунок або внутрішній виклик. */
+export interface ModelCommandCaller {
+  /** Виклик персональним токеном (агент). */
+  accessToken?: { readOnly: boolean };
+}
+
+/**
+ * Запобіжники, що діють ЛИШЕ на агента.
+ *
+ * Обидва свідомо не є заміною правам: право відмовляє тому, кому не можна
+ * взагалі, а це — тому, кому можна, але не отак. Токен «тільки читання» дає
+ * видати агенту доступ на задачу, де запис не потрібен, не забираючи прав у
+ * самої людини; підтвердження робить зміну стану документа навмисною дією, а
+ * не побічним ефектом кроку, який агент зробив «щоб подивитися».
+ *
+ * Текст відмови звичайний, без маркера перекладу: його читає агент, а не
+ * людина, і `@[core.…]` для нього був би шумом.
+ */
+function assertCallerMayRun(
+  action: string,
+  payload: Record<string, unknown>,
+  caller: ModelCommandCaller,
+): void {
+  const token = caller.accessToken;
+  if (!token) return;
+
+  if (token.readOnly && CHANGING_ACTIONS.has(action)) {
+    throw ModelCommandError.forbidden(
+      `Цей токен доступу — тільки для читання: дія «${action}» заборонена.`,
+    );
+  }
+
+  if (CONFIRM_REQUIRED_ACTIONS.has(action) && payload.confirm !== true) {
+    throw ModelCommandError.forbidden(
+      `Дія «${action}» міняє стан документа. Повтори виклик із "confirm": true, ` +
+        "якщо це справді те, що потрібно.",
+    );
+  }
+}
+
 function resolveRequiredAction(
   model: string,
   command: string,
@@ -262,7 +314,14 @@ export class ModelRuntimeService {
    * ними підписуються ключі доступу у відповіді, тому токен живе рівно
    * стільки, скільки сесія. Порожній рядок — сесії немає (агент, dev-bypass).
    */
-  async execute(model: string, command: string, payload: unknown, userId: string, sessionId = "") {
+  async execute(
+    model: string,
+    command: string,
+    payload: unknown,
+    userId: string,
+    sessionId = "",
+    caller: ModelCommandCaller = {},
+  ) {
     assertIdentifier(model, "model");
     assertCommandIdentifier(command);
 
@@ -298,6 +357,8 @@ export class ModelRuntimeService {
       if (action === null) {
         throw ModelCommandError.accessNotDeclared(model, command);
       }
+
+      assertCallerMayRun(action, normalizedPayload, caller);
 
       const candidate = tsCommand
         ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand, action)

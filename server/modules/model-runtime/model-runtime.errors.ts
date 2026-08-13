@@ -39,6 +39,15 @@ export class ModelCommandError extends Error {
    * Fail-closed: мовчки пропустити невідому команду означало б, що будь-яка
    * нова команда з'являється без прав і ніхто цього не помічає.
    */
+  /**
+   * Відмова запобіжника, а не прав: викликати таку команду цьому користувачеві
+   * можна, але не в такий спосіб (токен «тільки читання», незапитане
+   * підтвердження). 403, бо повторювати автентифікацію нема сенсу.
+   */
+  static forbidden(message: string): ModelCommandError {
+    return new ModelCommandError(403, message);
+  }
+
   static accessNotDeclared(model: string, command: string): ModelCommandError {
     return new ModelCommandError(
       501,

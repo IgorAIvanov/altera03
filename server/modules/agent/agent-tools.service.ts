@@ -16,6 +16,7 @@
 import { Injectable } from "@danet/core";
 import { getServerConfig } from "../../config/server-config.ts";
 import { AuthService } from "../auth/auth.service.ts";
+import type { ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 
 /** Право, потрібне команді. Той самий вивід, що робить рантайм. */
 const COMMAND_ACTION: Record<string, string> = {
@@ -38,7 +39,10 @@ export interface AgentToolListItem {
 export class AgentToolsService {
   constructor(private authService: AuthService) {}
 
-  async listTools(userId: string): Promise<AgentToolListItem[]> {
+  async listTools(userId: string, caller: ModelCommandCaller = {}): Promise<AgentToolListItem[]> {
+    // Токен «тільки читання» не має бачити інструментів запису: вони йому
+    // однаково відмовлять, а показані — виглядають як доступні.
+    const readOnly = caller.accessToken?.readOnly === true;
     const schemas = getServerConfig().agentTools;
     const permissions = await this.authService.getEffectivePermissions(userId);
 
@@ -62,6 +66,11 @@ export class AgentToolsService {
       const permitted = actions.some((action) =>
         action && (allowed.has(`${model}:${action}`) || allowedEverywhere.has(action))
       );
+
+      const changing = actions.some((action) =>
+        action && ["create", "edit", "delete", "post", "unpost"].includes(action)
+      );
+      if (readOnly && changing) continue;
 
       if (permitted) tools.push({ model, command, input });
     }

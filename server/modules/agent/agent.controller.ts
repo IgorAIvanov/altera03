@@ -28,8 +28,10 @@ export class AgentController {
   @Get("tools")
   async tools(@Req() req: HttpRequest) {
     try {
-      const userId = await this.requestUserService.resolveUserId(req, {});
-      const tools = await this.agentToolsService.listTools(userId);
+      const auth = await this.requestUserService.resolveAuthContext(req, {});
+      const tools = await this.agentToolsService.listTools(auth.userId, {
+        accessToken: auth.accessToken,
+      });
       return { ok: true, data: { rows: tools, totals: { count: tools.length } }, messages: [] };
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
@@ -51,7 +53,7 @@ export class AgentController {
         body = {};
       }
 
-      const userId = await this.requestUserService.resolveUserId(req, body);
+      const auth = await this.requestUserService.resolveAuthContext(req, body);
       const request = body as AgentChatRequest;
 
       if (!request.model || typeof request.model !== "string") {
@@ -67,7 +69,8 @@ export class AgentController {
           command: request.command,
           payload: (request.payload ?? {}) as Record<string, unknown>,
         },
-        userId,
+        auth.userId,
+        { accessToken: auth.accessToken },
       );
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {

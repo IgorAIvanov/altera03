@@ -64,6 +64,38 @@ function idPayloadFallback(): Record<string, unknown> {
   };
 }
 
+/** Команди, які рантайм пропускає лише з `"confirm": true` (див. §4.3 плану). */
+const CONFIRM_REQUIRED_COMMANDS = new Set(["delete", "undelete", "post", "unpost"]);
+
+/**
+ * Дописує обов'язкове підтвердження — ПОВЕРХ будь-якої схеми.
+ *
+ * Саме поверх, а не замість: `confirm` це правило РАНТАЙМУ, а не вибір моделі,
+ * тож оголошений моделлю `DeletePayloadSchema` про нього не знає й знати не
+ * повинен. Складати їх у порядку «оголошене виграє» означало б, що вимога
+ * зникає рівно в тих моделей, які найретельніше описали свій payload.
+ *
+ * Вимога стоїть У СХЕМІ, а не лише в перевірці на сервері: інакше агент
+ * дізнавався б про неї відмовою — тобто витрачав крок і міг би вважати відмову
+ * випадковою. `const: true` не лишає місця для тлумачення.
+ */
+function withConfirm(schema: Record<string, unknown>): Record<string, unknown> {
+  const properties = { ...(schema.properties ?? {}) as Record<string, unknown> };
+  properties.confirm = {
+    type: "boolean",
+    const: true,
+    description: "Підтвердження зміни стану. Без нього команда відмовить.",
+  };
+
+  const required = Array.isArray(schema.required) ? schema.required as string[] : [];
+  return {
+    ...schema,
+    type: "object",
+    properties,
+    required: [...new Set([...required, "confirm"])],
+  };
+}
+
 /**
  * Рекурсивно прибирає екранні анотації. Копія, а не правка на місці: схема
  * належить модулю моделі, і зіпсувати її означало б зіпсувати форму.
@@ -116,9 +148,12 @@ function payloadSchemaFor(
   documentHeader: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
   const pascal = pascalCase(model);
+  const confirmable = CONFIRM_REQUIRED_COMMANDS.has(command);
+
   const declared = exports[`${pascal}${pascalCase(command)}PayloadSchema`];
   if (declared && typeof declared === "object") {
-    return stripUiAnnotations(declared) as Record<string, unknown>;
+    const schema = stripUiAnnotations(declared) as Record<string, unknown>;
+    return confirmable ? withConfirm(schema) : schema;
   }
 
   if (command === "save") {
@@ -158,8 +193,12 @@ function payloadSchemaFor(
       },
     };
   }
-  if (command === "get" || command === "delete" || command === "undelete") return idPayloadFallback();
-  if (command === "post" || command === "unpost") return idPayloadFallback();
+  // `delete` тут — позначка на видалення, `undelete` — її зняття; обидві
+  // ходять під правом `delete`, тож підтвердження вимагають однаково.
+  if (command === "get" || confirmable) {
+    const schema = idPayloadFallback();
+    return confirmable ? withConfirm(schema) : schema;
+  }
 
   return null;
 }

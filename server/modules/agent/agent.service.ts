@@ -1,5 +1,5 @@
 import { Injectable } from "@danet/core";
-import { ModelRuntimeService } from "../model-runtime/model-runtime.service.ts";
+import { ModelRuntimeService, type ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 import { getAgentRoutes } from "./agent-routes.ts";
 import type {
   AgentChatRequest,
@@ -15,7 +15,11 @@ const CONFIRM_COMMANDS = new Set(["post", "unpost"]);
 export class AgentService {
   constructor(private modelRuntime: ModelRuntimeService) {}
 
-  async chat(request: AgentChatRequest, userId: string): Promise<AgentResponse> {
+  async chat(
+    request: AgentChatRequest,
+    userId: string,
+    caller: ModelCommandCaller = {},
+  ): Promise<AgentResponse> {
     const { model, command, payload } = request;
 
     const routes = getAgentRoutes()[model];
@@ -29,7 +33,7 @@ export class AgentService {
 
     let rawResult: unknown;
     try {
-      rawResult = await this.modelRuntime.execute(model, command, payload, userId);
+      rawResult = await this.modelRuntime.execute(model, command, payload, userId, "", caller);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return this.errorResponse(`Помилка виконання команди: ${message}`);
