@@ -36,7 +36,7 @@
     // Вбудовує шрифти друку (Roboto з кирилицею) у fonts.generated.ts.
     // Запускати після зміни версії @fontsource/roboto; у встановленому пакеті
     // node_modules поряд немає, тож читати woff з диска рендерер не може.
-    "print:fonts": "deno run -A ./tools/generate-print-fonts.ts ./node_modules/@fontsource/roboto/files ./server/modules/print/fonts.generated.ts --verbose",
+    "print:fonts": "deno run -A ./tools/generate-print-fonts.ts ./node_modules/@fontsource ./server/modules/print/fonts.generated.ts --verbose",
     // Вбудовує дерево create/template/** у create/template.generated.ts.
     "scaffold:template": "deno run -A ./tools/generate-scaffold-template.ts ./create/template ./create/template.generated.ts --verbose",
     // Вбудовує прикладні скіли (metadata.audience: app) у skills.generated.ts.
@@ -132,6 +132,7 @@
     "@danet/core": "jsr:@danet/core@^2.11.1",
     "@danet/validatte": "jsr:@danet/validatte@^0.7.9",
     "@fontsource/roboto": "npm:@fontsource/roboto@^5.2.10",
+    "@fontsource/pt-sans": "npm:@fontsource/pt-sans@^5.3.0",
     "pdf-lib": "npm:pdf-lib@^1.17.1",
     "@pdf-lib/fontkit": "npm:@pdf-lib/fontkit@^1.1.1",
     "qrcode-generator": "npm:qrcode-generator@^1.4.4",
