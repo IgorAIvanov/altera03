@@ -27,7 +27,11 @@
  */
 import { PDFDocument, type PDFFont, StandardFonts } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { PRINT_FONT_BOLD_BASE64, PRINT_FONT_REGULAR_BASE64 } from "./fonts.generated.ts";
+import {
+  type PrintFontSubset,
+  PRINT_FONT_SUBSETS_BOLD,
+  PRINT_FONT_SUBSETS_REGULAR,
+} from "./fonts.generated.ts";
 
 /** Аркуш A4 у пунктах. */
 export const PRINT_PAGE_SIZE_A4: { width: number; height: number } = { width: 595.28, height: 841.89 };
@@ -63,6 +67,63 @@ function decodeBase64(base64: string): Uint8Array {
 }
 
 /**
+ * Коди, які покриває WinAnsiEncoding — тобто Helvetica з `StandardFonts`.
+ *
+ * Латиниця-1 плюс те, що WinAnsi тримає у слотах 0x80–0x9F: лапки, тире,
+ * апостроф, три крапки. Саме через цей набір ялинки й друкуються правильно —
+ * у Roboto-субсеті їх немає, а тут є.
+ *
+ * Набір потрібен не заради краси, а заради відмови: pdf-lib падає, коли просиш
+ * стандартний шрифт намалювати символ, якого в його кодуванні немає. Тобто без
+ * цієї перевірки «віддамо все незнайоме Helvetice» валило б увесь друк.
+ */
+const WIN_ANSI_EXTRA = new Set([
+  0x20AC, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030,
+  0x0160, 0x2039, 0x0152, 0x017D, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022,
+  0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x017E, 0x0178,
+]);
+
+function inWinAnsi(codePoint: number): boolean {
+  return (codePoint >= 0x20 && codePoint <= 0x7E) ||
+    (codePoint >= 0xA0 && codePoint <= 0xFF) ||
+    WIN_ANSI_EXTRA.has(codePoint);
+}
+
+function subsetCovers(subset: PrintFontSubset, codePoint: number): boolean {
+  return subset.ranges.some(([from, to]) => codePoint >= from && codePoint <= to);
+}
+
+/**
+ * Який шрифт малює цей символ: `-1` — Helvetica, інакше індекс субсета Roboto.
+ *
+ * ЧОМУ ЦЕ ОКРЕМА ЧИСТА ФУНКЦІЯ. Тут сидів дефект, який не бачив ніхто: шрифт
+ * вибирався за межею `код <= 0x7F`, тобто все, що вище, їхало в Roboto. Лапка
+ * `«` — U+00AB, вище межі, у кирилічному субсеті її немає, і назва «ТОВ «Демо»»
+ * друкувалася сміттям. У КОЖНОМУ бланку, бо лапки має назва будь-якої
+ * української юрособи. Іронія була в тому, що Helvetica ці символи має —
+ * питання просто ставилося не те: не «чи це ASCII», а «чи є гліф».
+ *
+ * Винесено з рендеру, щоб бути під пробою без pdf-lib: правило, яке видно лише
+ * на надрукованому папері, мусить перевірятися інакше.
+ *
+ * Порядок правил: ASCII завжди Helvetica (так метрики збігаються з очікуваннями
+ * pdf-lib), далі перший субсет, що покриває символ, далі Helvetica, якщо код у
+ * WinAnsi. Останній рядок — не «правильний шрифт», а свідома відмова падати:
+ * символ, якого немає ніде, друкується порожньою рамкою, а не валить документ.
+ * Друк — остання ланка, і людина, яка натиснула «Друк», однаково не полагодить
+ * шрифт.
+ */
+export function printFontIndexFor(codePoint: number, bold = false): number {
+  if (codePoint <= 0x7F) return -1;
+
+  const subsets = bold ? PRINT_FONT_SUBSETS_BOLD : PRINT_FONT_SUBSETS_REGULAR;
+  const index = subsets.findIndex((subset) => subsetCovers(subset, codePoint));
+  if (index >= 0) return index;
+
+  return inWinAnsi(codePoint) ? -1 : 0;
+}
+
+/**
  * Шрифти бланка, вбудовані в документ.
  *
  * Не експортується з пакета навмисно: типи pdf-lib у публічній поверхні
@@ -86,18 +147,27 @@ export interface PrintFontSet {
 export async function embedPrintFonts(pdf: PDFDocument): Promise<PrintFontSet> {
   pdf.registerFontkit(fontkit);
 
-  const regular = await pdf.embedFont(decodeBase64(PRINT_FONT_REGULAR_BASE64));
-  const bold = await pdf.embedFont(decodeBase64(PRINT_FONT_BOLD_BASE64));
+  const regular: PDFFont[] = [];
+  for (const subset of PRINT_FONT_SUBSETS_REGULAR) {
+    regular.push(await pdf.embedFont(decodeBase64(subset.base64)));
+  }
+
+  const bold: PDFFont[] = [];
+  for (const subset of PRINT_FONT_SUBSETS_BOLD) {
+    bold.push(await pdf.embedFont(decodeBase64(subset.base64)));
+  }
+
   const regularAscii = await pdf.embedFont(StandardFonts.Helvetica);
   const boldAscii = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   const runs = (text: string, isBold: boolean) => {
     const result: Array<{ text: string; font: PDFFont }> = [];
-    const unicodeFont = isBold ? bold : regular;
+    const embedded = isBold ? bold : regular;
     const asciiFont = isBold ? boldAscii : regularAscii;
 
     for (const char of text) {
-      const font = char.codePointAt(0)! <= 0x7f ? asciiFont : unicodeFont;
+      const index = printFontIndexFor(char.codePointAt(0)!, isBold);
+      const font = index < 0 ? asciiFont : embedded[index]!;
       const previous = result[result.length - 1];
       if (previous?.font === font) {
         previous.text += char;

@@ -10,15 +10,17 @@
 import { assertEquals } from "@std/assert";
 import { encodeBase64 } from "jsr:@std/encoding@^1/base64";
 import { fromFileUrl } from "@std/path";
-import { PRINT_FONT_BOLD_BASE64, PRINT_FONT_REGULAR_BASE64 } from "./fonts.generated.ts";
+import { PRINT_FONT_SUBSETS_BOLD, PRINT_FONT_SUBSETS_REGULAR } from "./fonts.generated.ts";
 
 const FONTS_DIR = fromFileUrl(
   new URL("../../../node_modules/@fontsource/roboto/files/", import.meta.url),
 );
 
+// Порядок такий самий, як у генераторі: рендерер бере перший субсет, що
+// покриває символ, тож переставлені місцями файли змінили б і вибір шрифту.
 const CASES = [
-  { file: "roboto-cyrillic-400-normal.woff", embedded: PRINT_FONT_REGULAR_BASE64 },
-  { file: "roboto-cyrillic-700-normal.woff", embedded: PRINT_FONT_BOLD_BASE64 },
+  { file: "roboto-cyrillic-400-normal.woff", embedded: PRINT_FONT_SUBSETS_REGULAR[0]!.base64 },
+  { file: "roboto-cyrillic-700-normal.woff", embedded: PRINT_FONT_SUBSETS_BOLD[0]!.base64 },
 ];
 
 Deno.test("fonts.generated.ts збігається з @fontsource/roboto", async (t) => {

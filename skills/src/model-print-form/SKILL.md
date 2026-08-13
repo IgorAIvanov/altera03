@@ -193,6 +193,12 @@ An empty `label` prints the value alone. Do **not** fold the caption into the da
 returns fragments of phrases instead of values, presentation has leaked into the data, and the
 next blank needs its own set of fields.
 
+### The hryvnia sign does not print
+
+`₴` (U+20B4) exists in neither WinAnsi nor any `@fontsource/roboto` subset, so it comes out
+as an empty box. Write `грн`, or name the currency in words. Everything else Ukrainian
+prints fine — Cyrillic, `№`, and the guillemets `«»` that every legal entity's name carries.
+
 ### Check the layout before the paper does
 
 A blank breaks silently: a number wider than its cell wraps onto a second line, and a
