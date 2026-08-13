@@ -1,8 +1,9 @@
-import { Controller, Post, Req } from "@danet/core";
+import { Controller, Get, Post, Req } from "@danet/core";
 import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { AgentService } from "./agent.service.ts";
 import { AgentLlmService } from "./agent-llm.service.ts";
+import { AgentToolsService } from "./agent-tools.service.ts";
 import type { AgentChatRequest } from "./agent.types.ts";
 
 function agentError(message: string) {
@@ -14,8 +15,29 @@ export class AgentController {
   constructor(
     private agentService: AgentService,
     private agentLlmService: AgentLlmService,
+    private agentToolsService: AgentToolsService,
     private requestUserService: RequestUserService,
   ) {}
+
+  /**
+   * Що агент уміє робити в ЦІЙ базі — і рівно те, на що має право.
+   *
+   * Далі він кличе звичайні `POST /api/model/:model/:command`: окремого каналу
+   * для агента немає, тож і розходитися з застосунком нема чому.
+   */
+  @Get("tools")
+  async tools(@Req() req: HttpRequest) {
+    try {
+      const userId = await this.requestUserService.resolveUserId(req, {});
+      const tools = await this.agentToolsService.listTools(userId);
+      return { ok: true, data: { rows: tools, totals: { count: tools.length } }, messages: [] };
+    } catch (error) {
+      if (error instanceof AuthenticationRequiredError) {
+        return jsonResponse(agentError(error.message), 401);
+      }
+      return agentError(error instanceof Error ? error.message : "Помилка переліку інструментів");
+    }
+  }
 
   @Post("chat")
   async chat(

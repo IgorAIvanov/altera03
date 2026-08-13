@@ -154,6 +154,13 @@ export interface ServerOptions {
   models: ModelsConfig;
   views: ViewsConfig;
   agentRoutes?: Record<string, AgentModelRoute>;
+  /**
+   * JSON Schema payload-ів агентських команд — ключ `"<модель>.<команда>"`.
+   * Застосунок передає згенероване `app/_generated/agent-tools.generated.ts`;
+   * без цього поля перелік інструментів порожній, і зовнішній агент не бачить
+   * ані складу полів, ані типів.
+   */
+  agentTools?: Record<string, unknown>;
   auth?: Partial<AuthConfig>;
   blob?: Partial<BlobConfig>;
   agent?: Partial<AgentConfig>;
@@ -165,6 +172,7 @@ export interface ServerConfig {
   models: ModelsConfig;
   views: ViewsConfig;
   agentRoutes: Record<string, AgentModelRoute>;
+  agentTools: Record<string, unknown>;
   auth: AuthConfig;
   blob: BlobConfig;
   agent: AgentConfig;
@@ -202,6 +210,7 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
       projectRoot: options.views.projectRoot.replaceAll("\\", "/").replace(/\/$/, ""),
     },
     agentRoutes: options.agentRoutes ?? {},
+    agentTools: options.agentTools ?? {},
     auth: { ...DEFAULT_AUTH, ...options.auth },
     blob: { ...DEFAULT_BLOB, ...options.blob },
     agent: { ...DEFAULT_AGENT, ...options.agent },

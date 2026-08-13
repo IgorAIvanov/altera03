@@ -1,4 +1,6 @@
 import { dirname, join, relative, resolve, SEPARATOR } from "@std/path";
+import { buildAgentToolsForModel, renderAgentTools } from "./agent-tool-schemas.ts";
+import { documentHeaderSpecifier } from "./generate-model-sql.ts";
 
 type ManifestSqlCommand = string | {
   schema?: string;
@@ -64,6 +66,47 @@ type ManifestRecord = {
 };
 
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+/**
+ * Команди, які модель віддає агенту.
+ *
+ * Умовчання — стандартна п'ятірка плюс проведення для документів; це рівно те,
+ * що пропускає `AgentService`. `manifest.agent` звужує: `allow: false` знімає
+ * модель цілком, `allowCommands` лишає перелічене.
+ */
+/** `DocumentHeaderSchema` фреймворку — спільна шапка всіх документів. */
+async function loadDocumentHeaderSchema(appDir: string): Promise<Record<string, unknown> | null> {
+  try {
+    const specifier = await documentHeaderSpecifier(appDir);
+    const mod = await import(specifier) as Record<string, unknown>;
+    const header = mod.DocumentHeaderSchema;
+    return header && typeof header === "object" ? header as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function agentCommandsFor(manifest: ManifestRecord): string[] {
+  const agent = manifest.agent ?? {};
+  if (agent.allow === false) return [];
+
+  // Лише типи зі стандартним CRUD. Звіт має свій `index`, admin-екран —
+  // рукописний набір; описати їм п'ятірку означало б показати агенту
+  // інструменти, які повернуть 501. Мовчання тут чесніше за опис навмання.
+  const type = manifest.type ?? "catalog";
+  if (type !== "catalog" && type !== "document" && type !== "register") return [];
+
+  // Регістр не має підбору — у нього нема чого підбирати.
+  const base = type === "register"
+    ? ["list", "get", "save", "delete"]
+    : ["list", "get", "save", "delete", "lookup"];
+  if (type === "document") base.push("post", "unpost");
+
+  if (Array.isArray(agent.allowCommands)) {
+    return base.filter((command) => agent.allowCommands!.includes(command));
+  }
+  return base;
+}
 
 function toPosixPath(value: string) {
   return value.split(SEPARATOR).join("/");
@@ -375,6 +418,8 @@ export async function generateModelRuntimeRegistry(
   // означав би, що кожен застосунок мусить його дописати, інакше файл мовчки
   // не з'явиться. Ім'я фіксоване, сусідом реєстру.
   const tsCommandsPath = join(dirname(outputPath), "ts-commands.generated.ts");
+  // Те саме міркування, що й для ts-commands: ім'я фіксоване, сусідом реєстру.
+  const agentToolsPath = join(dirname(outputPath), "agent-tools.generated.ts");
 
   const writeRegistry = async () => {
     const allManifests = (await Promise.all(appDirs.map(collectManifests))).flat();
@@ -410,6 +455,36 @@ export async function generateModelRuntimeRegistry(
     const agentRoutesSource = `// Generated from model manifests. Do not edit manually.\n\n${renderAgentRoutesMulti(allManifests, appDirs)}`;
     await Deno.mkdir(dirname(agentRoutesPath), { recursive: true });
     await Deno.writeTextFile(agentRoutesPath, `${agentRoutesSource}\n`);
+
+    // Опис інструментів агента: JSON Schema payload-ів із TypeBox-схем моделей.
+    // Без нього агент бачить `item` як `{type: "object"}` — тобто не знає ні
+    // складу полів, ні типів, ні куди веде посилання.
+    // Шапку документа резолвимо ОДИН раз і тим самим кодом, що генератор SQL:
+    // у монорепо `@client/` веде на сусідній каталог, у встановленому
+    // застосунку — на пакет із реєстру, і промах тут тихий (тип `document`
+    // просто не згенерувався б).
+    const documentHeader = await loadDocumentHeaderSchema(appDirs[0]!);
+
+    const agentTools = (await Promise.all(
+      allManifests.map(({ manifestPath, manifest }) =>
+        buildAgentToolsForModel(
+          manifest.model ?? "",
+          join(dirname(manifestPath), `${manifest.model}.schema.ts`),
+          agentCommandsFor(manifest),
+          manifest.type === "document" ? documentHeader : null,
+        )
+      ),
+    )).flat();
+
+    const agentToolsSource = `// Generated from model schemas. Do not edit manually.
+` +
+      `// JSON Schema payload-ів агентських команд — див. tools/agent-tool-schemas.ts.
+
+` +
+      `${renderAgentTools(agentTools)}`;
+    await Deno.mkdir(dirname(agentToolsPath), { recursive: true });
+    await Deno.writeTextFile(agentToolsPath, `${agentToolsSource}
+`);
 
     // View-manifest: route → moduleFile (відносно кореня репо) → titleKey
     const viewManifestSource = `// Generated from model manifests. Do not edit manually.\n\n${renderViewManifest(allManifests, appDirs)}`;

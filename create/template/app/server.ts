@@ -10,6 +10,7 @@ import { bootstrap, configFromEnv } from "@altera/server";
 import { generatedModelRegistry } from "./_generated/model-registry.generated.ts";
 import { generatedTsCommandBindings } from "./_generated/ts-commands.generated.ts";
 import { agentModelRoutes } from "./_generated/agent-routes.generated.ts";
+import { agentToolSchemas } from "./_generated/agent-tools.generated.ts";
 import { viewManifest } from "./_generated/view-manifest.generated.ts";
 
 // Корінь проєкту — батьківський каталог app/.
@@ -32,6 +33,7 @@ export async function createServer() {
     ...configFromEnv(),
     models: { registry: generatedModelRegistry, tsCommands: generatedTsCommandBindings },
     agentRoutes: agentModelRoutes,
+    agentTools: agentToolSchemas,
     views: {
       manifest: viewManifest,
       projectRoot,
