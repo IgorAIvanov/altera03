@@ -163,10 +163,66 @@ in % of the print area = A4 minus 40pt margins) and `text` (fontSize, align, fon
 
 | Where | Root | Example |
 |---|---|---|
+| `text` block `path` | `data.item` | `document.title` |
+| `image` block `path` | `data.item` | `invoice.sellerStamp` (a `data:` URI) |
 | `field-list` item `path` | `data.item` | `document.counterpartyName` |
 | table `source` | `data.item` | `document.lines` |
 | cell `path` in section `row` | **one array record** | `name` — never `document.lines.name` |
 | cell `path` in `header` / `footer` | `data.item` | `document.total` |
+
+A static value **overrides** the binding — in a `text` block, an `image`, a table cell and a
+barcode alike. One rule across the format, so you never have to recall where the priority is
+reversed.
+
+Logo, stamp and facsimile signature belong to the **organisation** you print on behalf of, not
+to the blank — and a database holds several. Bind them; return a `data:` URI from the data
+command. A hard-coded `src` is not a simplified document, it is a wrong one.
+
+### A line of values with no caption
+
+The blank's title («Рахунок на оплату № 12 від 02.02.2026 р.»), the summary line, a party's
+details — these are values with no caption. Two ways, pick by whether it is one value or several:
+
+```json
+{ "type": "text", "path": "document.title" }
+{ "type": "field-list", "items": [{ "key": "org", "label": "", "path": "org.name" }] }
+```
+
+An empty `label` prints the value alone. Do **not** fold the caption into the data command
+(`titleTail`, `itemsSummary` and other halves of sentences): the moment the data command
+returns fragments of phrases instead of values, presentation has leaked into the data, and the
+next blank needs its own set of fields.
+
+### Conditional parts: `visibleWhen`
+
+A regulated blank is rarely one blank. The discount column, the «У т.ч. ПДВ» line, the returnable
+packaging block, the footer with a facsimile — each is there or not **depending on the document**.
+Bind one flag per variation:
+
+```json
+{ "type": "field-list", "visibleWhen": "invoice.hasVat", "items": [ … ] }
+{ "key": "c_vat",  "widthPercent": "10", "visibleWhen": "invoice.hasVat" }
+{ "key": "r_note", "cells": [ … ],       "visibleWhen": "note" }
+{ "key": "vat", "label": "У т.ч. ПДВ", "path": "vat", "visibleWhen": "hasVat" }
+```
+
+It sits on **every** element: any block (lines, image and barcode included), a table column, a
+row of any section, an item of a field list. Empty means always visible.
+
+Scope is the same as `path` next to it: root data for blocks, columns, header/footer rows and
+field items — **the record** for a row of the `row` section.
+
+Compute the flag in the **data command** (`total_vat > 0 as "hasVat"`), never in the template:
+the condition is a path, not an expression, because a bookkeeper edits the template. Falsy is
+`false`, `0`, `""`, `[]`, `null`, a missing field — and the strings `"false"` / `"0"`, so a data
+command that returns everything as text does not silently show the block.
+
+Do **not** solve variation by shipping a template per combination: discounts × VAT × packaging ×
+three footers is 24 templates of one invoice, all of them editable, and they diverge on the first
+edit because whoever edits fixes the one they happened to open.
+
+A hidden column hands its width to its neighbours by itself, and a cell merged across it narrows
+rather than disappears — you do not compensate for either.
 
 ### Amount in words
 
@@ -180,7 +236,7 @@ template say how to print it:
 ]}
 ```
 
-`format` works on a `field-list` item and on a table cell. The same number can be bound twice
+`format` works on a `text` block, a `field-list` item and a table cell. The same number can be bound twice
 — once plain, once in words — because the data command knows nothing about presentation.
 
 Language and currency come from the **template**, not from the data:

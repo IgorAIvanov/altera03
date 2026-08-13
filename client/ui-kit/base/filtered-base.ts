@@ -113,6 +113,19 @@ export abstract class FilteredBase<Root extends Record<string, unknown>> extends
   }
 
   /**
+   * Записати фільтр БЕЗ перезапиту — для умовчань, які сіються ДО першого
+   * завантаження (відбір за організацією в журналі документів).
+   *
+   * Окремо від `setFilter`, бо тут не має бути гака: звичайний запис попросив
+   * би перезавантажити екран, який ще нічого не завантажував, — тобто зайвий
+   * запит, а в списку ще й блимання чужих даних між двома відповідями.
+   */
+  protected seedFilter(key: string, value: unknown) {
+    if (value === undefined || value === null || value === "") return;
+    this.#mutable()[key] = value;
+  }
+
+  /**
    * Прив'язка НАТИВНОГО контрола до фільтра — рівно як `BaseUI.bindTo` для
    * полів форми: `@input=${this.bindFilter("number", { debounce: true })}`.
    *

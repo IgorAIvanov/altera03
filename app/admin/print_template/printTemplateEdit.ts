@@ -33,8 +33,13 @@ import {
   splitCell,
   type GridRange,
 } from "./printTemplate.grid.ts";
-// Тільки типи: формат шаблону визначає ядро (server/modules/print), і цей
-// import стирається при збірці — рантайм-коду ядра в бандл не потрапляє.
+// Єдиний рантайм-виняток серед імпортів ядра тут: правило істинності умови
+// показу мусить бути ОДНЕ з друком. Полотно, яке рахує «видно» інакше, ніж
+// рендерер, — гірше за полотно, яке не рахує цього зовсім: воно обіцяє те,
+// чого на папері не буде. `@altera/server/print` — вузький вхід (сам формат
+// шаблону), барель із контролерами Danet він не тягне.
+import { isPrintTemplateElementVisible } from "@altera/server/print";
+// Решта — тільки типи: цей import стирається при збірці.
 import type {
   PrintTemplateBlock,
   PrintTemplateBlockPlacement,
@@ -72,11 +77,17 @@ const PRINT_TEMPLATE_TABLE_SECTIONS: PrintTemplateTableSectionName[] = ["header"
 /** Скільки рядків таблиці показувати на схемі — решта не додає інформації. */
 const SCHEMATIC_TABLE_ROWS = 8;
 
-/** Значення для схеми: як у рендерері, прочерк замість порожнечі та об'єктів. */
+/**
+ * Значення для схеми — як у рендерері: порожнє лишається порожнім.
+ *
+ * Що показувати замість «нічого», вирішує розробник бланка в команді даних, а
+ * не ядро; полотно мусить показувати те саме, що поїде на папір, інакше воно
+ * обіцяє прочерк, якого не буде.
+ */
 function stringifyValue(value: unknown) {
-  if (value === null || value === undefined || value === "") return "-";
+  if (value === null || value === undefined || value === "") return "";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
-  return "-";
+  return "";
 }
 
 interface PathOption { value: string; label: string; }
@@ -184,6 +195,7 @@ function toSectionRows(value: unknown): PrintTemplateTableRow[] {
 
     return [{
       key: (row as { key?: string }).key || crypto.randomUUID(),
+      visibleWhen: (row as { visibleWhen?: string }).visibleWhen ?? "",
       cells: cells.map((cell) => ({
         ...createCell(),
         ...(cell as Partial<PrintTemplateTableCell>),
@@ -212,7 +224,9 @@ function normalizeLoadedBlocks(blocks: PrintTemplateBlock[]): PrintTemplateBlock
 
 /** Короткий підпис блока у списку. */
 function blockLabel(block: PrintTemplateBlock): string {
-  if (block.type === "text") return block.value.slice(0, 40) || t("printTemplate.blockType.text");
+  // Прив'язка теж іде в підпис: блок зі значенням з даних інакше виглядав би в
+  // списку як «Текст» без жодної ознаки, чим він відрізняється від сусіднього.
+  if (block.type === "text") return (block.value || block.path).slice(0, 40) || t("printTemplate.blockType.text");
   if (block.type === "table") return block.title || block.source || t("printTemplate.blockType.table");
   if (block.type === "field-list") return block.items.map((item) => item.label).filter(Boolean).join(", ").slice(0, 40);
   return t(`printTemplate.blockType.${block.type}`);
@@ -274,6 +288,22 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       border: 2px solid rgba(22, 119, 255, 0.9);
       background: rgba(22, 119, 255, 0.1);
       z-index: 20;
+    }
+    /* Блок, чия умова показу на демо-даних НЕ виконується. З полотна він не
+       зникає навмисно: сховане треба лишити чим рухати й куди клікати, а на
+       порожньому місці блока не виділиш. Тому він блідне й дістає штрихування
+       — видно, що на папір він зараз не піде. */
+    .frame.frame-hidden { opacity: 0.4; }
+    .frame.frame-hidden::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        45deg,
+        rgba(120, 120, 120, 0.10) 0 6px,
+        transparent 6px 12px
+      );
     }
     /* Схематичний вміст рамки: тільки щоб було видно, що і де стоїть.
        Джерело правди для вигляду — вкладка PDF. */
@@ -1002,6 +1032,14 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           </span>
         </div>
 
+        <!-- Умова показу — на блоці будь-якого типу, лінії включно: сховати
+             картинку підпису й лишити риску під нею було б гірше, ніж не мати
+             умовності зовсім. -->
+        ${this.field(t("printTemplate.visibleWhen"), this.pathSelect(block.visibleWhen, scalarPaths, (v) => this.updateBlock(block.key, (b) => ({ ...b, visibleWhen: v }))))}
+        ${block.visibleWhen && !this.isConditionMet(this.previewData, block.visibleWhen)
+          ? html`<div class="text-xs text-warning">${t("printTemplate.visibleWhenHiddenNow")}</div>`
+          : nothing}
+
         <div class="grid grid-cols-2 gap-2">
           ${this.field(t("printTemplate.placementX"), this.textInput(block.placement.xPercent, (v) => this.updatePlacement(block.key, { xPercent: v })))}
           ${this.field(t("printTemplate.placementY"), this.textInput(block.placement.yPercent, (v) => this.updatePlacement(block.key, { yPercent: v })))}
@@ -1034,10 +1072,29 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         ` : nothing}
 
         ${block.type === "text" ? html`
+          <!-- Значення: або з даних, або вписане руками. Статичне перекриває
+               прив'язку — те саме правило, що й у штрих-коді та комірці. -->
+          ${this.field(t("printTemplate.textPath"), this.pathSelect(block.path, scalarPaths, (v) => this.updateBlock(block.key, (b) => (
+            b.type === "text" ? { ...b, path: v } : b
+          ))))}
+          ${block.path ? this.field(t("printTemplate.valueFormat"), html`
+            <select class="select select-sm select-bordered w-full"
+              @change=${(e: Event) => this.updateBlock(block.key, (b) => (
+                b.type === "text"
+                  ? { ...b, format: (e.target as HTMLSelectElement).value as PrintTemplateValueFormat }
+                  : b
+              ))}>
+              <option value="" ?selected=${!block.format}>${t("printTemplate.formatNone")}</option>
+              <option value="amountInWords" ?selected=${block.format === "amountInWords"}>${t("printTemplate.formatAmountInWords")}</option>
+            </select>
+          `) : nothing}
           ${this.field(t("printTemplate.textValue"), html`
             <textarea class="textarea textarea-sm textarea-bordered w-full" rows="3" .value=${block.value}
               @input=${(e: Event) => this.updateBlock(block.key, (b) => (b.type === "text" ? { ...b, value: (e.target as HTMLTextAreaElement).value } : b))}></textarea>
           `)}
+          ${block.value && block.path
+            ? html`<div class="text-xs text-warning">${t("printTemplate.staticValueWins")}</div>`
+            : nothing}
           ${this.field(t("printTemplate.textStyle"), html`
             <select class="select select-sm select-bordered w-full"
               @change=${(e: Event) => this.updateBlock(block.key, (b) => (b.type === "text" ? { ...b, style: (e.target as HTMLSelectElement).value as typeof b.style } : b))}>
@@ -1049,7 +1106,21 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         ` : nothing}
 
         ${block.type === "image" ? html`
+          <!-- Логотип, печатка й підпис належать ОРГАНІЗАЦІЇ, а не бланку, тож
+               звичайний спосіб — прив'язка. Вибраний файл перекриває її: те саме
+               правило, що в тексті й у штрих-коді. -->
+          ${this.field(t("printTemplate.imagePath"), this.pathSelect(block.path, scalarPaths, (v) => this.updateBlock(block.key, (b) => (
+            b.type === "image" ? { ...b, path: v } : b
+          ))))}
           <button class="btn btn-sm" @click=${() => this.pickImageFile(block.key)}>${t("printTemplate.imageSelect")}</button>
+          ${block.src ? html`
+            <button class="btn btn-sm btn-ghost text-error" @click=${() => this.updateBlock(block.key, (b) => (
+              b.type === "image" ? { ...b, src: "" } : b
+            ))}>${t("printTemplate.imageClear")}</button>
+          ` : nothing}
+          ${block.src && block.path
+            ? html`<div class="text-xs text-warning">${t("printTemplate.staticValueWins")}</div>`
+            : nothing}
           ${this.field(t("printTemplate.imageAlt"), this.textInput(block.alt, (v) => this.updateBlock(block.key, (b) => (b.type === "image" ? { ...b, alt: v } : b))))}
         ` : nothing}
 
@@ -1101,7 +1172,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
             b.type === "barcode" ? { ...b, value: v } : b
           ))))}
           ${block.value && block.path
-            ? html`<div class="text-xs text-warning">${t("printTemplate.barcodeValueWins")}</div>`
+            ? html`<div class="text-xs text-warning">${t("printTemplate.staticValueWins")}</div>`
             : nothing}
 
           ${this.field(t("printTemplate.barcodeShowText"), html`
@@ -1171,6 +1242,11 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               <option value="">${t("printTemplate.formatNone")}</option>
               <option value="amountInWords">${t("printTemplate.formatAmountInWords")}</option>
             </select>
+            ${this.field(t("printTemplate.visibleWhen"), this.pathSelect(fieldItem.visibleWhen, scalarPaths, (v) => this.updateBlock(block.key, (b) => (
+              b.type === "field-list"
+                ? { ...b, items: b.items.map((entry) => (entry.key === fieldItem.key ? { ...entry, visibleWhen: v } : entry)) }
+                : b
+            ))))}
           </div>
         `)}
       </div>
@@ -1347,16 +1423,22 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           <span class="text-sm font-semibold">${t("printTemplate.columns")}</span>
           <button class="btn btn-xs" @click=${() => this.addGridColumn(block)}>+ ${t("printTemplate.addColumn")}</button>
         </div>
-        <div class="flex flex-wrap gap-1">
+        <!-- По рядку на колонку, а не чипами: у колонки тепер дві властивості,
+             і умова показу мусить бути видною, а не схованою за виділенням. -->
+        <div class="flex flex-col gap-1">
           ${block.columns.map((column, index) => html`
-            <span class="flex items-center gap-1 rounded border border-base-300 px-1">
-              <span class="text-xs text-muted">${index + 1}</span>
+            <span class="flex items-center gap-1">
+              <span class="w-5 text-xs text-muted">${index + 1}</span>
               <input class="input input-xs w-12" .value=${column.widthPercent}
                 @input=${(e: Event) => this.updateGridColumn(block, column.key, (e.target as HTMLInputElement).value)} />
+              <span class="flex-1">
+                ${this.pathSelect(column.visibleWhen, rootPaths, (v) => this.updateGridColumnCondition(block, column.key, v))}
+              </span>
               <button class="btn btn-ghost btn-xs text-error" ?disabled=${block.columns.length <= 1}
                 @click=${() => this.removeGridColumn(block, index)}>✕</button>
             </span>
           `)}
+          <span class="text-xs text-muted">${t("printTemplate.columnsHint")}</span>
         </div>
 
         <!-- Секції -->
@@ -1372,12 +1454,29 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
             ${this.renderSectionGrid(block, section)}
             ${block.sections[section].length
               ? html`
-                <div class="flex flex-wrap gap-1">
-                  ${block.sections[section].map((_, rowIndex) => html`
-                    <button class="btn btn-ghost btn-xs text-error"
-                      @click=${() => this.setSectionRows(block.key, section, removeRow(block.sections[section], block.columns.length, rowIndex))}>
-                      ✕ ${t("printTemplate.row")} ${rowIndex + 1}
-                    </button>
+                <div class="flex flex-col gap-1">
+                  ${block.sections[section].map((row, rowIndex) => html`
+                    <span class="flex items-center gap-1">
+                      <span class="w-16 text-xs text-muted">${t("printTemplate.row")} ${rowIndex + 1}</span>
+                      <span class="flex-1">
+                        <!-- Умова рядка резолвиться з того самого кореня, що й
+                             шляхи його комірок: у секції рядків це ЗАПИС, у
+                             шапці й підвалі — дані друку. -->
+                        ${this.pathSelect(
+                          row.visibleWhen,
+                          section === "row" ? recordPaths : rootPaths,
+                          (v) => this.setSectionRows(
+                            block.key,
+                            section,
+                            block.sections[section].map((entry) => (entry.key === row.key ? { ...entry, visibleWhen: v } : entry)),
+                          ),
+                        )}
+                      </span>
+                      <button class="btn btn-ghost btn-xs text-error"
+                        @click=${() => this.setSectionRows(block.key, section, removeRow(block.sections[section], block.columns.length, rowIndex))}>
+                        ✕
+                      </button>
+                    </span>
                   `)}
                 </div>
               `
@@ -1439,6 +1538,23 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
             footer: addColumn(entry.sections.footer, columnCount),
           },
         }
+        : entry
+    ));
+  }
+
+  /** Чи виконується умова на демо-даних — тільки для підказок у редакторі. */
+  private isConditionMet(scope: unknown, visibleWhen: string) {
+    return isPrintTemplateElementVisible(scope, visibleWhen);
+  }
+
+  private updateGridColumnCondition(
+    block: Extract<PrintTemplateBlock, { type: "table" }>,
+    columnKey: string,
+    visibleWhen: string,
+  ) {
+    this.updateBlock(block.key, (entry) => (
+      entry.type === "table"
+        ? { ...entry, columns: entry.columns.map((column) => (column.key === columnKey ? { ...column, visibleWhen } : column)) }
         : entry
     ));
   }
@@ -1523,20 +1639,31 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     ].join(";");
 
     if (block.type === "text") {
-      return html`<div class="frame-body" style="${common(block.text)};white-space:pre-wrap">${block.value}</div>`;
+      // Те саме правило, що в комірці й у штрих-коді: статичний текст перекриває
+      // прив'язку.
+      const text = block.value ||
+        (block.path ? stringifyValue(resolvePath(this.previewData, block.path)) : "");
+      return html`<div class="frame-body" style="${common(block.text)};white-space:pre-wrap">${text}</div>`;
     }
 
     if (block.type === "field-list") {
       return html`
         <div class="frame-body frame-fields" style=${common(block.text)}>
           ${block.items.map((item) => html`
-            <div><strong>${item.label}:</strong> ${stringifyValue(resolvePath(this.previewData, item.path))}</div>
+            <div>
+              ${item.label ? html`<strong>${item.label}:</strong> ` : nothing}${stringifyValue(resolvePath(this.previewData, item.path))}
+            </div>
           `)}
         </div>
       `;
     }
 
     if (block.type === "table") {
+      // Умовні колонки й рядки полотно показує ВСІ, і це не недогляд: полотно —
+      // сітка, яку редагують, а колонку, якої на ньому немає, не виділиш і не
+      // посунеш. Умова кожної видна поруч у панелі властивостей, а результат —
+      // на вкладці PDF. Блок цілком — інша річ: те, що він не піде на папір,
+      // видно з розкладки сусідів, тому рамка блока блідне (`.frame-hidden`).
       const source = resolvePath(this.previewData, block.source);
       const records = Array.isArray(source) ? source.slice(0, SCHEMATIC_TABLE_ROWS) : [];
       const columnCount = block.columns.length;
@@ -1590,8 +1717,13 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     }
 
     if (block.type === "image") {
-      return block.src.trim()
-        ? html`<img class="frame-body" src=${block.src} alt=${block.alt}
+      // Прив'язана картинка теж малюється на полотні: інакше блок із печаткою
+      // виглядав би порожнім рівно там, де компонують підвал бланка. Значення
+      // беремо з демо-даних, як і решта прив'язок.
+      const bound = block.path ? resolvePath(this.previewData, block.path) : null;
+      const src = block.src.trim() || (typeof bound === "string" ? bound.trim() : "");
+      return src
+        ? html`<img class="frame-body" src=${src} alt=${block.alt}
             style="width:100%;height:100%;object-fit:contain" />`
         : html`<div class="frame-empty">${t("printTemplate.imageEmpty")}</div>`;
     }
@@ -1671,11 +1803,14 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               box.h > 0 ? `height:${box.h}%` : "",
             ].filter(Boolean).join(";");
 
+            const hidden = !this.isConditionMet(this.previewData, block.visibleWhen);
+            const label = `${t(`printTemplate.blockType.${block.type}`)}: ${blockLabel(block)}`;
+
             return html`
               <div
-                class="frame ${selected ? "selected" : ""}"
+                class="frame ${selected ? "selected" : ""} ${hidden ? "frame-hidden" : ""}"
                 style=${style}
-                title=${`${t(`printTemplate.blockType.${block.type}`)}: ${blockLabel(block)}`}
+                title=${hidden ? `${label} — ${t("printTemplate.visibleWhenHiddenNow")}` : label}
                 @pointerdown=${(e: PointerEvent) => this.startDrag(e, "move", block)}
               >
                 ${this.renderFrameContent(block)}

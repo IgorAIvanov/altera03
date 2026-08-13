@@ -138,7 +138,7 @@ export class UiImage extends GlobalStyledLitElement {
       <div class="flex flex-col gap-1">
         ${this.label
           ? html`<span class="label text-sm leading-none">
-              ${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}
+              ${this.label}${this.required ? html`<span class="field-required">*</span>` : ""}
             </span>`
           : ""}
 

@@ -51,6 +51,7 @@ export function createRow(columnCount: number): PrintTemplateTableRow {
   return {
     key: crypto.randomUUID(),
     cells: Array.from({ length: Math.max(columnCount, 1) }, () => createCell()),
+    visibleWhen: "",
   };
 }
 
@@ -118,6 +119,9 @@ export function gridToRows(grid: CellGrid, sourceRows: PrintTemplateTableRow[]):
 
   return grid.map((gridRow, rowIndex) => ({
     key: sourceRows[rowIndex]?.key ?? crypto.randomUUID(),
+    // Умова показу належить РЯДКУ, а не комірці: перебудова сітки (об'єднання,
+    // вставка) не має її губити.
+    visibleWhen: sourceRows[rowIndex]?.visibleWhen ?? "",
     cells: gridRow.flatMap((cell, columnIndex) => {
       if (!cell) return [createCell()];
 

@@ -602,6 +602,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
           </button>
         </div>
         <div class="flex-1 min-h-0 overflow-auto p-2 flex flex-col gap-2">
+          ${this.renderBuiltInFilters()}
           ${this.renderFilters()}
         </div>
       </div>
@@ -643,6 +644,21 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
    * лише той список, якому він потрібен, а не кожен табличний екран застосунку.
    */
   protected renderFilters(): TemplateResult | string { return ""; }
+
+  /**
+   * Відбори, які основа малює САМА — перед фільтрами екрана.
+   *
+   * Точка розширення ФРЕЙМВОРКУ, не застосунку (пара до `renderToolbarActions`
+   * поруч із `renderToolbarExtra`). Сюди йде те, що однакове в кожного екрана
+   * свого роду й спирається на дані ядра: сьогодні це відбір за організацією в
+   * журналі документів — колонка `organization_id` живе в `app.document`, тож
+   * застосунку нема куди його повісити.
+   *
+   * Окремо від `renderFilters()` навмисно: інакше екран, який дописує свій
+   * фільтр, мусив би пам'ятати покликати основу — а забутий виклик мовчки
+   * прибрав би відбір, і виглядало б це як «журнал показує чужий облік».
+   */
+  protected renderBuiltInFilters(): TemplateResult | string { return ""; }
 
   /**
    * Порожня таблиця.

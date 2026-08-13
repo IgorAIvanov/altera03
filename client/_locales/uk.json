@@ -26,6 +26,8 @@
   "common.statusNew": "Введений",
   "common.statusPosted": "Проведений",
   "common.statusDeleted": "Позначено на видалення",
+  "common.organization": "Організація",
+  "common.organizationAll": "Усі організації",
   "common.filters": "Фільтри",
   "common.filtersReset": "Скинути",
   "common.code": "Код",

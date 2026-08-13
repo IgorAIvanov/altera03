@@ -293,6 +293,31 @@ on a table screen.
   hierarchical catalogue the panel and the group tree share that one column, filters on
   top, tree below.
 
+## The organisation filter is a flag, not markup
+
+A document journal never writes this one by hand:
+
+```ts
+protected override organizationFilter = true;
+```
+
+`organization_id` lives in `app.document` and its `x-filter` is declared in the core
+`DocumentHeaderSchema`, so there is nothing for you to annotate and nothing to render.
+The base supplies the default (the current organisation, seeded before the first load),
+the «all organisations» option that clears it, and silence when only one organisation
+exists.
+
+Do **not** add your own organisation picker to `renderFilters()` — you would get two
+controls over one key, and yours would have neither the default nor the auto-hide.
+
+The framework learns the organisations from the application, registered once in the
+composition root; without that registration it behaves as if there were one organisation:
+
+```ts
+// app/main.ts
+setOrganizationContext({ current: () => currentOrg(), list: () => knownOrgs() });
+```
+
 ## Rules
 
 - One line in the schema per filter; regenerate with `deno task sql:gen <family>/<model>`

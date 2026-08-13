@@ -10,6 +10,8 @@ import type { BarcodeShape } from "./barcode/barcode.ts";
 import {
   getRenderablePrintTemplateBlocks,
   getRenderablePrintTemplateTableColumns,
+  isPrintTemplateElementVisible,
+  layoutPrintTemplateGrid,
   resolvePrintTemplateBlockPlacement,
   resolvePrintTemplateBlockTextOptions,
   resolvePrintTemplateLineOptions,
@@ -146,24 +148,50 @@ function buildSectionRows(
   rows: PrintTemplateTableRow[],
   scope: unknown,
   context: PrintTemplateValueContext,
+  columnCount: number,
+  isColumnVisible: (index: number) => boolean,
 ): PrintTemplateRenderTableRow[] {
-  return rows.map((row) => ({
-    key: row.key,
-    cells: row.cells.map((cell) => ({
+  const kept = rows.filter((row) => isPrintTemplateElementVisible(scope, row.visibleWhen));
+
+  // Комірки лежать у рядку списком, а до колонок їх прив'язує обхід сітки —
+  // той самий, яким потім розставляє їх рендерер. Без нього неможливо
+  // сказати, ЯКІЙ колонці належить комірка, а отже й чи вона зникає разом
+  // із нею: `colSpan`/`rowSpan` зсувають усе, що правіше й нижче.
+  const placed = layoutPrintTemplateGrid(kept, columnCount);
+  const cellsByRow: PrintTemplateRenderTableCell[][] = kept.map(() => []);
+
+  for (const item of placed) {
+    let colSpan = 0;
+    for (let column = item.columnIndex; column < item.columnIndex + item.colSpan; column += 1) {
+      if (isColumnVisible(column)) colSpan += 1;
+    }
+
+    // Від комірки не лишилося жодної видимої колонки — вона зникає разом із ними.
+    if (colSpan === 0) continue;
+
+    const cell = item.cell;
+    cellsByRow[item.rowIndex]!.push({
       key: cell.key,
       // Статичний текст має пріоритет: підпис у шапці не має залежати від даних.
       value: cell.text ||
         (cell.path
           ? stringifyPrintTemplateValue(resolvePrintTemplatePath(scope, cell.path), cell.format, context)
           : ""),
-      colSpan: cell.colSpan,
+      colSpan,
       rowSpan: cell.rowSpan,
       align: cell.align,
       fontWeight: cell.fontWeight,
       fontSize: cell.fontSize ? Number.parseFloat(cell.fontSize) || null : null,
       color: cell.color,
-    })),
-  }));
+    });
+  }
+
+  // Рядок, від якого не лишилося комірок, теж не друкуємо: інакше в таблиці
+  // з'явилася б порожня смуга висотою в рядок тексту — слід від колонки, якої
+  // на бланку немає.
+  return kept
+    .map((row, index) => ({ key: row.key, cells: cellsByRow[index]! }))
+    .filter((row) => row.cells.length > 0);
 }
 
 export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source: unknown): PrintTemplateRenderBlock[] {
@@ -172,11 +200,24 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
   const context: PrintTemplateValueContext = { locale: schema.locale, currency: schema.currency };
 
   return getRenderablePrintTemplateBlocks(schema).flatMap<PrintTemplateRenderBlock>((block: PrintTemplateSchema["blocks"][number]) => {
+    // Умова показу — на блоці БУДЬ-ЯКОГО типу, включно з лініями: підвал із
+    // факсиміле це рамка плюс картинка плюс риска, і сховати з них частину
+    // означало б лишити на бланку висячу лінію.
+    if (!isPrintTemplateElementVisible(source, block.visibleWhen)) {
+      return [];
+    }
+
     if (block.type === "text") {
+      // Статичний текст перекриває прив'язку — те саме правило, що в комірці
+      // таблиці й у штрих-коді.
+      const bound = block.path
+        ? stringifyPrintTemplateValue(resolvePrintTemplatePath(source, block.path), block.format, context)
+        : "";
+
       return [{
         key: block.key,
         type: "text",
-        text: block.value || "-",
+        text: block.value || bound,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
@@ -186,15 +227,17 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
       return [{
         key: block.key,
         type: "field-list",
-        items: block.items.map((item: typeof block.items[number]) => ({
-          key: item.key,
-          label: item.label,
-          value: stringifyPrintTemplateValue(
-            resolvePrintTemplatePath(source, item.path),
-            item.format,
-            context,
-          ),
-        })),
+        items: block.items
+          .filter((item: typeof block.items[number]) => isPrintTemplateElementVisible(source, item.visibleWhen))
+          .map((item: typeof block.items[number]) => ({
+            key: item.key,
+            label: item.label,
+            value: stringifyPrintTemplateValue(
+              resolvePrintTemplatePath(source, item.path),
+              item.format,
+              context,
+            ),
+          })),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
@@ -204,24 +247,46 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
       const records = resolvePrintTemplatePath(source, block.source);
       const items = Array.isArray(records) ? records : [];
 
+      // Колонка є або її немає на весь бланк, тож умова рахується один раз — від
+      // кореня даних, а не від запису. Ширину схована колонка віддає сусідам
+      // САМА, без арифметики: рендерер ділить таблицю за вагами тих колонок, що
+      // прийшли, тож менша сума ваг розтягує решту пропорційно.
+      const columnVisible = block.columns.map((column) => isPrintTemplateElementVisible(source, column.visibleWhen));
+      const columns = block.columns.filter((_, index) => columnVisible[index]);
+
+      // Таблиця без жодної видимої колонки — це не порожня таблиця, а таблиця,
+      // якої на цьому бланку немає.
+      if (!columns.length) {
+        return [];
+      }
+
+      const isColumnVisible = (index: number) => columnVisible[index] === true;
+      const columnCount = block.columns.length;
+
       return [{
         key: block.key,
         type: "table",
         title: block.title,
-        columns: getRenderablePrintTemplateTableColumns(block.columns),
-        header: buildSectionRows(block.sections.header, source, context),
-        body: items.map((record) => buildSectionRows(block.sections.row, record, context)),
-        footer: buildSectionRows(block.sections.footer, source, context),
+        columns: getRenderablePrintTemplateTableColumns(columns),
+        header: buildSectionRows(block.sections.header, source, context, columnCount, isColumnVisible),
+        body: items.map((record) => buildSectionRows(block.sections.row, record, context, columnCount, isColumnVisible)),
+        footer: buildSectionRows(block.sections.footer, source, context, columnCount, isColumnVisible),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
 
     if (block.type === "image") {
+      // Те саме правило, що всюди в форматі: статичне значення сильніше. Але
+      // через `stringifyPrintTemplateValue` це не пропускаємо — його «-» для
+      // порожнього значення став би `src="-"`, тобто зламаною картинкою замість
+      // відсутньої (та сама причина, що в штрих-коді нижче).
+      const bound = block.path ? resolvePrintTemplatePath(source, block.path) : null;
+
       return [{
         key: block.key,
         type: "image",
-        src: block.src,
+        src: block.src || (typeof bound === "string" ? bound : ""),
         alt: block.alt,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
       }];

@@ -47,6 +47,8 @@
   "common.statusNew": "Entered",
   "common.statusPosted": "Posted",
   "common.statusDeleted": "Marked for deletion",
+  "common.organization": "Organisation",
+  "common.organizationAll": "All organisations",
   "common.filters": "Filters",
   "common.filtersReset": "Reset",
   "common.noOpenTabs": "No open tabs",

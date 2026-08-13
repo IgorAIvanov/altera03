@@ -9,7 +9,7 @@ import { currentUser, logout } from "@client/auth/session.ts";
 import "./change-password-dialog.ts";
 import type { ChangePasswordDialog } from "./change-password-dialog.ts";
 import { availableLocales, getLocale, localeName, t } from "@client/locale.ts";
-import { currentOrg, setCurrentOrg } from "@shared/current-organization.ts";
+import { currentOrg, knownOrgs, loadOrgs, orgsError, setCurrentOrg } from "@shared/current-organization.ts";
 
 @customElement("app-header")
 export class AppHeader extends SignalWatcher(LitElement) {
@@ -261,9 +261,10 @@ export class AppHeader extends SignalWatcher(LitElement) {
   @state() private orgOpen = false;
   @state() private langOpen = false;
   @state() private locales: string[] = [];
-  @state() private orgs: Array<{ id: string; name: string }> = [];
-  /** Чому список порожній. Порожній рядок — причини немає, справді нічого немає. */
-  @state() private orgsError = "";
+  // Перелік організацій і причина його порожнечі більше не власний стан шапки:
+  // він живе в `@shared/current-organization.ts`, бо його питає ще й фреймворк
+  // (відбір за організацією в журналі документів). Сигнали — тож перемальовує
+  // сам, без @state.
 
   private appName = "Altera ERP";
   /** Вихід уже почався: другий клік нічого не додасть, крім другого запиту. */
@@ -339,46 +340,17 @@ export class AppHeader extends SignalWatcher(LitElement) {
     return words.map(w => w[0]).join("").slice(0, 2).toUpperCase();
   }
 
-  /** Відкрити/закрити список організацій; при відкритті — перечитати перелік. */
+  /**
+   * Відкрити/закрити список організацій.
+   *
+   * Перечитувати перелік тут більше не треба: його завантажує composition root
+   * одразу після входу, і міняється він приблизно ніколи. Повторне читання
+   * лишається на випадок відмови — порожній перелік з причиною варто спробувати
+   * ще раз.
+   */
   private toggleOrgMenu() {
     this.orgOpen = !this.orgOpen;
-    if (this.orgOpen) void this.loadOrgs();
-  }
-
-  /**
-   * Перелік організацій для меню — через lookup довідника.
-   *
-   * Обов'язково шиною, а не власним `fetch`. Раніше тут стояв голий `fetch`, і
-   * після переходу на httpOnly-cookie він перестав проходити авторизацію:
-   * заголовок `X-Requested-With`, без якого сервер відкидає POST із cookie
-   * (захист від CSRF), ставить лише `apiFetch`. Запит повертав 401, гілка
-   * `data?.data?.rows ?? []` мовчки давала порожній масив — і список організацій
-   * виглядав просто порожнім, без жодної ознаки відмови.
-   */
-  private async loadOrgs() {
-    this.orgsError = "";
-    try {
-      // `pageSize`, а не `limit`: саме це ім'я читає `app.organization_lookup`.
-      // З `limit` payload мовчки ігнорувався, і меню обрізалося на десятій
-      // організації — при двох наявних це було непомітно.
-      const envelope = await bus.request("data.load", {
-        model: "organization",
-        command: "lookup",
-        payload: { pageSize: 100 },
-      }) as { ok?: boolean; data?: { rows?: unknown[] }; messages?: unknown[] } | undefined;
-
-      const rows = envelope?.data?.rows ?? [];
-      this.orgs = rows.map((row) => {
-        const record = row as Record<string, unknown>;
-        return { id: String(record.id), name: String(record.name) };
-      });
-    } catch (e) {
-      // Тепер помилка видно: data-service кидає повідомлення сервера, і ховати
-      // його за порожнім списком означало б повторити ту саму ваду.
-      console.error("[app-header] не вдалося завантажити організації:", e);
-      this.orgs = [];
-      this.orgsError = e instanceof Error ? e.message : String(e);
-    }
+    if (this.orgOpen && knownOrgs().length === 0) void loadOrgs();
   }
 
   private selectOrg(o: { id: string; name: string }) {
@@ -452,11 +424,11 @@ export class AppHeader extends SignalWatcher(LitElement) {
           ${this.orgOpen ? html`
             <div class="overlay" @click=${() => this.orgOpen = false}></div>
             <div class="hdr-menu">
-              ${this.orgs.length === 0
-                ? html`<div class="hdr-menu-empty ${this.orgsError ? "error" : ""}">
-                    ${this.orgsError || t("common.noData")}
+              ${knownOrgs().length === 0
+                ? html`<div class="hdr-menu-empty ${orgsError() ? "error" : ""}">
+                    ${orgsError() || t("common.noData")}
                   </div>`
-                : this.orgs.map(o => html`
+                : knownOrgs().map(o => html`
                   <button type="button" class="hdr-menu-item ${o.id === org?.id ? "active" : ""}"
                     @click=${() => this.selectOrg(o)}>
                     ${this.iconCheck()}

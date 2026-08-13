@@ -371,7 +371,7 @@ function toField(
     filter: normalizeFilter(prop["x-filter"]),
     search: prop["x-search"] === true,
     sortable: prop["x-list"]?.sortable === true,
-    boolDefaultSql: prop.default === false ? "false" : "true",
+    boolDefaultSql: booleanDefaultSql(prop.default),
     defaultSql: isJson
       ? "'{}'::jsonb"
       : (isNumeric || isInt) && typeof prop.default === "number"
@@ -382,6 +382,27 @@ function toField(
     ref,
     blobTokenKey,
   };
+}
+
+/**
+ * Умовчання логічного поля для `coalesce` у згенерованому `merge`.
+ *
+ * Тут стояло «все, крім явного `false`, — це `true`», тобто `undefined` теж.
+ * Поле, якого немає в payload (а його не буде в кожного клієнта, що шле лише
+ * заповнене), мовчки ставало «так»: `amountIncludesVat` без ключа перетворював
+ * рахунок на «ціни з ПДВ», тобто з іншою сумою до сплати. Ніщо цього не ловило
+ * — SQL валідний, тип правильний, проба на документі з явним ключем проходить,
+ * і видно це лише сумою в чужому рахунку.
+ *
+ * `false` не «краще значення», а єдине, яке не вигадує факт: «нема ключа»
+ * означає «не сказано», а не «так». Хто хоче «так» — оголошує `default: true`
+ * у схемі, як це вже роблять `is_active` моделей ядра.
+ *
+ * Винесено окремо й експортовано, щоб бути під пробою: тихі правила мусять
+ * перевірятися, бо саме їх ніхто не перечитує.
+ */
+export function booleanDefaultSql(schemaDefault: unknown): "true" | "false" {
+  return schemaDefault === true ? "true" : "false";
 }
 
 function normalizeFilter(raw: boolean | XFilter | undefined): XFilter | undefined {

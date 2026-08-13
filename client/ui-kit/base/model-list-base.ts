@@ -4,6 +4,12 @@ import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { can } from "@client/auth/session.ts";
 import { formatDate } from "@client/shared/datetime.ts";
+import {
+  currentOrganization,
+  knownOrganizations,
+  organizationFilterApplies,
+  type OrgRef,
+} from "@client/shared/organization-context.ts";
 import { QueryTableBase } from "./query-table-base.ts";
 import type { ListColumn, ListRoot } from "./table-contract.ts";
 import { buildRowsSheet, type ExportColumn } from "../report/rows-sheet.ts";
@@ -95,6 +101,10 @@ export abstract class ModelListBase<Row extends { id: string }> extends QueryTab
   #unsub?: () => void;
 
   override connectedCallback() {
+    // Умовчання відбору сіється ДО super: там відбувається перше завантаження,
+    // і засіяний після нього фільтр коштував би другого запиту, а на екрані
+    // встиг би блимнути чужий облік.
+    this.#seedOrganizationFilter(false);
     // Основа виставляє сортування за замовчуванням і робить перше завантаження.
     super.connectedCallback();
     this.#unsub = bus.on("model.changed", (msg) => {
@@ -102,9 +112,106 @@ export abstract class ModelListBase<Row extends { id: string }> extends QueryTab
     });
   }
 
+  protected override updated(changed: Map<string, unknown>) {
+    super.updated?.(changed);
+    // Другий захід: перелік організацій міг приїхати вже після першого рендера.
+    this.#seedOrganizationFilter(true);
+  }
+
   override disconnectedCallback() {
     super.disconnectedCallback();
     this.#unsub?.();
+  }
+
+  // ── Відбір за організацією ────────────────────────────────────────────────
+  //
+  // Вмикається одним рядком у журналі документів (`organizationFilter = true`),
+  // а решта — тут: умовчання з поточної організації, можливість його зняти й
+  // мовчання там, де організація одна.
+  //
+  // Чому це в основі, а не в кожному журналі: колонка `organization_id` живе в
+  // `app.document`, тобто в ядрі, і `x-filter` на неї оголошений теж у ядрі
+  // (`DocumentHeaderSchema`). Журнал, який писав би панель сам, повторював би
+  // одне й те саме десять разів — і кожен наступний застосунок писав би
+  // одинадцятий.
+
+  /**
+   * Журнал документів: показувати відбір за організацією (ключ `organization`).
+   *
+   * Умовчання `false` — довідники такого поля не мають.
+   */
+  protected organizationFilter = false;
+
+  /** Чи малювати відбір ЗАРАЗ: увімкнений і організацій справді кілька. */
+  protected get showOrganizationFilter(): boolean {
+    return this.organizationFilter && organizationFilterApplies();
+  }
+
+  /** Умовчання вже вирішене — другий раз не сіємо, навіть якщо його зняли. */
+  #organizationSeeded = false;
+
+  /**
+   * Умовчання — поточна організація, і воно саме УМОВЧАННЯ, а не заборона:
+   * знімається як звичайний фільтр (вибором «усі організації», кнопкою
+   * «Скинути»). Заборонити тут не можна — побачити всі організації разом це
+   * законна потреба, і саме так поводиться джерело, з якого списано механізм.
+   *
+   * Сіється лише в порожній набір: відновлена вкладка чи перехід із
+   * параметрами вже несуть свій відбір, і затирати його не можна.
+   *
+   * Кличеться ДВІЧІ, і це не перестраховка. Перелік організацій приїжджає
+   * запитом, тож журнал, відкритий одразу після входу (а так відкриваються
+   * відновлені вкладки), встигає намалюватися раніше за нього — і в момент
+   * `connectedCallback` ще не видно, чи організацій кілька. Тому другий захід
+   * робиться після рендера, коли перелік уже є; він коштує зайвого запиту,
+   * але тільки в цьому випадку, і краще за журнал, який мовчки показує чужий
+   * облік.
+   */
+  #seedOrganizationFilter(reload: boolean) {
+    if (this.#organizationSeeded) return;
+    // Переліку ще немає — не «організація одна», а «не знаємо». Спробуємо
+    // після наступного рендера.
+    if (!this.showOrganizationFilter) return;
+
+    this.#organizationSeeded = true;
+    if (this.filterValue("organization") !== undefined) return;
+
+    const org = currentOrganization();
+    if (!org) return;
+
+    this.seedFilter("organization", { id: org.id, name: org.name });
+    if (reload) this.reload();
+  }
+
+  protected override get hasFilters(): boolean {
+    return this.showOrganizationFilter || super.hasFilters;
+  }
+
+  protected override renderBuiltInFilters(): TemplateResult | string {
+    if (!this.showOrganizationFilter) return "";
+
+    const selected = this.filterValue<OrgRef>("organization");
+    // Нативний `<select>`, а не `<ui-picker>`, і це не спрощення: основа
+    // списків не має права статично імпортувати компонент відбору — за нього
+    // платив би КОЖЕН табличний екран застосунку, включно з довідниками, у
+    // яких організації немає (скіл `framework-ui-internals`, граф чанків).
+    // Перелік до того ж уже в руках і короткий — пікер із пошуком тут зайвий.
+    return html`
+      <label class="flex flex-col gap-px">
+        <span class="label text-sm leading-none">${t("common.organization")}</span>
+        <select class="select select-sm select-bordered w-full"
+          @change=${(e: Event) => {
+            const id = (e.target as HTMLSelectElement).value;
+            const org = knownOrganizations().find((entry) => entry.id === id);
+            this.setFilter("organization", org ? { id: org.id, name: org.name } : undefined);
+          }}>
+          <option value="" ?selected=${!selected}>${t("common.organizationAll")}</option>
+          ${knownOrganizations().map((org) => html`
+            <option value=${org.id} ?selected=${selected?.id === org.id}>${org.name}</option>
+          `)}
+        </select>
+      </label>
+    `;
   }
 
   /**

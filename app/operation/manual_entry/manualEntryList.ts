@@ -12,6 +12,13 @@ export const tagName = "manual-entry-list";
 export class ManualEntryList extends ModelListBase<ManualEntryRow> {
   protected model = "manual_entry";
   protected editRoute = "operation/manual_entry/edit";
+
+  /**
+   * Журнал документів — відбір за організацією. Умовчання (поточна
+   * організація), можливість його зняти й мовчання при одній організації
+   * дає основа; тут лишається сам факт, що документ організації належить.
+   */
+  protected override organizationFilter = true;
   protected override defaultSortBy = "docDate";
 
   protected columns: ListColumn<ManualEntryRow>[] = [

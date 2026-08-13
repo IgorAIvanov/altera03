@@ -22,6 +22,13 @@ type PeriodEvent = CustomEvent<{ dateFrom: string; dateTo: string }>;
 export class InvoiceList extends ModelListBase<InvoiceRow> {
   protected model = "invoice";
   protected editRoute = "document/invoice/edit";
+
+  /**
+   * Журнал документів — відбір за організацією. Умовчання (поточна
+   * організація), можливість його зняти й мовчання при одній організації
+   * дає основа; тут лишається сам факт, що документ організації належить.
+   */
+  protected override organizationFilter = true;
   protected override defaultSortBy = "number";
 
   protected columns: ListColumn<InvoiceRow>[] = [

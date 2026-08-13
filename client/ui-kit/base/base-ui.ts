@@ -811,7 +811,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
       <label class="flex flex-col gap-px ${opts.class ?? ""} ${error ? "field-invalid" : ""}"
         data-field=${opts.field ?? nothing}>
         <span class="label text-sm leading-none">
-          ${label}${required ? html`<span class="text-error ml-0.5">*</span>` : ""}
+          ${label}${required ? html`<span class="field-required">*</span>` : ""}
         </span>
         ${control}
         ${error ? html`<span class="field-error" role="alert">${error}</span>` : ""}

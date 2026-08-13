@@ -348,6 +348,46 @@ export class AppMenu extends LitElement {
     bus.emit({ type: "tab.open", route: item.route, id: null });
   }
 
+  /**
+   * Наведення на пункт. Підказки дві, і це не дублювання: у двох режимах
+   * приховане різне, тож і ліки різні.
+   *
+   * СГОРНУТЕ меню — підпису немає взагалі, лишилася сама іконка. Підказка
+   * потрібна завжди й одразу, без затримки браузера: інакше по рейці не
+   * зорієнтуватися зовсім. Це власна `.tooltip` (нижче), вона ж уміє стати
+   * праворуч від рейки.
+   *
+   * РОЗГОРНУТЕ — підпис є, але довгий ріжеться багатокрапкою по ширині панелі.
+   * Тут доречний рівно нативний `title`: затримку, зникнення й розміщення (у
+   * тому числі ВИХІД за межі панелі, куди своя підказка не дістає без ще
+   * одного шару координат) робить браузер. Своя підказка тут була б ще й
+   * настирливою — вона з'являється миттєво на кожному наведенні.
+   */
+  private handleItemEnter(e: MouseEvent, item: MenuItem, hasChildren: boolean) {
+    const el = e.currentTarget as HTMLElement;
+
+    if (this.collapsed) {
+      el.removeAttribute("title");
+      if (hasChildren) this.hideTooltip();
+      else this.showTooltip(e, item.label);
+      return;
+    }
+
+    this.hideTooltip();
+    // Ставимо `title` ЛИШЕ обрізаному підпису: на кожному пункті поспіль
+    // підказка перетворюється на шум, а сказати вона має те, чого не видно.
+    //
+    // Обрізаність рахується вимірюванням, а не довжиною назви: ширина панелі
+    // стала, а от скільки в неї влізе — залежить від шрифту й рівня вкладеності
+    // (дочірні пункти мають більший відступ зліва). Допуск в 1px — бо
+    // scrollWidth і clientWidth цілі, і дробова ширина дає зайвий піксель на
+    // рівному місці.
+    const label = el.querySelector<HTMLElement>(".label");
+    const clipped = !!label && label.scrollWidth - label.clientWidth > 1;
+    if (clipped) el.title = item.label;
+    else el.removeAttribute("title");
+  }
+
   private showTooltip(e: MouseEvent, label: string) {
     if (!this.collapsed) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -396,7 +436,7 @@ export class AppMenu extends LitElement {
         class="item ${this.activeId === item.id ? "active" : ""}"
         style="${level > 0 ? "padding-left: 28px;" : ""}"
         @click=${(e: MouseEvent) => this.handleItemClick(e, item)}
-        @mouseenter=${(e: MouseEvent) => !hasChildren ? this.showTooltip(e, item.label) : this.hideTooltip()}
+        @mouseenter=${(e: MouseEvent) => this.handleItemEnter(e, item, !!hasChildren)}
         @mouseleave=${this.hideTooltip}
       >
         <span class="icon">${this.icon(item.icon)}</span>

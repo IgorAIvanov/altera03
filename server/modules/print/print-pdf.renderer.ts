@@ -6,6 +6,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { PRINT_FONT_BOLD_BASE64, PRINT_FONT_REGULAR_BASE64 } from "./fonts.generated.ts";
+import { layoutPrintTemplateGrid } from "./print-template.ts";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
 import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
 import type {
@@ -334,62 +335,43 @@ export async function renderPrintPdf(
   /**
    * Розкладка секції по сітці колонок.
    *
-   * Комірки лягають зліва направо, пропускаючи клітинки, зайняті `rowSpan` з
-   * попередніх рядків, — так само, як це робить HTML-таблиця. Висота рядка =
-   * найвища з комірок, що в ньому закінчуються; якщо об'єднана по вертикалі
-   * комірка вища за суму своїх рядків, різницю добираємо останньому з них.
+   * Сам обхід (зліва направо, з пропуском клітинок, зайнятих `rowSpan` з
+   * попередніх рядків) живе в `print-template.ts`: ним же користується план
+   * рендеру, коли викидає комірки схованої колонки. Тут лишається те, що знає
+   * тільки рендерер, — ширини, шрифти й перенесення рядків.
+   *
+   * Висота рядка = найвища з комірок, що в ньому закінчуються; якщо об'єднана
+   * по вертикалі комірка вища за суму своїх рядків, різницю добираємо останньому.
    */
   const layoutSection = (
     rows: PrintTemplateRenderTableRow[],
     columns: TableColumn[],
     fallbackFontSize: number,
   ): SectionLayout => {
-    const occupied = new Set<string>();
-    const placed: PlacedCell[] = [];
+    const placed: PlacedCell[] = layoutPrintTemplateGrid(rows, columns.length).map((item) => {
+      const cell = item.cell;
+      const width = columns
+        .slice(item.columnIndex, item.columnIndex + item.colSpan)
+        .reduce((sum, column) => sum + column.width, 0);
+      const fontSize = cell.fontSize ?? fallbackFontSize;
+      const bold = cell.fontWeight === "bold";
 
-    rows.forEach((row, rowIndex) => {
-      let columnIndex = 0;
-
-      for (const cell of row.cells) {
-        while (occupied.has(`${rowIndex}:${columnIndex}`)) columnIndex += 1;
-        // Комірки, для яких не лишилось колонок, просто не друкуються:
-        // краще втратити зайву комірку, ніж поламати сітку.
-        if (columnIndex >= columns.length) break;
-
-        const colSpan = Math.min(cell.colSpan, columns.length - columnIndex);
-        const rowSpan = Math.min(cell.rowSpan, rows.length - rowIndex);
-
-        for (let r = 0; r < rowSpan; r += 1) {
-          for (let c = 0; c < colSpan; c += 1) {
-            occupied.add(`${rowIndex + r}:${columnIndex + c}`);
-          }
-        }
-
-        const width = columns
-          .slice(columnIndex, columnIndex + colSpan)
-          .reduce((sum, column) => sum + column.width, 0);
-        const fontSize = cell.fontSize ?? fallbackFontSize;
-        const bold = cell.fontWeight === "bold";
-
-        placed.push({
-          columnIndex,
-          rowIndex,
-          colSpan,
-          rowSpan,
-          width,
-          fontSize,
-          bold,
-          align: cell.align,
-          color: cell.color,
-          lines: wrapText(
-            cell.value,
-            Math.max(width - CELL_PADDING * 2, 12),
-            (value) => measure(value, fontSize, bold),
-          ),
-        });
-
-        columnIndex += colSpan;
-      }
+      return {
+        columnIndex: item.columnIndex,
+        rowIndex: item.rowIndex,
+        colSpan: item.colSpan,
+        rowSpan: item.rowSpan,
+        width,
+        fontSize,
+        bold,
+        align: cell.align,
+        color: cell.color,
+        lines: wrapText(
+          cell.value,
+          Math.max(width - CELL_PADDING * 2, 12),
+          (value) => measure(value, fontSize, bold),
+        ),
+      };
     });
 
     const heights = rows.map(() => 0);
@@ -478,7 +460,7 @@ export async function renderPrintPdf(
     const blockWidth = contentWidth * (block.placement.widthPercent / 100);
 
     if (block.type === "text") {
-      return drawParagraph(block.text || "-", {
+      return drawParagraph(block.text, {
         x: blockX,
         y: topY,
         width: blockWidth,
@@ -492,7 +474,11 @@ export async function renderPrintPdf(
     if (block.type === "field-list") {
       let fieldY = topY;
       for (const item of block.items) {
-        fieldY -= drawParagraph(`${item.label}: ${item.value}`, {
+        // Підпис необов'язковий: без нього друкується САМЕ значення. Доти рядок
+        // склеювався беззастережно, і поле без підпису починалося з двокрапки
+        // («: ТОВ «Демо»»), тобто списком полів не можна було надрукувати
+        // рядок значень — а саме так виглядають реквізити сторони на бланку.
+        fieldY -= drawParagraph(item.label ? `${item.label}: ${item.value}` : item.value, {
           x: blockX,
           y: fieldY,
           width: blockWidth,

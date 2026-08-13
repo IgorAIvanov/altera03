@@ -45,10 +45,36 @@ export interface PrintTemplateBlockTextOptions {
   color: string;
 }
 
+/**
+ * Умова показу — шлях у даних друку. Порожній означає «видно завжди», тож усі
+ * наявні шаблони лишаються чинними без міграції.
+ *
+ * ЧОМУ ШЛЯХ, А НЕ ВИРАЗ. Шаблон редагує бухгалтер, а не програміст, і вираз
+ * (`amount > 0 && hasVat`) — це мова всередині форми, яку доведеться і
+ * розбирати, і пояснювати. Рішення лишається в SQL: команда даних рахує
+ * `hasVat`, `hasDiscount`, `hasPackaging`, а бланк лише показує, чим воно
+ * керує. Дані від цього не стають поданням — прапорець це факт про документ,
+ * а не про розкладку.
+ *
+ * ЩО ВВАЖАЄТЬСЯ ХИБОЮ: `false`, `0`, порожній рядок, порожній масив, `null` —
+ * і текстові написання `"false"` / `"0"`. Останнє не поступка, а fail-closed:
+ * команда даних, що віддає все рядками (`(total > 0)::text`), інакше показувала
+ * б блок завжди, і побачити це можна було б лише на папері. Помилятися тут
+ * безпечніше в бік «сховано».
+ */
+export type PrintTemplateVisibleWhen = string;
+
 interface PrintTemplateBlockBase {
   key: string;
   placement: PrintTemplateBlockPlacement;
   text: PrintTemplateBlockTextOptions;
+  /**
+   * Умова показу блока — БУДЬ-ЯКОГО, включно з лініями, картинкою й
+   * штрих-кодом. Лежить у базі, а не в типах окремих блоків: підвал із
+   * факсиміле це рамка плюс картинка плюс лінія, і сховати з них два з трьох
+   * означало б лишити на бланку висячу риску.
+   */
+  visibleWhen: PrintTemplateVisibleWhen;
 }
 
 /**
@@ -72,6 +98,8 @@ export interface PrintTemplateFieldListItem {
   label: string;
   path: string;
   format: PrintTemplateValueFormat;
+  /** Умова показу рядка. Шлях резолвиться від кореня даних, як і `path` поруч. */
+  visibleWhen: PrintTemplateVisibleWhen;
 }
 
 /**
@@ -83,6 +111,12 @@ export interface PrintTemplateFieldListItem {
 export interface PrintTemplateTableColumn {
   key: string;
   widthPercent: string;
+  /**
+   * Умова показу колонки (від кореня даних: колонка або є на весь бланк, або
+   * її немає). Схована колонка **віддає свою ширину сусідам** пропорційно —
+   * інакше таблиця з'їхала б убік і лишила порожню смугу.
+   */
+  visibleWhen: PrintTemplateVisibleWhen;
 }
 
 /**
@@ -106,6 +140,12 @@ export interface PrintTemplateTableCell {
 export interface PrintTemplateTableRow {
   key: string;
   cells: PrintTemplateTableCell[];
+  /**
+   * Умова показу рядка. Шлях резолвиться з ТОГО САМОГО кореня, що й `path`
+   * комірок поруч: у `header`/`footer` — від даних друку («Разом ПДВ»), у
+   * `row` — від конкретного запису (додатковий рядок під позицією).
+   */
+  visibleWhen: PrintTemplateVisibleWhen;
 }
 
 /** Секції необов'язкові: таблиця може бути без шапки або без підвалу. */
@@ -125,6 +165,9 @@ export const PRINT_TEMPLATE_TABLE_SECTIONS: PrintTemplateTableSectionName[] = ["
  */
 interface LegacyPrintTemplateTableColumn {
   key: string;
+  // Сучасна колонка — це ключ, ширина й умова показу; решта полів тут потрібна
+  // лише для підйому давніх шаблонів, але шлях нормалізації в них один.
+  visibleWhen: string;
   title: string;
   path: string;
   widthPercent: string;
@@ -138,10 +181,30 @@ interface LegacyPrintTemplateTableColumn {
   valueColor: string;
 }
 
+/**
+ * Рядок тексту. Значення береться так само, як у штрих-коді й комірці таблиці:
+ * статичний `value` перекриває прив'язку `path`. Одне правило на весь формат —
+ * щоб не доводилось пам'ятати, де саме пріоритет інший.
+ *
+ * Прив'язки тут спершу не було, і це виявилося дірою в самій СЕРЕДИНІ формату:
+ * динамічний рядок БЕЗ підпису надрукувати не було чим. Заголовок бланка
+ * («Рахунок на оплату № 12 від 02.02.2026»), підсумок, «Надруковано …» — усе це
+ * значення без підпису, а `field-list` завжди друкував «підпис: значення».
+ * Виходило, що текст або статичний, або з підписом, і третього не дано.
+ *
+ * Гірший бік був тихий: шаблони писали `path` у текстовий блок, наче він
+ * працює, нормалізація його мовчки викидала, і на бланку лишався «-». Тобто
+ * відсутність механізму виглядала як заповнений бланк, і помітити це можна було
+ * тільки поглядом на папір.
+ */
 export interface PrintTemplateTextBlock extends PrintTemplateBlockBase {
   type: "text";
   style: PrintTemplateTextStyle;
+  /** Статичний текст. Непорожній — перекриває прив'язку. */
   value: string;
+  /** Шлях у даних друку (від того самого кореня, що й у списку полів). */
+  path: string;
+  format: PrintTemplateValueFormat;
 }
 
 export interface PrintTemplateFieldListBlock extends PrintTemplateBlockBase {
@@ -157,9 +220,25 @@ export interface PrintTemplateTableBlock extends PrintTemplateBlockBase {
   sections: PrintTemplateTableSections;
 }
 
+/**
+ * Картинка. Значення береться за тим самим правилом, що в тексті, комірці й
+ * штрих-коді: статичний `src` перекриває прив'язку `path`.
+ *
+ * Прив'язка тут не зручність, а умова правильності документа: логотип, печатка
+ * й факсимільний підпис належать ОРГАНІЗАЦІЇ, від імені якої друкують, а
+ * організацій у базі кілька. Статичний `src` означав би одну печатку на всі —
+ * тобто не спрощений бланк, а неправильний.
+ *
+ * За шляхом очікується `data:`-URI рядком — так само, як застосунок віддає все
+ * інше. Нічим іншим воно й не могло б приїхати: блок читає дані друку, а не
+ * файлову систему.
+ */
 export interface PrintTemplateImageBlock extends PrintTemplateBlockBase {
   type: "image";
+  /** Статичне зображення (`data:`-URI). Непорожнє — перекриває прив'язку. */
   src: string;
+  /** Шлях у даних друку (від того самого кореня, що й у списку полів). */
+  path: string;
   alt: string;
 }
 
@@ -376,6 +455,7 @@ function normalizeFieldListItem(value: unknown): PrintTemplateFieldListItem | nu
     label: normalizeString(value.label),
     path: normalizeString(value.path),
     format: normalizeValueFormat(value.format),
+    visibleWhen: normalizeString(value.visibleWhen),
   };
 }
 
@@ -386,6 +466,7 @@ function normalizeLegacyTableColumn(value: unknown): LegacyPrintTemplateTableCol
 
   return {
     key: normalizeString(value.key),
+    visibleWhen: normalizeString(value.visibleWhen),
     title: normalizeString(value.title),
     path: normalizeString(value.path),
     widthPercent: normalizeString(value.widthPercent),
@@ -436,7 +517,13 @@ function normalizeTableRows(value: unknown): PrintTemplateTableRow[] {
       ? row.cells.map(normalizeTableCell).filter((cell): cell is PrintTemplateTableCell => Boolean(cell))
       : [];
 
-    return cells.length ? [{ key: normalizeString(row.key) || crypto.randomUUID(), cells }] : [];
+    return cells.length
+      ? [{
+        key: normalizeString(row.key) || crypto.randomUUID(),
+        cells,
+        visibleWhen: normalizeString(row.visibleWhen),
+      }]
+      : [];
   });
 }
 
@@ -466,6 +553,7 @@ function sectionsFromLegacyColumns(columns: LegacyPrintTemplateTableColumn[]): P
   return {
     header: [{
       key: crypto.randomUUID(),
+      visibleWhen: "",
       cells: columns.map((column) => createTableCell({
         text: column.title,
         align: column.headerAlign,
@@ -476,6 +564,7 @@ function sectionsFromLegacyColumns(columns: LegacyPrintTemplateTableColumn[]): P
     }],
     row: [{
       key: crypto.randomUUID(),
+      visibleWhen: "",
       cells: columns.map((column) => createTableCell({
         path: column.path,
         align: column.valueAlign,
@@ -519,6 +608,9 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       type,
       style: textStyle,
       value: normalizeString(value.value),
+      path: normalizeString(value.path),
+      format: normalizeValueFormat(value.format),
+      visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type, textStyle)),
     };
@@ -531,6 +623,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       items: Array.isArray(value.items)
         ? value.items.map((item) => normalizeFieldListItem(item)).filter((item): item is PrintTemplateFieldListItem => Boolean(item))
         : [],
+      visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -548,8 +641,13 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       type,
       title: normalizeString(value.title),
       source: normalizeString(value.source),
-      columns: legacyColumns.map((column) => ({ key: column.key, widthPercent: column.widthPercent })),
+      columns: legacyColumns.map((column) => ({
+        key: column.key,
+        widthPercent: column.widthPercent,
+        visibleWhen: column.visibleWhen,
+      })),
       sections: normalizeTableSections(value.sections, legacyColumns),
+      visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -560,7 +658,9 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       key,
       type,
       src: normalizeString(value.src),
+      path: normalizeString(value.path),
       alt: normalizeString(value.alt),
+      visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -576,6 +676,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       // Підпис під кодом за замовчуванням увімкнений: він потрібен людині, коли
       // сканера немає під рукою, і саме його очікують у EAN-13.
       showText: value.showText !== false,
+      visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -585,6 +686,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
     return {
       key,
       type,
+      visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
       color: normalizeColor(value.color, "#595959"),
@@ -644,23 +746,126 @@ export function resolvePrintTemplatePath(source: unknown, path: string): unknown
   }, source);
 }
 
+/**
+ * Чи показувати елемент. Порожня умова — так; далі значення за шляхом.
+ *
+ * Правило істинності одне на всі рівні (блок, рядок, колонка, поле списку) —
+ * див. `PrintTemplateVisibleWhen`. `scope` тут той самий корінь, від якого
+ * рахується `path` поруч: для блока й колонки це дані друку, для рядка секції
+ * `row` — конкретний запис.
+ */
+export function isPrintTemplateElementVisible(scope: unknown, visibleWhen: PrintTemplateVisibleWhen): boolean {
+  const path = normalizeString(visibleWhen);
+  if (!path) {
+    return true;
+  }
+
+  const value = resolvePrintTemplatePath(scope, path);
+
+  if (value === null || value === undefined) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (Array.isArray(value)) return value.length > 0;
+
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    // `"false"`/`"0"` — це команда даних, яка віддає все рядками. Непорожній
+    // рядок сам собою істинний, але саме ці два написання означають «ні» для
+    // будь-якої людини, і мовчки показаний блок гірший за мовчки схований.
+    return text !== "" && text !== "false" && text !== "0";
+  }
+
+  // Об'єкт: значення є, і це не «нічого».
+  return true;
+}
+
+/** Позиція комірки в сітці колонок. */
+export interface PrintTemplateGridCell<Cell> {
+  cell: Cell;
+  rowIndex: number;
+  columnIndex: number;
+  /** Уже обрізаний по краю таблиці. */
+  colSpan: number;
+  rowSpan: number;
+}
+
+/**
+ * Розкладка комірок по сітці колонок — зліва направо, з пропуском клітинок,
+ * зайнятих `rowSpan` попередніх рядків (так само, як це робить HTML-таблиця).
+ *
+ * Живе тут, а не в рендерері, бо обхід потрібен ДВОМ: рендерер розставляє за
+ * ним комірки, а план рендеру — вирішує, які з них викинути разом зі схованою
+ * колонкою. Дві копії цього циклу розійшлися б на першому ж `rowSpan`, і
+ * розходження виглядало б як з'їхала таблиця, а не як помилка в коді.
+ */
+export function layoutPrintTemplateGrid<Cell extends { colSpan: number; rowSpan: number }>(
+  rows: readonly { cells: readonly Cell[] }[],
+  columnCount: number,
+): PrintTemplateGridCell<Cell>[] {
+  const occupied = new Set<string>();
+  const placed: PrintTemplateGridCell<Cell>[] = [];
+
+  rows.forEach((row, rowIndex) => {
+    let columnIndex = 0;
+
+    for (const cell of row.cells) {
+      while (occupied.has(`${rowIndex}:${columnIndex}`)) columnIndex += 1;
+      // Комірки, для яких не лишилось колонок, просто не друкуються: краще
+      // втратити зайву комірку, ніж поламати сітку.
+      if (columnIndex >= columnCount) break;
+
+      const colSpan = Math.min(cell.colSpan, columnCount - columnIndex);
+      const rowSpan = Math.min(cell.rowSpan, rows.length - rowIndex);
+
+      for (let r = 0; r < rowSpan; r += 1) {
+        for (let c = 0; c < colSpan; c += 1) {
+          occupied.add(`${rowIndex + r}:${columnIndex + c}`);
+        }
+      }
+
+      placed.push({ cell, rowIndex, columnIndex, colSpan, rowSpan });
+      columnIndex += colSpan;
+    }
+  });
+
+  return placed;
+}
+
 /** Мова й валюта бланка — усе, що формат значення знає про оточення. */
 export interface PrintTemplateValueContext {
   locale?: string;
   currency?: string;
 }
 
+/**
+ * Значення → текст бланка.
+ *
+ * **Порожнє друкується порожнім.** Раніше тут стояв прочерк, і це було
+ * втручанням ядра в бланк: «нічого» на регламентованій формі виглядає
+ * по-різному — десь порожньо, десь прочерк, десь «б/н», — і вирішує це той, хто
+ * форму робить, а не той, хто пише рендерер. Кому потрібен прочерк, ставить
+ * його в команді даних (`coalesce(x, '-')`), де відомо, чи поле «не заповнене»,
+ * чи «не застосовне».
+ *
+ * Ціна старого рішення була видна в кожній таблиці: у рядка-послуги немає
+ * одиниці виміру, і колонка «Од.» друкувалася прочерком на кожному такому
+ * рядку — ядро вирішувало за бланк, а виправити це шаблоном не було чим.
+ *
+ * Непридатне значення (об'єкт, масив) теж дає порожнє, а не позначку: прочерк
+ * діагностикою однаково не був — помилку прив'язки видно з того, що на папері
+ * немає значення, і однаково лише поглядом на папір.
+ */
 export function stringifyPrintTemplateValue(
   value: unknown,
   format: PrintTemplateValueFormat = "",
   context: PrintTemplateValueContext = {},
 ): string {
   if (value === null || value === undefined || value === "") {
-    return "-";
+    return "";
   }
 
   if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
-    return "-";
+    return "";
   }
 
   if (format === "amountInWords") {

@@ -1,5 +1,6 @@
 import { Signal } from "signal-polyfill";
 import { readUserScoped, writeUserScoped, removeUserScoped } from "@client/shared/user-storage.ts";
+import { bus } from "@client/bus/bus.ts";
 
 /**
  * Поточна організація застосунку — наскрізний контекст, який:
@@ -53,4 +54,57 @@ export function setCurrentOrg(org: OrgRef | null): void {
   _current.set(org);
   if (org) writeUserScoped(STORAGE_KEY, org);
   else removeUserScoped(STORAGE_KEY);
+}
+
+// ── Перелік організацій ──────────────────────────────────────────────────────
+//
+// Живе тут, а не в шапці, з двох причин. Перша: його питає не лише меню вибору
+// — фреймворк бере з нього рішення, показувати відбір за організацією в журналі
+// документів чи мовчати (одна організація — механізму немає). Друга: у шапці
+// він перечитувався на КОЖНЕ відкриття меню, а перелік організацій міняється
+// приблизно ніколи.
+
+const _orgs = new Signal.State<OrgRef[]>([]);
+const _orgsError = new Signal.State<string>("");
+
+/** Відомі організації (реактивно). Порожньо — ще не завантажено або відмова. */
+export function knownOrgs(): OrgRef[] {
+  return _orgs.get();
+}
+
+/** Текст відмови завантаження — шапка показує його замість порожнього меню. */
+export function orgsError(): string {
+  return _orgsError.get();
+}
+
+/**
+ * Завантажити перелік. Кличеться в composition root після відновлення сесії;
+ * повторний виклик (наприклад після заведення нової організації) припустимий.
+ *
+ * Обов'язково шиною, а не власним `fetch`: заголовок `X-Requested-With`, без
+ * якого сервер відкидає POST із cookie (захист від CSRF), ставить лише
+ * `apiFetch`. Голий `fetch` тут колись повертав 401, а гілка `?? []` мовчки
+ * давала порожній масив — список організацій виглядав просто порожнім.
+ */
+export async function loadOrgs(): Promise<void> {
+  _orgsError.set("");
+  try {
+    // `pageSize`, а не `limit`: саме це ім'я читає `app.organization_lookup`.
+    // З `limit` payload мовчки ігнорувався, і перелік обрізався на десятій
+    // організації — при двох наявних це було непомітно.
+    const envelope = await bus.request("data.load", {
+      model: "organization",
+      command: "lookup",
+      payload: { pageSize: 100 },
+    }) as { data?: { rows?: unknown[] } } | undefined;
+
+    _orgs.set((envelope?.data?.rows ?? []).map((row) => {
+      const record = row as Record<string, unknown>;
+      return { id: String(record.id), name: String(record.name) };
+    }));
+  } catch (e) {
+    console.error("[current-organization] не вдалося завантажити організації:", e);
+    _orgs.set([]);
+    _orgsError.set(e instanceof Error ? e.message : String(e));
+  }
 }

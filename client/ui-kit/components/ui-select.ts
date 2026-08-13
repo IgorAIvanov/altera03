@@ -98,13 +98,13 @@ export class UiSelect extends GlobalStyledLitElement {
     return this.labelPosition === "left"
       ? html`
         <div class="flex items-center gap-2" style=${style}>
-          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
+          ${this.label ? html`<span class="label text-sm whitespace-nowrap">${this.label}${this.required ? html`<span class="field-required">*</span>` : ""}</span>` : ""}
           ${control}
         </div>
       `
       : html`
         <div class="flex flex-col gap-1 ${this.invalid ? "field-invalid" : ""}" style=${style}>
-          ${this.label ? html`<span class="label text-sm leading-none">${this.label}${this.required ? html`<span class="text-error ml-0.5">*</span>` : ""}</span>` : ""}
+          ${this.label ? html`<span class="label text-sm leading-none">${this.label}${this.required ? html`<span class="field-required">*</span>` : ""}</span>` : ""}
           ${control}
           ${this.invalid ? html`<span class="field-error">${this.invalid}</span>` : ""}
         </div>

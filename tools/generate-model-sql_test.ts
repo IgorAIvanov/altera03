@@ -12,7 +12,7 @@
  */
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
-import { collectModelDirs, documentHeaderSpecifier } from "./generate-model-sql.ts";
+import { booleanDefaultSql, collectModelDirs, documentHeaderSpecifier } from "./generate-model-sql.ts";
 
 /** Тимчасове дерево «застосунок»: `<root>/app` + `<root>/deno.json`. */
 async function appWithConfig(config?: string): Promise<string> {
@@ -110,4 +110,26 @@ Deno.test("карта моделей: службові каталоги не є 
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+/**
+ * Умовчання логічного поля.
+ *
+ * Проба тут не про арифметику, а про напрямок помилки: генератор ставить це
+ * значення в `coalesce` для поля, якого може не бути в payload, — і `true`
+ * нізвідки означав би вигаданий факт («ціни з ПДВ», «враховувати знижку»),
+ * тобто інші суми в документі. Валідності SQL це не порушує, типів — теж,
+ * тому не ловилося нічим.
+ */
+Deno.test("логічне поле: умовчання — false, якщо в схемі не сказано інакше", () => {
+  assertEquals(booleanDefaultSql(undefined), "false");
+  assertEquals(booleanDefaultSql(false), "false");
+  // Не-булеві значення теж не роблять поле істинним: схема з таким умовчанням
+  // помилкова, і вигадувати за неї «так» — найгірше з можливого.
+  assertEquals(booleanDefaultSql(null), "false");
+  assertEquals(booleanDefaultSql("true"), "false");
+  assertEquals(booleanDefaultSql(1), "false");
+
+  // Явне `true` — єдине, що дає `true`.
+  assertEquals(booleanDefaultSql(true), "true");
 });

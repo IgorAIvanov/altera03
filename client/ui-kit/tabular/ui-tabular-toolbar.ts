@@ -7,16 +7,25 @@
  */
 import { html, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { SignalWatcher } from "@lit-labs/signals";
 import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { t } from "../../locale.ts";
 import type { TabularSection } from "./tabular-section.ts";
 import { icons } from "../icons.ts";
 
+// `section.readonly` — це функція форми (`() => this.readonlyMode`), а та читає
+// сигнали: право на запис і `$root.item.isPosted`. Без SignalWatcher панель про
+// зміну не дізнається — власна властивість `section` лишається ТИМ САМИМ
+// об'єктом, і після «Розпровести» кнопки лишалися вимкненими, доки користувач
+// не перемкне вкладку (тоді в тулбар приїздить інша секція, і lit малює його
+// заново). Тобто стан у формі був уже правильний — неправильним було лише те,
+// що видно. `ui-tabular-table` тримається на цьому ж із самого початку.
+const Base: typeof GlobalStyledLitElement = SignalWatcher(GlobalStyledLitElement);
 
 export const tagName = "ui-tabular-toolbar";
 
 @customElement(tagName)
-export class UiTabularToolbar extends GlobalStyledLitElement {
+export class UiTabularToolbar extends Base {
   @property({ attribute: false }) section?: TabularSection<Record<string, unknown>>;
 
   #bound?: TabularSection<Record<string, unknown>>;

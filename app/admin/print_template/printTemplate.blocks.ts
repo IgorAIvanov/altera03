@@ -58,11 +58,11 @@ export function createTextOptions(patch?: Partial<PrintTemplateBlockTextOptions>
 
 /** Колонка сітки — лише ключ і ширина: заголовки живуть у комірках секцій. */
 export function createTableColumn(): PrintTemplateTableColumn {
-  return { key: newKey(), widthPercent: "20" };
+  return { key: newKey(), widthPercent: "20", visibleWhen: "" };
 }
 
 export function createFieldItem(index: number): PrintTemplateFieldListItem {
-  return { key: newKey(), label: `Поле ${index}`, path: "", format: "" };
+  return { key: newKey(), label: `Поле ${index}`, path: "", format: "", visibleWhen: "" };
 }
 
 export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
@@ -72,6 +72,9 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       type: "text",
       style: "body",
       value: "Текст",
+      path: "",
+      format: "",
+      visibleWhen: "",
       placement: createPlacement({ heightPercent: "6" }),
       text: createTextOptions(),
     };
@@ -82,6 +85,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       key: newKey(),
       type: "field-list",
       items: [createFieldItem(1)],
+      visibleWhen: "",
       placement: createPlacement({ heightPercent: "12" }),
       text: createTextOptions(),
     };
@@ -97,10 +101,11 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       source: "",
       columns,
       sections: {
-        header: [{ key: newKey(), cells: ["Колонка 1", "Колонка 2", "Колонка 3"].map((text) => createCell({ text, fontWeight: "bold" })) }],
+        header: [{ key: newKey(), visibleWhen: "", cells: ["Колонка 1", "Колонка 2", "Колонка 3"].map((text) => createCell({ text, fontWeight: "bold" })) }],
         row: [createRow(columns.length)],
         footer: [],
       },
+      visibleWhen: "",
       placement: createPlacement({ heightPercent: "20" }),
       text: createTextOptions(),
     };
@@ -111,7 +116,9 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       key: newKey(),
       type: "image",
       src: "",
+      path: "",
       alt: "",
+      visibleWhen: "",
       placement: createPlacement({ widthPercent: "24", heightPercent: "12" }),
       text: createTextOptions(),
     };
@@ -127,6 +134,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       showText: true,
       // Пропорції під лінійний код: приблизно 45×15 мм на A4. Для QR ширину
       // зазвичай зменшують — він квадратний і бере меншу зі сторін.
+      visibleWhen: "",
       placement: createPlacement({ widthPercent: "30", heightPercent: "7" }),
       text: createTextOptions({ fontSize: "8", align: "center" }),
     };
@@ -136,6 +144,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
     return {
       key: newKey(),
       type: "horizontal-line",
+      visibleWhen: "",
       placement: createPlacement({ widthPercent: "100", heightPercent: "1" }),
       text: createTextOptions(),
       color: "#595959",
@@ -147,6 +156,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
   return {
     key: newKey(),
     type: "vertical-line",
+    visibleWhen: "",
     placement: createPlacement({ widthPercent: "1", heightPercent: "18" }),
     text: createTextOptions(),
     color: "#595959",
@@ -162,7 +172,7 @@ export function cloneBlock(block: PrintTemplateBlock): PrintTemplateBlock {
 
   if (block.type === "table") {
     const cloneRows = (rows: typeof block.sections.header) =>
-      rows.map((row) => ({ key: newKey(), cells: row.cells.map((cell) => ({ ...cell, key: newKey() })) }));
+      rows.map((row) => ({ ...row, key: newKey(), cells: row.cells.map((cell) => ({ ...cell, key: newKey() })) }));
 
     return {
       ...block,
@@ -187,6 +197,9 @@ export function createDefaultBlocks(): PrintTemplateBlock[] {
       type: "text",
       style: "title",
       value: "Друкована форма",
+      path: "",
+      format: "",
+      visibleWhen: "",
       placement: createPlacement({ heightPercent: "8" }),
       text: createTextOptions({ fontSize: "16", align: "center", fontWeight: "bold" }),
     },

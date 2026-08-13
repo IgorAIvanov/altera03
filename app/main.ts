@@ -11,7 +11,8 @@ import { ServerUnavailableError } from "@client/data/api.ts";
 import { mustChangePassword, restoreSession } from "@client/auth/session.ts";
 import { dropLegacyKey } from "@client/shared/user-storage.ts";
 import { setLocale } from "@client/locale.ts";
-import { hydrateCurrentOrg } from "@shared/current-organization.ts";
+import { setOrganizationContext } from "@client/shared/organization-context.ts";
+import { currentOrg, hydrateCurrentOrg, knownOrgs, loadOrgs } from "@shared/current-organization.ts";
 
 // Компоненти оболонки застосунку — визначають кастомні елементи (@customElement).
 import "./header/app-header.ts";
@@ -51,6 +52,15 @@ async function boot(): Promise<void> {
     // Порядок важливий: обидва читають сховище за ключем із id користувача,
     // тому мають іти після відновлення сесії й до підняття оболонки.
     hydrateCurrentOrg();
+    // Фреймворк не має власного поняття організації — воно приходить сюди
+    // ЗЗОВНІ, як і все на сервері приходить аргументом bootstrap(). З цього
+    // журнал документів бере умовчання відбору й рішення, чи показувати його
+    // взагалі (одна організація — механізму немає). Обидва методи читаються на
+    // кожен рендер, тож перемикання організації в шапці доходить саме собою.
+    setOrganizationContext({ current: () => currentOrg(), list: () => knownOrgs() });
+    // Не чекаємо: вхід не має впиратися в перелік організацій, а екрани
+    // перемалюються самі — і шапка, і відбір читають сигнал.
+    void loadOrgs();
     await import("@client/tabs/tab-controller.ts");
     root.replaceChildren(document.createElement("tab-controller"));
     return;

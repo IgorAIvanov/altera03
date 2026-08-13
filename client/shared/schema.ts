@@ -78,6 +78,12 @@ export const DocumentHeaderSchema: TObject<{
     title: "Організація",
     "x-db-type": "bigint",
     "x-ref": { model: "organization", display: "name", as: "organization", sortable: true, searchable: true },
+    // Відбір за організацією оголошений тут, а не в схемі кожної моделі:
+    // колонка живе в `app.document`, тобто в ядрі, і застосунок не має куди
+    // повісити `x-filter`. Доти журнал документів фільтрувався за періодом і
+    // проведенням «задарма», а за організацією — ніяк; на другій організації в
+    // базі це перетворює журнал на суміш двох обліків.
+    "x-filter": true,
   }),
   number: Type.Optional(Type.String({
     title: "Номер", maxLength: 20,

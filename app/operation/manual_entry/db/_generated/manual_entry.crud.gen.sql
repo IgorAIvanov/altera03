@@ -13,6 +13,7 @@ declare
   v_sort_by   text := coalesce(payload->>'sortBy', 'number');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
   v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);
+  v_f_organization_id bigint := nullif(v_filters->'organization'->>'id', '')::bigint;
   v_f_date_from date := nullif(v_filters->>'dateFrom', '')::date;
   v_f_date_to date := nullif(v_filters->>'dateTo', '')::date;
   v_f_is_posted boolean := (v_filters->>'isPosted')::boolean;
@@ -25,6 +26,11 @@ begin
   end if;
 
   v_filters_out := v_filters;
+  v_filters_out := v_filters_out || jsonb_strip_nulls(jsonb_build_object(
+    'organization',
+    (select jsonb_build_object('id', x.id::text, 'name', x.name)
+     from app.organization x where x.id = v_f_organization_id)
+  ));
 
   select count(*)::int into v_total
   from app.document h
@@ -36,6 +42,7 @@ begin
     or h.number ilike '%' || (payload->>'search') || '%'
     or h.presentation ilike '%' || (payload->>'search') || '%'
   )
+  and (v_f_organization_id is null or h.organization_id = v_f_organization_id)
   and (v_f_date_from is null or h.doc_date >= v_f_date_from)
   and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
   and (v_f_is_posted is null or h.is_posted = v_f_is_posted);
@@ -60,6 +67,7 @@ begin
       or h.number ilike '%' || (payload->>'search') || '%'
       or h.presentation ilike '%' || (payload->>'search') || '%'
     )
+    and (v_f_organization_id is null or h.organization_id = v_f_organization_id)
     and (v_f_date_from is null or h.doc_date >= v_f_date_from)
     and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
     and (v_f_is_posted is null or h.is_posted = v_f_is_posted)
@@ -385,6 +393,7 @@ declare
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
   v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);
   v_unknown   text;
+  v_f_organization_id bigint := nullif(v_filters->'organization'->>'id', '')::bigint;
   v_f_date_from date := nullif(v_filters->>'dateFrom', '')::date;
   v_f_date_to date := nullif(v_filters->>'dateTo', '')::date;
   v_f_is_posted boolean := (v_filters->>'isPosted')::boolean;
@@ -397,7 +406,7 @@ begin
 
   select k into v_unknown
   from jsonb_object_keys(v_filters) k
-  where k not in ('dateFrom', 'dateTo', 'isPosted')
+  where k not in ('organization', 'dateFrom', 'dateTo', 'isPosted')
   limit 1;
 
   if v_unknown is not null then
@@ -416,6 +425,7 @@ begin
     or h.number ilike '%' || (payload->>'search') || '%'
     or h.presentation ilike '%' || (payload->>'search') || '%'
   )
+  and (v_f_organization_id is null or h.organization_id = v_f_organization_id)
   and (v_f_date_from is null or h.doc_date >= v_f_date_from)
   and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
   and (v_f_is_posted is null or h.is_posted = v_f_is_posted);
@@ -437,6 +447,7 @@ begin
       or h.number ilike '%' || (payload->>'search') || '%'
       or h.presentation ilike '%' || (payload->>'search') || '%'
     )
+    and (v_f_organization_id is null or h.organization_id = v_f_organization_id)
     and (v_f_date_from is null or h.doc_date >= v_f_date_from)
     and (v_f_date_to is null or h.doc_date < v_f_date_to + interval '1 day')
     and (v_f_is_posted is null or h.is_posted = v_f_is_posted)
