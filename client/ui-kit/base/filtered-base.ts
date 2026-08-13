@@ -141,10 +141,54 @@ export abstract class FilteredBase<Root extends Record<string, unknown>> extends
     };
   }
 
-  /** Скинути всі фільтри. Знати їх поіменно не треба — набір і є весь перелік. */
+  /**
+   * Відбори, з якими екран ВІДКРИВАЄТЬСЯ, — і саме до них повертає «Скинути».
+   *
+   * Порожньо за умовчанням: у довідника відкритий стан і є «без відборів».
+   * Журнал документів інший — він відкривається звуженим на поточну
+   * організацію й на період із налаштувань користувача, і це не примха: журнал
+   * за ВЕСЬ час — найдорожчий запит екрана, а без організації він показує суміш
+   * двох обліків. Тобто відбір там не прикраса, а умова придатності.
+   *
+   * Доти «Скинути» чистив набір ДОЩЕНТУ, і виходили дві правильні поведінки,
+   * що суперечать одна одній: основа сіяла організацію навмисно, а кнопка
+   * поруч її знімала. Тепер обидві кажуть те саме, бо джерело одне — цей метод.
+   *
+   * Нащадок, що додає своє, мусить кликати `super.defaultFilters()`, інакше
+   * мовчки прибере умовчання основи.
+   */
+  protected defaultFilters(): Record<string, unknown> {
+    return {};
+  }
+
+  /** Чи стоїть екран рівно на своїх умовчаннях — тоді скидати нічого. */
+  protected get filtersAreDefault(): boolean {
+    const current = this.filters;
+    const defaults = this.defaultFilters();
+    const keys = new Set([...Object.keys(current), ...Object.keys(defaults)]);
+
+    for (const key of keys) {
+      if (JSON.stringify(current[key]) !== JSON.stringify(defaults[key])) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Скинути відбори до умовчань екрана. Знати їх поіменно не треба — набір і є
+   * весь перелік, а умовчання оголошує `defaultFilters()`.
+   */
   protected resetFilters() {
     const filters = this.#mutable();
     for (const key of Object.keys(filters)) delete filters[key];
+
+    // Те саме правило порожнечі, що в `setFilters`: порожнє значення не
+    // зберігається, а відсутнє. Інакше умовчання-порожнеча рахувалося б за
+    // діючий відбір і сиділо б у payload.
+    for (const [key, value] of Object.entries(this.defaultFilters())) {
+      if (value === undefined || value === null || value === "" || value === false) continue;
+      filters[key] = value;
+    }
+
     this.onFiltersChanged();
   }
 

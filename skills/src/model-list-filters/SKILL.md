@@ -60,7 +60,8 @@ that, "how many filters are active" and "what to send" are both just the content
 | `setFilter(key, value, {debounce})` | write one, reload from page 1 |
 | `setFilters(patch, {debounce})` | write several in **one** request |
 | `bindFilter(key, {debounce})` | ready-made handler for a native `input`/`select` |
-| `resetFilters()` | clear everything |
+| `resetFilters()` | back to `defaultFilters()`, not to empty |
+| `defaultFilters()` | what the screen opens with — override to declare |
 
 `bindFilter` covers native controls only. ui-kit components differ in their events
 (`value-changed`, `period-changed`, each with its own `detail`), so the
@@ -292,6 +293,24 @@ on a table screen.
 - **Filters go to the right, not above the table** — the base puts them there. On a
   hierarchical catalogue the panel and the group tree share that one column, filters on
   top, tree below.
+
+## Reset returns to the screen's defaults
+
+```ts
+protected override defaultFilters() {
+  return { ...super.defaultFilters(), dateFrom: periodStart(), dateTo: periodEnd() };
+}
+```
+
+A document journal opens narrowed — to the current organisation (the base does that) and to
+the period from the user's settings. A journal over all time is the most expensive query on
+the screen, and without an organisation it shows two sets of books mixed together. So
+«Скинути» returns the filters to that state rather than emptying them.
+
+Always call `super.defaultFilters()`; skipping it silently drops the base's own default.
+Do not override `resetFilters()` and do not hide the button with CSS — both were workarounds
+for the old behaviour. `filterReset = false` removes the button if a screen truly has nothing
+to reset.
 
 ## The organisation filter is a flag, not markup
 

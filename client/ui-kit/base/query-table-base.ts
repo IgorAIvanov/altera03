@@ -260,6 +260,15 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
     return this.renderFilters !== QueryTableBase.prototype.renderFilters;
   }
 
+  /**
+   * Чи показувати «Скинути» в шапці панелі відборів.
+   *
+   * Потрібен рідко: відколи скидання повертає до УМОВЧАНЬ екрана
+   * (`defaultFilters()`), а не до порожнечі, кнопка перестала бути
+   * небезпечною. Лишається для екрана, у якого скидати справді нема чого.
+   */
+  protected filterReset = true;
+
   protected toggleFilterPanel() {
     this.filterPanelOpen = !this.filterPanelOpen;
     writeUserScoped(`${FILTER_PANEL_KEY}:${this.model}`, this.filterPanelOpen);
@@ -596,10 +605,14 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
       <div class="filter-panel flex flex-col min-h-0">
         <div class="flex items-center justify-between px-2 py-1 border-b border-base-300">
           <span class="font-semibold">${t("common.filters")}</span>
-          <button class="btn btn-xs btn-ghost" ?disabled=${this.activeFilterCount === 0}
-            @click=${() => this.resetFilters()}>
-            ${t("common.filtersReset")}
-          </button>
+          ${this.filterReset
+            ? html`
+              <button class="btn btn-xs btn-ghost" ?disabled=${this.filtersAreDefault}
+                @click=${() => this.resetFilters()}>
+                ${t("common.filtersReset")}
+              </button>
+            `
+            : ""}
         </div>
         <div class="flex-1 min-h-0 overflow-auto p-2 flex flex-col gap-2">
           ${this.renderBuiltInFilters()}

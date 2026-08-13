@@ -176,15 +176,33 @@ export abstract class ModelListBase<Row extends { id: string }> extends QueryTab
     this.#organizationSeeded = true;
     if (this.filterValue("organization") !== undefined) return;
 
-    const org = currentOrganization();
-    if (!org) return;
+    // Значення беремо з `defaultFilters()`, а не з `currentOrganization()`
+    // напряму: інакше засівка й «Скинути» мали б два джерела, і розійшлися б
+    // вони мовчки — рівно там, де екран уже відкрито.
+    const organization = this.defaultFilters().organization;
+    if (organization === undefined) return;
 
-    this.seedFilter("organization", { id: org.id, name: org.name });
+    this.seedFilter("organization", organization);
     if (reload) this.reload();
   }
 
   protected override get hasFilters(): boolean {
     return this.showOrganizationFilter || super.hasFilters;
+  }
+
+  /**
+   * Поточна організація — УМОВЧАННЯ екрана, а не разова засівка.
+   *
+   * Оголошено тут, тому сіяння при відкритті й «Скинути» беруть значення з
+   * одного місця. Доти кнопка знімала відбір, який основа щойно поставила
+   * навмисно, — дві правильні поведінки, що суперечать одна одній.
+   */
+  protected override defaultFilters(): Record<string, unknown> {
+    const base = super.defaultFilters();
+    if (!this.showOrganizationFilter) return base;
+
+    const org = currentOrganization();
+    return org ? { ...base, organization: { id: org.id, name: org.name } } : base;
   }
 
   protected override renderBuiltInFilters(): TemplateResult | string {
