@@ -75,6 +75,7 @@
   "tabular.down": "Down",
   "tabular.total": "Total",
   "tabular.row": "Row",
+  "tabular.tabErrors": "This tab has empty or invalid cells",
   "tabs.hidden": "Tabs that did not fit",
   "tabs.copyUrl": "Copy tab URL",
   "tabs.urlCopied": "URL copied",

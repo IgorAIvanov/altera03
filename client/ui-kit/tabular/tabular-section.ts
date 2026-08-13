@@ -190,8 +190,14 @@ export class TabularSection<Line extends object> {
     return this.config.readonly?.() ?? false;
   }
 
+  /**
+   * Колонка з кошиком у рядку. У режимі перегляду вона ЛИШАЄТЬСЯ (кнопки в ній
+   * вимкнені) — з тієї ж причини, що й панель дій: зникла колонка каже «дії тут
+   * немає ніколи», а проведення документа ще й міняло б від цього ширину
+   * таблиці просто під час перегляду.
+   */
   get rowDelete(): boolean {
-    return this.config.rowDelete !== false && !this.readonly;
+    return this.config.rowDelete !== false;
   }
 
   visibleColumns(): Array<TabularColumn<Line>> {

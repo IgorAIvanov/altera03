@@ -75,6 +75,7 @@
   "tabular.down": "Нижче",
   "tabular.total": "Разом",
   "tabular.row": "Рядок",
+  "tabular.tabErrors": "На цій вкладці є незаповнені або невірні комірки",
   "tabs.hidden": "Вкладки, що не вмістилися",
   "tabs.copyUrl": "Скопіювати URL вкладки",
   "tabs.urlCopied": "URL скопійовано",

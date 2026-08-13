@@ -111,6 +111,7 @@ Custom UI annotations (prefix `x-`):
 | `x-picker`   | `{ url, displayField }`         | Field is a reference — render ui-picker |
 | `x-readonly` | `true`                          | Display only, not editable           |
 | `x-filter`   | `true` or `{ op, key }`         | Field can filter the list — generates the SQL (see below) |
+| `x-transient`| `true`                          | Field exists in the form type but has no column — the generator ignores it entirely |
 
 Width values: `"xs"` (60px), `"sm"` (100px), `"md"` (160px), `"lg"` (240px), `"full"` (flex-1).
 
@@ -262,6 +263,19 @@ export type BankLookupData = Static<typeof BankLookupDataSchema>;
 - `RowSchema` contains only fields needed for the list view — do not duplicate all item fields.
 - `LookupRowSchema` contains `id`, the display field (usually `name`), and any extra searchable fields. Keep it minimal.
 - **A reference in `RowSchema` or `LookupRowSchema` is named by the key of the nested object** (`counterparty: Type.Object({ id, name })`), never by repeating `x-ref`. The annotation lives once, on `counterpartyId` in `ItemSchema`; the generator adds the join and builds the object. A key with no matching reference in `ItemSchema` is parsed as a plain column (`t.counterparty`) — generation and publishing stay green and the picker fails on first open with `column t.counterparty does not exist`.
+- **The display object next to a reference is not a column — mark it `x-transient`.** In `ItemSchema`, and just as much in the line schema of a tabular section, a reference is two keys: `nomenclatureId` carries `x-ref`, and `nomenclature: { id, name }` next to it is what the picker shows. The second one has no column behind it — the generator builds it from the join:
+  ```ts
+  nomenclatureId: Type.String({ "x-db-type": "bigint",
+    "x-ref": { model: "nomenclature", display: "name", as: "nomenclature" } }),
+  nomenclature: Type.Optional(Type.Union([
+    Type.Object({ id: Type.String(), name: Type.String() }), Type.Null(),
+  ], { "x-transient": true })),
+  ```
+  The generator also recognises such an object by itself (an object-typed key whose name matches a sibling `x-ref.as` is skipped), so a forgotten annotation is no longer fatal — but write it anyway: it says *this key is not a column* to the next reader, and on an older `@altera/tools` the omission surfaces only at `sql:publish`, long after `sql:gen` and `deno check` were both green:
+  ```
+  column l.nomenclature does not exist
+  ```
+  The alternative is what this repository's `invoice` does — keep two schemas, `<Model>LineSchema` for the database and `<Model>FormLineSchema` for the form, and let the display refs live only in the second.
 - `x-form`, `x-list`, `x-lookup` annotations are the canonical way to declare UI roles — do not create separate display configuration objects.
 - `options` in `GetDataSchema` is typed explicitly per model — list every dropdown the form needs (currencies, statuses, groups, etc.).
 - Payload schemas are validated at runtime by the backend using `Value.Check()` or TypeBox-compatible validator.

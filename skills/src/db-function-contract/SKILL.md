@@ -60,6 +60,22 @@ tabular part, with the mandatory `when not matched by source and <parentFk> = v_
 guard). `post`/`unpost` are emitted as stubs — implement real posting in
 `db/<model>.custom.sql`.
 
+**A `not null default` column has to be sent explicitly.** The generated `save` builds
+its `MERGE` source from `jsonb_to_recordset`, so a key that is **absent** from the
+payload arrives as an explicit `null` — and an explicit `null` does not trigger the
+column default:
+
+```
+null value in column "rate" of relation "supplier_invoice" violates not-null constraint
+```
+
+`not null default 1` in the DDL does not save an API call that omits `rate`. Forms never
+hit this — `Value.Create` seeds `$root` from the schema, so every field of the schema is
+in the payload; the first call from the side — the agent, `deno task api`, an import —
+does. Give the field a `default` in the TypeBox schema (so it is at least declared in one
+place both sides read) and treat the DDL default as what it is: a value for rows written
+around the API, not a substitute for the key.
+
 Hand-write a SQL function only as an exception (non-standard logic), and put it in
 `db/<model>.custom.sql`. Deep dive on the generator (framework repository, not part of
 an application): `docs/sql-codegen.md`.
@@ -364,6 +380,32 @@ end $$;
   believe the rule is in force.
 - one function per database, not per model — that is the point: it holds for
   models that do not exist yet.
+
+## Posting is a STATE, not only movements
+
+A document that produces no accounting entries at all is **still posted**. "Posted"
+means *filled in correctly, not editable any more* — that is what an invoice for
+payment (рахунок на оплату) and a payment order need, and neither of them moves
+anything in the register, here or in the system your users come from. Most of
+those users come from 1С, where this is exactly how it behaves.
+
+So `post` on such a document does **not** refuse. Its `<model>_post_entries`
+**checks** instead of writing: the things `app.doc_entry_add` would have checked
+for a document with movements — that the lines are not empty, that the amounts
+are non-zero, that the mandatory fields of the form are filled — have to be named
+here, because further down there is nobody left to check them.
+
+The mistake to avoid (it has been made, and both documents had to be rewritten):
+refusing to post with a well-argued message — *«це намір, а не господарська
+операція; проводки робить списання з рахунку»*. It reads as consistent, because
+the generator emits `post` for every document and a silent stub would give a
+"posted" document with no movements. But it equates *posted* with *has entries*,
+and those are two different things — the users need the second one less often
+than the first.
+
+Consequences for the screen come for free: `BaseUI` opens a posted document
+read-only, the toolbar shows «Розпровести», and the list shows the posted mark.
+Nothing extra to write.
 
 ## One-sided entries: off-balance accounts
 

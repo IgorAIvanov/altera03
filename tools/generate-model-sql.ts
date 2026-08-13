@@ -250,6 +250,16 @@ function isStringType(s: TSchema): boolean {
   return Array.isArray(s.anyOf) && s.anyOf.some((m) => m.type === "string");
 }
 
+/**
+ * Об'єктний тип — з поправкою на те, як його насправді пишуть у схемі форми:
+ * `Type.Optional(Type.Union([Type.Object({…}), Type.Null()]))`, тобто `anyOf`,
+ * а не `type: "object"`.
+ */
+function isObjectType(s: TSchema): boolean {
+  if (s.type === "object") return true;
+  return Array.isArray(s.anyOf) && s.anyOf.some((m) => m.type === "object");
+}
+
 function assertIdentifier(value: string, label: string) {
   if (!IDENTIFIER_PATTERN.test(value)) {
     throw new Error(`${label} «${value}» має містити лише lowercase, digits та underscore`);
@@ -515,10 +525,29 @@ function parseObject(
   const fields: Field[] = [];
   const tables: TableSpec[] = [];
 
+  // Імена вкладених об'єктів-ссылок, оголошених ТУТ ЖЕ (`counterpartyId` з
+  // `x-ref.as: "counterparty"` → `counterparty`). Сам об'єкт у схемі форми
+  // потрібен (пікер показує ним значення), а колонки під нього немає — його
+  // складає генератор із join'а. Без цього кроку об'єкт розбирався як звичайне
+  // поле, і публікація падала аж на `create function`:
+  // `column l.counterparty does not exist`. Зелено при цьому було все — і
+  // `sql:gen`, і `deno check`, — тобто ловилося воно найдорожчим способом.
+  const refNames = new Set(
+    Object.values(props)
+      .map((p) => p["x-ref"])
+      .filter((x): x is XRef => !!x)
+      .map((x) => x.as ?? x.model),
+  );
+
   for (const [key, prop] of Object.entries(props)) {
     // Транзієнтне поле живе тільки в типі форми (напр. токен вкладення, який
     // підставляє рантайм) — колонки під нього немає, у SQL воно не потрапляє.
     if (prop["x-transient"]) continue;
+
+    // Об'єкт-ссылка поруч зі своїм id. Звужено до об'єктного типу навмисно:
+    // збіг імені ссылки зі СКАЛЯРНОЮ колонкою — це справжня колізія (у `get`
+    // вийшло б два однакових ключі), і хай вона падає голосно.
+    if (refNames.has(key) && isObjectType(prop)) continue;
 
     if (prop.type === "array" && prop["x-table"]) {
       const xt = prop["x-table"];

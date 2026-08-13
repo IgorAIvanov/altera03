@@ -325,6 +325,7 @@ export class UiTabularTable extends Base {
               <!-- Хрестик і колір шрифту — той самий значок, що в панелі дій
                    секції: дія прибирає рядок, а не позначає запис на видалення. -->
               <button class="btn btn-ghost btn-xs" title=${t("tabular.delete")}
+                ?disabled=${section.readonly}
                 @click=${(e: Event) => { e.stopPropagation(); section.removeLine(i); }}>
                 ${icons.clear}
               </button>

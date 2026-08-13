@@ -502,6 +502,87 @@ html, body {
 /* Загрузка */
 .loading { width: 16px; height: 16px; }
 
+/* ── Вкладки форми (кілька табличних частин) ──────────────────────────────
+   Розмітку малює `ui-kit/tabular/ui-form-tabs.ts`, вигляд — тут: кольори
+   мусять приходити токенами теми, а токен у розмітці означав би `style="…"`
+   на кожній вкладці.
+
+   Активну вкладку позначає САМЕ ЛІНІЯ, а не лише шрифт: жирність на 14px
+   помітна тільки поруч із сусідом, тобто щойно відкрита вкладка від інших не
+   відрізнялася б. Лінія 2px кольором акценту читається з відстані й не зникає
+   в чорно-білому друку.
+
+   Щільність не піднімаємо (скіл screen-design-rules): висота вкладки — це
+   висота контрола, радіуси лишаються 2px, тіней немає. */
+.form-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 1px solid var(--app-border);
+}
+.form-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding-inline: 12px;
+  margin-bottom: -1px;              /* лінія вкладки лягає НА лінію смуги */
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  /* Кнопка, а не div (див. коментар у компоненті), тож шрифт доводиться
+     повернути явно — власний у неї від браузера. */
+  font: inherit;
+  color: var(--app-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.form-tab:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: -2px;
+}
+.form-tab:hover {
+  color: var(--app-text);
+  border-bottom-color: var(--app-border-strong);
+}
+.form-tab[aria-selected="true"] {
+  color: var(--app-text);
+  font-weight: 500;
+  border-bottom-color: var(--app-accent);
+}
+/* Панель під смугою: ЗАМКНЕНА рамка того ж кольору й зазор між нею та смугою.
+   Тримає таблицю з панеллю дій разом, щоб було видно: вони належать ВИБРАНІЙ
+   вкладці, а не формі взагалі.
+      Зазор саме ЗОВНІ рамки (`margin`), а не всередині (`padding`), і це не
+   те саме: панель без верхньої межі зливалася зі смугою в одну лінію, а
+   внутрішній відступ від цього не рятує — він відсуває таблицю НИЖЧЕ обводки,
+   тоді як розділити треба смугу й саму обводку. */
+.form-tab-panel {
+  margin-top: 6px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-strong);
+  padding: 6px;
+}
+/* Лічильник рядків у вкладці. Порожня частина — приглушено: нуль не мусить
+   кричати, він мусить бути видним. */
+.form-tab-count {
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 8px;
+  background: var(--app-header);
+  color: var(--app-text-muted);
+}
+.form-tab[aria-selected="true"] .form-tab-count {
+  background: var(--app-accent-soft);
+  color: var(--app-text);
+}
+/* Позначка «тут є помилка»: крапка кольором помилки. Кольором одним статус не
+   передається (скіл screen-design-rules), тому вкладка ще й несе `title`. */
+.form-tab-error { color: var(--color-error); font-weight: 700; }
+
 /* ── Діалоги застосунку ───────────────────────────────────────────────────
    Спільний контракт модального вікна (confirm-host, вибір групи, будь-які
    майбутні діалоги): «вікно 1С» — смуга заголовка кольору оболонки з

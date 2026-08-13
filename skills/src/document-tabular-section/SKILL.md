@@ -70,6 +70,73 @@ The CSS knowledge below still applies to `custom` cells and to fully
 hand-written tables (which remain legal — the primitive is a default, not a
 requirement).
 
+## How many sections: as many as the subject area has
+
+One tabular section is the **exception**, not the norm. In the systems these
+documents come from a document usually has three to six, and the reason they are
+separate is not technical:
+
+> several sections exist not because they could not be merged into one, but
+> because that is how a **person** fills them in.
+
+Goods have a unit and a quantity, a service has a description, a payment has a
+counterparty and a contract. One table with an account column per line does work
+technically — the entry is the same for all of them — and it means two thirds of
+the columns are empty in every row.
+
+This has been got wrong twice and rewritten twice (an expense report with one
+section instead of five, a goods receipt with one instead of six). Both times the
+argument was "the sections of the source differ by *registers*, which we do not
+have, and the accounting entry is identical" — technically true and wrong on the
+substance. Model the sections the subject area has; posting merges them, the form
+does not.
+
+Each section is its own `TabularSection` over its own array in `$root`, its own
+table in the database (`x-table`), and all of them are returned from `sections()`:
+
+```ts
+protected override sections(): FormSection[] { return [this.goods, this.services]; }
+```
+
+## Several sections go on TABS — `<ui-form-tabs>`
+
+Three tables stacked vertically hide the header and each other. Put them on a tab
+strip — one section visible at a time, the rest listed with their row counts — and
+do **not** write that strip yourself:
+
+```ts
+import "@client/ui-kit/tabular/ui-form-tabs.ts";
+
+// render():
+html`<ui-form-tabs .tabs=${[
+  { key: "goods",    titleKey: "supplierInvoice.goods",    section: this.goods },
+  { key: "services", titleKey: "supplierInvoice.services", section: this.services },
+  { key: "extra",    titleKey: "common.extra",             content: () => this.renderExtra() },
+]}></ui-form-tabs>`
+```
+
+A tab with a `section` is drawn whole — toolbar, table, row count, error mark.
+`content` is the escape hatch for a tab that holds ordinary fields instead of a
+table. Only the active panel is rendered; the rows live in `$root`, so nothing is
+lost while a table is out of the DOM. Everything the form has to declare is above:
+`sections()` still returns all of the sections, and the rest is the component's.
+
+Two of its jobs are worth knowing about, because a hand-written strip gets both
+wrong:
+
+- **the tab with the error opens itself.** `BaseUI` validates every section from
+  `sections()`, hidden ones included — so the banner would say «Рядок 2, „Сума“…»
+  about a row that is not on screen. The component reacts to the focus request the
+  base makes (`pendingFocus` on the first section with errors), not to
+  `errorCount`, so it switches once on a failed save instead of dragging the user
+  back every time they look at a neighbouring section;
+- **a tab may be a `<button>` again.** A strip written in the form's own markup
+  sits inside the `<fieldset disabled>` of `renderFields()`, and that cascade kills
+  every native control in it — the strip stops working exactly on a **posted**
+  document, where editing is forbidden (fine) but *looking* at the other sections
+  is the whole point. The cascade does not cross a shadow root, so inside the
+  component the button works, keyboard and accessibility included.
+
 ## The trap: read this before touching any CSS
 
 The framework theme contains a hand-written layer — `.input`, `.btn`,
@@ -190,6 +257,18 @@ conditional column cannot be highlighted anyway.
 Do not hand-write per-row loops in `saveItem()`; do not put the rule in the form
 and the asterisk in the column. Deep dive (framework repository, not part of an
 application): `docs/ui-form-validation.md`.
+
+## Changing the set of sections is a MIGRATION
+
+Publishing SQL never drops anything, so a table you renamed or split stays in the
+database forever, and the old one keeps its rows. When the set of sections changes:
+
+- `drop table if exists <old>` goes in `db/migration.sql` — explicitly, by you;
+- if the old table already has rows, **move them first**. Splitting one section
+  into several is not a rename: something in the row has to say which new table it
+  belongs to. In practice that is the **account** — it is what made the line what
+  it was (an expense report split into three sections was migrated exactly that
+  way).
 
 ## Implementation flow
 

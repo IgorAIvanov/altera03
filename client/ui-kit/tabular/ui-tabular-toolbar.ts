@@ -39,12 +39,18 @@ export class UiTabularToolbar extends GlobalStyledLitElement {
     const section = this.section;
     if (!section) return html``;
 
-    // У режимі перегляду панелі дій немає взагалі: жодна її кнопка не має сенсу,
-    // а вимкнений ряд із п'яти кнопок лише займав би місце над таблицею.
-    if (section.readonly) return html``;
-
+    // У режимі перегляду панель ЛИШАЄТЬСЯ, тільки вимкнена. Зникнення читалося б
+    // як поламка: вимкнена кнопка каже «дія тут є, зараз не можна», відсутня —
+    // «дії тут немає ніколи», а для щойно проведеного документа правильне саме
+    // перше (розпровів — і панель повернулася). Плюс проведення не
+    // перезавантажує форму, тож смуга з'являлася й зникала під курсором,
+    // зсуваючи таблицю на висоту рядка кнопок.
+    //
+    // Кому потрібне саме зникнення — той просто не ставить компонент: тулбар
+    // незалежний від таблиці, і власного прапорця для цього не треба.
+    const ro = section.readonly;
     const current = section.currentIndex;
-    const hasCurrent = current >= 0 && current < section.rows.length;
+    const hasCurrent = !ro && current >= 0 && current < section.rows.length;
 
     // Панель уся `btn-ghost`: це смуга дій над таблицею, а не форма з кнопками.
     // Рамки тут малювали сітку поверх сітки, а іконки все одно несуть значення
@@ -52,7 +58,7 @@ export class UiTabularToolbar extends GlobalStyledLitElement {
     // очима, а не після вибору рядка.
     return html`
       <div class="flex items-center gap-1">
-        <button class="btn btn-sm btn-ghost" @click=${() => section.addLine()}>
+        <button class="btn btn-sm btn-ghost" ?disabled=${ro} @click=${() => section.addLine()}>
           ${icons.add} ${t("tabular.add")}
         </button>
         <button class="btn btn-sm btn-ghost" ?disabled=${!hasCurrent} title=${t("tabular.copy")}
