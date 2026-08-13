@@ -3,9 +3,8 @@
 //
 // Викликається з `print.handlers.ts`, який і дістає шаблон та дані.
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
-import { PRINT_FONT_BOLD_BASE64, PRINT_FONT_REGULAR_BASE64 } from "./fonts.generated.ts";
+import { PDFDocument, rgb } from "pdf-lib";
+import { embedPrintFonts } from "./print-text-metrics.ts";
 import { layoutPrintTemplateGrid } from "./print-template.ts";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
 import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
@@ -54,6 +53,11 @@ export interface PrintTemplateRuntimeItem {
 }
 
 
+/**
+ * Байти з base64. Лишається тут, хоч такий самий є в модулі метрики: це
+ * рядкова арифметика, у якій нема чому розійтися, а спільний «утиль» заради
+ * шести рядків зробив би модуль метрики звалищем.
+ */
 function decodeBase64(base64: string) {
   const binary = atob(base64.replace(/\s+/g, ""));
   const bytes = new Uint8Array(binary.length);
@@ -110,12 +114,12 @@ export async function renderPrintPdf(
   const renderPlan = buildPrintTemplateRenderPlan(template.schema, printData);
 
   const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
-
-  const regularFont = await pdf.embedFont(decodeBase64(PRINT_FONT_REGULAR_BASE64));
-  const boldFont = await pdf.embedFont(decodeBase64(PRINT_FONT_BOLD_BASE64));
-  const regularAsciiFont = await pdf.embedFont(StandardFonts.Helvetica);
-  const boldAsciiFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  // Шрифти й метрика — зі спільного модуля: тим самим кодом застосунок міряє
+  // верстку в пробі. Дві копії розійшлися б мовчки, а розходження виявилося б
+  // рівно там, де перевірка й потрібна, — на надрукованому бланку.
+  const fonts = await embedPrintFonts(pdf);
+  const getTextRuns = fonts.runs;
+  const measure = fonts.measure;
 
   const landscape = template.orientation === "landscape";
   const pageSize: [number, number] = landscape
@@ -127,29 +131,6 @@ export async function renderPrintPdf(
   let page = pdf.addPage(pageSize);
   const contentWidth = page.getWidth() - MARGIN * 2;
   const contentHeight = page.getHeight() - MARGIN * 2;
-
-  // Кирилиця йде Roboto, латиниця — Helvetica: так метрики ASCII збігаються
-  // з очікуваннями pdf-lib, а кирилиця не перетворюється на «крякозябри».
-  const getTextRuns = (text: string, bold: boolean) => {
-    const runs: Array<{ text: string; font: typeof regularFont }> = [];
-    const unicodeFont = bold ? boldFont : regularFont;
-    const asciiFont = bold ? boldAsciiFont : regularAsciiFont;
-
-    for (const char of text) {
-      const font = char.codePointAt(0)! <= 0x7f ? asciiFont : unicodeFont;
-      const previous = runs[runs.length - 1];
-      if (previous?.font === font) {
-        previous.text += char;
-        continue;
-      }
-      runs.push({ text: char, font });
-    }
-
-    return runs;
-  };
-
-  const measure = (text: string, fontSize: number, bold = false) =>
-    getTextRuns(text, bold).reduce((sum, run) => sum + run.font.widthOfTextAtSize(run.text, fontSize), 0);
 
   const drawTextLine = (
     text: string,

@@ -193,6 +193,34 @@ An empty `label` prints the value alone. Do **not** fold the caption into the da
 returns fragments of phrases instead of values, presentation has leaked into the data, and the
 next blank needs its own set of fields.
 
+### Check the layout before the paper does
+
+A blank breaks silently: a number wider than its cell wraps onto a second line, and a
+**word** wider than its column does not wrap at all — it spills over the neighbour. Nothing
+catches it; the SQL is green, the template valid, the data right.
+
+Measure it in a probe, with the same code the renderer uses:
+
+```ts
+import {
+  createPrintTextMeasurer,
+  PRINT_CELL_PADDING,
+  printContentWidth,
+} from "@altera/server/print/metrics";
+
+const measure = await createPrintTextMeasurer();          // once per run — embedding a font is not free
+const usable = printContentWidth() * 0.10 - PRINT_CELL_PADDING * 2;
+
+measure("1 234 567.89", 9) <= usable;
+caption.split(/\s+/).every((word) => measure(word, 9, true) <= usable);
+```
+
+Measure a caption **by its longest word**, not by the whole string: wrapping is by words, so
+two short words split across two lines happily — one long word never does.
+
+Test with a realistic amount, not the demo one. A blank built around `12 000.00` looks
+finished until the first invoice for `1 234 567.89`.
+
 ### Conditional parts: `visibleWhen`
 
 A regulated blank is rarely one blank. The discount column, the «У т.ч. ПДВ» line, the returnable
