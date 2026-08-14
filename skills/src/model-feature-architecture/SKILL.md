@@ -78,6 +78,15 @@ Architecture notes:
 - A standard model can be fully functional with frontend model files, SQL package files, published PostgreSQL functions, and a generic backend runtime.
 - Current manifest contract requires `model`, `type`, and `schema` for routed features.
 - Manifest may optionally include `agent.allow`, `agent.allowCommands`, `agent.aliases`, and `agent.priority` for LLM access control, model discovery, and fallback ordering.
+
+Agent discovery — `agent.aliases` and `agent.priority`:
+- An external agent picks a model out of the catalog it reads from `GET /api/agent/tools`: technical name, titles taken from the locales, and these aliases. On a real solution that catalog is fifty to a hundred models, and the technical name is the least useful of the three — a person asks for «оборотка» or «расходная накладная», never for `turnover_balance`. Fill aliases when you add the model; retrofitting them across a finished solution is a separate chore nobody schedules.
+- Aliases are the words the trade actually uses, not translations of the technical name. Take them from the domain, and include the other language the users speak: an alias is not a translation, it is what someone will actually type.
+- Singular and plural both, when both are used.
+- **An alias must be unique across the whole application.** A word that fits two models helps with neither — the agent cannot choose, and ambiguity is worse than absence. Check after regenerating: duplicates are silent, because each manifest is edited on its own day.
+- Three to six per model. A longer list adds nothing: the agent matches, it does not read a dictionary.
+- `priority` (default 0) orders the catalog. Set it to 10 for the dozen models used daily; leave the rest alone. What the agent sees first should be what people work with most.
+- Both fields reach the catalog through `deno task sql:registry` — the generated `agent-routes` file is what the server serves, so a manifest edit without regeneration changes nothing.
 - `schema` identifies the SQL schema that owns the model objects and should normally be `app` unless the feature deliberately lives in another lowercase SQL schema.
 - `type: document` is reserved for true editable document models and must declare `views.edit`.
 - An information-register model is a first-class model in the same architecture and gets the same generated CRUD as a catalog (minus `lookup`); what differs is the reading it adds on top — value on a date, history, slice.
