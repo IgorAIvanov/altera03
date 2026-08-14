@@ -42,3 +42,20 @@ from app.menu m
 join app.menu_item parent on parent.menu_id = m.id and parent.code = 'catalog'
 where m.code = 'default'
 on conflict do nothing;
+
+-- Група «Адміністрування» і журнал зауважень. На відміну від демо-довідника,
+-- це НЕ приклад і видаляти його разом із демо не треба: щойно застосунок
+-- покажуть першій живій людині, з'явиться потік зауважень, і приймати його
+-- краще в самому застосунку — там, де видно контекст випадку.
+insert into app.menu_item (menu_id, parent_id, code, name, route_path, sort_order, is_active)
+select m.id, null, 'administration', '@[menu.group.administration]', null, 90, true
+from app.menu m
+where m.code = 'default'
+on conflict do nothing;
+
+insert into app.menu_item (menu_id, parent_id, code, name, route_path, sort_order, is_active)
+select m.id, parent.id, 'administration.remark', '@[remark.titleMany]', 'admin/remark/list', 10, true
+from app.menu m
+join app.menu_item parent on parent.menu_id = m.id and parent.code = 'administration'
+where m.code = 'default'
+on conflict do nothing;

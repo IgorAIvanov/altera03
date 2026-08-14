@@ -98,6 +98,15 @@ export const agentModelRoutes = {
     type: "admin",
     titles: {"en":"Print templates","uk":"Шаблони друку"}
   },
+  "remark": {
+    editPath: "/admin/remark/edit",
+    listPath: "/admin/remark/list",
+    type: "admin",
+    allow: true,
+    allowCommands: ["list","get","answer"],
+    aliases: ["зауваження","зауваження до рішення","remark"],
+    priority: 5
+  },
   "setting": {
     editPath: "/admin/setting/edit",
     type: "admin",

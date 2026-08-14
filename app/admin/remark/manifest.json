@@ -1,0 +1,38 @@
+{
+  "model": "remark",
+  "type": "admin",
+  "schema": "app",
+  "sql": { "generate": false },
+  "commands": {
+    "sql": {
+      "answer": "remark_answer",
+      "verify": "remark_verify",
+      "unread": "remark_unread"
+    },
+    "access": {
+      "//answer": "Відповідь виконавця — це правка запису, тож право те саме, що на правку.",
+      "answer": "edit",
+      "//verify": "Закриття теж правка. Хто саме закриває, вирішує не право, а те, що кнопка стоїть у формі: агент до неї не дотягнеться, бо verify немає в allowCommands.",
+      "verify": "edit",
+      "//unread": "Лічильник рахує ВЛАСНІ зауваження людини — це не доступ до моделі, а відповідь на питання «мені відповіли?». Вимагати тут право на модель означало б ховати значок від того, хто зауваження й написав.",
+      "unread": "authenticated"
+    }
+  },
+  "agent": {
+    "allow": true,
+    "//allowCommands": "Ані save, ані verify: писати зауваження — робота людини, закривати — теж її. Виконавець читає й відповідає.",
+    "allowCommands": ["list", "get", "answer"],
+    "aliases": ["зауваження", "зауваження до рішення", "remark"],
+    "priority": 5
+  },
+  "views": {
+    "list": {
+      "module": "./remarkList.ts",
+      "titleKey": "remark.titleMany"
+    },
+    "edit": {
+      "module": "./remarkEdit.ts",
+      "titleKey": "remark.titleOne"
+    }
+  }
+}

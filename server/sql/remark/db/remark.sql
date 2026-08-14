@@ -60,9 +60,13 @@ as $$
   with params as (
     select
       coalesce(payload->>'search', '')                                   as search,
-      nullif(payload->>'kind', '')                                       as kind,
-      nullif(payload->>'status', '')                                     as status,
-      coalesce((payload->>'openOnly')::boolean, false)                   as open_only,
+      -- Відбори приходять вкладеним об'єктом `filters` — так їх шле панель
+      -- фільтрів основи (`$root.$filters`). Верхній рівень лишається за
+      -- запитом (`search`, сторінка, сортування); змішувати їх в одному рівні
+      -- означало б, що ім'я поля моделі колись збіжиться з іменем параметра.
+      nullif(payload->'filters'->>'kind', '')                            as kind,
+      nullif(payload->'filters'->>'status', '')                          as status,
+      coalesce((payload->'filters'->>'openOnly')::boolean, false)        as open_only,
       greatest(coalesce((payload->>'page')::int, 1), 1)                  as page,
       least(greatest(coalesce((payload->>'pageSize')::int, 20), 1), 200) as page_size,
       coalesce(nullif(payload->>'sortBy', ''), 'createdAt')              as sort_by,

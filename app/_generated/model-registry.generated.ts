@@ -126,6 +126,23 @@ export const generatedModelRegistry = {
     "preview": "view"
     }
   },
+  "remark": {
+    type: "admin",
+    schema: "app",
+    sqlCommands: {
+    "answer": "remark_answer",
+    "unread": "remark_unread",
+    "verify": "remark_verify"
+    },
+    access: {
+    "//answer": "Відповідь виконавця — це правка запису, тож право те саме, що на правку.",
+    "//unread": "Лічильник рахує ВЛАСНІ зауваження людини — це не доступ до моделі, а відповідь на питання «мені відповіли?». Вимагати тут право на модель означало б ховати значок від того, хто зауваження й написав.",
+    "//verify": "Закриття теж правка. Хто саме закриває, вирішує не право, а те, що кнопка стоїть у формі: агент до неї не дотягнеться, бо verify немає в allowCommands.",
+    "answer": "edit",
+    "unread": "authenticated",
+    "verify": "edit"
+    }
+  },
   "setting": {
     type: "admin",
     schema: "app",

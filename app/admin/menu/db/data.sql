@@ -68,7 +68,8 @@ from (values
   ('administration', 'audit_log',          '@[auditLog.titleMany]',             'settings',     'admin/audit_log/list',            50),
   ('administration', 'audit_setting',      '@[auditSetting.titleMany]',         'settings',     'admin/audit_setting/list',        55),
   -- Маршрут веде одразу в форму: запис тут один на установку, списку немає.
-  ('administration', 'setting',            '@[setting.titleOne]',               'settings',     'admin/setting/edit',              60)
+  ('administration', 'setting',            '@[setting.titleOne]',               'settings',     'admin/setting/edit',              60),
+  ('administration', 'remark',             '@[remark.titleMany]',               'settings',     'admin/remark/list',               70)
 ) as v(parent_code, code, name, icon_key, route_path, sort_order)
 join app.menu m      on m.code = 'default'
 join app.menu_item p on p.menu_id = m.id and p.parent_id is null and p.code = v.parent_code

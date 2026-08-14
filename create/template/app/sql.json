@@ -11,6 +11,7 @@
     "@core/base",
     "@core/access",
     "@core/audit",
+    "@core/remark",
     "@core/menu",
     "admin/menu",
     "@core/print_template",
