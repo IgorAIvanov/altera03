@@ -1,9 +1,10 @@
 import { html, nothing, type TemplateResult } from "lit";
-import { customElement, query, state } from "lit/decorators.js";
+import { customElement, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
 import { apiFetch, readEnvelope } from "@client/data/api.ts";
 import { dateFormat, formatDate } from "@client/shared/datetime.ts";
 import { t } from "@client/locale.ts";
+import "@client/ui-kit/components/ui-dialog.ts";
 
 export const tagName = "access-token-dialog";
 
@@ -37,7 +38,11 @@ interface AccessTokenRow {
 
 @customElement(tagName)
 export class AccessTokenDialog extends GlobalStyledLitElement {
-  @query("dialog") private dialogEl!: HTMLDialogElement;
+  /**
+   * Стан вікна тримає власник, а `<ui-dialog>` його лише показує: закриття
+   * приходить сюди подією `ui-dialog-close`.
+   */
+  @state() private opened = false;
 
   @state() private rows: AccessTokenRow[] = [];
   @state() private name = "";
@@ -58,28 +63,29 @@ export class AccessTokenDialog extends GlobalStyledLitElement {
     this.copied = false;
     this.error = "";
     this.confirming = null;
-    this.dialogEl.showModal();
+    this.opened = true;
     void this.load();
   }
 
+  #close = () => { this.opened = false; };
+
   override render(): TemplateResult {
     return html`
-      <!-- m-auto обов'язковий: preflight Tailwind обнуляє margin усім елементам,
-           а нативне центрування модального dialog тримається саме на margin:auto
-           з UA-стилів. -->
-      <dialog class="m-auto p-6 rounded border w-[38rem] max-w-[95vw]">
+      <ui-dialog
+        .open=${this.opened}
+        heading=${t("header.tokensTitle")}
+        style="--ui-dialog-width: 38rem"
+        @ui-dialog-close=${this.#close}
+      >
         <div class="flex flex-col gap-4">
-          <h2 class="text-lg font-medium">${t("header.tokensTitle")}</h2>
-
           ${this.issued ? this.renderIssued() : this.renderForm()}
           ${this.error ? html`<div class="text-error text-sm">${this.error}</div>` : nothing}
           ${this.renderList()}
-
-          <div class="flex justify-end">
-            <button class="btn" @click=${() => this.dialogEl.close()}>${t("common.close")}</button>
-          </div>
         </div>
-      </dialog>
+        <div slot="actions">
+          <button class="btn btn-sm" @click=${this.#close}>${t("common.close")}</button>
+        </div>
+      </ui-dialog>
     `;
   }
 

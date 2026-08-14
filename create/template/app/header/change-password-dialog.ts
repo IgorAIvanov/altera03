@@ -1,8 +1,9 @@
 import { html, nothing, type TemplateResult } from "lit";
-import { customElement, query, state } from "lit/decorators.js";
+import { customElement, state } from "lit/decorators.js";
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
 import { changeOwnPassword } from "@client/auth/session.ts";
 import { t } from "@client/locale.ts";
+import "@client/ui-kit/components/ui-dialog.ts";
 
 export const tagName = "change-password-dialog";
 
@@ -20,7 +21,12 @@ export const tagName = "change-password-dialog";
  */
 @customElement(tagName)
 export class ChangePasswordDialog extends GlobalStyledLitElement {
-  @query("dialog") private dialogEl!: HTMLDialogElement;
+  /**
+   * Стан вікна тримає ВЛАСНИК, а `<ui-dialog>` його лише показує: закриття
+   * приходить сюди подією. Якби вікно гасило прапорець само, після Esc власник
+   * вважав би його відкритим і не зміг би показати вдруге.
+   */
+  @state() private opened = false;
 
   @state() private current = "";
   @state() private next = "";
@@ -35,24 +41,46 @@ export class ChangePasswordDialog extends GlobalStyledLitElement {
     this.repeat = "";
     this.error = "";
     this.done = false;
-    this.dialogEl.showModal();
+    this.opened = true;
   }
+
+  #close = () => {
+    this.opened = false;
+    this.done = false;
+  };
 
   override render(): TemplateResult {
     return html`
-      <!-- m-auto обов'язковий: preflight Tailwind обнуляє margin усім
-           елементам, а нативне центрування модального dialog тримається саме
-           на margin: auto з UA-стилів. -->
-      <dialog class="m-auto p-6 rounded border w-80" @close=${() => this.done = false}>
+      <ui-dialog
+        .open=${this.opened}
+        heading=${this.done ? t("header.passwordChanged") : t("header.passwordTitle")}
+        style="--ui-dialog-width: 22rem"
+        @ui-dialog-close=${this.#close}
+      >
         ${this.done ? this.renderDone() : this.renderForm()}
-      </dialog>
+        <div slot="actions">${this.renderActions()}</div>
+      </ui-dialog>
+    `;
+  }
+
+  private renderActions(): TemplateResult {
+    if (this.done) {
+      return html`
+        <button class="btn btn-sm btn-primary" @click=${this.#close}>${t("common.close")}</button>
+      `;
+    }
+    return html`
+      <button type="button" class="btn btn-sm" @click=${this.#close}>${t("common.cancel")}</button>
+      <!-- type="button", а не submit: кнопка стоїть поза формою, тож натискання
+           веде сюди напряму, а Enter усередині форми — через її @submit. -->
+      <button type="button" class="btn btn-sm btn-primary" ?disabled=${this.busy}
+        @click=${this.submit}>${t("common.save")}</button>
     `;
   }
 
   private renderForm(): TemplateResult {
     return html`
       <form class="flex flex-col gap-3" @submit=${this.submit}>
-        <h2 class="text-lg font-medium">${t("header.passwordTitle")}</h2>
 
         <input class="input" type="password" placeholder=${t("header.passwordCurrent")} .value=${this.current}
                @input=${(e: Event) => this.current = (e.target as HTMLInputElement).value} />
@@ -62,25 +90,12 @@ export class ChangePasswordDialog extends GlobalStyledLitElement {
                @input=${(e: Event) => this.repeat = (e.target as HTMLInputElement).value} />
 
         ${this.error ? html`<div class="text-error text-sm">${this.error}</div>` : nothing}
-
-        <div class="flex justify-end gap-2">
-          <button type="button" class="btn" @click=${() => this.dialogEl.close()}>${t("common.cancel")}</button>
-          <button class="btn btn-primary" ?disabled=${this.busy}>${t("common.save")}</button>
-        </div>
       </form>
     `;
   }
 
   private renderDone(): TemplateResult {
-    return html`
-      <div class="flex flex-col gap-3">
-        <h2 class="text-lg font-medium">${t("header.passwordChanged")}</h2>
-        <p class="text-sm opacity-70">${t("header.passwordChangedHint")}</p>
-        <div class="flex justify-end">
-          <button class="btn btn-primary" @click=${() => this.dialogEl.close()}>${t("common.close")}</button>
-        </div>
-      </div>
-    `;
+    return html`<p class="text-sm opacity-70">${t("header.passwordChangedHint")}</p>`;
   }
 
   private submit = async (event: Event) => {
