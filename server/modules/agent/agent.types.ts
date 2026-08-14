@@ -1,41 +1,27 @@
-export type AgentUiActionType = "openRoute" | "openList" | "showToast" | "focusField";
-
-export interface AgentUiActionOpenRoute {
-  type: "openRoute";
-  route: string;       // /app/operation/supplier_invoice/42
-  model: string;
-  id: string;
-}
-
-export interface AgentUiActionOpenList {
-  type: "openList";
-  route: string;       // /app/operation/supplier_invoice
-  model: string;
-}
-
-export interface AgentUiActionShowToast {
-  type: "showToast";
-  level: "info" | "success" | "warning" | "error";
-  message: string;
-}
-
-export interface AgentUiActionFocusField {
-  type: "focusField";
-  field: string;
-  message?: string;
-}
-
-export type AgentUiAction =
-  | AgentUiActionOpenRoute
-  | AgentUiActionOpenList
-  | AgentUiActionShowToast
-  | AgentUiActionFocusField;
-
+/**
+ * Контракт входу агента (`POST /api/agent/call`).
+ *
+ * Команд для інтерфейсу тут немає: колишні `uiActions` («відкрий цей документ»,
+ * «покажи тост») наказували щось зробити оболонці, яка їх не слухала й не
+ * слухає — зовнішній агент екрана не має. Лишилося те, що має сенс без екрана:
+ * {@link AgentCommandResult.route}, тобто ПОСИЛАННЯ. Різниця не словесна: наказ
+ * потребує каналу до відкритого браузера й довіри до того, хто наказує, а
+ * посилання доходить саме собою — агент кладе його в чат хоста, людина клікає.
+ */
 export interface AgentCommandResult {
   ok: boolean;
   model: string;
   command: string;
   id?: string;
+  /**
+   * Глибоке посилання на вкладку — `/document/invoice/edit/42`, той самий
+   * формат, що в `buildTabUrl` клієнта. Шлях, а не повна адреса: походження
+   * знає той, хто нас кличе, а сервер за зворотним проксі — не завжди.
+   *
+   * Відборів посилання не несе (їх немає у форматі вкладки), тож звіт
+   * відкриється порожнім — це видно й це поки так.
+   */
+  route?: string;
   messages: string[];
   data?: unknown;
 }
@@ -43,11 +29,10 @@ export interface AgentCommandResult {
 export interface AgentResponse {
   ok: boolean;
   result: AgentCommandResult | null;
-  uiActions: AgentUiAction[];
   messages: string[];
 }
 
-export interface AgentChatRequest {
+export interface AgentCallRequest {
   model: string;
   command: string;
   payload: Record<string, unknown>;

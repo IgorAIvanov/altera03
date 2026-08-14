@@ -1,22 +1,15 @@
 import { Injectable } from "@danet/core";
 import { ModelRuntimeService, type ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
+import { getServerConfig } from "../../config/server-config.ts";
 import { getAgentRoutes } from "./agent-routes.ts";
-import type {
-  AgentChatRequest,
-  AgentCommandResult,
-  AgentResponse,
-  AgentUiAction,
-} from "./agent.types.ts";
-
-const SAFE_COMMANDS = new Set(["list", "get", "save", "delete", "lookup"]);
-const CONFIRM_COMMANDS = new Set(["post", "unpost"]);
+import type { AgentCallRequest, AgentCommandResult, AgentResponse } from "./agent.types.ts";
 
 @Injectable()
 export class AgentService {
   constructor(private modelRuntime: ModelRuntimeService) {}
 
-  async chat(
-    request: AgentChatRequest,
+  async call(
+    request: AgentCallRequest,
     userId: string,
     caller: ModelCommandCaller = {},
   ): Promise<AgentResponse> {
@@ -27,8 +20,19 @@ export class AgentService {
       return this.errorResponse(`Модель '${model}' не знайдена або не підтримується агентом`);
     }
 
-    if (!SAFE_COMMANDS.has(command) && !CONFIRM_COMMANDS.has(command)) {
-      return this.errorResponse(`Команда '${command}' не дозволена для агента`);
+    // Що агенту можна, каже ПЕРЕЛІК ІНСТРУМЕНТІВ — той самий, який він прочитав
+    // у `/api/agent/tools`, і той самий, що зібрався з манифестів (`agent.allow`,
+    // `allowCommands`). Свій другий список тут уже був — п'ятірка стандартних
+    // імен, — і саме через нього агент не міг покликати звіт: перелік показував
+    // би `index`, а диспетчер відмовляв. Розходження двох білих списків тихе за
+    // побудовою: помітно його лише тоді, коли агент уперше спробує.
+    const tools = getServerConfig().agentTools;
+    if (!tools[`${model}.${command}`]) {
+      return this.errorResponse(
+        Object.keys(tools).length === 0
+          ? "Перелік інструментів агента порожній: застосунок не передав agentTools у bootstrap()"
+          : `Команда '${command}' не оголошена для агента в моделі '${model}'`,
+      );
     }
 
     let rawResult: unknown;
@@ -55,64 +59,36 @@ export class AgentService {
       model,
       command,
       id,
+      // Тільки на успіху: посилання на запис, якого не створилося, гірше за
+      // його відсутність — людина піде дивитися й побачить порожню форму.
+      route: ok ? this.routeFor(routes, id) : undefined,
       messages,
       data,
     };
 
-    if (!ok) {
-      return {
-        ok: false,
-        result,
-        uiActions: [],
-        messages,
-      };
-    }
-
-    const uiActions = this.buildUiActions(model, command, id, routes);
-
-    return {
-      ok: true,
-      result,
-      uiActions,
-      messages,
-    };
+    return { ok, result, messages };
   }
 
-  private buildUiActions(
-    model: string,
-    command: string,
+  /**
+   * Куди подивитися людині — глибоке посилання на вкладку.
+   *
+   * Формат той самий, що будує клієнт (`route` + `id`, без `?id=`): адреса
+   * `/catalog/bank/edit/5` вміє відкрити вкладку, а `?id=5` — ні. Стара версія
+   * цього коду розходилася з клієнтом саме тут, бо писалася до того, як
+   * посилання на вкладку з'явилися.
+   *
+   * Немає запису — веде на список: після `list`, звіту чи видалення саме він і
+   * потрібен.
+   */
+  private routeFor(
+    routes: { editPath?: string; listPath?: string },
     id: string | undefined,
-    routes: { editPath?: string; listPath?: string; type: string },
-  ): AgentUiAction[] {
-    const actions: AgentUiAction[] = [];
-
-    if ((command === "save" || command === "post") && id && routes.editPath) {
-      const route = `${routes.editPath}?id=${id}`;
-      actions.push({ type: "openRoute", route, model, id });
-      return actions;
-    }
-
-    if (command === "delete" && routes.listPath) {
-      actions.push({ type: "openList", route: routes.listPath, model });
-      return actions;
-    }
-
-    if (routes.editPath && id) {
-      const route = `${routes.editPath}?id=${id}`;
-      actions.push({ type: "openRoute", route, model, id });
-    } else if (routes.listPath) {
-      actions.push({ type: "openList", route: routes.listPath, model });
-    }
-
-    return actions;
+  ): string | undefined {
+    if (id && routes.editPath) return `${routes.editPath}/${id}`;
+    return routes.listPath;
   }
 
   private errorResponse(message: string): AgentResponse {
-    return {
-      ok: false,
-      result: null,
-      uiActions: [{ type: "showToast", level: "error", message }],
-      messages: [message],
-    };
+    return { ok: false, result: null, messages: [message] };
   }
 }

@@ -18,7 +18,14 @@ import { getServerConfig } from "../../config/server-config.ts";
 import { AuthService } from "../auth/auth.service.ts";
 import type { ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 
-/** Право, потрібне команді. Той самий вивід, що робить рантайм. */
+/**
+ * Право, потрібне СТАНДАРТНІЙ команді. Той самий вивід, що робить рантайм.
+ *
+ * Нестандартна (звітний `index`, TS-команда, друк) свого права звідси не
+ * дістає — вона оголошує його в манифесті, і саме оголошене має силу. Порядок
+ * джерел тут той самий, що в `resolveRequiredAction`: спершу оголошене,
+ * потім вивід з імені.
+ */
 const COMMAND_ACTION: Record<string, string> = {
   list: "view",
   get: "view",
@@ -43,7 +50,7 @@ export class AgentToolsService {
     // Токен «тільки читання» не має бачити інструментів запису: вони йому
     // однаково відмовлять, а показані — виглядають як доступні.
     const readOnly = caller.accessToken?.readOnly === true;
-    const schemas = getServerConfig().agentTools;
+    const { agentTools: schemas, models } = getServerConfig();
     const permissions = await this.authService.getEffectivePermissions(userId);
 
     const allowed = new Set(permissions.map((entry) => `${entry.model}:${entry.action}`));
@@ -59,11 +66,22 @@ export class AgentToolsService {
       const model = key.slice(0, separator);
       const command = key.slice(separator + 1);
 
+      // Оголошене право сильніше за вивід з імені — інакше звіт (`index`),
+      // друк і будь-яка TS-команда лишалися б невидимі для агента, хоч і
+      // виконувані: вивід знає лише вісім стандартних дій.
+      const declared = models.registry[model]?.access?.[command];
+
       // `save` — це ДВА різні права: новий запис вимагає `create`, наявний
       // `edit`. Рантайм розрізняє їх за наявністю `item.id`, а тут запису ще
       // немає, тож інструмент показуємо, якщо є бодай одне з них.
-      const actions = command === "save" ? ["create", "edit"] : [COMMAND_ACTION[command]];
-      const permitted = actions.some((action) =>
+      const actions = declared
+        ? [declared]
+        : command === "save"
+        ? ["create", "edit"]
+        : [COMMAND_ACTION[command]];
+
+      // `authenticated` — «досить бути авторизованим»: права не питаємо.
+      const permitted = declared === "authenticated" || actions.some((action) =>
         action && (allowed.has(`${model}:${action}`) || allowedEverywhere.has(action))
       );
 

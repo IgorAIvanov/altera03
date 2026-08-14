@@ -1293,13 +1293,24 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           return body.data.rows as Array<{ model: string; command: string; input: unknown }>;
         };
 
-        const call = async (token: string, command: string, payload: Record<string, unknown>) => {
-          return await client.json<{ ok: boolean; messages: string[] }>("/api/agent/chat", {
-            method: "POST",
-            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-            body: JSON.stringify({ model: "bank", command, payload }),
-          });
+        const callModel = async (
+          token: string,
+          model: string,
+          command: string,
+          payload: Record<string, unknown>,
+        ) => {
+          return await client.json<{ ok: boolean; result: unknown; messages: string[] }>(
+            "/api/agent/call",
+            {
+              method: "POST",
+              headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+              body: JSON.stringify({ model, command, payload }),
+            },
+          );
         };
+
+        const call = (token: string, command: string, payload: Record<string, unknown>) =>
+          callModel(token, "bank", command, payload);
 
         // Токен бачить інструменти зі СХЕМОЮ payload-а — заради цього перелік і
         // існує: без складу полів агент лишається з прозовою підказкою.
@@ -1319,9 +1330,26 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           false,
         );
 
-        // Читання токеном виконується від імені його власника.
+        // Читання токеном виконується від імені його власника, а у відповіді
+        // є посилання на вкладку — те, що агент кладе людині в чат. Формат
+        // саме клієнтський (`route`, не `?id=`): іншого оболонка не відкриє.
         const list = await call(full.token, "list", {});
         assertEquals(list.body.ok, true);
+        assertEquals((list.body.result as { route?: string }).route, "/catalog/bank/list");
+
+        // Той самий формат для запису — саме він і потрібен у сценарії «агент
+        // завів документ, людина його відкрила». Читанням, а не записом: тут
+        // перевіряється форма посилання, а не робота `save`.
+        const rows = (list.body.result as { data?: { rows?: Array<{ id: string }> } }).data?.rows;
+        const existing = rows?.[0];
+        if (existing) {
+          const one = await call(full.token, "get", { id: existing.id });
+          assertEquals(one.body.ok, true);
+          assertEquals(
+            (one.body.result as { route?: string }).route,
+            `/catalog/bank/edit/${existing.id}`,
+          );
+        }
 
         // Зміна стану без `confirm` не виконується, і у відмові сказано, чого
         // бракує: агент має дізнатися вимогу з тексту, а не вгадувати.
@@ -1333,6 +1361,38 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         const write = await call(reader.token, "save", { item: { name: "Smoke agent bank" } });
         assertEquals(write.body.ok, false);
         assertEquals(write.body.messages.join(" ").includes("тільки для читання"), true);
+
+        // Звіт — те, заради чого агента здебільшого й кличуть: звірка
+        // починається з читання регістру, а не з запису. Інструмент у переліку
+        // є (право прийшло з `commands.access`, а не з виводу за іменем)...
+        assertExists(
+          tools.find((tool) => tool.model === "turnover_balance" && tool.command === "index"),
+        );
+
+        // ...і виклик доходить до самого звіту, а не спиняється в диспетчері:
+        // без обов'язкового відбору відмовляє SQL звіту, і у відповіді є
+        // `result` із луною фільтрів, тоді як відмова диспетчера лишає його
+        // порожнім. Саме цим два білих списки й розходилися.
+        const noFilter = await callModel(full.token, "turnover_balance", "index", { filters: {} });
+        assertEquals(noFilter.body.ok, false);
+        assertExists(noFilter.body.result);
+
+        // Успішний прогін вимагає організації, а вона тут не своя: заводити її
+        // пробі задорого (з'їсть номер із лічильника), тож беремо наявну. На
+        // порожній базі звіту й так нема про що звітувати.
+        const organizations = await client.model("organization", "lookup", { pageSize: 1 });
+        const organization = (organizations.body.data.rows as Array<{ id: string }>)[0];
+        if (organization) {
+          const turnover = await callModel(full.token, "turnover_balance", "index", {
+            filters: { organization: { id: organization.id } },
+          });
+          assertEquals(turnover.body.ok, true);
+          // У звіту немає запису, тож посилання веде на сам екран звіту.
+          assertEquals(
+            (turnover.body.result as { route?: string }).route,
+            "/report/turnover_balance/list",
+          );
+        }
 
         const revoked = await client.json<Envelope>("/api/auth/tokens/revoke", {
           method: "POST",

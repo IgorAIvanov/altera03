@@ -182,6 +182,23 @@ function payloadSchemaFor(
     return { type: "object", properties, required: ["item"] };
   }
 
+  // Звіт приймає рівно `filters` — розбирає їх згенерована обгортка
+  // `app.<report>_index`, і схема фільтрів тут та сама, з якої вона зроблена.
+  // Обов'язковим `filters` не роблю: звіт без власних відборів існує
+  // (`document_movements`), і вимагати від агента порожній об'єкт — вигадана
+  // перешкода. Чого бракує насправді, скаже сам звіт.
+  if (command === "index") {
+    const filters = exports[`${pascal}FiltersSchema`];
+    return {
+      type: "object",
+      properties: {
+        filters: filters && typeof filters === "object"
+          ? stripUiAnnotations(filters)
+          : { type: "object", description: "Відбори звіту" },
+      },
+    };
+  }
+
   if (command === "list") return listPayloadFallback();
   if (command === "lookup") {
     return {

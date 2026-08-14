@@ -3,10 +3,10 @@ import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { AgentService } from "./agent.service.ts";
 import { AgentToolsService } from "./agent-tools.service.ts";
-import type { AgentChatRequest } from "./agent.types.ts";
+import type { AgentCallRequest } from "./agent.types.ts";
 
 function agentError(message: string) {
-  return { ok: false, result: null, uiActions: [], messages: [message] };
+  return { ok: false, result: null, messages: [message] };
 }
 
 @Controller("api/agent")
@@ -39,8 +39,17 @@ export class AgentController {
     }
   }
 
-  @Post("chat")
-  async chat(
+  /**
+   * Виконати команду моделі від імені власника токена.
+   *
+   * `call`, а не `chat`: чату тут ніколи й не було — приходить `{model,
+   * command, payload}`, а не репліка людини. Ім'я лишалося від LLM-агента,
+   * якого вже немає, і збивало з пантелику саме тих, для кого цей вхід і
+   * зроблено. Пара з `GET /api/agent/tools` тепер читається як у MCP:
+   * перелік інструментів і виклик інструмента.
+   */
+  @Post("call")
+  async call(
     @Req() req: HttpRequest,
   ) {
     try {
@@ -52,7 +61,7 @@ export class AgentController {
       }
 
       const auth = await this.requestUserService.resolveAuthContext(req, body);
-      const request = body as AgentChatRequest;
+      const request = body as AgentCallRequest;
 
       if (!request.model || typeof request.model !== "string") {
         return agentError("model є обов'язковим");
@@ -61,7 +70,7 @@ export class AgentController {
         return agentError("command є обов'язковим");
       }
 
-      return await this.agentService.chat(
+      return await this.agentService.call(
         {
           model: request.model,
           command: request.command,

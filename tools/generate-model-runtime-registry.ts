@@ -86,21 +86,33 @@ async function loadDocumentHeaderSchema(appDir: string): Promise<Record<string, 
   }
 }
 
+/**
+ * Команди типу моделі, які має сенс показувати агенту.
+ *
+ * Набір саме за типом, а не «п'ятірка всім»: описати admin-екрану стандартний
+ * CRUD означало б показати інструменти, які повернуть 501. Мовчання чесніше за
+ * опис навмання — тому невідомий тип не дає нічого.
+ *
+ * Звіт віддає свій `index`, і він тут не з міркувань повноти: агентська робота
+ * починається з того, щоб ПОДИВИТИСЯ. Звірка виписки, питання «скільки винні
+ * цьому контрагенту», перевірка перед проведенням — усе це читання регістру, а
+ * не запис. Доти агент умів створити й провести документ, але не міг подивитися
+ * оборотку, тобто мав рівно протилежний до потрібного набір.
+ */
+function agentBaseCommands(type: string): string[] {
+  if (type === "report") return ["index"];
+  // Регістр не має підбору — у нього нема чого підбирати.
+  if (type === "register") return ["list", "get", "save", "delete"];
+  if (type === "catalog") return ["list", "get", "save", "delete", "lookup"];
+  if (type === "document") return ["list", "get", "save", "delete", "lookup", "post", "unpost"];
+  return [];
+}
+
 function agentCommandsFor(manifest: ManifestRecord): string[] {
   const agent = manifest.agent ?? {};
   if (agent.allow === false) return [];
 
-  // Лише типи зі стандартним CRUD. Звіт має свій `index`, admin-екран —
-  // рукописний набір; описати їм п'ятірку означало б показати агенту
-  // інструменти, які повернуть 501. Мовчання тут чесніше за опис навмання.
-  const type = manifest.type ?? "catalog";
-  if (type !== "catalog" && type !== "document" && type !== "register") return [];
-
-  // Регістр не має підбору — у нього нема чого підбирати.
-  const base = type === "register"
-    ? ["list", "get", "save", "delete"]
-    : ["list", "get", "save", "delete", "lookup"];
-  if (type === "document") base.push("post", "unpost");
+  const base = agentBaseCommands(manifest.type ?? "catalog");
 
   if (Array.isArray(agent.allowCommands)) {
     return base.filter((command) => agent.allowCommands!.includes(command));
