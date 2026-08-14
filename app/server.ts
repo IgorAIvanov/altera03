@@ -5,7 +5,7 @@
 import { fromFileUrl } from "jsr:@std/path@^1.1.2";
 import { serveDir } from "jsr:@std/http@^1.0.18/file-server";
 
-import { bootstrap, configFromEnv } from "@altera/server";
+import { bootstrap, configFromEnv, type VersionInfo } from "@altera/server";
 
 import { generatedModelRegistry } from "./_generated/model-registry.generated.ts";
 import { generatedTsCommandBindings } from "./_generated/ts-commands.generated.ts";
@@ -41,6 +41,54 @@ export interface AppServer {
 }
 
 /**
+ * Як звуть цю установку — назва рішення й пін фреймворку.
+ *
+ * Читається з двох джерел, бо установки бувають двох родів. Пакетна поставка
+ * лишає манифест `app/.solution.json` — там і назва, і піни, під якими рішення
+ * зібране. Розгортання з репозиторію (git push на платформу) манифеста не має
+ * зовсім, тож пін беремо з карти імпортів кореня — це те саме, чим застосунок і
+ * запущений.
+ *
+ * Помилка тут не має ламати старт: без версії зауваження просто небагатослівне,
+ * а без сервера немає нічого.
+ */
+async function solutionVersion(): Promise<VersionInfo> {
+  const pin = (value: unknown): string | undefined => {
+    const text = typeof value === "string" ? value : "";
+    return text.match(/@altera\/server@(.+?)\/?$/)?.[1];
+  };
+
+  try {
+    const raw = await Deno.readTextFile(new URL("./.solution.json", import.meta.url));
+    const m = JSON.parse(raw) as {
+      name?: string;
+      version?: string;
+      installedFramework?: Record<string, string>;
+      framework?: Record<string, string>;
+    };
+    const fw = m.installedFramework?.["@altera/server"] ?? m.framework?.["@altera/server"];
+    return {
+      solution: m.name && m.version ? `${m.name} ${m.version}` : m.name,
+      framework: pin(fw),
+    };
+  } catch {
+    // Манифеста немає — це не помилка, а інший рід установки.
+  }
+
+  try {
+    const raw = await Deno.readTextFile(new URL("../deno.json", import.meta.url));
+    const cfg = JSON.parse(raw) as { name?: string; version?: string; imports?: Record<string, string> };
+    return {
+      solution: cfg.name && cfg.version ? `${cfg.name} ${cfg.version}` : cfg.name,
+      framework: pin(cfg.imports?.["@altera/server"] ?? cfg.imports?.["@altera/server/"]),
+    };
+  } catch {
+    return {};
+  }
+}
+
+
+/**
  * Збирає застосунок і віддає його обробником, нікуди не слухаючи.
  *
  * Порт з'являється тільки в `import.meta.main` нижче — завдяки цьому той самий
@@ -59,6 +107,7 @@ export async function createServer(): Promise<AppServer> {
   const env = configFromEnv();
   const application = await bootstrap({
     ...env,
+    version: await solutionVersion(),
     auth: { ...env.auth, methods: devAuthMethods() },
     models: {
       registry: generatedModelRegistry,

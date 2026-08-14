@@ -27,6 +27,7 @@ export type {
   ServerConfig,
   ServerOptions,
   SessionCookieConfig,
+  VersionInfo,
   ViewsConfig,
 } from "./config/server-config.ts";
 

@@ -4,6 +4,7 @@ import { css, html, type CSSResultGroup, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { t } from "../../locale.ts";
+import { appVersion } from "../../auth/session.ts";
 import { activeTab } from "../../tabs/active-tab.ts";
 import { readUserScoped, removeUserScoped, writeUserScoped } from "../../shared/user-storage.ts";
 import "./ui-dialog.ts";
@@ -154,6 +155,8 @@ export class UiRemark extends Base {
             ctxRoute: this.#contextRoute(),
             ctxModel: activeTab()?.route.split("/")[1] ?? null,
             ctxRecordId: activeTab()?.modelId ?? null,
+            ctxSolution: appVersion().solution ?? null,
+            ctxFramework: appVersion().framework ?? null,
             ctxUserAgent: navigator.userAgent,
           },
         },

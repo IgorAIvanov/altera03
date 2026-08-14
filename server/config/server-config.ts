@@ -141,6 +141,26 @@ export interface ViewsConfig {
   dev: boolean;
 }
 
+/**
+ * Як звуть цю установку — назва рішення і версія фреймворку, під яким воно
+ * працює.
+ *
+ * Називає їх ЗАСТОСУНОК, як і версію SQL ядра: бібліотека не має вирішувати за
+ * нього, чим він є. Значення їде з кожним зауваженням (`ctxSolution`,
+ * `ctxFramework`) — без них «не проводиться накладна» не прив'язане ні до якої
+ * поставки, і на питання «у якій версії це було» відповіді немає.
+ *
+ * Рядки вільні: у пакетній поставці їх дає `app/.solution.json`, у розгортанні
+ * з репозиторію — карта імпортів, а de facto годиться будь-що, що людина
+ * упізнає.
+ */
+export interface VersionInfo {
+  /** Рішення: `«erp 1.4.0»`. */
+  solution?: string;
+  /** Фреймворк: пін `@altera/server`. */
+  framework?: string;
+}
+
 /** Те, що застосунок передає в {@link bootstrap}. Необов'язкові блоки мають дефолти. */
 export interface ServerOptions {
   database: DatabaseConfig;
@@ -156,6 +176,7 @@ export interface ServerOptions {
   agentTools?: Record<string, unknown>;
   auth?: Partial<AuthConfig>;
   blob?: Partial<BlobConfig>;
+  version?: VersionInfo;
 }
 
 /** Повна конфігурація після застосування дефолтів. Такою її бачать сервіси. */
@@ -167,6 +188,7 @@ export interface ServerConfig {
   agentTools: Record<string, unknown>;
   auth: AuthConfig;
   blob: BlobConfig;
+  version: VersionInfo;
 }
 
 const DEFAULT_AUTH: AuthConfig = {
@@ -198,6 +220,7 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
     agentTools: options.agentTools ?? {},
     auth: { ...DEFAULT_AUTH, ...options.auth },
     blob: { ...DEFAULT_BLOB, ...options.blob },
+    version: options.version ?? {},
   };
 }
 

@@ -14,6 +14,7 @@ import { htmlResponse, redirectBouncePage } from "./auth-redirect-page.ts";
 import { err, ok, rows } from "../../common/response.ts";
 import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "./password-hash.ts";
 import { type HttpRequest, jsonResponse } from "../../common/http.ts";
+import { getServerConfig } from "../../config/server-config.ts";
 import type { AuthLoginRequest, AuthSessionInfo } from "./auth.types.ts";
 
 /**
@@ -151,9 +152,18 @@ export class AuthController {
   async me(@Req() req: HttpRequest) {
     const sessionUser = await this.authSessionService.resolveSessionUser(req);
     // Немає сесії — це не помилка, а порожній item: клієнт просто показує вхід.
+    //
+    // Версія установки їде саме тут, а не окремим маршрутом: клієнт і так
+    // ходить сюди рівно раз за сеанс, а два рядки не варті ані другого
+    // round-trip, ані ще одного публічного шляху. Без сесії їх немає — назва
+    // рішення нікому стороннньому не потрібна.
     return ok(
       sessionUser
-        ? { user: sessionUser.user, session: publicSession(sessionUser.session) }
+        ? {
+          user: sessionUser.user,
+          session: publicSession(sessionUser.session),
+          version: getServerConfig().version,
+        }
         : null,
     );
   }

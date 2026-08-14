@@ -17,6 +17,12 @@ import {
   setSessionLostHandler,
 } from "../data/api.ts";
 
+/** Назва рішення й пін фреймворку — так, як їх назвав застосунок. */
+export interface AppVersion {
+  solution?: string;
+  framework?: string;
+}
+
 export interface SessionUser {
   id: string;
   login: string;
@@ -98,6 +104,12 @@ const _user = new Signal.State<SessionUser | null>(null);
 const _session = new Signal.State<SessionInfo | null>(null);
 
 export const currentUser = (): SessionUser | null => _user.get();
+/**
+ * Як звуть цю установку — назву рішення й пін фреймворку називає застосунок
+ * (`bootstrap({ version })`), сервер лише переказує. Потрібне тому, хто
+ * повідомляє про поламку: без версії зауваження не прив'язане до поставки.
+ */
+export const appVersion = (): AppVersion => _version.get();
 export const currentSession = (): SessionInfo | null => _session.get();
 
 /**
@@ -109,6 +121,7 @@ export const currentSession = (): SessionInfo | null => _session.get();
  * раз при вході, застигав би до перезавантаження сторінки.
  */
 const _permissions = new Signal.State<Set<string>>(new Set());
+const _version = new Signal.State<AppVersion>({});
 
 function setPermissions(next: Set<string>) {
   _permissions.set(next);
@@ -159,7 +172,16 @@ function applySession(item: { user: SessionUser; session: SessionInfo } | null):
 /** Чи є жива сесія. Викликається на старті ДО підняття оболонки. */
 export async function restoreSession(): Promise<boolean> {
   const response = await apiFetch("/api/auth/me");
-  const envelope = await readEnvelope<{ user: SessionUser; session: SessionInfo }>(response);
+  const envelope = await readEnvelope<{
+    user: SessionUser;
+    session: SessionInfo;
+    version?: AppVersion;
+  }>(response);
+
+  // Версія установки — те саме, що права: читається один раз за сеанс і не
+  // реактивна. Кладемо ДО перевірки сесії: якщо сесії немає, порожнє значення
+  // теж правильне.
+  _version.set(envelope.data?.item?.version ?? {});
 
   // `ok: false` тут не розбираємо навмисно: сесії однаково немає, і показати
   // причину краще на екрані входу — у нього для цього є місце, а тут немає.
