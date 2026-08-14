@@ -131,5 +131,17 @@
   "core.sqlCheck": "Значення не проходить перевірку, задану в базі.",
   "core.sqlSerialization": "Дані одночасно змінив хтось інший — повторіть операцію.",
   "core.sqlBadFormat": "Значення має неправильний формат.",
-  "core.sqlDeadlock": "Операції заблокували одна одну — повторіть операцію."
+  "core.sqlDeadlock": "Операції заблокували одна одну — повторіть операцію.",
+  "core.remark.button": "Зауваження",
+  "core.remark.hint": "Записати зауваження про цей екран",
+  "core.remark.send": "Надіслати",
+  "core.remark.titlePlaceholder": "Коротко: що не так",
+  "core.remark.bodyPlaceholder": "Що робили й що сталося",
+  "core.remark.titleRequired": "Напишіть коротко, у чому річ",
+  "core.remark.sendFailed": "Не вдалося надіслати зауваження",
+  "core.remark.noContext": "Без прив'язки до екрана",
+  "core.remark.kind.error": "Помилка",
+  "core.remark.kind.question": "Питання",
+  "core.remark.kind.wish": "Побажання",
+  "core.remark.kind.order": "Замовлення"
 }

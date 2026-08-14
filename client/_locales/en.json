@@ -131,5 +131,17 @@
   "core.sqlDateRange": "The date or time is out of the allowed range.",
   "core.sqlBadFormat": "The value has an invalid format.",
   "core.sqlSerialization": "Someone changed the data at the same time — please repeat the operation.",
-  "core.sqlDeadlock": "The operations blocked each other — please repeat the operation."
+  "core.sqlDeadlock": "The operations blocked each other — please repeat the operation.",
+  "core.remark.button": "Remark",
+  "core.remark.hint": "Record a remark about this screen",
+  "core.remark.send": "Send",
+  "core.remark.titlePlaceholder": "In short: what is wrong",
+  "core.remark.bodyPlaceholder": "What you did and what happened",
+  "core.remark.titleRequired": "Say in short what this is about",
+  "core.remark.sendFailed": "Could not send the remark",
+  "core.remark.noContext": "Not tied to a screen",
+  "core.remark.kind.error": "Defect",
+  "core.remark.kind.question": "Question",
+  "core.remark.kind.wish": "Wish",
+  "core.remark.kind.order": "Order"
 }

@@ -6,6 +6,7 @@ import { t } from "../locale.ts";
 import { shellTags } from "../shell/shell-registry.ts";
 import "@client/ui-kit/picker-host.ts";
 import "@client/ui-kit/confirm-host.ts";
+import "@client/ui-kit/components/ui-remark.ts";
 import { apiFetch, readEnvelope, ServerUnavailableError } from "../data/api.ts";
 import { readUserScoped, writeUserScoped } from "../shared/user-storage.ts";
 import { buildTabUrl, parseTabPath } from "./tab-url.ts";
@@ -198,8 +199,27 @@ export class TabController extends LitElement {
       /* Точка відліку для вимірювального рядка (.tab-measure). */
       position: relative;
     }
+    .tab-row {
+      display: flex;
+      align-items: stretch;
+      background: var(--color-primary, #2f5f8f);
+      flex-shrink: 0;
+    }
+
+    .tab-aside {
+      display: flex;
+      align-items: center;
+      padding: 0 8px 2px;
+      color: #e8f0fb;
+      font-size: 0.8125rem;
+    }
+
     .tab-bar {
       display: flex;
+      /* min-width: 0 — інакше смуга не стискається під сусіда, і кнопка поїде
+         за край замість того, щоб забрати ширину в ярликів. */
+      flex: 1;
+      min-width: 0;
       align-items: flex-end;
       gap: 2px;
       padding: 4px 4px 0;
@@ -1078,14 +1098,31 @@ export class TabController extends LitElement {
     `;
   }
 
+  /** Активна вкладка — з неї бере контекст кнопка зауваження. */
+  private get activeTab(): Tab | undefined {
+    return this.tabs.find(tab => tab.id === this.activeTabId);
+  }
+
   override render(): TemplateResult {
     const hidden = new Set(this.hiddenIds);
     const visible = this.tabs.filter(tab => tab.permanent || !hidden.has(tab.id));
     return html`
       ${this.headerEl}
-      <div class="tab-bar">
-        ${repeat(visible, tab => tab.id, tab => this.renderTabChip(tab))}
-        ${this.hiddenIds.length ? this.renderHistoryButton() : ""}
+      <!-- Кнопка зауваження — СУСІД смуги, а не її вміст: ширину смуги міряє
+           #syncOverflow, щоб порахувати, скільки ярликів уміщається, і зайвий
+           елемент усередині зробив би той вимір брехливим. Зовні вона просто
+           забирає в смуги ширину, і вимір лишається чесним. -->
+      <div class="tab-row">
+        <div class="tab-bar">
+          ${repeat(visible, tab => tab.id, tab => this.renderTabChip(tab))}
+          ${this.hiddenIds.length ? this.renderHistoryButton() : ""}
+        </div>
+        <div class="tab-aside">
+          <ui-remark
+            .route=${this.activeTab?.route ?? ""}
+            .modelId=${this.activeTab?.modelId ?? null}
+          ></ui-remark>
+        </div>
       </div>
       <!-- Вимірювальний рядок: ВСІ ярлики плюс кнопка, поза розкладкою й поза
            кліками. Ширини звідси — єдине джерело для #syncOverflow; міряти по
