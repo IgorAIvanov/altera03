@@ -58,7 +58,16 @@ export class UiRemark extends GlobalStyledLitElement {
         background: #2563eb; color: #fff; font-size: 11px; line-height: 16px;
         text-align: center;
       }
-      dialog { width: min(460px, 92vw); border: 0; border-radius: 10px; padding: 0; }
+      /* Центрування дає правило теми dialog:modal; тут лише розміри. Довгий
+         текст зауваження не має виштовхувати кнопки за екран, звідси max-height
+         і прокрутка всередині. (Зворотних лапок у коментарі всередині css-шаблона
+         бути не може — вони обривають сам шаблонний рядок.) */
+      dialog {
+        width: min(460px, 92vw);
+        max-height: 88vh;
+        border: 0; border-radius: 10px; padding: 0;
+      }
+      .body { overflow: auto; }
       dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
       .body { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
       .kinds { display: flex; gap: 6px; flex-wrap: wrap; }
