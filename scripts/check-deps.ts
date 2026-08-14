@@ -231,11 +231,16 @@ await checkNoAppDependency("tools", () => false);
 // ловить спокусу зчитати skills/src із самого пакета: у встановленому пакета
 // того каталогу немає, він їде мапою (skills.generated.ts).
 await checkNoAppDependency("skills", () => false);
+// mcp/ — обгортка над HTTP-API, і застосунок для неї закінчується на межі
+// протоколу: вона знає адресу бази й токен, а не її моделі. Імпорт застосунку
+// тут означав би, що обгортка зліплена з ЦІЄЮ базою й до чужої не поїде.
+await checkNoAppDependency("mcp", () => false);
 
 await checkStaysInsidePackage("client");
 await checkStaysInsidePackage("server");
 await checkStaysInsidePackage("tools");
 await checkStaysInsidePackage("skills");
+await checkStaysInsidePackage("mcp");
 
 await checkCssIsPlain("client");
 await checkCssIsPlain("server");

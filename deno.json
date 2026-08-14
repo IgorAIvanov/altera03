@@ -68,7 +68,7 @@
     // входять — і зламаний список чи базовий клас таблиці ця перевірка мовчки
     // пропускала. Знайдено рівно так: зрізаний метод основи не помітили ні
     // check, ні збірка (Vite типи не перевіряє), ні проби.
-    "check": "deno check ./app ./client ./server ./tools ./scripts",
+    "check": "deno check ./app ./client ./server ./tools ./scripts ./mcp",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",
     // Юніт-проби бібліотек, яким не потрібні ні БД, ні HTTP: символіки
@@ -76,6 +76,10 @@
     // scripts/ додано ОДНИМ файлом, а не каталогом: поряд лежить smoke_test.ts,
     // якому потрібні база й оточення, і він живе окремою задачею `smoke`.
     "test:unit": "deno test --allow-read --allow-write ./server/ ./client/ ./skills/ ./tools/ ./scripts/version-pins_test.ts ./scripts/app-locales_test.ts ./scripts/translation-markers_test.ts",
+    // Проба MCP-обгортки — окремою задачею, бо вона піднімає підроблену базу на
+    // порту й запускає обгортку ПІДПРОЦЕСОМ (протокол інакше не перевіриш), а
+    // test:unit за домовленістю не ходить ні в БД, ні в мережу.
+    "mcp:test": "deno test --allow-net --allow-env --allow-read --allow-run ./mcp/",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
     // Через обгортки в scripts/, а не прямим викликом інструмента: SQL ядра
@@ -124,7 +128,7 @@
     }
   },
 
-  "workspace": ["./server", "./client", "./app", "./tools", "./create", "./skills"],
+  "workspace": ["./server", "./client", "./app", "./tools", "./create", "./skills", "./mcp"],
   "imports": {
     "@app/": "./app/",
     "@client/": "./client/",
