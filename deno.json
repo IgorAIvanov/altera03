@@ -82,6 +82,11 @@
     "mcp:test": "deno test --allow-net --allow-env --allow-read --allow-run ./mcp/",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
+    // Видача персонального токена: `deno task token <назва> [--write]`. Той самий
+    // клас, що passwd — пряма робота з локальною базою під запобіжником оточення.
+    // Потрібен тому, що токени видає лише сесія (браузер), а екрана «Мої токени»
+    // ще немає: поза браузером узяти токен нізвідки.
+    "token": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/issue-access-token.ts",
     // Через обгортки в scripts/, а не прямим викликом інструмента: SQL ядра
     // приходить у tools аргументом, і назвати його версію може лише застосунок
     // (див. коментар у scripts/sql-assemble.ts).
