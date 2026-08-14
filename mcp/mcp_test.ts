@@ -276,10 +276,35 @@ Deno.test("обгортка: відмова бази стає текстом д�
   }
 });
 
+Deno.test("обгортка: нерозгорнутий ${…} названо помилкою конфіга, а не токена", async () => {
+  // Так виглядає запис у конфізі хоста, коли змінної в його оточенні не було.
+  const command = new Deno.Command(Deno.execPath(), {
+    args: ["run", "--allow-net", "--allow-env", "--allow-read", MAIN],
+    env: { ALTERA_URL: "http://localhost:1", ALTERA_TOKEN: "${ALTERA_TOKEN}" },
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const { code, stderr } = await command.output();
+  const message = new TextDecoder().decode(stderr);
+
+  assertEquals(code, 1);
+  // Без цього перше, що бачить людина, — 401 «токен недійсний», і шукає вона
+  // відкликаний токен, а не незадану змінну.
+  assertEquals(message.includes("нерозгорнутим"), true);
+  assertEquals(message.includes("перезапусти хост"), true);
+});
+
 Deno.test("обгортка: без токена не стартує й каже це в stderr", async () => {
   const command = new Deno.Command(Deno.execPath(), {
     args: ["run", "--allow-net", "--allow-env", "--allow-read", MAIN],
-    env: { ALTERA_URL: "http://localhost:1" },
+    // Порожнє значення, а не відсутній ключ: `Deno.Command` ДОМІШУЄ оточення
+    // батька до заданого, тож на машині, де розробник підключив обгортку до
+    // свого хоста (`setx ALTERA_TOKEN …`), справжній токен просочився б сюди —
+    // і крок проходив би, нічого не перевіряючи. Саме так він і зламався,
+    // щойно змінна з'явилася.
+    env: { ALTERA_URL: "http://localhost:1", ALTERA_TOKEN: "" },
     stdin: "null",
     stdout: "piped",
     stderr: "piped",
