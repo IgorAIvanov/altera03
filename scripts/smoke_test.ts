@@ -1284,10 +1284,28 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         const full = await issue("smoke agent", false);
         const reader = await issue("smoke agent readonly", true);
 
-        const toolsOf = async (token: string) => {
+        /** Каталог моделей — те, що агент читає першим і тримає цілком. */
+        const catalogOf = async (token: string) => {
           const { status, body } = await client.json<Envelope>("/api/agent/tools", {
             headers: { authorization: `Bearer ${token}` },
           });
+
+          assertEquals(status, 200);
+          return body.data.rows as Array<{
+            model: string;
+            type: string;
+            titles?: Record<string, string>;
+            aliases?: string[];
+            commands: string[];
+          }>;
+        };
+
+        /** Схеми — на вимогу, однієї моделі. */
+        const toolsOf = async (token: string, model: string) => {
+          const { status, body } = await client.json<Envelope>(
+            `/api/agent/tools?model=${model}`,
+            { headers: { authorization: `Bearer ${token}` } },
+          );
 
           assertEquals(status, 200);
           return body.data.rows as Array<{ model: string; command: string; input: unknown }>;
@@ -1312,16 +1330,75 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         const call = (token: string, command: string, payload: Record<string, unknown>) =>
           callModel(token, "bank", command, payload);
 
-        // Токен бачить інструменти зі СХЕМОЮ payload-а — заради цього перелік і
-        // існує: без складу полів агент лишається з прозовою підказкою.
-        const tools = await toolsOf(full.token);
-        const save = tools.find((tool) => tool.model === "bank" && tool.command === "save");
+        // Каталог: моделі з переліком команд і БЕЗ схем — саме він лишається
+        // малим, коли моделей стане сотня. Схема тут була б тим самим шматком
+        // на 200 КБ, від якого поділ і рятує.
+        const catalog = await catalogOf(full.token);
+        const bankEntry = catalog.find((entry) => entry.model === "bank");
+        assertExists(bankEntry);
+        assertEquals(bankEntry.commands.includes("save"), true);
+        assertEquals("input" in bankEntry, false);
+
+        // Назва мовами застосунку: технічне ім'я `bank` не каже нічого тому,
+        // хто цієї бази не бачив, а на сотні моделей вибирати доводиться саме
+        // за назвою. Мов кілька — мову називає застосунок, не фреймворк.
+        assertExists(bankEntry.titles);
+        assertEquals(bankEntry.titles.uk, "Банки");
+        assertEquals(typeof bankEntry.titles.en, "string");
+
+        // Синоніми доїжджають до агента: на сотні моделей саме вони й
+        // відрізняють «номенклатуру» від «номенклатурної групи».
+        const named = catalog.find((entry) => (entry.aliases?.length ?? 0) > 0);
+        assertExists(named);
+
+        // Схеми — на вимогу й лише названої моделі.
+        const tools = await toolsOf(full.token, "bank");
+        assertEquals(tools.every((tool) => tool.model === "bank"), true);
+        const save = tools.find((tool) => tool.command === "save");
         assertExists(save);
         assertExists((save.input as { properties?: unknown }).properties);
 
+        // Кілька моделей одним запитом — заради цього список і зроблено:
+        // диспетчеру потрібні дві-три одразу, а три запити коштують трьох
+        // обертів.
+        const pair = await client.json<Envelope>("/api/agent/tools?model=bank,counterparty", {
+          headers: { authorization: `Bearer ${full.token}` },
+        });
+        const pairModels = new Set(
+          (pair.body.data.rows as Array<{ model: string }>).map((tool) => tool.model),
+        );
+        assertEquals([...pairModels].sort(), ["bank", "counterparty"]);
+
+        // Названа модель, якої немає, — відмова, а не порожнеча: «нічого» агент
+        // прочитав би як «прав немає» й пішов би шукати не там. У списку
+        // відмовляє й одна невідома серед відомих: віддати решту мовчки
+        // означало б дати агенту вважати, що він отримав усе, що просив.
+        const unknown = await client.json<{ ok: boolean }>("/api/agent/tools?model=nosuchmodel", {
+          headers: { authorization: `Bearer ${full.token}` },
+        });
+        assertEquals(unknown.body.ok, false);
+
+        const partly = await client.json<{ ok: boolean }>(
+          "/api/agent/tools?model=bank,nosuchmodel",
+          { headers: { authorization: `Bearer ${full.token}` } },
+        );
+        assertEquals(partly.body.ok, false);
+
         // Той самий користувач, ті самі права — різниця тільки в прапорці
-        // токена. Тому порожнеча тут доводить, що читали саме токен.
-        const readerTools = await toolsOf(reader.token);
+        // токена. Тому порожнеча тут доводить, що читали саме токен, і однаково
+        // в обох режимах.
+        const readerCatalog = await catalogOf(reader.token);
+        const readerBank = readerCatalog.find((entry) => entry.model === "bank");
+        assertExists(readerBank);
+        assertEquals(readerBank.commands.includes("list"), true);
+        assertEquals(
+          readerBank.commands.some((command) =>
+            ["save", "delete", "undelete", "post", "unpost"].includes(command)
+          ),
+          false,
+        );
+
+        const readerTools = await toolsOf(reader.token, "bank");
         assertEquals(readerTools.some((tool) => tool.command === "list"), true);
         assertEquals(
           readerTools.some((tool) =>
@@ -1363,10 +1440,14 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertEquals(write.body.messages.join(" ").includes("тільки для читання"), true);
 
         // Звіт — те, заради чого агента здебільшого й кличуть: звірка
-        // починається з читання регістру, а не з запису. Інструмент у переліку
-        // є (право прийшло з `commands.access`, а не з виводу за іменем)...
+        // починається з читання регістру, а не з запису. Він є і в каталозі, і
+        // в схемах (право прийшло з `commands.access`, а не з виводу за іменем)...
+        assertEquals(
+          catalog.find((entry) => entry.model === "turnover_balance")?.commands,
+          ["index"],
+        );
         assertExists(
-          tools.find((tool) => tool.model === "turnover_balance" && tool.command === "index"),
+          (await toolsOf(full.token, "turnover_balance")).find((tool) => tool.command === "index"),
         );
 
         // ...і виклик доходить до самого звіту, а не спиняється в диспетчері:

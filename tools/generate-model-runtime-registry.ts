@@ -222,11 +222,119 @@ function resolveAppDirForManifest(manifestPath: string, appDirs: string[]): stri
   return appDirs[0]!;
 }
 
-function renderAgentRoutesMulti(manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>, appDirs: string[]) {
-  return renderAgentRoutes(manifests, appDirs[0]!, appDirs);
+/**
+ * Ім'я моделі — ГЛОБАЛЬНИЙ ідентифікатор, а не назва в межах теки: під ним
+ * лежать SQL-функції однієї схеми (`app.bank_list`), рядки прав («група →
+ * модель → дія») і записи аудиту. Тому воно й не має префікса родини — родина
+ * їде окремим полем (`type`, `route`), а ім'я лишається сталим, навіть коли
+ * модель переїде з довідників у регістри.
+ *
+ * Ціна цього рішення — обов'язок перевірити унікальність тут: доти два
+ * манифести з однаковим `model` мовчки перетирали один одного в реєстрі, а
+ * зіткнення вилазило аж при публікації SQL. Або не вилазило зовсім, і
+ * застосунок працював не з тією моделлю, з якою здавалося.
+ */
+export function assertUniqueModels(
+  manifests: Array<{ manifestPath: string; manifest: { model?: string } }>,
+): void {
+  const firstSeen = new Map<string, string>();
+  const clashes: string[] = [];
+
+  for (const { manifestPath, manifest } of manifests) {
+    const model = manifest.model;
+    if (!model) continue;
+
+    const first = firstSeen.get(model);
+    if (first) {
+      clashes.push(
+        `  '${model}': ${toPosixPath(relative(Deno.cwd(), first))} ↔ ` +
+          toPosixPath(relative(Deno.cwd(), manifestPath)),
+      );
+    } else {
+      firstSeen.set(model, manifestPath);
+    }
+  }
+
+  if (clashes.length > 0) {
+    throw new Error(
+      `Ім'я моделі мусить бути унікальним на весь застосунок — під ним лежать ` +
+        `SQL-функції, права й аудит:\n${clashes.join("\n")}`,
+    );
+  }
 }
 
-function renderAgentRoutes(manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>, appDir: string, appDirs?: string[]) {
+/**
+ * Словники застосунку — щоб агент бачив не лише `nomenclature`, а й
+ * «Номенклатура».
+ *
+ * Беруться зі ЗБІРКИ локалей (`deno task locales:build`), тобто того самого
+ * джерела, з якого їх читає екран. Немає збірки — немає назв, і це не помилка:
+ * реєстр генерують і до першої збірки локалей.
+ */
+async function loadLocaleDictionaries(appDirs: string[]): Promise<Record<string, Record<string, string>>> {
+  const dictionaries: Record<string, Record<string, string>> = {};
+
+  for (const appDir of appDirs) {
+    const localesDir = join(appDir, "_locales");
+    let locales: string[];
+    try {
+      const index = JSON.parse(await Deno.readTextFile(join(localesDir, "_index.json")));
+      locales = Array.isArray(index?.locales) ? index.locales : [];
+    } catch {
+      continue;
+    }
+
+    for (const locale of locales) {
+      try {
+        const dictionary = JSON.parse(await Deno.readTextFile(join(localesDir, `${locale}.json`)));
+        dictionaries[locale] = { ...dictionaries[locale], ...dictionary };
+      } catch {
+        // Мови немає у зборі — решта лишається чинною.
+      }
+    }
+  }
+
+  return dictionaries;
+}
+
+/**
+ * Назва моделі всіма мовами, які має застосунок.
+ *
+ * Саме всіма, а не однією: мову називає застосунок, і фреймворку не годиться
+ * вибирати за нього — тим паче що агент і людина можуть розмовляти різними.
+ * Ключ беремо зі списку (`titleMany` — «Банки»), бо каталог перелічує моделі, а
+ * не записи.
+ */
+function titlesFor(
+  manifest: ManifestRecord,
+  dictionaries: Record<string, Record<string, string>>,
+): Record<string, string> | null {
+  const key = manifest.views?.list?.titleKey ?? manifest.views?.edit?.titleKey;
+  if (!key) return null;
+
+  const titles: Record<string, string> = {};
+  for (const [locale, dictionary] of Object.entries(dictionaries)) {
+    const text = dictionary[key];
+    if (typeof text === "string" && text.trim() !== "") titles[locale] = text;
+  }
+
+  return Object.keys(titles).length > 0 ? titles : null;
+}
+
+function renderAgentRoutesMulti(
+  manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
+  appDirs: string[],
+  dictionaries: Record<string, Record<string, string>> = {},
+) {
+  return renderAgentRoutes(manifests, appDirs[0]!, appDirs, dictionaries);
+}
+
+function renderAgentRoutes(
+  manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
+  appDir: string,
+  appDirs?: string[],
+  dictionaries: Record<string, Record<string, string>> = {},
+) {
   const entries = manifests.flatMap(({ manifestPath, manifest }) => {
     if (!manifest.model) return [];
     const effectiveAppDir = appDirs ? resolveAppDirForManifest(manifestPath, appDirs) : appDir;
@@ -255,7 +363,11 @@ function renderAgentRoutes(manifests: Array<{ manifestPath: string; manifest: Ma
     if (typeof agentMeta.priority === "number") {
       parts.push(`    priority: ${agentMeta.priority}`);
     }
-    
+    const titles = titlesFor(manifest, dictionaries);
+    if (titles) {
+      parts.push(`    titles: ${JSON.stringify(titles)}`);
+    }
+
     return [`  ${JSON.stringify(manifest.model)}: {\n${parts.join(",\n")}\n  }`];
   });
 
@@ -437,6 +549,10 @@ export async function generateModelRuntimeRegistry(
     const allManifests = (await Promise.all(appDirs.map(collectManifests))).flat();
     allManifests.sort((left, right) => (left.manifest.model ?? "").localeCompare(right.manifest.model ?? ""));
 
+    // До будь-якої генерації: далі все ключується іменем моделі, тож дублікат
+    // тихо переміг би останнім записом.
+    assertUniqueModels(allManifests);
+
     // Реєстр — ЧИСТІ ДАНІ, окремо від прив'язок TS-команд, і це не косметика.
     // Реєстр читає не лише сервер: екран admin/user_group бере з нього перелік
     // моделей для прав. Поки статичні `import` модулів TS-команд лежали в тому
@@ -464,7 +580,12 @@ export async function generateModelRuntimeRegistry(
 
     // For agent routes, use the first appDir as base for route path computation
     // Each manifest's route is computed relative to its own source appDir
-    const agentRoutesSource = `// Generated from model manifests. Do not edit manually.\n\n${renderAgentRoutesMulti(allManifests, appDirs)}`;
+    // Назви моделей людською мовою — з зібраних локалей застосунку.
+    const dictionaries = await loadLocaleDictionaries(appDirs);
+    const agentRoutesSource =
+      `// Generated from model manifests. Do not edit manually.\n\n${
+        renderAgentRoutesMulti(allManifests, appDirs, dictionaries)
+      }`;
     await Deno.mkdir(dirname(agentRoutesPath), { recursive: true });
     await Deno.writeTextFile(agentRoutesPath, `${agentRoutesSource}\n`);
 

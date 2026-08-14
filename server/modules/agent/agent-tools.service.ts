@@ -1,21 +1,28 @@
 /**
- * Перелік інструментів для зовнішнього агента.
+ * Що агент уміє робити в цій базі — у двох режимах, і це поділ за розміром.
  *
- * Кожен інструмент — це команда моделі: `{model, command, input}`, де `input`
- * це JSON Schema payload-а, згенерована зі схем моделей
- * (`tools/agent-tool-schemas.ts` → `app/_generated/agent-tools.generated.ts`).
- * Окремого API для агента немає й не треба: далі він кличе ті самі
- * `POST /api/model/:model/:command`, що й застосунок.
+ * КАТАЛОГ (`GET /api/agent/tools`) — моделі, їхні синоніми й перелік команд,
+ * БЕЗ схем. ~120 байтів на модель, тобто дванадцять кілобайтів на сотню: його
+ * можна тримати цілком.
  *
- * ПЕРЕЛІК ЗАЛЕЖИТЬ ВІД КОРИСТУВАЧА. Віддавати всі інструменти означало б
- * показати агенту те, чого його користувач не має права викликати: він витратив
- * би крок, отримав відмову й пішов пробувати інше. Тому список фільтрується
- * ефективними правами — тими самими, які потім і відмовлять. Це не захист
+ * ОПИС (`?model=bank`, `?model=bank&command=save`) — схеми на вимогу.
+ *
+ * Поділ не передчасна оптимізація, а арифметика: двадцять моделей дають 65
+ * інструментів і 26 КБ, повне рішення — сотню моделей, тобто 400–600
+ * інструментів і 200 КБ в одній відповіді. Причому нелінійно: `save` документа
+ * з табличною частиною важить у рази більше за `lookup` довідника. Віддавати це
+ * одним шматком означало б, що заради схеми одного `save` агент стягує всю базу
+ * знань — рівно те, від чого рятує диспетчер на боці MCP.
+ *
+ * ПЕРЕЛІК ЗАЛЕЖИТЬ ВІД КОРИСТУВАЧА, обидва режими однаково. Віддавати все
+ * означало б показати агенту те, чого його користувач не має права викликати:
+ * він витратив би крок, отримав відмову й пішов пробувати інше. Це не захист
  * (захист нижче, у рантаймі й fail-closed), а чесність опису.
  */
 import { Injectable } from "@danet/core";
 import { getServerConfig } from "../../config/server-config.ts";
 import { AuthService } from "../auth/auth.service.ts";
+import { getAgentRoutes } from "./agent-routes.ts";
 import type { ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 
 /**
@@ -36,17 +43,96 @@ const COMMAND_ACTION: Record<string, string> = {
   unpost: "unpost",
 };
 
+const CHANGING_ACTIONS = ["create", "edit", "delete", "post", "unpost"];
+
 export interface AgentToolListItem {
   model: string;
   command: string;
   input: unknown;
 }
 
+/** Рядок каталогу: модель без схем — те, з чого агент вибирає, куди дивитися. */
+export interface AgentModelListItem {
+  model: string;
+  type: string;
+  /** Назва мовами застосунку: `{uk: "Банки", en: "Banks"}`. */
+  titles?: Record<string, string>;
+  /** Маршрут списку — щоб агент міг дати людині посилання, не викликаючи нічого. */
+  route?: string;
+  /** Слова, якими цю модель називають люди («банк», «банки»). */
+  aliases?: string[];
+  priority?: number;
+  commands: string[];
+}
+
 @Injectable()
 export class AgentToolsService {
   constructor(private authService: AuthService) {}
 
-  async listTools(userId: string, caller: ModelCommandCaller = {}): Promise<AgentToolListItem[]> {
+  /**
+   * Каталог моделей. Порядок — за `priority` з манифеста, далі за іменем: на
+   * сотні моделей перше, що бачить агент, має бути найужитковішим.
+   */
+  async listModels(userId: string, caller: ModelCommandCaller = {}): Promise<AgentModelListItem[]> {
+    const routes = getAgentRoutes();
+    const byModel = new Map<string, string[]>();
+
+    for (const tool of await this.permittedTools(userId, caller)) {
+      const commands = byModel.get(tool.model);
+      if (commands) commands.push(tool.command);
+      else byModel.set(tool.model, [tool.command]);
+    }
+
+    const models: AgentModelListItem[] = [];
+    for (const [model, commands] of byModel) {
+      const route = routes[model];
+      models.push({
+        model,
+        type: route?.type ?? "",
+        // Технічне ім'я нічого не каже тому, хто цієї бази не бачив: назва — це
+        // те, чим модель називають люди, і саме за нею агент її й упізнає.
+        titles: route?.titles,
+        route: route?.listPath,
+        // Синоніми лежали в маршрутах і не доїжджали до агента взагалі. Поки
+        // моделей два десятки, він угадує за іменем; на сотні саме синонім і
+        // відрізняє «номенклатуру» від «номенклатурної групи».
+        aliases: route?.aliases,
+        priority: route?.priority,
+        commands,
+      });
+    }
+
+    return models.sort((a, b) =>
+      (b.priority ?? 0) - (a.priority ?? 0) || a.model.localeCompare(b.model)
+    );
+  }
+
+  /**
+   * Схеми названих моделей (і, за потреби, однієї команди). Без моделі не
+   * віддається нічого.
+   *
+   * Моделей саме СПИСОК: диспетчеру звичайно потрібні дві-три одразу («опиши
+   * рахунок, контрагента й номенклатуру»), і три окремі запити на це — три
+   * оберти там, де вистачає одного.
+   */
+  async listTools(
+    userId: string,
+    caller: ModelCommandCaller = {},
+    filter: { models?: string[]; command?: string } = {},
+  ): Promise<AgentToolListItem[]> {
+    const wanted = filter.models?.length ? new Set(filter.models) : null;
+    const tools = await this.permittedTools(userId, caller);
+    return tools.filter((tool) =>
+      (!wanted || wanted.has(tool.model)) &&
+      (!filter.command || tool.command === filter.command)
+    );
+  }
+
+  /** Усе, що цьому користувачу цим викликом дозволено. Спільне для обох режимів. */
+  private async permittedTools(
+    userId: string,
+    caller: ModelCommandCaller,
+  ): Promise<AgentToolListItem[]> {
     // Токен «тільки читання» не має бачити інструментів запису: вони йому
     // однаково відмовлять, а показані — виглядають як доступні.
     const readOnly = caller.accessToken?.readOnly === true;
@@ -85,9 +171,7 @@ export class AgentToolsService {
         action && (allowed.has(`${model}:${action}`) || allowedEverywhere.has(action))
       );
 
-      const changing = actions.some((action) =>
-        action && ["create", "edit", "delete", "post", "unpost"].includes(action)
-      );
+      const changing = actions.some((action) => action && CHANGING_ACTIONS.includes(action));
       if (readOnly && changing) continue;
 
       if (permitted) tools.push({ model, command, input });

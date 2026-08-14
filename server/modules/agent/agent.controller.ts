@@ -3,6 +3,7 @@ import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { AgentService } from "./agent.service.ts";
 import { AgentToolsService } from "./agent-tools.service.ts";
+import { getAgentRoutes } from "./agent-routes.ts";
 import type { AgentCallRequest } from "./agent.types.ts";
 
 function agentError(message: string) {
@@ -20,16 +21,52 @@ export class AgentController {
   /**
    * Що агент уміє робити в ЦІЙ базі — і рівно те, на що має право.
    *
-   * Далі він кличе звичайні `POST /api/model/:model/:command`: окремого каналу
-   * для агента немає, тож і розходитися з застосунком нема чому.
+   * Без параметрів — КАТАЛОГ моделей (без схем); `?model=bank,invoice` — схеми
+   * названих моделей, `&command=save` — однієї команди. Умовчання саме каталог,
+   * бо він єдиний лишається малим, коли моделей стане сотня (див.
+   * agent-tools.service.ts).
+   *
+   * Далі агент кличе `POST /api/agent/call` — окремого каналу немає, тож і
+   * розходитися з застосунком нема чому.
    */
   @Get("tools")
   async tools(@Req() req: HttpRequest) {
     try {
       const auth = await this.requestUserService.resolveAuthContext(req, {});
-      const tools = await this.agentToolsService.listTools(auth.userId, {
-        accessToken: auth.accessToken,
-      });
+      const caller = { accessToken: auth.accessToken };
+      const query = new URL(req.url).searchParams;
+      const command = query.get("command")?.trim();
+
+      // Кілька моделей через кому: диспетчеру звичайно треба дві-три одразу, а
+      // три запити на це — три оберти замість одного. Тілом такого не передати
+      // (GET його не носить), але кілька імен у рядок вкладаються з запасом.
+      const models = (query.get("model") ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
+
+      if (!models.length) {
+        const catalog = await this.agentToolsService.listModels(auth.userId, caller);
+        return {
+          ok: true,
+          data: { rows: catalog, totals: { count: catalog.length } },
+          messages: [],
+        };
+      }
+
+      // Названу модель, якої немає, називаємо помилкою, а не порожнечею: агент
+      // спитав про конкретне, і «нічого» він прочитав би як «прав немає». У
+      // списку відмовляє будь-яка невідома — мовчки віддати решту означало б
+      // дати агенту вважати, що він отримав усе, що просив.
+      const routes = getAgentRoutes();
+      const unknown = models.filter((name) => !routes[name]);
+      if (unknown.length) {
+        return agentError(
+          `Не знайдено або не підтримується агентом: '${unknown.join("', '")}'`,
+        );
+      }
+
+      const tools = await this.agentToolsService.listTools(auth.userId, caller, { models, command });
       return { ok: true, data: { rows: tools, totals: { count: tools.length } }, messages: [] };
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
