@@ -27,6 +27,14 @@ const MISSING_USER_ID = "999999999";
 const REDIRECT_PROBE_LOGIN = "smoke-redirect-probe";
 const REDIRECT_PROBE_SUBJECT = "smoke-redirect-subject";
 
+/**
+ * Свій користувач для проб агента — окремий від redirect-проби навмисно: цьому
+ * потрібні права на запис (інакше «токен-читач не пише» нічого не доводить —
+ * такому користувачеві й так не можна), а роздавати їх чужій пробі не варто.
+ */
+const AGENT_PROBE_LOGIN = "smoke-agent-probe";
+const AGENT_PROBE_SUBJECT = "smoke-agent-subject";
+
 function bytes(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
@@ -193,6 +201,22 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
 
       assertEquals(status, 200);
       assertEquals(body.data.item, null);
+    });
+
+    // Обхід авторизації підставляє користувача там, де облікових даних НЕМАЄ, —
+    // і тільки там. Запит із `Bearer`, який не підійшов, мусить дістати 401
+    // навіть при ввімкненому обході: інакше зіпсований токен мовчки працює від
+    // імені дефолтного користувача, а помітно це лише на чужій базі, де обходу
+    // немає. Проба має сенс саме тому, що смоук ходить із `DEV_AUTH_BYPASS=1`.
+    await t.step("auth: сміттєвий Bearer не провалюється в dev-bypass", async () => {
+      const { status, body } = await client.json<Envelope>("/api/model/bank/list", {
+        method: "POST",
+        headers: { authorization: "Bearer not-a-real-token", "content-type": "application/json" },
+        body: "{}",
+      });
+
+      assertEquals(status, 401);
+      assertEquals(body.ok, false);
     });
 
     await t.step("auth: відмова має ту саму форму конверта", async () => {
@@ -1187,6 +1211,152 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       } finally {
         const removed = await client.model("user", "delete", { id: user.id });
         assertEquals(removed.body.ok, true);
+      }
+    });
+
+    /**
+     * Агентський контур: персональний токен, межі токена, підтвердження змін.
+     *
+     * Жодна перевірка тут не питає «чи прийшла відповідь» — і це головне в
+     * цьому кроці. З увімкненим `DEV_AUTH_BYPASS` виклик без чинних облікових
+     * даних тихо стає викликом дефолтного користувача, тож зламаний токен
+     * віддавав би 200 і виглядав робочим (одного разу так і сталося). Тому
+     * питають лише про те, чого обхід дати не може: про відсутність
+     * інструментів запису в токена-читача, про вимогу `confirm` і про відмову
+     * записати. Обхід — не токен, і запобіжники агента на нього не діють, тож
+     * підміна валить перевірку, а не ховається за нею.
+     */
+    await t.step("агент: токен, його межі й підтвердження змін", async () => {
+      const [adminGroup] = await withDb((sql) =>
+        sql<Array<{ id: string }>>`select id::text as id from app.user_group where code = 'admin'`
+      );
+      assertExists(adminGroup);
+
+      const created = await client.model("user", "save", {
+        item: {
+          login: AGENT_PROBE_LOGIN,
+          fullName: "Smoke agent probe",
+          isActive: true,
+          groupIds: [adminGroup.id],
+          identities: [{ provider: "dev", externalId: AGENT_PROBE_SUBJECT }],
+        },
+      });
+
+      assertEquals(created.body.ok, true);
+      const user = created.body.data.item as { id: string } | null;
+      assertExists(user);
+
+      try {
+        // Сесія потрібна рівно щоб ВИДАТИ токени: `/api/auth/tokens` доступний
+        // тільки з браузера — агент, який тримає токен, не має карбувати нові.
+        const started = await client.fetch("/api/auth/authorize/dev?redirect=/");
+        const state = stateFromLocation(started.headers.get("location") ?? "");
+        const callback = await client.fetch(
+          `/api/auth/callback/dev?code=dev:${AGENT_PROBE_SUBJECT}&state=${state}`,
+        );
+
+        const session = sessionCookie(callback.headers);
+        assertExists(session);
+
+        // Cookie плюс `x-requested-with`: по cookie запит міг ініціювати чужий
+        // сайт, тому змінювальні методи вимагають заголовка, якого крос-доменно
+        // не поставити. Токен цим не користується — він і є `Bearer`.
+        const browser = {
+          cookie: `${Deno.env.get("AUTH_COOKIE_NAME")?.trim() || "altera_session"}=${session}`,
+          "x-requested-with": "XMLHttpRequest",
+          "content-type": "application/json",
+        };
+
+        const issue = async (name: string, isReadOnly: boolean) => {
+          const { body } = await client.json<Envelope>("/api/auth/tokens", {
+            method: "POST",
+            headers: browser,
+            body: JSON.stringify({ name, isReadOnly }),
+          });
+
+          assertEquals(body.ok, true);
+          const item = body.data.item as { id: string; token?: string };
+          // Значення віддається один раз і більше ніде: у таблиці лише хеш.
+          assertExists(item.token);
+          return item as { id: string; token: string };
+        };
+
+        const full = await issue("smoke agent", false);
+        const reader = await issue("smoke agent readonly", true);
+
+        const toolsOf = async (token: string) => {
+          const { status, body } = await client.json<Envelope>("/api/agent/tools", {
+            headers: { authorization: `Bearer ${token}` },
+          });
+
+          assertEquals(status, 200);
+          return body.data.rows as Array<{ model: string; command: string; input: unknown }>;
+        };
+
+        const call = async (token: string, command: string, payload: Record<string, unknown>) => {
+          return await client.json<{ ok: boolean; messages: string[] }>("/api/agent/chat", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ model: "bank", command, payload }),
+          });
+        };
+
+        // Токен бачить інструменти зі СХЕМОЮ payload-а — заради цього перелік і
+        // існує: без складу полів агент лишається з прозовою підказкою.
+        const tools = await toolsOf(full.token);
+        const save = tools.find((tool) => tool.model === "bank" && tool.command === "save");
+        assertExists(save);
+        assertExists((save.input as { properties?: unknown }).properties);
+
+        // Той самий користувач, ті самі права — різниця тільки в прапорці
+        // токена. Тому порожнеча тут доводить, що читали саме токен.
+        const readerTools = await toolsOf(reader.token);
+        assertEquals(readerTools.some((tool) => tool.command === "list"), true);
+        assertEquals(
+          readerTools.some((tool) =>
+            ["save", "delete", "undelete", "post", "unpost"].includes(tool.command)
+          ),
+          false,
+        );
+
+        // Читання токеном виконується від імені його власника.
+        const list = await call(full.token, "list", {});
+        assertEquals(list.body.ok, true);
+
+        // Зміна стану без `confirm` не виконується, і у відмові сказано, чого
+        // бракує: агент має дізнатися вимогу з тексту, а не вгадувати.
+        const removal = await call(full.token, "delete", { id: MISSING_USER_ID });
+        assertEquals(removal.body.ok, false);
+        assertEquals(removal.body.messages.join(" ").includes("confirm"), true);
+
+        // Токен-читач не пише навіть там, де людині можна.
+        const write = await call(reader.token, "save", { item: { name: "Smoke agent bank" } });
+        assertEquals(write.body.ok, false);
+        assertEquals(write.body.messages.join(" ").includes("тільки для читання"), true);
+
+        const revoked = await client.json<Envelope>("/api/auth/tokens/revoke", {
+          method: "POST",
+          headers: browser,
+          body: JSON.stringify({ id: full.id }),
+        });
+        assertEquals(revoked.body.ok, true);
+
+        // Просто 401, без хитрощів: запит із `Bearer` до dev-bypass не доходить
+        // навіть при ввімкненому обході — облікові дані були, і вони не
+        // підійшли. Доти відкликаний токен тихо ставав дефолтним користувачем,
+        // тобто перевірити його відкликання було нічим.
+        const afterRevoke = await client.json<{ ok: boolean }>("/api/agent/tools", {
+          headers: { authorization: `Bearer ${full.token}` },
+        });
+        assertEquals(afterRevoke.status, 401);
+        assertEquals(afterRevoke.body.ok, false);
+      } finally {
+        // Прибирання фізичне, як і всюди в цьому файлі: `user_delete` лишає
+        // деактивований рядок, щойно на користувача послався журнал, — а логін
+        // унікальний, тож наступний прогін упав би на ньому. Токени й членство
+        // у групі йдуть каскадом за користувачем; журнал — ні.
+        await withDb((sql) => sql`delete from app.audit_log where user_id = ${user.id}::bigint`);
+        await purge("app.users", user.id);
       }
     });
 

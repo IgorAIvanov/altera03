@@ -73,6 +73,18 @@ export class RequestUserService {
       return this.assertClaimedUser(request, token);
     }
 
+    // Дійшли сюди з `Bearer` — отже облікові дані БУЛИ, і вони не підійшли
+    // (зіпсований токен, відкликаний, протермінований, деактивований власник).
+    // Обхід сюди не пускаємо навіть увімкнений: інакше виклик тихо стає
+    // викликом дефолтного користувача, і зламаний токен виглядає робочим — на
+    // цьому вже двічі трималася помилка, яку показала лише проба на живій базі.
+    // Обхід лишається тим, чим має бути: підстановкою для запиту БЕЗ облікових
+    // даних (браузер розробника). Cookie сюди не входить свідомо — протермінована
+    // сесія в деві має вести до звичайної роботи, а не до 401 на кожен клік.
+    if (resolveSessionToken(request)?.source === "bearer") {
+      throw new AuthenticationRequiredError("Токен доступу недійсний або відкликаний");
+    }
+
     const devBypassUserId = await this.resolveDevBypassUserId(request);
     if (devBypassUserId) {
       return this.assertClaimedUser(request, { userId: devBypassUserId, sessionId: "" });
