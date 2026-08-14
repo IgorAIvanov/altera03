@@ -15,7 +15,7 @@ const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 // ── TypeBox schema shape (рантайм = JSON Schema об'єкт) ───────────────────────
 
-type XRef = {
+export type XRef = {
   model: string;
   fk?: string;
   display?: string;
@@ -99,16 +99,25 @@ type FeatureManifest = {
   periodic?: { key: string[]; period: string };
 };
 
-type Ref = {
+export type Ref = {
   fkCol: string; // колонка-FK на цій таблиці (counterparty_id)
   as: string; // ключ вкладеного об'єкта (counterparty)
   display: string; // display-колонка цілі (name)
+  displayKey: string; // JSON-ключ подання у вкладеному об'єкті (camelCase від колонки)
   targetSchema: string;
   targetTable: string;
   targetPk: string;
   alias: string; // аліас join (r_counterparty)
   sortable: boolean;
   searchable: boolean;
+  /**
+   * Ціль — ДОКУМЕНТ, і подання лежить у спільній шапці `app.document`, а не в
+   * таблиці моделі. Тоді join подвійний: спершу таблиця документа (її ключ —
+   * `document_id`), потім шапка. Аліас шапки — `d_<as>`.
+   */
+  headerAlias?: string;
+  /** `display` — колонка шапки документа, а не таблиці цілі. */
+  displayInHeader: boolean;
 };
 
 type Field = {
@@ -232,13 +241,52 @@ type ModelSpec = {
   rowHasGroupName: boolean; // Row оголошує groupName → list віддає ім'я групи
 };
 
-type ModelMeta = { schema: string; model: string; table: string; pk: string; displayCol: string };
-type ModelMetaMap = Map<string, ModelMeta>;
+export type ModelMeta = {
+  schema: string;
+  model: string;
+  table: string;
+  pk: string;
+  displayCol: string;
+  /** Модель типу `document`: ключ таблиці `document_id`, шапка — `app.document`. */
+  isDocument: boolean;
+};
+export type ModelMetaMap = Map<string, ModelMeta>;
+
+/**
+ * Колонки спільної шапки `app.document` — тобто те, чим документ можна
+ * ПОКАЗАТИ, коли на нього посилаються. Номер, дата й представлення живуть тут,
+ * а не в таблиці моделі, тож ссылка на документ join'иться двічі.
+ *
+ * Список тут константою, а не з `DocumentHeaderSchema`: карта моделей будується
+ * до того, як стане ясно, чи є в застосунку хоч один документ, а тягти резолв
+ * `@client/` заради довідки про сім імен — дорожче за саму довідку. Розбіжність
+ * ловиться `assertHeaderColsKnown` на першому ж документі, тобто голосно.
+ */
+const DOCUMENT_HEADER_COLS = new Set([
+  "organization_id",
+  "number",
+  "doc_date",
+  "total",
+  "presentation",
+  "description",
+  "is_posted",
+  "is_deleted",
+]);
+
+/** Ті з них, за якими можна ШУКАТИ: `ilike` по даті чи числу — помилка типу. */
+const DOCUMENT_HEADER_TEXT_COLS = new Set(["number", "presentation", "description"]);
+
+/** Подання документа за умовчанням: денормалізований рядок для списків посилань. */
+const DOCUMENT_DISPLAY_COL = "presentation";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function camelToSnake(value: string): string {
   return value.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+}
+
+function snakeToCamel(value: string): string {
+  return value.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 }
 
 function pascalCase(model: string): string {
@@ -304,6 +352,54 @@ function assertDbType(value: string, label: string) {
   }
 }
 
+/**
+ * Оголошення `x-ref` → усе, що потрібно SQL: колонка-FK, ключ вкладеного
+ * об'єкта, аліаси join'ів і те, звідки брати подання.
+ *
+ * Експортовано заради проб: розкладка «шапка в ядрі, реквізити в таблиці
+ * моделі» видно лише в SQL, тобто найдешевше її перевірити тут — а до цієї
+ * функції ссылка на ДОКУМЕНТ не працювала взагалі (join будувався за колонкою
+ * `id`, якої в таблиці документа немає, і падало це аж на публікації).
+ */
+export function resolveRef(xref: XRef, fkColumn: string, map: ModelMetaMap, owner: string): Ref {
+  const target = map.get(xref.model);
+  if (!target) {
+    throw new Error(`${owner} → модель '${xref.model}' не знайдена (x-ref)`);
+  }
+  const as = xref.as ?? xref.model;
+  const display = xref.display ?? target.displayCol;
+  // Подання їде в SQL іменем колонки — тобто підставляється в запит текстом.
+  assertIdentifier(display, `${owner}: x-ref.display`);
+  // Ссылка на документ: реквізити лежать у таблиці моделі, а номер, дата й
+  // представлення — у шапці. Куди йти за поданням, вирішує саме колонка, а не
+  // тип цілі: `display` цілком може називати власний реквізит документа.
+  const displayInHeader = target.isDocument && DOCUMENT_HEADER_COLS.has(display);
+  // Пошук по подання йде `ilike`, а в шапці документа є і дата, і сума, і
+  // прапорці. Мовчки це не зламається на генерації й не зламається на
+  // публікації — `list` плпгсиловий, тіло не перевіряється, — а вилізе на
+  // першому наборі символів у полі пошуку, помилкою типу.
+  if (xref.searchable === true && displayInHeader && !DOCUMENT_HEADER_TEXT_COLS.has(display)) {
+    throw new Error(
+      `${owner}: x-ref.searchable з display «${display}» неможливий — пошук іде ilike, ` +
+        `а це не текст; шукати документ можна за ${[...DOCUMENT_HEADER_TEXT_COLS].join(", ")}`,
+    );
+  }
+  return {
+    fkCol: xref.fk ?? fkColumn,
+    as,
+    display,
+    displayKey: snakeToCamel(display),
+    targetSchema: target.schema,
+    targetTable: target.table,
+    targetPk: target.pk,
+    alias: `r_${as}`,
+    sortable: xref.sortable === true,
+    searchable: xref.searchable === true,
+    headerAlias: displayInHeader ? `d_${as}` : undefined,
+    displayInHeader,
+  };
+}
+
 function toField(
   key: string,
   prop: TSchema,
@@ -326,26 +422,8 @@ function toField(
   const isString = !isBigint && !isInt && !isNumeric && !isDate && !isTimestamp && !isBool &&
     !isJson && isStringType(prop);
 
-  let ref: Ref | undefined;
   const xref = prop["x-ref"];
-  if (xref) {
-    const target = map.get(xref.model);
-    if (!target) {
-      throw new Error(`${owner}.${key} → модель '${xref.model}' не знайдена (x-ref)`);
-    }
-    const as = xref.as ?? xref.model;
-    ref = {
-      fkCol: xref.fk ?? col,
-      as,
-      display: xref.display ?? target.displayCol,
-      targetSchema: target.schema,
-      targetTable: target.table,
-      targetPk: target.pk,
-      alias: `r_${as}`,
-      sortable: xref.sortable === true,
-      searchable: xref.searchable === true,
-    };
-  }
+  const ref = xref ? resolveRef(xref, col, map, `${owner}.${key}`) : undefined;
 
   const xblob = prop["x-blob"];
   const blobTokenKey = xblob
@@ -515,10 +593,15 @@ function buildFilters(fields: Field[], model: string): FilterSpec[] {
     // знав би id, але показував порожнє поле.
     if (f.ref) {
       const r = f.ref;
+      const from = r.displayInHeader
+        ? `${r.targetSchema}.${r.targetTable} x join app.document xh on xh.id = x.${r.targetPk}`
+        : `${r.targetSchema}.${r.targetTable} x`;
       spec.mirror = {
         key: r.as,
-        expr: `(select jsonb_build_object('id', x.${r.targetPk}::text, '${r.display}', x.${r.display})
-     from ${r.targetSchema}.${r.targetTable} x where x.${r.targetPk} = ${varName2})`,
+        expr: `(select jsonb_build_object('id', x.${r.targetPk}::text, '${r.displayKey}', ${
+          refDisplaySql(r, "x", "xh")
+        })
+     from ${from} where x.${r.targetPk} = ${varName2})`,
       };
     }
 
@@ -596,11 +679,42 @@ function outExpr(f: Field): string {
   return `'${f.key}', ${f.isBigint ? `${ref}::text` : ref}`;
 }
 
+/**
+ * Вираз подання ссылки — те, що людина бачить у пікері замість числа.
+ *
+ * Аліаси параметрами, бо той самий вираз потрібен у двох розкладках: у join'і
+ * списку (`r_shipment` / `d_shipment`) і в корельованому підзапиті эха фільтра
+ * (`x` / `xh`).
+ *
+ * `presentation` денормалізоване — його заповнює необов'язковий хук документа
+ * `_denormalize`, тобто в документа, який його не заповнює, воно порожнє.
+ * Порожній підпис у пікері невідрізненний від зламаного поля, тому подання
+ * документа падає на номер. Складати «номер від дати» тут не можна: слово
+ * «від» — це текст мовою, а сервер тексту не перекладає (він його називає
+ * маркером, а маркери в полях даних не розгортаються). Хто хоче саме такий
+ * підпис, складає його у своєму `_denormalize` — і мовою свого застосунку.
+ */
+function displaySql(
+  display: string,
+  inHeader: boolean,
+  targetAlias: string,
+  headerAlias: string | undefined,
+): string {
+  if (!inHeader) return `${targetAlias}.${display}`;
+  return display === DOCUMENT_DISPLAY_COL
+    ? `coalesce(nullif(${headerAlias}.${display}, ''), ${headerAlias}.number)`
+    : `${headerAlias}.${display}`;
+}
+
+export function refDisplaySql(r: Ref, targetAlias = r.alias, headerAlias = r.headerAlias): string {
+  return displaySql(r.display, r.displayInHeader, targetAlias, headerAlias);
+}
+
 // вивід вкладеного об'єкта ссылки
 function refEntry(f: Field): string {
   const r = f.ref!;
   return `'${r.as}', case when ${r.alias}.${r.targetPk} is null then null ` +
-    `else jsonb_build_object('id', ${r.alias}.${r.targetPk}::text, '${r.display}', ${r.alias}.${r.display}) end`;
+    `else jsonb_build_object('id', ${r.alias}.${r.targetPk}::text, '${r.displayKey}', ${refDisplaySql(r)}) end`;
 }
 
 /**
@@ -628,10 +742,24 @@ function refJoins(fields: Field[]): string[] {
   for (const f of fields) {
     if (!f.ref || seen.has(f.ref.alias)) continue;
     seen.add(f.ref.alias);
-    const r = f.ref;
-    joins.push(
-      `left join ${r.targetSchema}.${r.targetTable} ${r.alias} on ${r.alias}.${r.targetPk} = ${f.alias}.${r.fkCol}`,
-    );
+    joins.push(...refJoinSql(f.ref, f.alias));
+  }
+  return joins;
+}
+
+/**
+ * Join-и однієї ссылки: сама ціль, а для документа — ще й його шапка.
+ *
+ * Обидва `left`, і другий теж: `join` перетворив би зовнішнє з'єднання на
+ * внутрішнє, і рядок БЕЗ ссылки зник би зі списку взагалі — тобто відбір
+ * мовчки звузився б до заповнених.
+ */
+export function refJoinSql(r: Ref, ownerAlias: string): string[] {
+  const joins = [
+    `left join ${r.targetSchema}.${r.targetTable} ${r.alias} on ${r.alias}.${r.targetPk} = ${ownerAlias}.${r.fkCol}`,
+  ];
+  if (r.headerAlias) {
+    joins.push(`left join app.document ${r.headerAlias} on ${r.headerAlias}.id = ${r.alias}.${r.targetPk}`);
   }
   return joins;
 }
@@ -1784,8 +1912,12 @@ type ReportFilter = {
   /** Ключ у нормалізованому наборі: ссылка стає `<key>Id` (конвенція моделей). */
   normKey: string;
   required: boolean;
-  /** Джерело підпису для эха; порожнє — фільтр не ссылочний. */
-  ref?: { table: string; pk: string; display: string };
+  /**
+   * Джерело підпису для эха; порожнє — фільтр не ссылочний. Той самий резолв,
+   * що в полях моделі: інакше ссылка на документ працювала б у формі й падала
+   * у фільтрі звіту — на тій самій анотації.
+   */
+  ref?: Ref;
   isString: boolean;
 };
 
@@ -1837,19 +1969,11 @@ async function buildReportSpec(
     assertJsonKey(key, `${model}.${key}`);
     const xref = prop["x-ref"];
     if (xref) {
-      const target = map.get(xref.model);
-      if (!target) {
-        throw new Error(`${model}.${key}: модель '${xref.model}' не знайдена (x-ref фільтра)`);
-      }
       filters.push({
         key,
         normKey: `${key}Id`,
         required: required.has(key),
-        ref: {
-          table: `${target.schema}.${target.table}`,
-          pk: target.pk,
-          display: xref.display ?? target.displayCol,
-        },
+        ref: resolveRef(xref, camelToSnake(key), map, `${model}.${key} (фільтр)`),
         isString: false,
       });
       continue;
@@ -1864,7 +1988,7 @@ async function buildReportSpec(
 
   if (verbose) {
     const shown = filters.map((f) =>
-      `${f.normKey}${f.required ? "*" : ""}${f.ref ? `→${f.ref.table}` : ""}`
+      `${f.normKey}${f.required ? "*" : ""}${f.ref ? `→${f.ref.targetSchema}.${f.ref.targetTable}` : ""}`
     );
     console.log(`· ${model}: звіт, фільтри=[${shown.join(", ")}]`);
   }
@@ -1885,11 +2009,21 @@ function renderReportIndex(spec: ReportSpec): string {
       : `    '${f.normKey}', v_filters->'${f.key}'`
   );
 
-  const echoPairs = spec.filters.filter((f) => f.ref).map((f) =>
-    `    '${f.key}',\n` +
-    `    (select jsonb_build_object('id', x.${f.ref!.pk}::text, 'name', x.${f.ref!.display})\n` +
-    `       from ${f.ref!.table} x where x.${f.ref!.pk} = (v_norm->>'${f.normKey}')::bigint)`
-  );
+  // Эхо ссылочного фільтра: id прислав клієнт, підпис знає лише база. Ключ
+  // підпису — той самий, що в моделях (`displayKey`): у довідників це `name`,
+  // тобто нічого не змінилося, а документ показується представленням шапки.
+  const echoPairs = spec.filters.filter((f) => f.ref).map((f) => {
+    const r = f.ref!;
+    const target = `${r.targetSchema}.${r.targetTable}`;
+    const from = r.displayInHeader
+      ? `${target} x join app.document xh on xh.id = x.${r.targetPk}`
+      : `${target} x`;
+    return `    '${f.key}',\n` +
+      `    (select jsonb_build_object('id', x.${r.targetPk}::text, '${r.displayKey}', ${
+        refDisplaySql(r, "x", "xh")
+      })\n` +
+      `       from ${from} where x.${r.targetPk} = (v_norm->>'${f.normKey}')::bigint)`;
+  });
 
   const echo = echoPairs.length
     ? `  v_out := v_filters || jsonb_strip_nulls(jsonb_build_object(\n${
@@ -2139,10 +2273,15 @@ async function buildModelMap(appRoot: string, verbose: boolean): Promise<ModelMe
     }
 
     const schemaName = manifest.schema ?? "app";
+    const isDocument = manifest.type === "document";
     const mod = await importSchema(path);
     const item = mod[`${pascalCase(model)}ItemSchema`];
     const props = item?.properties ?? {};
-    let displayCol = "name";
+    // Документ показують представленням із шапки, і власного `x-lookup` у його
+    // схемі шукати нема де: спільних реквізитів документ у себе не описує
+    // взагалі, а `name` в нього немає — саме тому ссылка на документ падала
+    // з «column r_shipment.name does not exist» ще до того, як дійшла до ключа.
+    let displayCol = isDocument ? DOCUMENT_DISPLAY_COL : "name";
     for (const [key, prop] of Object.entries(props)) {
       if (prop["x-lookup"] && isStringType(prop)) {
         displayCol = prop["x-db-col"] ?? camelToSnake(key);
@@ -2154,12 +2293,36 @@ async function buildModelMap(appRoot: string, verbose: boolean): Promise<ModelMe
       schema: schemaName,
       model,
       table: manifest.table?.trim() || model,
-      pk: "id",
+      // Документ не має власної identity: первинний ключ його таблиці — це
+      // посилання на шапку. Хто цього не знає, будує join у неіснуючу колонку.
+      pk: isDocument ? "document_id" : "id",
       displayCol,
+      isDocument,
     });
   }
 
   return map;
+}
+
+/**
+ * Звірити константу з реальною шапкою — на першому ж документі застосунку.
+ *
+ * `DOCUMENT_HEADER_COLS` вирішує, куди генератор іде за поданням ссылки на
+ * документ. Нова колонка в `DocumentHeaderSchema` без рядка тут означала б, що
+ * `display: "<нова>"` мовчки шукається в таблиці МОДЕЛІ — і публікація падає з
+ * «column does not exist» на чужому полі, за два кроки від причини.
+ */
+function assertHeaderColsKnown(headerFields: Field[], model: string) {
+  const unknown = headerFields
+    .filter((f) => f.key !== "id" && !DOCUMENT_HEADER_COLS.has(f.col))
+    .map((f) => f.col);
+  if (unknown.length) {
+    throw new Error(
+      `${model}: у шапці документа з'явилися колонки [${unknown.join(", ")}], ` +
+        `яких не знає DOCUMENT_HEADER_COLS у generate-model-sql.ts — допиши їх, ` +
+        `інакше x-ref із таким display шукатиме колонку в таблиці моделі`,
+    );
+  }
 }
 
 async function buildSpec(
@@ -2213,6 +2376,7 @@ async function buildSpec(
     ? parseObject(await loadDocumentHeaderSchema(appRoot), schemaName, map, `${model}.header`, "h").fields
     : [];
   const headerKeys = new Set(headerFields.map((f) => f.key));
+  assertHeaderColsKnown(headerFields, model);
 
   const parsed = parseObject(itemSchema, schemaName, map, model);
   for (const f of parsed.fields) {
@@ -2250,7 +2414,7 @@ async function buildSpec(
   // search (list): ref.searchable → display; скаляр з x-search → alias.col; фоллбек — усі строкові
   const searchExprsList: string[] = [];
   for (const f of itemFields) {
-    if (f.ref?.searchable) searchExprsList.push(`${f.ref.alias}.${f.ref.display}`);
+    if (f.ref?.searchable) searchExprsList.push(refDisplaySql(f.ref));
     else if (!f.ref && f.search) searchExprsList.push(`${f.alias}.${f.col}`);
   }
   if (searchExprsList.length === 0) {
@@ -2265,7 +2429,7 @@ async function buildSpec(
   // діяв у списку, тобто той самий рядок схеми означав різне.
   const searchExprsLookup: string[] = [];
   for (const f of itemFields) {
-    if (f.ref?.searchable) searchExprsLookup.push(`${f.ref.alias}.${f.ref.display}`);
+    if (f.ref?.searchable) searchExprsLookup.push(refDisplaySql(f.ref));
     else if (!f.ref && f.search) searchExprsLookup.push(`${f.alias}.${f.col}`);
   }
   if (searchExprsLookup.length === 0) {
@@ -2277,7 +2441,7 @@ async function buildSpec(
   // sort (list): токен = JSON-ключ (= ListColumn.key на фронті), вираз = alias.col
   const listSort: SortEntry[] = [];
   for (const f of listFields) {
-    if (f.ref?.sortable) listSort.push({ token: f.ref.as, expr: `${f.ref.alias}.${f.ref.display}` });
+    if (f.ref?.sortable) listSort.push({ token: f.ref.as, expr: refDisplaySql(f.ref) });
     else if (!f.ref && f.sortable) listSort.push({ token: f.key, expr: `${f.alias}.${f.col}` });
   }
 

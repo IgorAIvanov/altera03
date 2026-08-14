@@ -276,6 +276,17 @@ export type BankLookupData = Static<typeof BankLookupDataSchema>;
   column l.nomenclature does not exist
   ```
   The alternative is what this repository's `invoice` does — keep two schemas, `<Model>LineSchema` for the database and `<Model>FormLineSchema` for the form, and let the display refs live only in the second.
+- **A reference to a DOCUMENT is declared exactly like any other reference** — `"x-ref": { model: "goods_sale", as: "shipment" }`. The generator reads the target's type from its `manifest.json` and joins by `document_id` (a document has no identity of its own) plus the shared header `app.document`, where number, date and presentation live. Do not hand-roll the reference as a plain `bigint` and fetch the caption in the form: that costs an extra request per open and leaves the reference invisible to the list and to the agent.
+  ```ts
+  shipmentId: Type.Optional(Type.Union([Type.String(), Type.Null()], {
+    title: "Документ відвантаження", "x-db-type": "bigint",
+    "x-ref": { model: "goods_sale", as: "shipment" },
+  })),
+  shipment: Type.Optional(Type.Union([
+    Type.Object({ id: Type.String(), presentation: Type.String() }), Type.Null(),
+  ], { "x-transient": true })),
+  ```
+  The default caption is the header's `presentation` falling back to `number`, so the picker needs `display-field="presentation"`. `presentation` is written by the document's own optional `_denormalize` hook — a document that does not fill it shows its number, never an empty field. `display` picks another column explicitly (`"number"`, `"doc_date"`, or one of the document's own columns); the nested key is the camelCase of that column, so `display: "doc_date"` gives `{ id, docDate }`. `searchable` is only allowed on a text caption — `ilike` over a date is refused at generation time. Requires `@altera/tools` 0.13.11.
 - `x-form`, `x-list`, `x-lookup` annotations are the canonical way to declare UI roles — do not create separate display configuration objects.
 - `options` in `GetDataSchema` is typed explicitly per model — list every dropdown the form needs (currencies, statuses, groups, etc.).
 - Payload schemas are validated at runtime by the backend using `Value.Check()` or TypeBox-compatible validator.
