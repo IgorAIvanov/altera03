@@ -85,6 +85,7 @@ Agent discovery — `agent.aliases` and `agent.priority`:
 - Singular and plural both, when both are used.
 - **An alias must be unique across the whole application.** A word that fits two models helps with neither — the agent cannot choose, and ambiguity is worse than absence. Check after regenerating: duplicates are silent, because each manifest is edited on its own day.
 - Three to six per model. A longer list adds nothing: the agent matches, it does not read a dictionary.
+- Do not repeat the title. It is already in the catalog next to the aliases, so `"картка рахунку"` on a model titled «Картка рахунку» buys nothing and costs bytes on every read — measured at a quarter of all aliases on the first solution that filled them. What earns its place is what the title is not: the short form («осв по рахунку»), the other language, the word from habit rather than from the form's caption.
 - `priority` (default 0) orders the catalog. Set it to 10 for the dozen models used daily; leave the rest alone. What the agent sees first should be what people work with most.
 - Both fields reach the catalog through `deno task sql:registry` — the generated `agent-routes` file is what the server serves, so a manifest edit without regeneration changes nothing.
 - `schema` identifies the SQL schema that owns the model objects and should normally be `app` unless the feature deliberately lives in another lowercase SQL schema.
