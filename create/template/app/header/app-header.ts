@@ -4,6 +4,8 @@ import { SignalWatcher } from "@lit-labs/signals";
 import { GlobalStyledLitElement } from "@client/ui-kit/base/gsle.ts";
 import { currentUser, logout } from "@client/auth/session.ts";
 import { t } from "@client/locale.ts";
+// Кнопка зауваження — компонент фреймворку; шапка лише дає їй місце.
+import "@client/ui-kit/components/ui-remark.ts";
 import "./change-password-dialog.ts";
 import type { ChangePasswordDialog } from "./change-password-dialog.ts";
 
@@ -21,6 +23,7 @@ export class AppHeader extends Base {
       <div class="flex items-center justify-between px-4 py-2 bg-primary text-primary-content">
         <span class="font-medium">{{name}}</span>
         <span class="flex items-center gap-3">
+          <ui-remark></ui-remark>
           <span class="opacity-80">${user?.fullName ?? user?.login ?? ""}</span>
           <button class="btn btn-sm" @click=${this.#changePassword}>${t("header.changePassword")}</button>
           <button class="btn btn-sm" @click=${this.#logout}>${t("header.logout")}</button>

@@ -6,6 +6,8 @@ import { currentUser, logout } from "@client/auth/session.ts";
 // Побічним ефектом, а не значенням: `ChangePasswordDialog` тут потрібен лише
 // як тип, і звичайний іменований імпорт esbuild вирізає разом із модулем —
 // тоді @customElement не виконується й тег лишається невизначеним.
+// Кнопка зауваження — компонент фреймворку; шапка лише дає їй місце.
+import "@client/ui-kit/components/ui-remark.ts";
 import "./change-password-dialog.ts";
 import type { ChangePasswordDialog } from "./change-password-dialog.ts";
 import "./access-token-dialog.ts";
@@ -421,6 +423,7 @@ export class AppHeader extends SignalWatcher(LitElement) {
       <div class="app-name">${this.appName}</div>
 
       <div class="right">
+        <ui-remark></ui-remark>
         <div class="org-wrap">
           <div class="org-btn" title=${t("header.currentOrganization")} @click=${this.toggleOrgMenu}>
             ${this.iconBuilding()}
