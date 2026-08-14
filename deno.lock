@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@altera/mcp@0.1": "0.1.0",
     "jsr:@danet/core@^2.11.1": "2.11.3",
     "jsr:@danet/validatte@0.7.4": "0.7.4",
     "jsr:@danet/validatte@~0.7.9": "0.7.9",
@@ -55,6 +56,12 @@
     "npm:vite@^8.2.0": "8.2.0"
   },
   "jsr": {
+    "@altera/mcp@0.1.0": {
+      "integrity": "57920919928dfd9f685ced33c2c2f1f32bc101a7b3393bd45c271a7b62e9c47b",
+      "dependencies": [
+        "npm:@modelcontextprotocol/sdk"
+      ]
+    },
     "@danet/core@2.11.1": {
       "integrity": "bf8d8cf031cbbed8253670cc4b2481803926eee140a5bc5668746d388fcb9e3d",
       "dependencies": [
