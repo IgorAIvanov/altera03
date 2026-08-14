@@ -160,6 +160,16 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       data: [file("print_template/db/data.sql")],
     },
   },
+  // Зауваження до рішення. Залежність одна — app.users (автор і той, хто
+  // закрив), тож ставити пакет можна одразу за access. Своїх даних не сіє:
+  // склад журналу пишуть люди, а не деплой.
+  {
+    name: "remark",
+    files: {
+      structure: [file("remark/db/struc.sql")],
+      models: [file("remark/db/remark.sql")],
+    },
+  },
 ];
 
 /** Префікс запису в `sql.json`, який означає «це пакет ядра, а не модель застосунку». */
