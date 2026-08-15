@@ -179,9 +179,14 @@ as $$
 declare
   v_doc record;
 begin
+  -- `for update` серіалізує паралельні проведення того самого документа: без
+  -- нього двоє встигали видалити старі проводки й почати писати нові, і другий
+  -- падав на unique(document_id, line_no) — помилкою про «дубль рядка», за два
+  -- кроки від причини. Тепер другий просто чекає першого й переписує начисто.
   select id, is_deleted into v_doc
   from app.document
-  where id = p_document_id;
+  where id = p_document_id
+  for update;
 
   if not found then
     raise exception '@[core.documentNotFound]%', jsonb_build_object('id', p_document_id)::text;
@@ -272,8 +277,24 @@ declare
   v_quantity_debit         numeric;
   v_quantity_credit        numeric;
 begin
-  if p_amount is null or p_amount = 0 then
+  -- Нуль перевіряється ПІСЛЯ округлення до копійок: колонка numeric(18,2)
+  -- округлює мовчки, тож 0.004 проходило б перевірку «не нуль» і лягало в
+  -- регістр нулем — проводка без суми, якої нібито не буває.
+  -- Від'ємна сума НЕ відсікається навмисно: це сторно — коригування пишеться
+  -- від'ємним числом на ТІЙ САМІЙ кореспонденції, а не перевернутою парою,
+  -- інакше обороти обох рахунків роздуваються фіктивним рухом туди-назад.
+  if p_amount is null or round(p_amount, 2) = 0 then
     raise exception '@[core.entryZeroAmount]%', jsonb_build_object('line', p_line_no, 'document', p_document_id)::text;
+  end if;
+
+  -- Два способи задати той самий вимір в одному виклику — це не вибір, а
+  -- суперечність: котрий із них мав на увазі документ, звідси не видно, і
+  -- мовчазна перевага одного ховала б помилку в його SQL.
+  if p_quantities is not null and p_quantity is not null then
+    raise exception 'doc_entry_add: передано і p_quantity, і p_quantities — залиш один спосіб';
+  end if;
+  if p_currencies is not null and (p_currency_id is not null or p_currency_amount is not null) then
+    raise exception 'doc_entry_add: передано і p_currency_id/p_currency_amount, і p_currencies — залиш один спосіб';
   end if;
 
   -- Рівно один бік може бути порожнім: це забалансовий облік (див. коментар до
@@ -321,14 +342,17 @@ begin
     -- Перелічені боки — висловлений намір (див. коментар до функції). На
     -- відміну від кількості, значення боку тут ПАРА, і половина пари — не
     -- намір, а помилка: сума без валюти (чи навпаки) не означає нічого.
-    if p_currencies ? 'debit' and v_debit_currency then
+    -- `"debit": null` — ЦІЛА пара порожня, тобто «боку без валюти», як у
+    -- кількості: намір висловлений, значення немає. Помилкою лишається саме
+    -- ПОЛОВИНА пари — id без amount чи навпаки.
+    if jsonb_typeof(p_currencies->'debit') = 'object' and v_debit_currency then
       v_currency_id_debit     := (p_currencies->'debit'->>'id')::bigint;
       v_currency_amount_debit := (p_currencies->'debit'->>'amount')::numeric;
       if v_currency_id_debit is null or v_currency_amount_debit is null then
         raise exception '@[core.entryNeedsCurrency]%', jsonb_build_object('line', p_line_no)::text;
       end if;
     end if;
-    if p_currencies ? 'credit' and v_credit_currency then
+    if jsonb_typeof(p_currencies->'credit') = 'object' and v_credit_currency then
       v_currency_id_credit     := (p_currencies->'credit'->>'id')::bigint;
       v_currency_amount_credit := (p_currencies->'credit'->>'amount')::numeric;
       if v_currency_id_credit is null or v_currency_amount_credit is null then

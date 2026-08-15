@@ -1115,6 +1115,15 @@ declare
   v_type_id bigint;
   v_result  jsonb;
 begin
+  -- Проведений документ не редагується. Форма й так відкриває його лише на
+  -- читання, але підказка клієнта — не захист: без цієї відмови API чи агент
+  -- переписали б реквізити, а рухи в регістрі лишилися б від старих даних —
+  -- розходження, якого не видно, доки хтось не звірить документ зі звітом.
+  if v_id is not null
+     and exists (select 1 from app.document h where h.id = v_id and h.is_posted) then
+    raise exception 'Документ проведено — редагування можливе після розпроведення';
+  end if;
+
   if v_org is null then
     raise exception 'organizationId обов''язковий' using column = 'organization_id';
   end if;

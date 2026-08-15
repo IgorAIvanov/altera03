@@ -407,6 +407,14 @@ Consequences for the screen come for free: `BaseUI` opens a posted document
 read-only, the toolbar shows «Розпровести», and the list shows the posted mark.
 Nothing extra to write.
 
+The read-only form is a hint; the refusal is the server's. The generated `save`
+refuses a posted document outright — without that, the API or an agent could
+rewrite the requisites while the register kept the movements of the old data,
+a mismatch nobody sees until a report is checked against the document. The
+cycle is: unpost — edit — post. Negative amounts, by the way, are lawful on
+purpose: a correction is written as a negative on the SAME correspondence
+(сторно), not as a flipped pair that would inflate both accounts' turnovers.
+
 ## Movements that are not entries: `<model>_unpost_records`
 
 `doc_unpost` clears `app.journal_entry` and nothing else, because nothing else is
