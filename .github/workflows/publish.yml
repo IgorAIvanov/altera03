@@ -1,15 +1,37 @@
 # Публікація пакетів у JSR (docs/development-plan.md, 4.5).
 #
-# Запуск — кнопкою зі сторінки Actions (workflow_dispatch). Публікуються лише
-# пакети, чия версія з deno.json ще відсутня в реєстрі: бамп версії в коміті і
-# є командою на реліз, решта тихо пропускається — тому запуск ідемпотентний і
-# «воркспейс перевидає вже опубліковане» неможливе.
+# Запуск — САМ, після зеленого CI на master. Публікуються лише пакети, чия
+# версія з deno.json ще відсутня в реєстрі: бамп версії в коміті і є командою на
+# реліз, решта тихо пропускається — тому запуск ідемпотентний і «воркспейс
+# перевидає вже опубліковане» неможливе.
+#
+# Кнопка була гіршою за автоматику рівно тим, чим кнопка й буває: вона
+# публікувала КОМІТ, а не намір. Пуш, зроблений після натискання, у реліз не
+# потрапляв — і це не «поїде наступним разом»: номери версій із опублікованого
+# коміту вже в реєстрі, тож правка, дописана після, лишалася без номера. Так
+# згоріли tools@0.13.12, skills@0.1.23 і create@0.7.22.
+#
+# `workflow_run`, а не `on: push`: гейтом тут завжди був зелений CI ЦЬОГО коміту,
+# а на пуші він щойно стартував. Тепер черга природна — пуш → CI → зелений →
+# публікація того самого SHA, і вікна між наміром і комітом немає.
+#
+# Кнопка лишається другим входом: реліз може впасти не через код (реєстр лежить,
+# мережа), і перезапускати заради цього CI безглуздо. На цьому шляху зелений CI
+# перевіряється явно — гейт нижче.
+#
+# Чого автоматика НЕ вирішує: «змінив пакет, а версію не підняв». Це ловиться
+# раніше й в іншому місці — кроком `scaffold:verify` «вміст проти реєстру», який
+# входить у той самий CI, що тут гейтить.
 #
 # Автентифікація — OIDC: пакети зв'язані з цим репозиторієм у налаштуваннях на
 # jsr.io, жодних токенів у секретах. Право id-token: write — саме для цього.
 name: Publish to JSR
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -20,21 +42,34 @@ permissions:
 jobs:
   # Гейт — зелений CI цього ж коміту, а не повторний прогін перевірок:
   # test:unit там стереже свіжість generated-файлів, scaffold:verify:local —
-  # шаблон (саме його пропуск випустив зламаний create@0.1.4). «:local» тут
-  # принципове: гейт не може вимагати перевірки проти реєстру, бо перевіряти
-  # там до релізу нічого — див. коментар до джоба scaffold у ci.yml.
+  # шаблон (саме його пропуск випустив зламаний create@0.1.4) і склад пакетів
+  # проти реєстру. «:local» тут принципове: гейт не може вимагати перевірки
+  # проти реєстру, бо перевіряти там до релізу нічого — див. коментар до джоба
+  # scaffold у ci.yml.
+  #
+  # На автоматичному шляху перевіряти нічого: подія і Є завершенням CI, лишається
+  # відсіяти незелений. На ручному — питаємо API, як і раніше.
   gate:
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      # Коміт релізу. Для workflow_run це SHA прогону, що нас розбудив, — саме
+      # його треба взяти явно: за замовчуванням checkout дав би голову гілки на
+      # момент запуску, тобто, можливо, вже НЕ той коміт, чий CI був зелений.
+      sha: ${{ steps.target.outputs.sha }}
     steps:
+      - id: target
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
       - name: Require green CI for this commit
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           conclusion=$(gh api \
-            "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${{ github.sha }}&per_page=1" \
+            "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${{ steps.target.outputs.sha }}&per_page=1" \
             --jq '.workflow_runs[0].conclusion // empty')
           if [ "$conclusion" != "success" ]; then
-            echo "CI для ${{ github.sha }} не зелений (стан: ${conclusion:-не знайдено})." >&2
+            echo "CI для ${{ steps.target.outputs.sha }} не зелений (стан: ${conclusion:-не знайдено})." >&2
             echo "Дочекайтеся зеленого прогону CI і запустіть публікацію знову." >&2
             exit 1
           fi
@@ -44,6 +79,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
