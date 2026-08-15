@@ -1,6 +1,6 @@
 {
   "name": "@altera/skills",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "//": "Скіли для написання застосунку на фреймворку Altera: deno run -A jsr:@altera/skills ./ розкладає їх у .claude/skills застосунку. Джерело — дерево skills/src/** у монорепо (туди ж дивиться .claude/skills самого репозиторію), а в пакет воно їде згенерованою мапою (skills.generated.ts): пакет може віддати лише модулі. Що саме їде, оголошує сам скіл полем metadata.audience.",
   "exports": "./mod.ts",
   "license": "MIT",

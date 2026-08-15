@@ -584,10 +584,24 @@ Those columns are **empty**, not zero, on an account without `is_quantitative` �
 zero would read as "we measured and got none". A row whose movement is in units
 only, with no money, is returned rather than dropped.
 
-One thing the layer still cannot answer: **more than one dimension at a time**.
-`..._by_dim` takes a single `p_dimension_code`, and stock lives in two — warehouse
-and item — so "how much of what, and where" is not a question you can put to it
-yet.
+**Several dimensions at once** — `acc_balance_turnover_by_dims(org, from, to,
+accounts, dims, array['warehouse','nomenclature'])`. Stock lives in two dimensions,
+and "how much of what, and WHERE" is one pass:
+
+```sql
+select b.dims->'warehouse'->>'presentation'    as warehouse,
+       b.dims->'nomenclature'->>'presentation' as item,
+       b.opening_quantity, b.quantity_debit, b.quantity_credit, b.closing_quantity,
+       b.opening_net, b.debit, b.credit, b.closing_net
+from app.acc_balance_turnover_by_dims(:org, :from, :to, array['281'], null,
+                                      array['warehouse','nomenclature']) b;
+```
+
+The breakdown rides in `dims jsonb`, keyed by dimension code — you read values by
+name, not by position. A movement missing a dimension keeps its row with that key
+absent (`{}` when it has none), so the sum of the breakdown still equals the
+account's balance — the same hard-won rule as in the single-dimension form.
+`_by_dim` remains as a flat wrapper over this for existing reports.
 
 Add `"@core/ledger"` to `app/sql.json` after `@core/document_core` and after your
 chart of accounts.

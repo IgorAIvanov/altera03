@@ -23,7 +23,9 @@
 --   app.acc_entries(…)                                — потік рухів ВІД РАХУНКУ (рядок = бік проводки)
 --   app.acc_journal(…, document_id)                   — потік ПРОВОДОК (рядок = проводка)
 --   app.acc_balance_turnover(…)                       — сальдо+обороти за один прохід
---   app.acc_balance_turnover_by_dim(…, dimension)     — те саме в розрізі субконто
+--   app.acc_balance_turnover_by_dims(…, dimensions[]) — те саме в розрізі СУБКОНТО
+--                                                       (одного чи кількох: склад × номенклатура)
+--   app.acc_balance_turnover_by_dim(…, dimension)     — плоска обгортка для одного виміру
 --   app.acc_balance(org, before, …)                   — сальдо на дату
 --   app.acc_turnover(org, from, to, …)                — обороти за період
 --
@@ -36,10 +38,6 @@
 -- періоду, що вважається рухом), яку шар і мусить тримати один.
 --
 -- ЧОГО ТУТ НЕМАЄ СВІДОМО:
---   • РОЗРІЗ БІЛЬШ НІЖ ЗА ОДНИМ виміром: `..._by_dim` бере один
---     `p_dimension_code`. Запас живе у двох (склад × номенклатура), тож
---     «скільки чого й ДЕ» через шар поки не питається — це наступна робота, і
---     вона міняє форму результату, а не додає колонки;
 --   • подання сальдо активного / пасивного / активно-пасивного рахунку. Шар
 --     віддає ЧИСТЕ сальдо (`net` = дебет − кредит, дебетове додатне), а як його
 --     показати — дебетом, кредитом чи обома — вирішує звіт за типом рахунку. Це
@@ -425,28 +423,128 @@ as $$
   order by a.account;
 $$;
 
--- ── Сальдо й обороти в розрізі субконто ──────────────────────────────────────
--- Те саме, що `acc_balance_turnover`, але згруповане ще й за значенням одного
--- виміру: основа «аналізу субконто» й «картки субконто».
+-- ── Сальдо й обороти в розрізі субконто (кілька вимірів) ────────────────────
+-- Те саме, що `acc_balance_turnover`, але згруповане ще й за значеннями
+-- ПЕРЕЛІЧЕНИХ вимірів: `array['warehouse','nomenclature']` — «скільки чого й
+-- ДЕ» одним проходом. Запас живе у двох вимірах (склад × номенклатура), і
+-- одновимірний розріз відповідав на це половиною: сума складу без позицій або
+-- позиція без складів.
 --
--- Рух, у якого цього виміру НЕМА, повертається окремим рядком із `value_id is
--- null`, а не зникає. Спершу тут стояв `cross join lateral`, і міркування було
--- таке: рахунок, який цього субконто не веде, не має «сальдо в розрізі нього»,
--- тож і рядка бути не повинно. Міркування помилкове, і ось чому.
+-- Розріз їде колонкою `dims jsonb` — об'єкт, ключований КОДОМ виміру:
+--   {"warehouse": {"valueId": "3", "valueCode": "01", "presentation": "Основний"},
+--    "nomenclature": {...}}
+-- Об'єкт, а не масиви по позиціях: звіт дістає значення за ім'ям
+-- (`dims->'warehouse'->>'presentation'`), а не за індексом, який мусив би
+-- збігатися з порядком параметра.
 --
--- Субконто веде не рахунок, а ПРОВОДКА. На рахунку з оборотним субконто майже
--- завжди є рухи без нього — уведення залишків, закриття, коригування, — і всі
--- вони мовчки зникали: кожен рядок вибірки лишався правильним, неправильною
--- ставала тільки їхня СУМА. На даних altera-buh рахунок 311 на 30.04.2026 давав
--- 117 500 через `acc_balance_turnover` і 5 500 у розрізі статті руху коштів;
--- різниця — початкові залишки, де статті руху немає й бути не може. Звіряти
--- підсумок розрізу з підсумком рахунку нікому, тож помилка не мала жодного
--- шансу виявитися сама.
---
--- Тепер сума рядків дорівнює сальдо рахунку — це властивість, на яку звіт може
--- спиратися. Рядок без виміру приходить останнім (`null` в ASC сортується в
--- кінець), а ЩО з ним робити — назвати «<не вказано>», згорнути чи відсіяти —
+-- Рух, у якого якогось виміру НЕМА, не зникає — його ключа просто немає в
+-- об'єкті (рух без жодного — `{}`). Правило успадковане від одновимірного
+-- розрізу, і воно там вистраждане: субконто веде не рахунок, а ПРОВОДКА, тож
+-- на рахунку з оборотним субконто майже завжди є рухи без нього (уведення
+-- залишків, закриття, коригування) — і з `cross join lateral` вони мовчки
+-- зникали. Кожен рядок вибірки лишався правильним, неправильною ставала їхня
+-- СУМА: рахунок 311 давав 117 500 через `acc_balance_turnover` і 5 500 у
+-- розрізі статті руху коштів, а звіряти підсумки нікому. Тепер сума рядків
+-- дорівнює сальдо рахунку — властивість, на яку звіт може спиратися; що робити
+-- з рядком без виміру — назвати «<не вказано>», згорнути чи відсіяти —
 -- вирішує звіт: шар віддає рух, а не подання.
+--
+-- Порядок: за поданнями вимірів у порядку параметра, потім за рахунком; рядки
+-- без виміру — наприкінці (порожній рядок подання).
+drop function if exists app.acc_balance_turnover_by_dims(bigint, date, date, varchar[], jsonb, varchar[]);
+create function app.acc_balance_turnover_by_dims(
+  p_organization_id bigint,
+  p_date_from       date default null,
+  p_date_to         date default null,
+  p_accounts        varchar[] default null,
+  p_dims            jsonb default null,
+  p_dimension_codes varchar[] default null
+)
+returns table (
+  dims             jsonb,
+  account          varchar,
+  account_name     varchar,
+  opening_net      numeric,
+  debit            numeric,
+  credit           numeric,
+  closing_net      numeric,
+  opening_quantity numeric,
+  quantity_debit   numeric,
+  quantity_credit  numeric,
+  closing_quantity numeric
+)
+language sql
+stable
+as $$
+  with moves as (
+    select
+      -- Ключ групи: значення перелічених вимірів цього боку. `coalesce` до
+      -- `{}` — jsonb-рівність у group by не терпить null.
+      coalesce((
+        select jsonb_object_agg(el->>'dimensionCode', jsonb_build_object(
+                 'valueId',      el->>'valueId',
+                 'valueCode',    el->>'valueCode',
+                 'presentation', el->>'presentation'))
+        from jsonb_array_elements(e.dims) el
+        where el->>'dimensionCode' = any (p_dimension_codes)
+      ), '{}'::jsonb) as dim_key,
+      e.account, e.account_name, e.doc_date, e.debit, e.credit,
+      coalesce(e.quantity_debit,  0::numeric) as quantity_debit,
+      coalesce(e.quantity_credit, 0::numeric) as quantity_credit,
+      (e.quantity_debit is not null or e.quantity_credit is not null) as has_quantity
+    from app.acc_entries(p_organization_id, null, p_date_to, p_accounts, p_dims) e
+  ),
+  agg as (
+    select
+      m.dim_key,
+      m.account,
+      max(m.account_name) as account_name,
+      coalesce(sum(m.debit - m.credit) filter (
+        where p_date_from is not null and m.doc_date::date < p_date_from
+      ), 0::numeric) as opening_net,
+      coalesce(sum(m.debit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as debit,
+      coalesce(sum(m.credit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as credit,
+      bool_or(m.has_quantity) as has_quantity,
+      coalesce(sum(m.quantity_debit - m.quantity_credit) filter (
+        where p_date_from is not null and m.doc_date::date < p_date_from
+      ), 0::numeric) as opening_quantity,
+      coalesce(sum(m.quantity_debit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as quantity_debit,
+      coalesce(sum(m.quantity_credit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as quantity_credit
+    from moves m
+    group by m.dim_key, m.account
+  )
+  select
+    a.dim_key,
+    a.account, a.account_name,
+    a.opening_net, a.debit, a.credit,
+    a.opening_net + a.debit - a.credit,
+    case when a.has_quantity then a.opening_quantity end,
+    case when a.has_quantity then a.quantity_debit end,
+    case when a.has_quantity then a.quantity_credit end,
+    case when a.has_quantity
+         then a.opening_quantity + a.quantity_debit - a.quantity_credit end
+  from agg a
+  where a.opening_net <> 0 or a.debit <> 0 or a.credit <> 0
+     or a.opening_quantity <> 0 or a.quantity_debit <> 0 or a.quantity_credit <> 0
+  order by (
+    select string_agg(coalesce(a.dim_key->u.code->>'presentation', ''), ' ' order by u.ord)
+    from unnest(p_dimension_codes) with ordinality as u(code, ord)
+  ), a.account;
+$$;
+
+-- ── Сальдо й обороти в розрізі ОДНОГО виміру ─────────────────────────────────
+-- Обгортка над `acc_balance_turnover_by_dims`: методологія (межа періоду, що
+-- вважається рухом, «рух без виміру не зникає») сказана ОДИН раз — там. Форма
+-- відповіді лишається плоскою (`value_id`/`value_code`/`value_presentation`),
+-- бо на ній стоять наявні звіти: аналіз субконто, картка субконто.
 drop function if exists app.acc_balance_turnover_by_dim(bigint, date, date, varchar[], jsonb, varchar);
 create function app.acc_balance_turnover_by_dim(
   p_organization_id bigint,
@@ -474,68 +572,18 @@ returns table (
 language sql
 stable
 as $$
-  with moves as (
-    select
-      v.value_id, v.value_code, v.presentation,
-      e.account, e.account_name, e.doc_date, e.debit, e.credit,
-      coalesce(e.quantity_debit,  0::numeric) as quantity_debit,
-      coalesce(e.quantity_credit, 0::numeric) as quantity_credit,
-      (e.quantity_debit is not null or e.quantity_credit is not null) as has_quantity
-    from app.acc_entries(p_organization_id, null, p_date_to, p_accounts, p_dims) e
-    -- `left … on true`: рух без цього виміру мусить лишитися в вибірці з
-    -- порожнім значенням (див. довід у заголовку функції).
-    left join lateral (
-      select el->>'valueId' as value_id, el->>'valueCode' as value_code,
-             el->>'presentation' as presentation
-      from jsonb_array_elements(e.dims) el
-      where el->>'dimensionCode' = p_dimension_code
-    ) v on true
-  ),
-  agg as (
-    select
-      m.value_id,
-      max(m.value_code)   as value_code,
-      max(m.presentation) as presentation,
-      m.account,
-      max(m.account_name) as account_name,
-      coalesce(sum(m.debit - m.credit) filter (
-        where p_date_from is not null and m.doc_date::date < p_date_from
-      ), 0::numeric) as opening_net,
-      coalesce(sum(m.debit) filter (
-        where p_date_from is null or m.doc_date::date >= p_date_from
-      ), 0::numeric) as debit,
-      coalesce(sum(m.credit) filter (
-        where p_date_from is null or m.doc_date::date >= p_date_from
-      ), 0::numeric) as credit,
-      -- Кількість — так само, як у `acc_balance_turnover`: порожньо там, де
-      -- рахунок її не веде, і нуль там, де веде, але руху не було.
-      bool_or(m.has_quantity) as has_quantity,
-      coalesce(sum(m.quantity_debit - m.quantity_credit) filter (
-        where p_date_from is not null and m.doc_date::date < p_date_from
-      ), 0::numeric) as opening_quantity,
-      coalesce(sum(m.quantity_debit) filter (
-        where p_date_from is null or m.doc_date::date >= p_date_from
-      ), 0::numeric) as quantity_debit,
-      coalesce(sum(m.quantity_credit) filter (
-        where p_date_from is null or m.doc_date::date >= p_date_from
-      ), 0::numeric) as quantity_credit
-    from moves m
-    group by m.value_id, m.account
-  )
   select
-    a.value_id, a.value_code, a.presentation,
-    a.account, a.account_name,
-    a.opening_net, a.debit, a.credit,
-    a.opening_net + a.debit - a.credit,
-    case when a.has_quantity then a.opening_quantity end,
-    case when a.has_quantity then a.quantity_debit end,
-    case when a.has_quantity then a.quantity_credit end,
-    case when a.has_quantity
-         then a.opening_quantity + a.quantity_debit - a.quantity_credit end
-  from agg a
-  where a.opening_net <> 0 or a.debit <> 0 or a.credit <> 0
-     or a.opening_quantity <> 0 or a.quantity_debit <> 0 or a.quantity_credit <> 0
-  order by a.presentation, a.account;
+    b.dims->p_dimension_code->>'valueId',
+    b.dims->p_dimension_code->>'valueCode',
+    b.dims->p_dimension_code->>'presentation',
+    b.account, b.account_name,
+    b.opening_net, b.debit, b.credit, b.closing_net,
+    b.opening_quantity, b.quantity_debit, b.quantity_credit, b.closing_quantity
+  from app.acc_balance_turnover_by_dims(
+         p_organization_id, p_date_from, p_date_to, p_accounts, p_dims,
+         array[p_dimension_code]
+       ) b
+  order by b.dims->p_dimension_code->>'presentation', b.account;
 $$;
 
 -- ── Сальдо на дату ───────────────────────────────────────────────────────────
