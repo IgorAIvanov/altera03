@@ -1207,13 +1207,17 @@ returns jsonb
 language plpgsql
 as $$
 declare
-  v_id bigint := nullif(payload->>'id', '')::bigint;
+  v_id      bigint := nullif(payload->>'id', '')::bigint;
+  v_records regprocedure;
 begin
   if v_id is null then
     raise exception 'id обов''язковий';
   end if;
 
   perform app.doc_post_begin(user_id, v_id);
+
+${unpostRecordsHookSql(spec.table, "post")}
+
   perform ${spec.table}_post_entries(user_id, v_id);
   perform app.doc_post_finish(user_id, v_id);
 
@@ -1245,15 +1249,28 @@ $$;`;
  * зовсім, тож наявні застосунки нічого не переписують. А функція з ІНШИМ
  * підписом валить розпроведення: мовчазний пропуск тут гірший за відмову —
  * застосунок був би певен, що рухи зняті, а вони лишилися б діяти.
+ *
+ * Кличеться на ОБОХ шляхах, і другий важливіший за перший. `doc_post_begin`
+ * повторному проведенню не відмовляє — він зносить проводки й дає провести
+ * наново, — тож без виклику ПЕРЕД `_post_entries` рядки в чужій таблиці
+ * подвоювалися б із кожним перепроведенням. Правило «перепроведення переписує
+ * начисто» ядро вже давно тримає для проводок; тут воно просто поширене на
+ * оголошені рухи, а не вигадане.
  */
-export function unpostRecordsHookSql(table: string): string {
+export function unpostRecordsHookSql(table: string, path: "post" | "unpost" = "unpost"): string {
   const hook = `${table}_unpost_records`;
   const hookName = hook.split(".").pop()!;
   const hookSchema = hook.slice(0, hook.length - hookName.length - 1);
   const pair = `${hookName.replace(/_unpost_records$/, "")}_post_entries`;
 
-  return `  -- Рухи, які документ поклав НЕ в проводки: ядро про чужу таблицю не знає.
-  -- Пара до рукописної ${pair} — що документ поклав, те він і прибирає.
+  const why = path === "post"
+    ? `-- Перепроведення переписує рухи НАЧИСТО — так само, як doc_post_begin щойно
+  -- зробив із проводками. Без цього рядки в чужій таблиці подвоювалися б:
+  -- повторному проведенню ядро не відмовляє.`
+    : `-- Рухи, які документ поклав НЕ в проводки: ядро про чужу таблицю не знає.
+  -- Пара до рукописної ${pair} — що документ поклав, те він і прибирає.`;
+
+  return `  ${why}
   -- Гак необов'язковий: немає функції — немає й виклику.
   v_records := to_regprocedure('${hook}(bigint, bigint)');
   if v_records is not null then

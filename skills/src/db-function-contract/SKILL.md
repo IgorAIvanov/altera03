@@ -428,6 +428,12 @@ end $$;
 
 Three things worth knowing:
 
+- **it runs on both paths, and posting is the one that matters.** `doc_post_begin`
+  does not refuse a document that is already posted — it clears the entries and
+  lets you post again — so the hook is called before `<model>_post_entries` too.
+  Without that, every re-post would add another copy of your rows to the foreign
+  table. Write it as a plain delete by `document_id` and both paths are correct:
+  re-posting rewrites from scratch, exactly as the core already does for entries;
 - **it is optional, and switched on by creating the function** — the same rule as
   `app.doc_before_write`. A document whose only movements are entries needs
   nothing;

@@ -383,3 +383,22 @@ Deno.test("розпроведення кличе гак рухів, і лише 
   assertStringIncludes(sql, "raise exception");
   assertStringIncludes(sql, "Очікую app.price_setting_unpost_records(user_id bigint, document_id bigint)");
 });
+
+/**
+ * Той самий гак на ПРОВЕДЕННІ, і це не симетрія заради симетрії:
+ * `doc_post_begin` повторному проведенню не відмовляє — він зносить проводки й
+ * дає провести наново. Без виклику перед `_post_entries` рядки в чужій таблиці
+ * подвоювалися б із кожним перепроведенням, і побачили б це не при проведенні,
+ * а в декларації.
+ */
+Deno.test("проведення теж кличе гак — інакше перепроведення подвоює рухи", () => {
+  const sql = unpostRecordsHookSql("app.price_setting", "post");
+
+  // Виклик той самий — гак у застосунку один на обидва шляхи.
+  assertStringIncludes(sql, "perform app.price_setting_unpost_records(user_id, v_id);");
+  // Причина названа в самому SQL: його читає той, хто відкрив згенерований файл.
+  assertStringIncludes(sql, "Перепроведення переписує рухи НАЧИСТО");
+
+  // На розпроведенні причина інша, і плутати їх не можна.
+  assertStringIncludes(unpostRecordsHookSql("app.price_setting"), "Пара до рукописної price_setting_post_entries");
+});
