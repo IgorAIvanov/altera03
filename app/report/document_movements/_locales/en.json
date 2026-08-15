@@ -1,4 +1,6 @@
 {
   "documentMovements.title": "Document movements",
-  "documentMovements.openDocument": "Open document"
+  "documentMovements.openDocument": "Open document",
+  "documentMovements.quantityDebit": "Qty Dr",
+  "documentMovements.quantityCredit": "Qty Cr"
 }

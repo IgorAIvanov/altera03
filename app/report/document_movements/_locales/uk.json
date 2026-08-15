@@ -1,4 +1,6 @@
 {
   "documentMovements.title": "Рух документа",
-  "documentMovements.openDocument": "Відкрити документ"
+  "documentMovements.openDocument": "Відкрити документ",
+  "documentMovements.quantityDebit": "К-сть Дт",
+  "documentMovements.quantityCredit": "К-сть Кт"
 }

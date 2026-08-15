@@ -22,7 +22,10 @@ export const DocumentMovementRowSchema = Type.Object({
   amount:            Type.Number(),
   currencyCode:      Type.Optional(Type.Union([Type.String(), Type.Null()])),
   currencyAmount:    Type.Optional(Type.Union([Type.Number(), Type.Null()])),
-  quantity:          Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  // Дві кількості, як у регістрі: у складній проводці вони різні за змістом
+  // (2 комплекти ← 6 корпусів), і одна колонка ховала б половину операції.
+  quantityDebit:     Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  quantityCredit:    Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   description:       Type.Optional(Type.String()),
 });
 export type DocumentMovementRow = Static<typeof DocumentMovementRowSchema>;

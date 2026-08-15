@@ -152,14 +152,12 @@ as $$
     cur.name                                as currency_code,
     case when s.side = 'debit' then je.currency_amount else null end as currency_debit,
     case when s.side = 'debit' then null else je.currency_amount end as currency_credit,
-    -- Кількість належить тому боку, чий рахунок її ВЕДЕ, а не обом. У регістрі
-    -- колонка одна, і заповнюється вона, коли кількісний ХОЧ ОДИН бік
-    -- (`doc_entry_add`), — тож у проводці «Дт 281 Кт 631 на 10 шт» друга сторона
-    -- діставала ті самі 10 штук, хоч рахунок 631 кількості не веде взагалі.
-    -- Помітно це не одразу: у картці 631 з'являлася колонка кількості з
-    -- правдоподібними числами, а в оборотці по 63-му вони б іще й склалися.
-    case when s.side = 'debit'  and coalesce(ca.is_quantitative, false) then je.quantity end as quantity_debit,
-    case when s.side = 'credit' and coalesce(ca.is_quantitative, false) then je.quantity end as quantity_credit,
+    -- Кількість зберігається по боках (складна проводка: комплектація списує
+    -- 6 корпусів і оприбутковує 2 комплекти одним рядком), тож тут вона просто
+    -- читається. Що значення лежить лише на боці, який його веде, гарантує
+    -- запис — doc_entry_add; сторожів удруге тут немає навмисно.
+    case when s.side = 'debit'  then je.quantity_debit  end as quantity_debit,
+    case when s.side = 'credit' then je.quantity_credit end as quantity_credit,
     je.description,
     coalesce(an.list, '[]'::jsonb)          as dims,
     coalesce(corr.list, '[]'::jsonb)        as corr_dims
@@ -257,7 +255,10 @@ returns table (
   amount              numeric,
   currency_code       varchar,
   currency_amount     numeric,
-  quantity            numeric,
+  -- Дві кількості, як і в самій проводці: у складній вони РІЗНІ за змістом
+  -- операції (2 комплекти ← 6 корпусів), і одна колонка ховала б половину.
+  quantity_debit      numeric,
+  quantity_credit     numeric,
   description         text,
   debit_dims          jsonb,
   credit_dims         jsonb
@@ -272,7 +273,7 @@ as $$
     je.debit_account, coalesce(cd.name, ''),
     je.credit_account, coalesce(cc.name, ''),
     je.amount,
-    cur.name, je.currency_amount, je.quantity, je.description,
+    cur.name, je.currency_amount, je.quantity_debit, je.quantity_credit, je.description,
     coalesce(dan.list, '[]'::jsonb),
     coalesce(can.list, '[]'::jsonb)
   from app.document d

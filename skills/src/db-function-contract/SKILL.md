@@ -449,6 +449,39 @@ The register whose rows you are deleting usually belongs to *another* model, wit
 its own CRUD and its own screens. That is fine and is the point: the document
 knows what it wrote, and the core does not have to know anything about the table.
 
+## Quantities are per side: compound entries
+
+`app.journal_entry` stores `quantity_debit` and `quantity_credit` separately —
+quantity is a non-balancing resource, exactly as in the register this model comes
+from. An assembly (комплектація) writes off six components and receives two kits
+in ONE correspondence, and the inequality is the content of the operation, not an
+error. A compound entry is therefore several ordinary rows; the head side's
+quantity is written once, on one of them:
+
+```sql
+-- 2 kits ← 6 cases + 2 matrices, money stays on 281
+perform app.doc_entry_add(doc_id, 1, '281', '281', 600.00, null, 'корпуси',
+  dims_kit, dims_case, null, null, '{"debit": 2, "credit": 6}'::jsonb);
+perform app.doc_entry_add(doc_id, 2, '281', '281', 600.02, null, 'матриці',
+  dims_kit, dims_matrix, null, null, '{"credit": 2}'::jsonb);
+```
+
+Two ways to pass quantity, and the difference is intent:
+
+- `p_quantity` (positional, as before) — one number for every quantitative side.
+  Receipts, write-offs, transfers. The strict rule stands: if either side keeps
+  quantity, forgetting it refuses the posting;
+- `p_quantities` jsonb — per side. **Listing the sides is the statement of
+  intent**: a quantitative side absent from the object stays empty lawfully (the
+  head of a compound entry lives on another row), and `{}` is a revaluation —
+  amount with no quantity at all, which used to be inexpressible.
+
+Do not fabricate a pair through an auxiliary account to make quantities "balance"
+— they are not supposed to balance, and the register would gain a correspondence
+the books do not have. The sums per account come out right by themselves: debit
+281 collects 2, credit 281 collects 8, and with dimensions the kit gains +2 while
+each component goes to zero.
+
 ## One-sided entries: off-balance accounts
 
 `app.doc_entry_add` accepts an empty side — `null` for `debit_account` or for

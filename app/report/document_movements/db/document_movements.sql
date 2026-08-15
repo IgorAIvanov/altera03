@@ -54,7 +54,8 @@ as $$
       j.amount              as "amount",
       j.currency_code       as "currencyCode",
       j.currency_amount     as "currencyAmount",
-      j.quantity            as "quantity",
+      j.quantity_debit      as "quantityDebit",
+      j.quantity_credit     as "quantityCredit",
       j.description         as "description"
     from params p
     join app.document d on d.id = p.document_id

@@ -53,3 +53,38 @@ begin
       add constraint ck_journal_entry_sides check (num_nonnulls(debit_account, credit_account) >= 1);
   end if;
 end $$;
+
+-- ── Кількість по боках проводки ─────────────────────────────────────────────
+-- Кількість — небалансовий вимір, і одна колонка на обидва боки не виражала
+-- складної проводки: комплектація (Дт комплект ← Кт компоненти) давала
+-- комплекту СУМУ кількостей компонентів. Тепер кількість зберігається окремо
+-- по Дт і Кт — модель джерела (регістр бухгалтерії 1С, ресурс balance=false).
+--
+-- Наповнення — тим самим правилом, яким доти кількість роздавав по боках
+-- `acc_entries`: значення дістає бік, чий рахунок його веде (is_quantitative).
+-- Стару колонку після перенесення прибираємо: дві правди гірші за міграцію.
+alter table if exists app.journal_entry
+  add column if not exists quantity_debit numeric(18,3);
+alter table if exists app.journal_entry
+  add column if not exists quantity_credit numeric(18,3);
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'app' and table_name = 'journal_entry' and column_name = 'quantity'
+  ) then
+    update app.journal_entry je
+    set quantity_debit = case when exists (
+          select 1 from app.chart_of_account c
+          where c.code = je.debit_account and c.is_quantitative
+        ) then je.quantity end,
+        quantity_credit = case when exists (
+          select 1 from app.chart_of_account c
+          where c.code = je.credit_account and c.is_quantitative
+        ) then je.quantity end
+    where je.quantity is not null;
+
+    alter table app.journal_entry drop column quantity;
+  end if;
+end $$;

@@ -99,8 +99,14 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
   private get showCurrency(): boolean {
     return this.$root.rows.some((r) => r.currencyAmount);
   }
-  private get showQuantity(): boolean {
-    return this.$root.rows.some((r) => r.quantity);
+  // Кількість — двома колонками, як у регістрі: у складній проводці кількості
+  // боків РІЗНІ (2 комплекти ← 6 корпусів), і спільна колонка ховала б половину
+  // операції. Коли в даних заповнений лише один бік, друга колонка не малюється.
+  private get showQuantityDebit(): boolean {
+    return this.$root.rows.some((r) => r.quantityDebit);
+  }
+  private get showQuantityCredit(): boolean {
+    return this.$root.rows.some((r) => r.quantityCredit);
   }
 
   private renderExtraCells(row: DocumentMovementRow): TemplateResult | string {
@@ -108,8 +114,10 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
       ${this.showCurrency ? html`
         <td class="text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
         <td class="text-muted">${row.currencyCode ?? ""}</td>` : ""}
-      ${this.showQuantity
-        ? html`<td class="text-right tabular-nums">${row.quantity ?? ""}</td>` : ""}
+      ${this.showQuantityDebit
+        ? html`<td class="text-right tabular-nums">${row.quantityDebit ?? ""}</td>` : ""}
+      ${this.showQuantityCredit
+        ? html`<td class="text-right tabular-nums">${row.quantityCredit ?? ""}</td>` : ""}
     `;
   }
 
@@ -169,7 +177,8 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
               ${this.showCurrency ? html`
                 <th class="w-28 text-right">${t("manualEntry.currencyAmount")}</th>
                 <th class="w-16">${t("manualEntry.currency")}</th>` : ""}
-              ${this.showQuantity ? html`<th class="w-24 text-right">${t("manualEntry.quantity")}</th>` : ""}
+              ${this.showQuantityDebit ? html`<th class="w-24 text-right">${t("documentMovements.quantityDebit")}</th>` : ""}
+              ${this.showQuantityCredit ? html`<th class="w-24 text-right">${t("documentMovements.quantityCredit")}</th>` : ""}
               <th>${t("manualEntry.description")}</th>
             </tr>
           </thead>
@@ -181,7 +190,8 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
               <th colspan="5" class="text-right">${t("invoice.total")}</th>
               <th class="text-right tabular-nums">${amount(doc.total)}</th>
               ${this.showCurrency ? html`<th></th><th></th>` : ""}
-              ${this.showQuantity ? html`<th></th>` : ""}
+              ${this.showQuantityDebit ? html`<th></th>` : ""}
+              ${this.showQuantityCredit ? html`<th></th>` : ""}
               <th></th>
             </tr>
           </tfoot>

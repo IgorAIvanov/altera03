@@ -201,8 +201,29 @@ $$;
 -- рахунку (is_currency / is_quantitative), як і субконто. Правило те саме, що
 -- для субконто: якщо бодай один бік кореспонденції веде вимір, він обов'язковий;
 -- де не веде — ядро обнуляє, щоб у регістр не потрапляв «валютний» мотлох.
+--
+-- Кількість задається ДВОМА способами, і різниця між ними — це різниця між
+-- звичайною проводкою і складною:
+--
+--   • `p_quantity` — одне число на обидва кількісні боки. Надходження,
+--     списання, переміщення: кількість там і справді одна. Правило строге, як
+--     було: бодай один бік кількісний → параметр обов'язковий;
+--   • `p_quantities` — jsonb `{"debit": 2, "credit": 6}`, кількість кожного
+--     боку окремо. Це шлях складної проводки: комплектація списує 6 корпусів і
+--     оприбутковує 2 комплекти одним рядком, а кількість головного боку
+--     пишеться на ОДНОМУ з рядків операції — `{"credit": 2}` на другому рядку
+--     означає «дебету кількості немає, і це свідомо».
+--
+-- Чому саме jsonb, а не пара numeric-параметрів: у PL/pgSQL «не передали» і
+-- «передали null» нерозрізненні, а тут ця різниця і є захистом. Перелічити боки
+-- в об'єкті — значить ВИСЛОВИТИ НАМІР, тож відсутній у переліку кількісний бік
+-- лишається порожнім законно. Не передали об'єкта взагалі — діє строге правило
+-- `p_quantity`, і забута кількість валить проведення, як і валила. Порожній
+-- об'єкт `{}` теж законний: сума без кількості на кількісному рахунку — це
+-- переоцінка, і доти вона не виражалася нічим.
 drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb);
 drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb, bigint, numeric);
+drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb, bigint, numeric, jsonb);
 create function app.doc_entry_add(
   p_document_id      bigint,
   p_line_no          int,
@@ -214,7 +235,8 @@ create function app.doc_entry_add(
   p_debit_analytics  jsonb   default '{}'::jsonb,
   p_credit_analytics jsonb   default '{}'::jsonb,
   p_currency_id      bigint  default null,
-  p_currency_amount  numeric default null
+  p_currency_amount  numeric default null,
+  p_quantities       jsonb   default null
 ) returns bigint
 language plpgsql
 as $$
@@ -235,7 +257,8 @@ declare
   v_needs_quantity  boolean;
   v_currency_id     bigint;
   v_currency_amount numeric;
-  v_quantity        numeric;
+  v_quantity_debit  numeric;
+  v_quantity_credit numeric;
 begin
   if p_amount is null or p_amount = 0 then
     raise exception '@[core.entryZeroAmount]%', jsonb_build_object('line', p_line_no, 'document', p_document_id)::text;
@@ -290,20 +313,28 @@ begin
     v_currency_amount := p_currency_amount;
   end if;  -- інакше лишаються null
 
-  if v_needs_quantity then
+  if p_quantities is not null then
+    -- Перелічені боки — висловлений намір: кількісний бік, відсутній у
+    -- переліку, лишається порожнім законно (голова складної проводки на
+    -- іншому рядку; переоцінка). Некількісний бік обнуляється, як і решта
+    -- мотлоху.
+    v_quantity_debit  := case when v_debit_quantity  then (p_quantities->>'debit')::numeric end;
+    v_quantity_credit := case when v_credit_quantity then (p_quantities->>'credit')::numeric end;
+  elsif v_needs_quantity then
     if p_quantity is null then
       raise exception '@[core.entryNeedsQuantity]%', jsonb_build_object('line', p_line_no)::text;
     end if;
-    v_quantity := p_quantity;
+    v_quantity_debit  := case when v_debit_quantity  then p_quantity end;
+    v_quantity_credit := case when v_credit_quantity then p_quantity end;
   end if;
 
   insert into app.journal_entry (
     document_id, line_no, debit_account, credit_account, amount,
-    currency_id, currency_amount, quantity, description
+    currency_id, currency_amount, quantity_debit, quantity_credit, description
   )
   values (
     p_document_id, p_line_no, p_debit_account, p_credit_account, p_amount,
-    v_currency_id, v_currency_amount, v_quantity, p_description
+    v_currency_id, v_currency_amount, v_quantity_debit, v_quantity_credit, p_description
   )
   returning id into v_entry_id;
 

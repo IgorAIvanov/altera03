@@ -406,6 +406,8 @@
   "accountCard.closing": "Сальдо на кінець",
   "documentMovements.title": "Рух документа",
   "documentMovements.openDocument": "Відкрити документ",
+  "documentMovements.quantityDebit": "К-сть Дт",
+  "documentMovements.quantityCredit": "К-сть Кт",
   "turnoverBalance.title": "Оборотно-сальдова відомість",
   "turnoverBalance.drillHint": "Клік на рахунку відкриває картку рахунку за той самий період",
   "turnoverBalance.offBalance": "поза балансом, у підсумок не входить",

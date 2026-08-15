@@ -406,6 +406,8 @@
   "accountCard.closing": "Closing balance",
   "documentMovements.title": "Document movements",
   "documentMovements.openDocument": "Open document",
+  "documentMovements.quantityDebit": "Qty Dr",
+  "documentMovements.quantityCredit": "Qty Cr",
   "turnoverBalance.title": "Turnover and balance sheet",
   "turnoverBalance.drillHint": "Click an account to open its card for the same period",
   "turnoverBalance.offBalance": "off balance, not in the total",
