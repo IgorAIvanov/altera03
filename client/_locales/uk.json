@@ -157,5 +157,7 @@
   "core.remark.pasteEmpty": "У буфері немає картинки",
   "core.remark.clipboardDenied": "Браузер не дав доступу до буфера обміну",
   "core.remark.shotSave": "Зберегти кадр файлом",
-  "core.remark.shotFile": "Додати файл"
+  "core.remark.shotFile": "Додати файл",
+  "core.remark.draftRestored": "Це відновлена чернетка — ви згортали вікно",
+  "core.remark.draftDrop": "Почати заново"
 }
