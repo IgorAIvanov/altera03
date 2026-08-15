@@ -21,6 +21,7 @@ metadata:
 | `create/template/deno.json` | `@altera/client` ×2 (`@altera/client` і `@client/`), `@altera/server` ×2 (пакет і `/sql`), `@altera/tools` ×3 (дві задачі + `@altera/tools/`), `@altera/skills` ×1 |
 | `create/deno.json` | `@altera/skills` ×1 |
 | `tools/deno.json` | `@altera/server` ×1 |
+| `create/template/Dockerfile`, `create/template/docker-compose.yml` | `@altera/tools` ×1 кожен (оновлення рішення — точна версія, без `^`) |
 
 Правило одне: **пін = `^` + поточна версія пакета**. Нічого вирішувати не треба,
 тому це стереже проба `scripts/version-pins_test.ts` (у `deno task test:unit`).
