@@ -293,7 +293,26 @@ can sit under several header levels.
 | `footer` | once, after the last record |
 
 Cells take `colSpan`/`rowSpan` (as in HTML), a static `text` **or** a `path`; a non-empty
-`text` wins over `path`. Sections are optional.
+`text` wins over `path`. Sections are optional — a form whose total sits under the table
+rather than in its last row simply omits `footer`, and printing does not care.
+
+What makes them optional is `normalizePrintTemplateSchema`, which fills the missing ones
+before anything reads the template. Both entries into printing go through it — the
+`printPdf` command and the editor preview — so a stored template never reaches the render
+plan half-described. **A template you read yourself does**, and that is the one way to meet
+`Cannot read properties of undefined (reading 'filter')`: a layout probe, a migration, a
+script that loads `prints/*.template.json` off disk and plans it. Normalize first, with the
+same entry the editor uses:
+
+```ts
+import { normalizePrintTemplateSchema } from "@altera/server/print";
+
+const schema = normalizePrintTemplateSchema(JSON.parse(await Deno.readTextFile(file)));
+if (!schema) throw new Error("не schemaVersion 2 або порожній шаблон");
+```
+
+Padding the template file with `"footer": []` to get past that is a workaround for the
+wrong thing — it fixes one file and leaves the next script to hit it again.
 
 Totals are **read from the data** (`document.total`), never summed by the template.
 
