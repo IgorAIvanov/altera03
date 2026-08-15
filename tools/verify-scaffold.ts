@@ -162,20 +162,32 @@ async function git(args: string[]): Promise<string> {
  * переписує специфікатори імпорту при публікації (`"lit"` → `"npm:lit@^3.3.1"`),
  * тож жоден вихідний файл із голим імпортом не збігається сам із собою — і
  * відтворювати те переписування локально означало б тримати другу його копію.
- * Питання ж просте: чи були коміти в каталог пакета ПІСЛЯ того, як там востаннє
- * змінився `version`.
+ *
+ * Точка відліку — те, що ОПУБЛІКОВАНО, а не коміт, який поставив версію.
+ * Різниця вистрелила першою ж версією цієї перевірки: реліз законно їде
+ * ПОЇЗДОМ (бамп першим комітом, далі правки, пуш усього разом), публікується
+ * head — і «коміти після бампа» були в реєстрі, а перевірка вважала їх
+ * неопублікованими. Гірше, що вердикт мінявся з часом: до публікації вона
+ * мовчала (версії ще немає в реєстрі), після — червоніла на тому самому дереві.
+ *
+ * Опублікований коміт береться з ТЕГА `jsr/<пакет>@<версія>` — його ставить
+ * publish-workflow. Для версій, виданих до тегів, фолбек — час публікації з
+ * реєстру: підозрілі лише коміти, вчинені ПІСЛЯ createdAt (із запасом на
+ * годинники); усе, що встигло в пуш до публікації, опубліковане за побудовою.
  *
  * Проби з відповіді виключені: вони в пакет не їдуть (`publish.exclude`), тож
  * коміт, який чіпає лише їх, релізу не потребує.
  *
- * Мережі може не бути, а історія — куцою (у CI `actions/checkout` тягне один
- * коміт). Обидва рази крок каже, що пропущений: мовчазний пропуск тут гірший за
- * відсутність перевірки.
+ * Мережі може не бути, а історія — куцою (у CI `actions/checkout` мусить брати
+ * `fetch-depth: 0`). Обидва рази крок каже, що пропущений: мовчазний пропуск
+ * тут гірший за відсутність перевірки.
  */
 async function checkPublishedContent(): Promise<{ skipped: string | null; problems: string[] }> {
   const problems: string[] = [];
+  const clockSlackMs = 10 * 60 * 1000;
 
-  for (const pkg of LOCAL_PACKAGES) {
+  // create — теж пакет реєстру, хоч і не лінкується (він сам і є scaffold).
+  for (const pkg of [...LOCAL_PACKAGES, "create"]) {
     let local: { version: string };
     try {
       local = JSON.parse(await Deno.readTextFile(resolve(pkg, "deno.json")));
@@ -184,35 +196,58 @@ async function checkPublishedContent(): Promise<{ skipped: string | null; proble
     }
 
     let latest: string;
+    let publishedAt: number | null = null;
     try {
       const meta = await (await fetch(`https://jsr.io/@altera/${pkg}/meta.json`)).json();
       latest = meta.latest;
+      if (local.version === latest) {
+        const version = await (await fetch(`https://api.jsr.io/scopes/altera/packages/${pkg}/versions/${latest}`))
+          .json();
+        publishedAt = version.createdAt ? Date.parse(version.createdAt) : null;
+      }
     } catch (error) {
       return { skipped: `${pkg}: ${error instanceof Error ? error.message : error}`, problems: [] };
     }
     if (local.version !== latest) continue; // бамп уже є — правки вільні
 
-    // Коміт, який поставив цей номер: `-S` шукає появу самого рядка версії.
-    const found = await git(["log", "-1", "--format=%H", `-S"version": "${latest}"`, "--", `${pkg}/deno.json`]);
-    if (!found) {
-      return { skipped: `${pkg}: не знайшов коміт, який поставив ${latest} (мілка історія?)`, problems: [] };
+    // Точний шлях: тег публікації.
+    const tagged = await git(["rev-parse", "-q", "--verify", `refs/tags/jsr/${pkg}@${latest}`]);
+    let suspects: string[];
+
+    if (tagged) {
+      const since = await git([
+        "log",
+        "--format=%h %s",
+        `${tagged}..HEAD`,
+        "--",
+        pkg,
+        `:(exclude)${pkg}/**/*_test.ts`,
+      ]);
+      suspects = since.split("\n").filter(Boolean);
+    } else {
+      // Фолбек без тега: коміти в каталог пакета, ВЧИНЕНІ після публікації.
+      if (publishedAt === null) {
+        return { skipped: `${pkg}: реєстр не віддав createdAt для ${latest}`, problems: [] };
+      }
+      const log = await git([
+        "log",
+        "--format=%h%x09%cI%x09%s",
+        "--",
+        pkg,
+        `:(exclude)${pkg}/**/*_test.ts`,
+      ]);
+      suspects = log.split("\n").filter(Boolean)
+        .map((line) => line.split("\t"))
+        .filter(([, committedAt]) => Date.parse(committedAt) > publishedAt + clockSlackMs)
+        .map(([hash, , subject]) => `${hash} ${subject}`);
     }
 
-    const since = await git([
-      "log",
-      "--format=%h %s",
-      `${found}..HEAD`,
-      "--",
-      pkg,
-      `:(exclude)${pkg}/**/*_test.ts`,
-    ]);
-    if (since) {
-      const lines = since.split("\n").filter(Boolean);
-      const shown = lines.slice(0, 6);
+    if (suspects.length) {
+      const shown = suspects.slice(0, 6);
       problems.push(
-        `@altera/${pkg}@${latest} уже в реєстрі, а після нього в пакет лягли коміти — підніми версію` +
+        `@altera/${pkg}@${latest} уже в реєстрі, а пакет змінився після публікації — підніми версію` +
           `\n      ${shown.join("\n      ")}` +
-          (lines.length > shown.length ? `\n      … і ще ${lines.length - shown.length}` : ""),
+          (suspects.length > shown.length ? `\n      … і ще ${suspects.length - shown.length}` : ""),
       );
     }
   }

@@ -35,7 +35,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # тег jsr/<пакет>@<версія> на опублікований коміт — точка відліку
+                  # для перевірки «вміст проти реєстру» в scaffold:verify
   actions: read   # гейту потрібно читати прогони CI через GitHub API
   id-token: write
 
@@ -124,6 +125,11 @@ jobs:
             fi
             echo "→ публікую @altera/$pkg@$version"
             (cd "$pkg" && deno publish)
+            # Тег — точка відліку для перевірки «вміст проти реєстру»: реліз
+            # законно їде поїздом комітів, і рахувати від коміта-бампа не можна —
+            # публікується head. Не зірвати публікацію через тег: він допоміжний.
+            git tag "jsr/$pkg@$version" || true
+            git push origin "jsr/$pkg@$version" || echo "⚠ тег jsr/$pkg@$version не запушено"
           done
 
       # Post-release. До публікації цю перевірку зробити ніде: вона ставить
