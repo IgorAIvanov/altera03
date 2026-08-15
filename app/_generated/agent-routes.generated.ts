@@ -105,7 +105,8 @@ export const agentModelRoutes = {
     allow: true,
     allowCommands: ["list","get","answer"],
     aliases: ["зауваження","зауваження до рішення","remark"],
-    priority: 5
+    priority: 5,
+    titles: {"en":"Remarks","uk":"Зауваження"}
   },
   "setting": {
     editPath: "/admin/setting/edit",

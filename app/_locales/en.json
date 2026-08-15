@@ -222,7 +222,7 @@
   "remark.attachments": "Attachments",
   "remark.id": "No.",
   "remark.work": "Processing",
-  "remark.saveWork": "Save processing",
+  "remark.duplicateOf": "Related remark",
   "setting.titleOne": "Settings",
   "setting.titleMany": "Settings",
   "setting.saved": "Settings saved",

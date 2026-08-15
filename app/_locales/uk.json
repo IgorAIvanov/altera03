@@ -222,7 +222,7 @@
   "remark.attachments": "Вкладення",
   "remark.id": "№",
   "remark.work": "Обробка",
-  "remark.saveWork": "Зберегти обробку",
+  "remark.duplicateOf": "Пов'язане зауваження",
   "setting.titleOne": "Налаштування",
   "setting.titleMany": "Налаштування",
   "setting.saved": "Налаштування збережено",

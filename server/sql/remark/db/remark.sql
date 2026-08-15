@@ -168,7 +168,15 @@ as $$
             r.answered_at                  as "answeredAt",
             r.fixed_version                as "fixedVersion",
             r.feedback_ref                 as "feedbackRef",
-            r.duplicate_of::text           as "duplicateOf",
+            -- Посилання їде об'єктом {id, name}: пікер малює підпис, а не id,
+            -- і брати його окремим запитом означало б другий round-trip на
+            -- кожне відкриття форми.
+            (
+              select case when d.id is null then null
+                else jsonb_build_object('id', d.id::text, 'name', '№' || d.id || ' · ' || d.title)
+              end
+              from app.remark d where d.id = r.duplicate_of
+            )                              as "duplicateOf",
             r.verified_at                  as "verifiedAt",
             coalesce(v.full_name, v.login) as "verifiedBy",
             r.is_deleted                   as "isDeleted"
@@ -399,3 +407,48 @@ begin
   end if;
   return app.remark_get(user_id, jsonb_build_object('id', v_id::text));
 end $$;
+
+/**
+ * Підбір зауваження — щоб послатися на раніше подане.
+ *
+ * У назві стоїть номер: зауваження розрізняють саме ним, а заголовки в потоці
+ * перевірки повторюються («не проводиться» буває про три різні документи).
+ * Позначені на видалення сюди не потрапляють — на них не посилаються.
+ */
+drop function if exists app.remark_lookup(bigint, jsonb);
+create function app.remark_lookup(user_id bigint, payload jsonb)
+returns jsonb
+language sql
+stable
+as $$
+  with params as (
+    select
+      coalesce(payload->>'search', '')                                  as search,
+      least(greatest(coalesce((payload->>'pageSize')::int, 20), 1), 100) as page_size,
+      app.remark_id(payload->>'exclude')                                as exclude_id
+  ),
+  found as (
+    select
+      r.id::text as id,
+      '№' || r.id || ' · ' || r.title as name
+    from app.remark r
+    cross join params p
+    where not r.is_deleted
+      and (p.exclude_id is null or r.id <> p.exclude_id)
+      and (p.search = ''
+           or r.title ilike '%' || p.search || '%'
+           or r.id::text = p.search)
+    order by r.id desc
+    limit (select page_size from params)
+  )
+  select jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', null,
+      'rows', coalesce((select jsonb_agg(row_to_json(found)) from found), '[]'::jsonb),
+      'options', '{}'::jsonb,
+      'totals', '{}'::jsonb
+    ),
+    'messages', '[]'::jsonb
+  );
+$$;

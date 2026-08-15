@@ -2,7 +2,9 @@
   "model": "remark",
   "type": "admin",
   "schema": "app",
-  "sql": { "generate": false },
+  "sql": {
+    "generate": false
+  },
   "commands": {
     "sql": {
       "answer": "remark_answer",
@@ -21,8 +23,16 @@
   "agent": {
     "allow": true,
     "//allowCommands": "Ані save, ані verify: писати зауваження — робота людини, закривати — теж її. Виконавець читає й відповідає.",
-    "allowCommands": ["list", "get", "answer"],
-    "aliases": ["зауваження", "зауваження до рішення", "remark"],
+    "allowCommands": [
+      "list",
+      "get",
+      "answer"
+    ],
+    "aliases": [
+      "зауваження",
+      "зауваження до рішення",
+      "remark"
+    ],
     "priority": 5
   },
   "views": {
@@ -33,6 +43,10 @@
     "edit": {
       "module": "./remarkEdit.ts",
       "titleKey": "remark.titleOne"
+    },
+    "picker": {
+      "module": "./remarkPicker.ts",
+      "titleKey": "remark.titleMany"
     }
   }
 }

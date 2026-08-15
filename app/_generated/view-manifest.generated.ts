@@ -38,6 +38,7 @@ export const viewManifest = [
   { route: "admin/print_template/edit", moduleFile: "app/admin/print_template/printTemplateEdit.ts", titleKey: "printTemplate.titleOne" },
   { route: "admin/remark/list", moduleFile: "app/admin/remark/remarkList.ts", titleKey: "remark.titleMany" },
   { route: "admin/remark/edit", moduleFile: "app/admin/remark/remarkEdit.ts", titleKey: "remark.titleOne" },
+  { route: "admin/remark/picker", moduleFile: "app/admin/remark/remarkPicker.ts", titleKey: "remark.titleMany" },
   { route: "admin/setting/edit", moduleFile: "app/admin/setting/settingEdit.ts", titleKey: "setting.titleOne" },
   { route: "report/turnover_balance/list", moduleFile: "app/report/turnover_balance/turnoverBalanceReport.ts", titleKey: "turnoverBalance.title" },
   { route: "admin/user/list", moduleFile: "app/admin/user/userList.ts", titleKey: "user.titleMany" },

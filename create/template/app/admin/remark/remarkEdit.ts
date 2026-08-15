@@ -9,7 +9,11 @@ import {
   type RemarkEditRoot,
 } from "./remark.schema.ts";
 import { remarkBadge } from "./remark-status.ts";
+import { bus } from "@client/bus/bus.ts";
+import { parseTabPath } from "@client/tabs/tab-url.ts";
 import "@client/ui-kit/components/ui-attachments.ts";
+import "@client/ui-kit/components/ui-picker.ts";
+import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 
 export const tagName = "remark-edit";
 
@@ -44,8 +48,24 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
     return !!this.$root.item.verifiedAt;
   }
 
+  /**
+   * Обов'язкові рівно три: тип, коротко й стан. Решта — ні, і це не поблажка:
+   * зауваження пишуть у мить, коли щось зламалося, і форма, яка вимагає
+   * заповнити ще п'ять полів, просто не буде заповнена. Схема тут не джерело:
+   * у ній майже всі поля непорожні, бо в них є умовчання.
+   */
   protected override fieldRules(): FieldRules {
-    return { title: true };
+    return {
+      kind: true,
+      title: true,
+      status: true,
+      body: false,
+      area: false,
+      answer: false,
+      fixedVersion: false,
+      feedbackRef: false,
+      duplicateOf: false,
+    };
   }
 
   /**
@@ -75,23 +95,41 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
   }
 
   /**
-   * Зберегти обробку — тією самою командою `answer`, якою відповідає агент.
+   * Зберегти — ОДНА дія для людини, дві команди для ядра.
    *
-   * Окремої команди «для людини» тут немає навмисно: сторону визначає не хто
-   * набрав, а ЩО пишеться. Прапорець `ownerDecision` каже ядру, що замовлення в
-   * роботу переводить власник рішення, а не виконавець (див. remark_answer).
+   * Поля розділені між `save` (текст зауваження) і `answer` (обробка) навмисно —
+   * інакше форма, що показує відповідь, затирала б її при звичайному записі. Але
+   * дві кнопки на екрані означали б, що половину змін хтось колись не збереже.
    */
-  #saveWork = async () => {
+  protected override async saveItem(): Promise<boolean> {
     const item = this.$root.item;
-    await this.loadInto("answer", {
-      id: item.id,
-      status: item.status,
-      area: item.area,
-      answer: item.answer ?? "",
-      fixedVersion: item.fixedVersion,
-      feedbackRef: item.feedbackRef,
-      ownerDecision: true,
-    }, "save");
+    const saved = await this.run<Partial<RemarkEditRoot>>("save", { item }, "save");
+    if (!saved.ok || !saved.data) return false;
+    this.assign(saved.data);
+
+    const id = this.$root.item.id;
+    if (id) {
+      const worked = await this.run<Partial<RemarkEditRoot>>("answer", {
+        id,
+        status: item.status,
+        area: item.area,
+        answer: item.answer ?? "",
+        fixedVersion: item.fixedVersion,
+        feedbackRef: item.feedbackRef,
+        duplicateOf: item.duplicateOf?.id ?? null,
+        ownerDecision: true,
+      }, "save");
+      if (!worked.ok) return false;
+      if (worked.data) this.assign(worked.data);
+    }
+    this.markClean();
+    return true;
+  }
+
+  /** Маршрут із контексту — жива ссылка: з неї відкривається той самий запис. */
+  #openContext = () => {
+    const parsed = parseTabPath("/" + (this.$root.item.ctxRoute ?? ""));
+    if (parsed) bus.emit({ type: "tab.open", route: parsed.route, id: parsed.modelId });
   };
 
   #close = () => this.loadInto("verify", { id: this.$root.item.id, confirmed: true }, "save");
@@ -119,6 +157,8 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
 
     return this.renderForm(html`
       <div class="flex flex-col gap-3">
+        ${item.id ? this.#renderState() : ""}
+
         ${this.renderField(
           this.t("remark.kind"),
           html`
@@ -145,6 +185,21 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
             .value=${item.body ?? ""} @input=${this.bindTo(item, "body")}></textarea>`,
           { field: "body" },
         )}
+
+        <!-- Посилання на раніше подане зауваження. Той самий стовпчик, яким
+             склеюють дублікати: другого поля «просто пов'язане» не заводимо,
+             доки не стане видно, що це різні речі. -->
+        <ui-picker
+          .label=${this.t("remark.duplicateOf")}
+          url="admin/remark"
+          fetch="lookup"
+          show-clear
+          ?disabled=${this.readonlyMode}
+          .value=${item.duplicateOf ?? null}
+          @value-changed=${(e: PickerChangeEvent) => {
+            item.duplicateOf = e.detail.value as typeof item.duplicateOf;
+          }}
+        ></ui-picker>
 
         ${item.id
           ? html`
@@ -179,7 +234,10 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
           ? html`
             <div class="flex gap-2 text-sm">
               <span class="opacity-60 shrink-0 w-40">${this.t("remark.ctxRoute")}</span>
-              <span class="font-mono break-all">${item.ctxRoute}</span>
+              <!-- Саме заради цього маршрут і зберігається: з нього відкривають
+                   ТОЙ САМИЙ запис, а не шукають його руками за описом. -->
+              <button type="button" class="link link-primary font-mono break-all text-left"
+                @click=${this.#openContext}>${item.ctxRoute}</button>
             </div>`
           : ""}
         ${this.#fact(this.t("remark.author"), item.author)}
@@ -202,45 +260,7 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
     const item = this.$root.item;
     return html`
       <div class="rounded-box border border-base-300 px-3 py-2 flex flex-col gap-2">
-        <div class="flex items-center gap-2">
-          <span class="text-sm opacity-60">${this.t("remark.work")}</span>
-          <span class="badge badge-sm ${remarkBadge(item.status, item.verifiedAt)}">
-            ${item.verifiedAt ? this.t("remark.closed") : this.t(`remark.status.${item.status}`)}
-          </span>
-        </div>
-
-        <div class="flex gap-3 flex-wrap">
-          ${this.renderField(
-            this.t("remark.status"),
-            html`
-              <select class="select select-bordered w-full" .value=${item.status}
-                @change=${(e: Event) => { item.status = (e.target as HTMLSelectElement).value; }}>
-                ${REMARK_STATUSES.map((v) =>
-                  html`<option value=${v} ?selected=${item.status === v}>${this.t(`remark.status.${v}`)}</option>`
-                )}
-              </select>`,
-            { field: "status", class: "w-48" },
-          )}
-
-          ${this.renderField(
-            this.t("remark.area"),
-            html`
-              <select class="select select-bordered w-full" .value=${item.area ?? ""}
-                @change=${(e: Event) => { item.area = (e.target as HTMLSelectElement).value || null; }}>
-                <option value="">—</option>
-                <option value="solution" ?selected=${item.area === "solution"}>${this.t("remark.area.solution")}</option>
-                <option value="framework" ?selected=${item.area === "framework"}>${this.t("remark.area.framework")}</option>
-              </select>`,
-            { field: "area", class: "w-48" },
-          )}
-
-          ${this.renderField(
-            this.t("remark.fixedVersion"),
-            html`<input class="input input-bordered w-full" .value=${item.fixedVersion ?? ""}
-              @input=${this.bindTo(item, "fixedVersion")} />`,
-            { field: "fixedVersion", class: "w-56" },
-          )}
-        </div>
+        <div class="text-sm opacity-60">${this.t("remark.work")}</div>
 
         ${this.renderField(
           this.t("remark.answer"),
@@ -256,16 +276,60 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
           { field: "feedbackRef" },
         )}
 
-        <div class="flex items-center gap-3">
-          <button class="btn btn-sm" ?disabled=${this.busy} @click=${this.#saveWork}>
-            ${this.t("remark.saveWork")}
-          </button>
-          ${item.answeredAt
-            ? html`<span class="text-sm opacity-60">
-                ${this.t("remark.answeredAt")}: ${formatDate(item.answeredAt, dateFormat.dateTime)}
-              </span>`
-            : ""}
-        </div>
+        ${item.answeredAt
+          ? html`<span class="text-sm opacity-60">
+              ${this.t("remark.answeredAt")}: ${formatDate(item.answeredAt, dateFormat.dateTime)}
+            </span>`
+          : ""}
+      </div>
+    `;
+  }
+
+  /**
+   * Стан, область і версія — угорі форми, одним рядком.
+   *
+   * Це те, на що дивляться першим: чия зараз черга і чи вже зроблено. Значок
+   * поруч зі станом кольоровий не для краси — закрита запис забиває будь-який
+   * стан, бо закритість це факт, а стан лише заявка виконавця.
+   */
+  #renderState(): TemplateResult {
+    const item = this.$root.item;
+    return html`
+      <div class="flex gap-3 flex-wrap items-end">
+        ${this.renderField(
+          this.t("remark.status"),
+          html`
+            <select class="select select-bordered w-full" .value=${item.status}
+              @change=${(e: Event) => { item.status = (e.target as HTMLSelectElement).value; }}>
+              ${REMARK_STATUSES.map((v) =>
+                html`<option value=${v} ?selected=${item.status === v}>${this.t(`remark.status.${v}`)}</option>`
+              )}
+            </select>`,
+          { field: "status", class: "w-48" },
+        )}
+
+        ${this.renderField(
+          this.t("remark.area"),
+          html`
+            <select class="select select-bordered w-full" .value=${item.area ?? ""}
+              @change=${(e: Event) => { item.area = (e.target as HTMLSelectElement).value || null; }}>
+              <option value="">—</option>
+              <option value="solution" ?selected=${item.area === "solution"}>${this.t("remark.area.solution")}</option>
+              <option value="framework" ?selected=${item.area === "framework"}>${this.t("remark.area.framework")}</option>
+            </select>`,
+          { field: "area", class: "w-48" },
+        )}
+
+        ${this.renderField(
+          this.t("remark.fixedVersion"),
+          html`<input class="input input-bordered w-full" .value=${item.fixedVersion ?? ""}
+            @input=${this.bindTo(item, "fixedVersion")} />`,
+          { field: "fixedVersion", class: "w-56" },
+        )}
+
+        <span class="badge badge-sm ${remarkBadge(item.status, item.verifiedAt)} mb-2">
+          ${item.verifiedAt ? this.t("remark.closed") : this.t(`remark.status.${item.status}`)}
+        </span>
       </div>
     `;
   }

@@ -58,13 +58,24 @@ export const RemarkItemSchema = Type.Object({
   answeredAt:   Type.Union([Type.String(), Type.Null()], { default: null }),
   fixedVersion: Type.Union([Type.String(), Type.Null()], { default: null }),
   feedbackRef:  Type.Union([Type.String(), Type.Null()], { default: null }),
-  duplicateOf:  Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint", default: null }),
+  /** Посилання на раніше подане зауваження: id відбирає, `name` малює пікер. */
+  duplicateOf: Type.Union([
+    Type.Object({ id: Type.String({ "x-db-type": "bigint" }), name: Type.String() }),
+    Type.Null(),
+  ], { default: null }),
   // --- закриття
   verifiedAt:   Type.Union([Type.String(), Type.Null()], { default: null }),
   verifiedBy:   Type.Union([Type.String(), Type.Null()], { default: null }),
   isDeleted:    Type.Boolean({ default: false }),
 });
 export type RemarkItem = Static<typeof RemarkItemSchema>;
+
+/** Рядок підбору: `name` уже несе номер. */
+export const RemarkLookupRowSchema = Type.Object({
+  id:   Type.String({ "x-db-type": "bigint" }),
+  name: Type.String(),
+});
+export type RemarkLookupRow = Static<typeof RemarkLookupRowSchema>;
 
 export const RemarkEditRootSchema = Type.Object({
   item: RemarkItemSchema,
