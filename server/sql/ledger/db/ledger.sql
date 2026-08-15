@@ -27,7 +27,19 @@
 --   app.acc_balance(org, before, …)                   — сальдо на дату
 --   app.acc_turnover(org, from, to, …)                — обороти за період
 --
+-- КІЛЬКІСТЬ. `acc_balance_turnover` і `..._by_dim` віддають її поруч із грішми —
+-- `opening_quantity`, `quantity_debit`, `quantity_credit`, `closing_quantity`.
+-- Порожньо там, де рахунок кількості НЕ ВЕДЕ (`is_quantitative`), і нуль там, де
+-- веде, але руху не було: нуль на негрошовому рахунку читався б як «поміряли й
+-- вийшло нічого». Доти кількість жила тільки в `acc_entries`, тобто ДО будь-якої
+-- арифметики сальдо, і складали її самотужки — а це та сама методологія (де межа
+-- періоду, що вважається рухом), яку шар і мусить тримати один.
+--
 -- ЧОГО ТУТ НЕМАЄ СВІДОМО:
+--   • РОЗРІЗ БІЛЬШ НІЖ ЗА ОДНИМ виміром: `..._by_dim` бере один
+--     `p_dimension_code`. Запас живе у двох (склад × номенклатура), тож
+--     «скільки чого й ДЕ» через шар поки не питається — це наступна робота, і
+--     вона міняє форму результату, а не додає колонки;
 --   • подання сальдо активного / пасивного / активно-пасивного рахунку. Шар
 --     віддає ЧИСТЕ сальдо (`net` = дебет − кредит, дебетове додатне), а як його
 --     показати — дебетом, кредитом чи обома — вирішує звіт за типом рахунку. Це
@@ -140,8 +152,14 @@ as $$
     cur.name                                as currency_code,
     case when s.side = 'debit' then je.currency_amount else null end as currency_debit,
     case when s.side = 'debit' then null else je.currency_amount end as currency_credit,
-    case when s.side = 'debit' then je.quantity else null end as quantity_debit,
-    case when s.side = 'debit' then null else je.quantity end as quantity_credit,
+    -- Кількість належить тому боку, чий рахунок її ВЕДЕ, а не обом. У регістрі
+    -- колонка одна, і заповнюється вона, коли кількісний ХОЧ ОДИН бік
+    -- (`doc_entry_add`), — тож у проводці «Дт 281 Кт 631 на 10 шт» друга сторона
+    -- діставала ті самі 10 штук, хоч рахунок 631 кількості не веде взагалі.
+    -- Помітно це не одразу: у картці 631 з'являлася колонка кількості з
+    -- правдоподібними числами, а в оборотці по 63-му вони б іще й склалися.
+    case when s.side = 'debit'  and coalesce(ca.is_quantitative, false) then je.quantity end as quantity_debit,
+    case when s.side = 'credit' and coalesce(ca.is_quantitative, false) then je.quantity end as quantity_credit,
     je.description,
     coalesce(an.list, '[]'::jsonb)          as dims,
     coalesce(corr.list, '[]'::jsonb)        as corr_dims
@@ -320,12 +338,16 @@ create function app.acc_balance_turnover(
   p_dims            jsonb default null
 )
 returns table (
-  account       varchar,
-  account_name  varchar,
-  opening_net   numeric,
-  debit         numeric,
-  credit        numeric,
-  closing_net   numeric
+  account          varchar,
+  account_name     varchar,
+  opening_net      numeric,
+  debit            numeric,
+  credit           numeric,
+  closing_net      numeric,
+  opening_quantity numeric,
+  quantity_debit   numeric,
+  quantity_credit  numeric,
+  closing_quantity numeric
 )
 language sql
 stable
@@ -333,7 +355,11 @@ as $$
   with moves as (
     -- Беремо все ДО кінця періоду одним заходом: рухи до початку дадуть вхідне
     -- сальдо, рухи в межах — обороти.
-    select e.account, e.account_name, e.doc_date, e.debit, e.credit
+    select
+      e.account, e.account_name, e.doc_date, e.debit, e.credit,
+      coalesce(e.quantity_debit,  0::numeric) as quantity_debit,
+      coalesce(e.quantity_credit, 0::numeric) as quantity_credit,
+      (e.quantity_debit is not null or e.quantity_credit is not null) as has_quantity
     from app.acc_entries(p_organization_id, null, p_date_to, p_accounts, p_dims) e
   ),
   agg as (
@@ -348,7 +374,21 @@ as $$
       ), 0::numeric) as debit,
       coalesce(sum(m.credit) filter (
         where p_date_from is null or m.doc_date::date >= p_date_from
-      ), 0::numeric) as credit
+      ), 0::numeric) as credit,
+      -- Ознака рахунку, а не рядка: питання «чи ведеться тут кількість» має одну
+      -- відповідь на весь рахунок, і саме вона вирішує, порожньо буде в колонці
+      -- чи нуль. Нуль на негрошовому рахунку читався б як «поміряли й вийшло
+      -- нічого», а це різні речі.
+      bool_or(m.has_quantity) as has_quantity,
+      coalesce(sum(m.quantity_debit - m.quantity_credit) filter (
+        where p_date_from is not null and m.doc_date::date < p_date_from
+      ), 0::numeric) as opening_quantity,
+      coalesce(sum(m.quantity_debit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as quantity_debit,
+      coalesce(sum(m.quantity_credit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as quantity_credit
     from moves m
     group by m.account
   )
@@ -358,11 +398,19 @@ as $$
     a.opening_net,
     a.debit,
     a.credit,
-    a.opening_net + a.debit - a.credit as closing_net
+    a.opening_net + a.debit - a.credit as closing_net,
+    case when a.has_quantity then a.opening_quantity end,
+    case when a.has_quantity then a.quantity_debit end,
+    case when a.has_quantity then a.quantity_credit end,
+    case when a.has_quantity
+         then a.opening_quantity + a.quantity_debit - a.quantity_credit end
   from agg a
   -- Рахунки без руху й без сальдо не повертаємо: показувати 460 порожніх рядків
-  -- плану — марно, а відсіювати їх у кожному звіті — зайва робота.
+  -- плану — марно, а відсіювати їх у кожному звіті — зайва робота. Кількість у
+  -- цій умові теж є: рух, у якого сума нульова, а штуки не нульові (безоплатна
+  -- передача, перекомплектація), інакше зник би разом із рядком.
   where a.opening_net <> 0 or a.debit <> 0 or a.credit <> 0
+     or a.opening_quantity <> 0 or a.quantity_debit <> 0 or a.quantity_credit <> 0
   order by a.account;
 $$;
 
@@ -406,7 +454,11 @@ returns table (
   opening_net        numeric,
   debit              numeric,
   credit             numeric,
-  closing_net        numeric
+  closing_net        numeric,
+  opening_quantity   numeric,
+  quantity_debit     numeric,
+  quantity_credit    numeric,
+  closing_quantity   numeric
 )
 language sql
 stable
@@ -414,7 +466,10 @@ as $$
   with moves as (
     select
       v.value_id, v.value_code, v.presentation,
-      e.account, e.account_name, e.doc_date, e.debit, e.credit
+      e.account, e.account_name, e.doc_date, e.debit, e.credit,
+      coalesce(e.quantity_debit,  0::numeric) as quantity_debit,
+      coalesce(e.quantity_credit, 0::numeric) as quantity_credit,
+      (e.quantity_debit is not null or e.quantity_credit is not null) as has_quantity
     from app.acc_entries(p_organization_id, null, p_date_to, p_accounts, p_dims) e
     -- `left … on true`: рух без цього виміру мусить лишитися в вибірці з
     -- порожнім значенням (див. довід у заголовку функції).
@@ -440,7 +495,19 @@ as $$
       ), 0::numeric) as debit,
       coalesce(sum(m.credit) filter (
         where p_date_from is null or m.doc_date::date >= p_date_from
-      ), 0::numeric) as credit
+      ), 0::numeric) as credit,
+      -- Кількість — так само, як у `acc_balance_turnover`: порожньо там, де
+      -- рахунок її не веде, і нуль там, де веде, але руху не було.
+      bool_or(m.has_quantity) as has_quantity,
+      coalesce(sum(m.quantity_debit - m.quantity_credit) filter (
+        where p_date_from is not null and m.doc_date::date < p_date_from
+      ), 0::numeric) as opening_quantity,
+      coalesce(sum(m.quantity_debit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as quantity_debit,
+      coalesce(sum(m.quantity_credit) filter (
+        where p_date_from is null or m.doc_date::date >= p_date_from
+      ), 0::numeric) as quantity_credit
     from moves m
     group by m.value_id, m.account
   )
@@ -448,9 +515,15 @@ as $$
     a.value_id, a.value_code, a.presentation,
     a.account, a.account_name,
     a.opening_net, a.debit, a.credit,
-    a.opening_net + a.debit - a.credit
+    a.opening_net + a.debit - a.credit,
+    case when a.has_quantity then a.opening_quantity end,
+    case when a.has_quantity then a.quantity_debit end,
+    case when a.has_quantity then a.quantity_credit end,
+    case when a.has_quantity
+         then a.opening_quantity + a.quantity_debit - a.quantity_credit end
   from agg a
   where a.opening_net <> 0 or a.debit <> 0 or a.credit <> 0
+     or a.opening_quantity <> 0 or a.quantity_debit <> 0 or a.quantity_credit <> 0
   order by a.presentation, a.account;
 $$;
 

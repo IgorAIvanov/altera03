@@ -498,5 +498,22 @@ The layer deliberately does **not** decide whether a balance is shown as debit o
 credit: it returns the net (debit − credit, debit positive), and the report
 splits it by account type. Arithmetic and presentation are different jobs.
 
+**Quantities come out of the same call.** `acc_balance_turnover` and
+`..._by_dim` return `opening_quantity`, `quantity_debit`, `quantity_credit` and
+`closing_quantity` beside the money, so a stock turnover sheet — how much was
+there, came in, went out, is left, in units and in hryvnia — is one pass and no
+arithmetic of yours. Do not scan `acc_entries` and fold the periods yourself:
+that is the methodology the layer exists to hold, and your copy stops agreeing
+with it the moment the core changes a rule.
+
+Those columns are **empty**, not zero, on an account without `is_quantitative` —
+zero would read as "we measured and got none". A row whose movement is in units
+only, with no money, is returned rather than dropped.
+
+One thing the layer still cannot answer: **more than one dimension at a time**.
+`..._by_dim` takes a single `p_dimension_code`, and stock lives in two — warehouse
+and item — so "how much of what, and where" is not a question you can put to it
+yet.
+
 Add `"@core/ledger"` to `app/sql.json` after `@core/document_core` and after your
 chart of accounts.
