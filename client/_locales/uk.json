@@ -143,5 +143,10 @@
   "core.remark.kind.error": "Помилка",
   "core.remark.kind.question": "Питання",
   "core.remark.kind.wish": "Побажання",
-  "core.remark.kind.order": "Замовлення"
+  "core.remark.kind.order": "Замовлення",
+  "core.remark.captureStart": "Увімкнути знімки екрана",
+  "core.remark.captureStop": "Сеанс знімків іде — вимкнути",
+  "core.remark.captureRefused": "Знімок екрана не дозволено",
+  "core.remark.shot": "Знімок екрана",
+  "core.remark.shotDrop": "Без знімка"
 }

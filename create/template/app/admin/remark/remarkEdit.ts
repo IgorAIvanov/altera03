@@ -7,6 +7,7 @@ import {
   RemarkEditRootSchema,
   type RemarkEditRoot,
 } from "./remark.schema.ts";
+import "@client/ui-kit/components/ui-attachments.ts";
 
 export const tagName = "remark-edit";
 
@@ -122,6 +123,19 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
             .value=${item.body ?? ""} @input=${this.bindTo(item, "body")}></textarea>`,
           { field: "body" },
         )}
+
+        ${item.id
+          ? html`
+            <!-- Знімок екрана лежить звичайним вкладенням (owner_model =
+                 "remark"), тож окремого показу йому не треба — тут той самий
+                 компонент, що у документів. -->
+            <ui-attachments
+              .label=${this.t("remark.attachments")}
+              owner-model="remark"
+              owner-id=${item.id}
+              ?disabled=${this.readonlyMode}
+            ></ui-attachments>`
+          : ""}
 
         ${item.id ? this.#renderContext() : ""}
         ${item.answer ? this.#renderAnswer() : ""}

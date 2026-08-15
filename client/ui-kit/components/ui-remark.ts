@@ -7,6 +7,8 @@ import { t } from "../../locale.ts";
 import { appVersion } from "../../auth/session.ts";
 import { activeTab } from "../../tabs/active-tab.ts";
 import { readUserScoped, removeUserScoped, writeUserScoped } from "../../shared/user-storage.ts";
+import { capturing, grabFrame, startCapture, stopCapture } from "../../shell/screen-capture.ts";
+import { uploadBlob } from "../../shared/blob.ts";
 import "./ui-dialog.ts";
 
 /** Типи зауваження — той самий перелік, що в app.remark (ck_remark_kind). */
@@ -47,6 +49,14 @@ export class UiRemark extends Base {
   @state() private error = "";
   /** Скільки відповідей людина ще не прочитала — значок на кнопці. */
   @state() private unread = 0;
+  /**
+   * Кадр, знятий у мить натискання кнопки — ДО того, як відкрився діалог.
+   *
+   * Знімається вкладка, тож кадр, зроблений при відкритому вікні, показав би
+   * саму скаргу замість екрана, на який скаржаться.
+   */
+  @state() private shot: File | null = null;
+  @state() private shotUrl = "";
 
   static override styles: CSSResultGroup = [
     ...(GlobalStyledLitElement.styles as CSSResultGroup[]),
@@ -71,6 +81,19 @@ export class UiRemark extends Base {
         color: var(--app-muted, #5a6b7a); word-break: break-all;
       }
       .err { color: var(--color-error, #b42318); font-size: 13px; }
+      .capture { padding: 3px 6px; }
+      .dot {
+        width: 9px; height: 9px; border-radius: 50%;
+        border: 1px solid currentColor; opacity: .65;
+      }
+      .capture.on .dot { background: #dc2626; border-color: #dc2626; opacity: 1; }
+      .shot {
+        display: flex; align-items: flex-start; gap: 8px;
+      }
+      .shot img {
+        max-height: 96px; max-width: 60%;
+        border: 1px solid var(--app-border, #b8c3cc); border-radius: 3px;
+      }
     `,
   ];
 
@@ -123,8 +146,13 @@ export class UiRemark extends Base {
     writeUserScoped(DRAFT_KEY, { kind: this.kind, title: this.summary, body: this.body });
   }
 
-  #show = () => {
+  #show = async () => {
     this.error = "";
+    this.#dropShot();
+    if (capturing()) {
+      this.shot = await grabFrame();
+      if (this.shot) this.shotUrl = URL.createObjectURL(this.shot);
+    }
     this.open = true;
     this.updateComplete.then(() => {
       this.renderRoot.querySelector<HTMLInputElement>("#remark-title")?.focus();
@@ -133,7 +161,23 @@ export class UiRemark extends Base {
 
   #close = () => {
     this.#saveDraft();
+    this.#dropShot();
     this.open = false;
+  };
+
+  /** Кадр живе рівно один діалог: чернетка тексту переживає, знімок — ні. */
+  #dropShot(): void {
+    if (this.shotUrl) URL.revokeObjectURL(this.shotUrl);
+    this.shotUrl = "";
+    this.shot = null;
+  }
+
+  #toggleCapture = async () => {
+    if (capturing()) {
+      stopCapture();
+      return;
+    }
+    if (!await startCapture()) this.error = t("core.remark.captureRefused");
   };
 
   async #send(): Promise<void> {
@@ -166,8 +210,21 @@ export class UiRemark extends Base {
         this.error = env?.messages?.[0]?.text ?? t("core.remark.sendFailed");
         return;
       }
+      // Кадр — окремим каналом і ПІСЛЯ запису: власника вкладення треба знати,
+      // а id зауваження з'являється лише тут. Невдале завантаження не скасовує
+      // зауваження — текст важливіший за картинку.
+      const id = (env as { data?: { item?: { id?: string } } }).data?.item?.id;
+      if (this.shot && id) {
+        try {
+          await uploadBlob(this.shot, { model: "remark", id });
+        } catch {
+          // мовчки: зауваження вже прийняте
+        }
+      }
+
       this.summary = "";
       this.body = "";
+      this.#dropShot();
       removeUserScoped(DRAFT_KEY);
       this.open = false;
     } finally {
@@ -187,6 +244,14 @@ export class UiRemark extends Base {
       <button class="trigger" type="button" title=${t("core.remark.hint")} @click=${this.#show}>
         <span>${t("core.remark.button")}</span>
         ${this.unread > 0 ? html`<span class="unread">${this.unread}</span>` : ""}
+      </button>
+
+      <!-- Індикатор сеансу — не прикраса: людина мусить бачити, що ділиться
+           екраном, не заглядаючи в смугу браузера. Він же й вимикач. -->
+      <button class="trigger capture ${capturing() ? "on" : ""}" type="button"
+        title=${capturing() ? t("core.remark.captureStop") : t("core.remark.captureStart")}
+        @click=${this.#toggleCapture}>
+        <span class="dot"></span>
       </button>
 
       <ui-dialog
@@ -214,6 +279,18 @@ export class UiRemark extends Base {
             placeholder=${t("core.remark.bodyPlaceholder")}
             .value=${this.body}
             @input=${(e: Event) => { this.body = (e.target as HTMLTextAreaElement).value; }}></textarea>
+
+          ${this.shotUrl
+            ? html`
+              <div class="shot">
+                <!-- Перший кадр показуємо одразу: це єдиний спосіб побачити, що
+                     знімається не те, до того як так знімуться сорок зауважень. -->
+                <img src=${this.shotUrl} alt=${t("core.remark.shot")} />
+                <button type="button" class="btn btn-sm" @click=${() => this.#dropShot()}>
+                  ${t("core.remark.shotDrop")}
+                </button>
+              </div>`
+            : ""}
 
           <div class="ctx">${this.#contextRoute() ?? t("core.remark.noContext")}</div>
           ${this.error ? html`<div class="err">${this.error}</div>` : ""}

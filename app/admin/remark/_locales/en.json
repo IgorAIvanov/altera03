@@ -33,5 +33,6 @@
   "remark.status.fixed": "Fixed",
   "remark.status.rejected": "Rejected",
   "remark.area.solution": "Solution",
-  "remark.area.framework": "Framework"
+  "remark.area.framework": "Framework",
+  "remark.attachments": "Attachments"
 }

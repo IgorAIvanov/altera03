@@ -33,5 +33,6 @@
   "remark.status.fixed": "Виправлено",
   "remark.status.rejected": "Відхилено",
   "remark.area.solution": "Рішення",
-  "remark.area.framework": "Фреймворк"
+  "remark.area.framework": "Фреймворк",
+  "remark.attachments": "Вкладення"
 }

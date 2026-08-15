@@ -143,5 +143,10 @@
   "core.remark.kind.error": "Defect",
   "core.remark.kind.question": "Question",
   "core.remark.kind.wish": "Wish",
-  "core.remark.kind.order": "Order"
+  "core.remark.kind.order": "Order",
+  "core.remark.captureStart": "Turn on screen capture",
+  "core.remark.captureStop": "Capture session running — turn off",
+  "core.remark.captureRefused": "Screen capture was not allowed",
+  "core.remark.shot": "Screenshot",
+  "core.remark.shotDrop": "Drop the shot"
 }
