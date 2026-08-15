@@ -7,7 +7,7 @@ import { t } from "../../locale.ts";
 import { icons } from "../icons.ts";
 import { appVersion } from "../../auth/session.ts";
 import { activeTab } from "../../tabs/active-tab.ts";
-import { readUserScoped, removeUserScoped, writeUserScoped } from "../../shared/user-storage.ts";
+import { removeUserScoped } from "../../shared/user-storage.ts";
 import { capturing, grabFrame, startCapture, stopCapture } from "../../shell/screen-capture.ts";
 import { uploadBlob } from "../../shared/blob.ts";
 import "./ui-dialog.ts";
@@ -17,14 +17,20 @@ const KINDS = ["error", "question", "wish", "order"] as const;
 type Kind = typeof KINDS[number];
 
 /**
- * Чернетка — страховка від ВТРАТИ, а не спосіб продовжити вчорашнє.
+ * Ключ чернетки в сховищі — лишився ТІЛЬКИ щоб прибрати за попередніми версіями.
  *
- * Пишеться лише при згортанні («я ще працюю над цим») і читається при
- * завантаженні сторінки. Явне закриття її прибирає: інакше кнопка «Зауваження»
- * відкривала б не новий запис, а стару заготовку — і виглядало б це як чужий
- * недописаний запит, тим паче поруч зі свіжим знімком.
+ * Чернетку в localStorage прибрано зовсім. Задумувалася вона як страховка від
+ * втрати тексту, а на ділі раз за разом підсовувала людині вчорашні слова у
+ * вікні, яке та щойно відкрила як нове, — і жодне уточнення правил («писати
+ * лише при згортанні», «читати лише позначене») цього не вилікувало, бо
+ * помилковим було саме припущення: набраний текст мусить жити рівно стільки,
+ * скільки видно вікно, у якому його набирають.
+ *
+ * Свою задачу згорнуте вікно закриває без сховища: воно тримає текст у пам'яті,
+ * поки сторінка відкрита, а саме це й потрібно, щоб піти подивитися сусідній
+ * екран.
  */
-const DRAFT_KEY = "altera.remark-draft";
+const LEGACY_DRAFT_KEY = "altera.remark-draft";
 
 /** Знімок разом з адресою для показу — щоб було що відкликати. */
 interface Shot {
@@ -99,13 +105,6 @@ export class UiRemark extends Base {
   @state() private shots: Shot[] = [];
   /** Який кадр щойно скопійовано — щоб дія не виглядала беззвучною. */
   @state() private copied = -1;
-  /**
-   * Текст у вікні приїхав із чернетки, а не набраний зараз.
-   *
-   * Без цього рядка відновлене виглядає як чуже: людина відкриває «нове
-   * зауваження» й бачить у ньому слова, яких щойно не писала.
-   */
-  @state() private restored = false;
 
   static override styles: CSSResultGroup = [
     ...(GlobalStyledLitElement.styles as CSSResultGroup[]),
@@ -130,10 +129,6 @@ export class UiRemark extends Base {
         color: var(--app-muted, #5a6b7a); word-break: break-all;
       }
       .err { color: var(--color-error, #b42318); font-size: 13px; }
-      .restored {
-        display: flex; align-items: center; gap: 8px;
-        font-size: 12px; color: var(--app-muted, #5a6b7a);
-      }
 
       .shots { display: flex; gap: 8px; flex-wrap: wrap; }
       .shot { position: relative; }
@@ -178,7 +173,8 @@ export class UiRemark extends Base {
 
   override connectedCallback(): void {
     super.connectedCallback();
-    this.#restoreDraft();
+    // Прибирання за попередніми версіями: чернетки в сховищі більше немає.
+    removeUserScoped(LEGACY_DRAFT_KEY);
     this.#loadUnread();
     // Відповідь виконавця приходить не в цю вкладку, а в базу. Перечитуємо
     // лічильник, коли модель мінялася де завгодно в застосунку.
@@ -212,33 +208,6 @@ export class UiRemark extends Base {
       // так само, тому мовчимо, а не світимо помилкою в шапці.
       this.unread = 0;
     }
-  }
-
-  #restoreDraft(): void {
-    const d = readUserScoped(DRAFT_KEY) as
-      { folded?: boolean; kind?: Kind; title?: string; body?: string } | null;
-    // Приймаємо лише те, що згорнули СВІДОМО. Запис без цієї позначки лишила
-    // попередня версія, яка зберігала чернетку й при закритті: він спливав би на
-    // кожному відкритті й виглядав як чужі дані. Такий просто прибираємо.
-    if (!d?.folded) {
-      removeUserScoped(DRAFT_KEY);
-      return;
-    }
-    this.kind = d.kind ?? "error";
-    this.summary = d.title ?? "";
-    this.body = d.body ?? "";
-    this.restored = !!(d.title || d.body);
-    // Чернетка — одноразова: вона потрібна, щоб пережити перезавантаження, а не
-    // щоб чекати в сховищі невідомо скільки.
-    removeUserScoped(DRAFT_KEY);
-  }
-
-  #saveDraft(): void {
-    if (!this.summary && !this.body) {
-      removeUserScoped(DRAFT_KEY);
-      return;
-    }
-    writeUserScoped(DRAFT_KEY, { folded: true, kind: this.kind, title: this.summary, body: this.body });
   }
 
   /** Кадри живуть рівно одне зауваження: чернетка тексту переживає, знімки — ні. */
@@ -369,26 +338,16 @@ export class UiRemark extends Base {
     });
   };
 
-  /** Почати заново — коли відновлена чернетка не потрібна. */
-  #startOver = () => {
-    this.summary = "";
-    this.body = "";
-    this.kind = "error";
-    this.restored = false;
-  };
-
+  /** Згорнути. Текст лишається в пам'яті вікна — сховище тут ні до чого. */
   #minimize = () => {
-    this.#saveDraft();
     this.mode = "min";
   };
 
   #close = () => {
-    // Саме тут чернетка ЗНИМАЄТЬСЯ, а не зберігається: закрити — це відмовитися.
-    removeUserScoped(DRAFT_KEY);
+    // Закрити — це відмовитися: набране зникає разом із вікном.
     this.summary = "";
     this.body = "";
     this.kind = "error";
-    this.restored = false;
     this.#dropShots();
     // Дозвіл живе рівно стільки, скільки саме зауваження: згорнуте вікно його
     // тримає (там і роблять другий кадр), закрите — віддає. Постійно ввімкнений
@@ -444,11 +403,9 @@ export class UiRemark extends Base {
 
       this.summary = "";
       this.body = "";
-      this.restored = false;
-      this.#dropShots();
+        this.#dropShots();
       stopCapture();
-      removeUserScoped(DRAFT_KEY);
-      this.mode = "closed";
+        this.mode = "closed";
     } finally {
       this.busy = false;
     }
@@ -555,16 +512,6 @@ export class UiRemark extends Base {
                     </div>
                   </div>
                 `)}
-              </div>`
-            : ""}
-
-          ${this.restored
-            ? html`
-              <div class="restored">
-                ${t("core.remark.draftRestored")}
-                <button type="button" class="btn btn-xs" @click=${this.#startOver}>
-                  ${t("core.remark.draftDrop")}
-                </button>
               </div>`
             : ""}
 

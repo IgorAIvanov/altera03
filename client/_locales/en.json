@@ -157,7 +157,5 @@
   "core.remark.pasteEmpty": "No image in the clipboard",
   "core.remark.clipboardDenied": "The browser denied clipboard access",
   "core.remark.shotSave": "Save the shot to a file",
-  "core.remark.shotFile": "Add a file",
-  "core.remark.draftRestored": "Restored draft — you folded this window",
-  "core.remark.draftDrop": "Start over"
+  "core.remark.shotFile": "Add a file"
 }
