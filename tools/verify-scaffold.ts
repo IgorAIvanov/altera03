@@ -128,6 +128,70 @@ async function checkTemplateFresh(): Promise<string[]> {
 }
 
 /**
+ * Пакет із доданим `exports`, але зі старим номером версії.
+ *
+ * Це сліпа пляма `:local` за побудовою: він підміняє залежності ВИХІДНИКАМИ, де
+ * export-мапа завжди свіжа, тож новий запис і його вжиток у шаблоні проходять
+ * зелено. Опублікована версія при цьому такого експорту не має, і застосунок,
+ * створений scaffold-ом, падає на `deno check`:
+ *
+ *   error: Unknown export './tabs/tab-url.ts' for '@altera/client@0.12.3'
+ *
+ * Саме так і сталося: один коміт додав до `client/deno.json` три експорти
+ * (`tab-url`, `ui-dialog`, `ui-remark`), скористався ними в екрані зауважень
+ * шаблону — і не підняв версію клієнта. Побачив це лише post-release verify,
+ * тобто ПІСЛЯ того, як номери решти пакетів уже пішли в реєстр незворотно.
+ *
+ * Правило просте й перевіряється однією парою запитів: **змінив `exports` —
+ * підніми версію**. Номер, що дорівнює опублікованому, при іншому складі
+ * експортів означає, що бамп забули.
+ *
+ * Мережі може не бути (офлайн, реєстр лежить) — тоді крок чесно каже, що
+ * пропущений. Мовчазний пропуск тут був би гіршим за відсутність перевірки.
+ */
+async function checkPublishedExports(): Promise<{ skipped: string | null; problems: string[] }> {
+  const problems: string[] = [];
+
+  for (const pkg of ["client", "server", "tools"]) {
+    let local: { version: string; exports?: Record<string, string> };
+    try {
+      local = JSON.parse(await Deno.readTextFile(resolve(pkg, "deno.json")));
+    } catch {
+      continue;
+    }
+    if (!local.exports) continue;
+
+    let latest: string;
+    let publishedExports: Record<string, string>;
+    try {
+      const meta = await (await fetch(`https://jsr.io/@altera/${pkg}/meta.json`)).json();
+      latest = meta.latest;
+      const config = await (await fetch(`https://jsr.io/@altera/${pkg}/${latest}/deno.json`)).json();
+      publishedExports = config.exports ?? {};
+    } catch (error) {
+      return { skipped: `${pkg}: ${error instanceof Error ? error.message : error}`, problems: [] };
+    }
+
+    if (local.version !== latest) continue; // бамп уже є — склад експортів вільний
+
+    const here = new Set(Object.keys(local.exports));
+    const there = new Set(Object.keys(publishedExports));
+    const added = [...here].filter((key) => !there.has(key));
+    const gone = [...there].filter((key) => !here.has(key));
+
+    if (added.length || gone.length) {
+      problems.push(
+        `@altera/${pkg}@${latest} у реєстрі має інший склад exports, а версія в репо та сама — підніми її` +
+          (added.length ? `\n      додано: ${added.join(", ")}` : "") +
+          (gone.length ? `\n      прибрано: ${gone.join(", ")}` : ""),
+      );
+    }
+  }
+
+  return { skipped: null, problems };
+}
+
+/**
  * Модуль фреймворку, відданий dev-сервером, справді транспільований.
  *
  * Порт нестандартний і `--strictPort`: якщо 5173 зайнятий робочим застосунком,
@@ -221,6 +285,19 @@ export async function verifyScaffold(
     return false;
   }
   console.log("✓ template.generated.ts свіжий");
+
+  const exportsCheck = await checkPublishedExports();
+  if (exportsCheck.problems.length) {
+    console.error("✗ склад exports розійшовся з опублікованою версією:");
+    for (const problem of exportsCheck.problems) console.error(`    ${problem}`);
+    if (!options.keep) await Deno.remove(target, { recursive: true });
+    return false;
+  }
+  console.log(
+    exportsCheck.skipped
+      ? `— exports проти реєстру: ПРОПУЩЕНО (${exportsCheck.skipped})`
+      : "✓ exports пакетів або збігаються з реєстром, або версія піднята",
+  );
 
   // Scaffold — окремо від решти: між ним і `deno install` вклинюється підміна
   // залежностей на локальні, а вона працює лише з уже згенерованим deno.json.
