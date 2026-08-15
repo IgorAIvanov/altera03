@@ -343,7 +343,7 @@ export class UiRemark extends Base {
       <ui-dialog
         .open=${this.mode === "open"}
         heading=${t("core.remark.button")}
-        style="--ui-dialog-width: 30rem"
+        style="--ui-dialog-width: 40rem"
         @ui-dialog-close=${this.#close}
       >
         <div class="form">
@@ -387,7 +387,7 @@ export class UiRemark extends Base {
           <!-- Згорнути — головна дія цього вікна, а не службова: саме нею
                роблять другий і третій знімок. -->
           <button class="btn btn-sm" ?disabled=${this.busy} @click=${this.#minimize}>
-            ${t("core.remark.minimize")}
+            ${icons.collapse} ${t("core.remark.minimize")}
           </button>
           <button class="btn btn-sm" ?disabled=${this.busy} @click=${this.#close}>
             ${t("common.cancel")}
