@@ -95,8 +95,6 @@ export class UiRemark extends Base {
   @state() private body = "";
   @state() private busy = false;
   @state() private error = "";
-  /** Скільки відповідей людина ще не прочитала — значок на кнопці. */
-  @state() private unread = 0;
   /**
    * Кадри цього зауваження. Перший знімається в мить натискання кнопки — ДО
    * того, як відкрилося вікно; решту людина додає зі згорнутого стану, уже
@@ -117,11 +115,6 @@ export class UiRemark extends Base {
       }
       .trigger:hover { background: rgba(255, 255, 255, .18); }
       .trigger:focus-visible { outline: 1px solid currentColor; outline-offset: 1px; }
-      .unread {
-        min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
-        background: #d97706; color: #fff; font-size: 11px; line-height: 16px;
-        text-align: center; font-weight: 500;
-      }
       .form { display: flex; flex-direction: column; gap: 10px; min-width: 24rem; }
       .kinds { display: flex; gap: 6px; flex-wrap: wrap; }
       .ctx {
@@ -175,12 +168,6 @@ export class UiRemark extends Base {
     super.connectedCallback();
     // Прибирання за попередніми версіями: чернетки в сховищі більше немає.
     removeUserScoped(LEGACY_DRAFT_KEY);
-    this.#loadUnread();
-    // Відповідь виконавця приходить не в цю вкладку, а в базу. Перечитуємо
-    // лічильник, коли модель мінялася де завгодно в застосунку.
-    this.#off = bus.on("model.changed", (m) => {
-      if ((m as { model?: string }).model === "remark") this.#loadUnread();
-    });
     // Вікно живе в тіньовому корені компонента, тож слухач тут ловить і вставку
     // всередині нього.
     this.addEventListener("paste", this.#onPaste as EventListener);
@@ -188,26 +175,8 @@ export class UiRemark extends Base {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.#off?.();
     this.removeEventListener("paste", this.#onPaste as EventListener);
     this.#dropShots();
-  }
-
-  #off: (() => void) | undefined;
-
-  async #loadUnread(): Promise<void> {
-    try {
-      const env = await bus.request("data.load", {
-        model: "remark",
-        command: "unread",
-        payload: {},
-      }) as { ok?: boolean; data?: { totals?: { count?: number } } } | undefined;
-      this.unread = env?.ok ? Number(env.data?.totals?.count ?? 0) : 0;
-    } catch {
-      // Лічильник — прикраса: установка без таблиці зауважень мусить працювати
-      // так само, тому мовчимо, а не світимо помилкою в шапці.
-      this.unread = 0;
-    }
   }
 
   /** Кадри живуть рівно одне зауваження: чернетка тексту переживає, знімки — ні. */
@@ -422,7 +391,6 @@ export class UiRemark extends Base {
     return html`
       <button class="trigger" type="button" title=${t("core.remark.hint")} @click=${this.#show}>
         <span>${t("core.remark.button")}</span>
-        ${this.unread > 0 ? html`<span class="unread">${this.unread}</span>` : ""}
       </button>
 
       ${this.mode === "min" ? this.#renderMini() : ""}
