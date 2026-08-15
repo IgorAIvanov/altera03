@@ -35,5 +35,7 @@
   "remark.area.solution": "Рішення",
   "remark.area.framework": "Фреймворк",
   "remark.attachments": "Вкладення",
-  "remark.id": "№"
+  "remark.id": "№",
+  "remark.work": "Обробка",
+  "remark.saveWork": "Зберегти обробку"
 }

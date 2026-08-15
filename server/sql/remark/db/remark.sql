@@ -267,7 +267,15 @@ begin
     return app.remark_fail('remark_answer: зауваження ' || coalesce(v_id::text, '?') || ' не знайдено');
   end if;
 
-  if v_kind = 'order' and v_status = 'in_work' then
+  -- Замовлення в роботу переводить власник рішення, а не виконавець. Форма
+  -- каже про це прямо (`ownerDecision`), бо за нею стоїть людина, яка й
+  -- вирішує; виклик без цієї заяви — це виклик виконавця, і йому відмова.
+  --
+  -- Це заява про намір, а не захист: сказати те саме може будь-хто, хто вміє
+  -- скласти payload. Захист тут інший і він людський — журнал читає власник, а
+  -- закрити запис (`verify`) виконавцю не дано взагалі.
+  if v_kind = 'order' and v_status = 'in_work'
+     and not coalesce((payload->>'ownerDecision')::boolean, false) then
     return app.remark_fail(
       'remark_answer: замовлення в роботу переводить власник рішення, а не виконавець. ' ||
       'Відповідай оцінкою й лишай статус answered.'

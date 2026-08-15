@@ -4,6 +4,7 @@ import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/mod
 import { icons } from "@client/ui-kit/icons.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
 import { REMARK_KINDS, REMARK_STATUSES, type RemarkRow } from "./remark.schema.ts";
+import { remarkBadge } from "./remark-status.ts";
 import "@client/ui-kit/components/ui-select.ts";
 
 export const tagName = "remark-list";
@@ -35,11 +36,9 @@ export class RemarkList extends ModelListBase<RemarkRow> {
       // закрила), і саме `verifiedAt` тут правда.
       key: "status", title: "remark.status", width: "9rem", sortable: true,
       render: (row) => {
-        if (row.verifiedAt) {
-          return html`<span class="badge badge-sm badge-success">${this.t("remark.closed")}</span>`;
-        }
-        const cls = row.hasAnswer ? "badge-info" : "badge-ghost";
-        return html`<span class="badge badge-sm ${cls}">${this.t(`remark.status.${row.status}`)}</span>`;
+        const cls = remarkBadge(row.status, row.verifiedAt);
+        const label = row.verifiedAt ? this.t("remark.closed") : this.t(`remark.status.${row.status}`);
+        return html`<span class="badge badge-sm ${cls}">${label}</span>`;
       },
       exportText: (row) => row.verifiedAt ? this.t("remark.closed") : this.t(`remark.status.${row.status}`),
     },

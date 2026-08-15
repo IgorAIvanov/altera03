@@ -4,9 +4,11 @@ import { BaseUI, type FieldRules } from "@client/ui-kit/base/base-ui.ts";
 import { dateFormat, formatDate } from "@client/shared/datetime.ts";
 import {
   REMARK_KINDS,
+  REMARK_STATUSES,
   RemarkEditRootSchema,
   type RemarkEditRoot,
 } from "./remark.schema.ts";
+import { remarkBadge } from "./remark-status.ts";
 import "@client/ui-kit/components/ui-attachments.ts";
 
 export const tagName = "remark-edit";
@@ -71,6 +73,26 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
       </button>
     `;
   }
+
+  /**
+   * Зберегти обробку — тією самою командою `answer`, якою відповідає агент.
+   *
+   * Окремої команди «для людини» тут немає навмисно: сторону визначає не хто
+   * набрав, а ЩО пишеться. Прапорець `ownerDecision` каже ядру, що замовлення в
+   * роботу переводить власник рішення, а не виконавець (див. remark_answer).
+   */
+  #saveWork = async () => {
+    const item = this.$root.item;
+    await this.loadInto("answer", {
+      id: item.id,
+      status: item.status,
+      area: item.area,
+      answer: item.answer ?? "",
+      fixedVersion: item.fixedVersion,
+      feedbackRef: item.feedbackRef,
+      ownerDecision: true,
+    }, "save");
+  };
 
   #close = () => this.loadInto("verify", { id: this.$root.item.id, confirmed: true }, "save");
   #reopen = () => this.loadInto("verify", { id: this.$root.item.id, confirmed: false }, "save");
@@ -138,7 +160,7 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
           : ""}
 
         ${item.id ? this.#renderContext() : ""}
-        ${item.answer ? this.#renderAnswer() : ""}
+        ${item.id ? this.#renderWork() : ""}
       </div>
     `);
   }
@@ -169,26 +191,81 @@ export class RemarkEdit extends BaseUI<RemarkEditRoot> {
   }
 
   /**
-   * Відповідь виконавця — теж лише показ. Форма її НЕ відправляє назад: команда
-   * `save` полів виконавця не бачить, тож навіть якщо вони поїдуть у payload,
-   * записана буде та відповідь, що вже лежить у базі.
+   * Обробка — сторона виконавця. Тут її бачать і люди, і агент: агент пише те
+   * саме командою `answer`, а форма показує написане й дозволяє поправити.
+   *
+   * Стан лишається ЗАЯВОЮ виконавця: закриває запис усе одно людина кнопкою
+   * «Перевірив», і саме тому поруч зі станом стоїть значок — щоб було видно,
+   * чия зараз черга.
    */
-  #renderAnswer(): TemplateResult {
+  #renderWork(): TemplateResult {
     const item = this.$root.item;
     return html`
-      <div class="rounded-box border border-base-300 px-3 py-2 flex flex-col gap-1">
+      <div class="rounded-box border border-base-300 px-3 py-2 flex flex-col gap-2">
         <div class="flex items-center gap-2">
-          <span class="text-sm opacity-60">${this.t("remark.answer")}</span>
-          ${item.verifiedAt
-            ? html`<span class="badge badge-sm badge-success">${this.t("remark.closed")}</span>`
-            : html`<span class="badge badge-sm badge-info">${this.t(`remark.status.${item.status}`)}</span>`}
+          <span class="text-sm opacity-60">${this.t("remark.work")}</span>
+          <span class="badge badge-sm ${remarkBadge(item.status, item.verifiedAt)}">
+            ${item.verifiedAt ? this.t("remark.closed") : this.t(`remark.status.${item.status}`)}
+          </span>
         </div>
-        <div class="text-sm whitespace-pre-wrap">${item.answer}</div>
-        ${this.#fact(this.t("remark.answeredAt"), formatDate(item.answeredAt, dateFormat.dateTime))}
-        ${this.#fact(this.t("remark.area"), item.area ? this.t(`remark.area.${item.area}`) : null)}
-        ${this.#fact(this.t("remark.fixedVersion"), item.fixedVersion)}
-        ${this.#fact(this.t("remark.feedbackRef"), item.feedbackRef)}
-        ${this.#fact(this.t("remark.verifiedAt"), formatDate(item.verifiedAt, dateFormat.dateTime))}
+
+        <div class="flex gap-3 flex-wrap">
+          ${this.renderField(
+            this.t("remark.status"),
+            html`
+              <select class="select select-bordered w-full" .value=${item.status}
+                @change=${(e: Event) => { item.status = (e.target as HTMLSelectElement).value; }}>
+                ${REMARK_STATUSES.map((v) =>
+                  html`<option value=${v} ?selected=${item.status === v}>${this.t(`remark.status.${v}`)}</option>`
+                )}
+              </select>`,
+            { field: "status", class: "w-48" },
+          )}
+
+          ${this.renderField(
+            this.t("remark.area"),
+            html`
+              <select class="select select-bordered w-full" .value=${item.area ?? ""}
+                @change=${(e: Event) => { item.area = (e.target as HTMLSelectElement).value || null; }}>
+                <option value="">—</option>
+                <option value="solution" ?selected=${item.area === "solution"}>${this.t("remark.area.solution")}</option>
+                <option value="framework" ?selected=${item.area === "framework"}>${this.t("remark.area.framework")}</option>
+              </select>`,
+            { field: "area", class: "w-48" },
+          )}
+
+          ${this.renderField(
+            this.t("remark.fixedVersion"),
+            html`<input class="input input-bordered w-full" .value=${item.fixedVersion ?? ""}
+              @input=${this.bindTo(item, "fixedVersion")} />`,
+            { field: "fixedVersion", class: "w-56" },
+          )}
+        </div>
+
+        ${this.renderField(
+          this.t("remark.answer"),
+          html`<textarea class="textarea textarea-bordered w-full" rows="4"
+            .value=${item.answer ?? ""} @input=${this.bindTo(item, "answer")}></textarea>`,
+          { field: "answer" },
+        )}
+
+        ${this.renderField(
+          this.t("remark.feedbackRef"),
+          html`<input class="input input-bordered w-full" .value=${item.feedbackRef ?? ""}
+            @input=${this.bindTo(item, "feedbackRef")} />`,
+          { field: "feedbackRef" },
+        )}
+
+        <div class="flex items-center gap-3">
+          <button class="btn btn-sm" ?disabled=${this.busy} @click=${this.#saveWork}>
+            ${this.t("remark.saveWork")}
+          </button>
+          ${item.answeredAt
+            ? html`<span class="text-sm opacity-60">
+                ${this.t("remark.answeredAt")}: ${formatDate(item.answeredAt, dateFormat.dateTime)}
+              </span>`
+            : ""}
+        </div>
       </div>
     `;
   }

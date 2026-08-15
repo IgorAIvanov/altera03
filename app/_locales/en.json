@@ -221,6 +221,8 @@
   "remark.area.framework": "Framework",
   "remark.attachments": "Attachments",
   "remark.id": "No.",
+  "remark.work": "Processing",
+  "remark.saveWork": "Save processing",
   "setting.titleOne": "Settings",
   "setting.titleMany": "Settings",
   "setting.saved": "Settings saved",
