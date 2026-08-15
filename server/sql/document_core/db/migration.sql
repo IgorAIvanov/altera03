@@ -132,3 +132,53 @@ begin
     alter table app.journal_entry drop column currency_id;
   end if;
 end $$;
+
+-- ── Позначений документ не тримає проводок ──────────────────────────────────
+-- Позначка на видалення = скасування проведення (зняв позначку — проводь
+-- заново). Доти позначений проведений документ тримав проводки, а «правду»
+-- виражав фільтр читання: рядки лежали, звіти їх не бачили, і зняття позначки
+-- мовчки повертало рухи. Наявні такі документи приводяться до інваріанта.
+--
+-- Гард (tr_document_guard) на час чистки вимкнено свідомо: хук застосунку
+-- (заборона закритого періоду) відмовив би старим документам і завалив би всю
+-- публікацію схеми — а видимих чисел чистка не міняє: рухи позначених і так
+-- виключені з кожного звіту умовою «що вважається рухом».
+do $$
+declare
+  r      record;
+  v_hook regprocedure;
+begin
+  if not exists (
+    select 1 from app.document where is_deleted and is_posted
+  ) then
+    return;
+  end if;
+
+  alter table app.document disable trigger tr_document_guard;
+
+  for r in
+    select d.id, dt.code
+    from app.document d
+    join app.document_type dt on dt.id = d.document_type_id
+    where d.is_deleted and d.is_posted
+  loop
+    delete from app.journal_entry where document_id = r.id;
+
+    -- Оголошені рухи моделі (чужі таблиці) знімає її власний гак, якщо він є.
+    v_hook := to_regprocedure(format('app.%I_unpost_records(bigint, bigint)', r.code));
+    if v_hook is not null then
+      execute format('select app.%I_unpost_records($1, $2)', r.code)
+        using null::bigint, r.id;
+    end if;
+
+    update app.document
+    set is_posted = false, posted_at = null, posted_by = null
+    where id = r.id;
+  end loop;
+
+  alter table app.document enable trigger tr_document_guard;
+exception when others then
+  -- Гард не має лишитися вимкненим ні за яких умов.
+  alter table app.document enable trigger tr_document_guard;
+  raise;
+end $$;

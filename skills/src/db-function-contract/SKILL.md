@@ -333,6 +333,16 @@ Consequences you must keep in mind when writing SQL by hand:
 - physical deletion is a **separate** operation that must check references and refuse —
   it does not exist yet.
 
+**Marking a document = cancelling its posting.** A marked document holds no
+register entries: the generated `delete` of a posted document unposts first
+(including your `_unpost_records` hook), then marks — so `doc_before_write` sees
+both events, and a closed-period lock refuses deleting a posted document exactly
+as it refuses unposting one. Lifting the mark does **not** restore the posting:
+the document comes back unposted, and posting it again is a deliberate act.
+Anything else would mean the register's truth lives in a read filter — rows
+present, reports blind to them, and «Відновити» silently pushing movements back
+into the balance.
+
 `undelete` is a standard command: the runtime knows it and maps it to the `delete`
 permission, so it needs no `commands.access` entry.
 

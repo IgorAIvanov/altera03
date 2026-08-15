@@ -1435,24 +1435,42 @@ $$;`;
 }
 
 function renderDelete(spec: ModelSpec): string {
+  // Документ: позначка на видалення = СКАСУВАННЯ ПРОВЕДЕННЯ. Позначений
+  // документ не тримає проводок — інакше «правду» про нього виражав би фільтр
+  // у читанні (рядки лежать, але їх ніхто не бачить), а зняття позначки мовчки
+  // повертало б рухи у звіти. Двома апдейтами, а не одним: гард ядра виводить
+  // op з переходу (is_posted сильніший за is_deleted), і хук застосунку мусить
+  // побачити ОБИДВІ події — 'unpost' (заборона закритого періоду діє й на
+  // видалення проведеного) і 'delete'.
+  const documentUnpost = spec.isDocument && spec.softDelete
+    ? `
+  -- Позначка = скасування проведення: позначений документ не тримає проводок.
+  if exists (select 1 from app.document h where h.id = v_id and h.is_posted) then
+    perform app.doc_unpost(user_id, v_id);
+
+${unpostRecordsHookSql(spec.table)}
+  end if;
+`
+    : "";
+
   return `drop function if exists ${spec.table}_delete(bigint, jsonb);
 create function ${spec.table}_delete(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-  v_id bigint;
+  v_id bigint;${spec.isDocument && spec.softDelete ? "\n  v_records regprocedure;" : ""}
 begin
   v_id := nullif(payload->>'id', '')::bigint;
   if v_id is null then
     raise exception 'id обов''язковий';
   end if;
-
+${documentUnpost}
   ${
     spec.softDelete
       // Позначка, а не знищення: помилкове «Видалити» на проведеному документі
-      // забирало б із собою рядки й проводки, і повернути їх не було б звідки.
-      // Фізичне видалення — окрема операція, яка мусить перевіряти посилання.
+      // забирало б із собою рядки й проводки НАЗАВЖДИ. Позначка знімна, а
+      // проведення після зняття відновлюється звичайним «Провести».
       ? `update ${spec.softDelete.table} set is_deleted = true where ${spec.softDelete.pk} = v_id;`
       : `delete from ${spec.table} where ${spec.pk} = v_id;`
   }
@@ -1473,19 +1491,35 @@ $$;`;
 /** Зняття позначки. Генерується лише для моделей, що мають `is_deleted`. */
 function renderUndelete(spec: ModelSpec): string {
   if (!spec.softDelete) return "";
+
+  // Після зняття позначки документ НЕПРОВЕДЕНИЙ — провести його треба заново,
+  // свідомо: рухи, зняті позначкою, не повертаються у звіти самим «Відновити».
+  // Для документів, позначених новим delete, це вже так (позначка зняла
+  // проведення); блок нижче ЛІНИВО доліковує позначені за старим правилом —
+  // проведені, з проводками в регістрі, невидимими через фільтр читання.
+  const legacyUnpost = spec.isDocument
+    ? `
+  if exists (select 1 from app.document h where h.id = v_id and h.is_posted) then
+    perform app.doc_unpost(user_id, v_id);
+
+${unpostRecordsHookSql(spec.table)}
+  end if;
+`
+    : "";
+
   return `drop function if exists ${spec.table}_undelete(bigint, jsonb);
 create function ${spec.table}_undelete(user_id bigint, payload jsonb)
 returns jsonb
 language plpgsql
 as $$
 declare
-  v_id bigint;
+  v_id bigint;${spec.isDocument ? "\n  v_records regprocedure;" : ""}
 begin
   v_id := nullif(payload->>'id', '')::bigint;
   if v_id is null then
     raise exception 'id обов''язковий';
   end if;
-
+${legacyUnpost}
   update ${spec.softDelete.table} set is_deleted = false where ${spec.softDelete.pk} = v_id;
 
   return ${
