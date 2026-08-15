@@ -23,6 +23,38 @@ const MAX_WIDTH = 1920;
 /** Якість JPEG. PNG на тому самому екрані важить учетверо більше. */
 const JPEG_QUALITY = 0.85;
 
+/** `requestVideoFrameCallback` є не в кожному браузері й не в кожній версії lib.dom. */
+type VideoWithFrameCallback = HTMLVideoElement & {
+  requestVideoFrameCallback?: (cb: () => void) => number;
+};
+
+/**
+ * Дочекатися СПРАВЖНЬОГО кадру.
+ *
+ * `video.play()` повертає керування, щойно почалося відтворення, а розміри
+ * (`videoWidth`) з'являються ще раніше — на метаданих. Тобто одразу після play()
+ * елемент уже виглядає готовим, але жодного кадру ще не показав, і `drawImage`
+ * малює порожнечу. У JPEG це чорний прямокутник — і, що найгірше, ОДНАКОВИЙ
+ * щоразу: виглядає так, ніби до кожного зауваження чіпляється один і той самий
+ * файл.
+ *
+ * Запобіжник за часом обов'язковий: без `requestVideoFrameCallback` чекати нема
+ * на що, і обіцянка не виконалася б ніколи.
+ */
+function nextFrame(el: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    const request = (el as VideoWithFrameCallback).requestVideoFrameCallback;
+    if (typeof request === "function") request.call(el, finish);
+    setTimeout(finish, 300);
+  });
+}
+
 const _active = new Signal.State(false);
 
 /** Чи живий сеанс. Читається компонентом шапки — звідси й сигнал. */
@@ -85,6 +117,7 @@ export async function startCapture(): Promise<boolean> {
   document.body.appendChild(video);
   video.srcObject = stream;
   await video.play().catch(() => {});
+  await nextFrame(video);
 
   _active.set(true);
   return true;
@@ -107,6 +140,9 @@ export function stopCapture(): void {
  */
 export async function grabFrame(): Promise<File | null> {
   if (!stream || !video) return null;
+  // Кадр беремо СВІЖИЙ: потік іде 5 к/с, тож щойно намальоване (закрите вікно,
+  // інший екран) могло ще не дійти до елемента.
+  await nextFrame(video);
   const w = video.videoWidth;
   const h = video.videoHeight;
   if (!w || !h) return null;
