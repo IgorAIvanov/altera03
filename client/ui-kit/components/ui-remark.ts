@@ -4,6 +4,7 @@ import { css, html, type CSSResultGroup, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { t } from "../../locale.ts";
+import { icons } from "../icons.ts";
 import { appVersion } from "../../auth/session.ts";
 import { activeTab } from "../../tabs/active-tab.ts";
 import { readUserScoped, removeUserScoped, writeUserScoped } from "../../shared/user-storage.ts";
@@ -18,26 +19,33 @@ type Kind = typeof KINDS[number];
 /** Чернетка переживає перезавантаження: абзац, написаний двічі, не пишуть. */
 const DRAFT_KEY = "altera.remark-draft";
 
+/** Знімок разом з адресою для показу — щоб було що відкликати. */
+interface Shot {
+  file: File;
+  url: string;
+}
+
 const Base: typeof GlobalStyledLitElement = SignalWatcher(GlobalStyledLitElement);
 
 /**
- * Кнопка «Зауваження» плюс діалог швидкого запису.
+ * Кнопка «Зауваження» плюс вікно швидкого запису.
  *
- * Стоїть у шапці застосунку — там, де решта загальних дій (організація,
- * користувач, вихід). Зауваження стосується всього застосунку, а не вкладки, і
- * в смузі вкладок воно виглядало б дією над вкладкою.
+ * Стоїть у шапці застосунку — там, де решта загальних дій. Зауваження стосується
+ * всього застосунку, а не вкладки, і в смузі вкладок воно виглядало б дією над
+ * вкладкою. Контекст випадку компонент бере сам, із сигналу активної вкладки.
  *
- * Контекст випадку компонент бере сам — із сигналу активної вкладки
- * (`client/tabs/active-tab.ts`), бо між шапкою й оболонкою немає спільного
- * власника, який міг би передати його властивістю.
+ * ТРИ СТАНИ, і середній тут головний. Випадок рідко вміщається в один екран:
+ * щоб показати «ось тут увів, а ось тут вилізло», потрібно кілька знімків, а
+ * зробити їх, поки поверх системи висить модальне вікно, неможливо — та й
+ * система під ним не працює. Тому вікно **згортається в куток**: набраний текст
+ * лишається, застосунок повністю живий, а в кутку лишаються рівно дві дії —
+ * зняти ще кадр і розгорнути назад.
  *
- * Про модель `remark` компонент знає лише ім'я команди: він шле її звичайною
- * шиною. Немає таблиці в базі — команда відмовить конвертом, а шапка лишиться
- * робочою.
+ * Згорнуте вікно не модальне навмисно: модальність — це й є те, що заважає.
  */
 @customElement("ui-remark")
 export class UiRemark extends Base {
-  @state() private open = false;
+  @state() private mode: "closed" | "open" | "min" = "closed";
   @state() private kind: Kind = "error";
   /**
    * НЕ `title`: так зветься властивість HTMLElement, і перекрити її своєю не
@@ -50,13 +58,11 @@ export class UiRemark extends Base {
   /** Скільки відповідей людина ще не прочитала — значок на кнопці. */
   @state() private unread = 0;
   /**
-   * Кадр, знятий у мить натискання кнопки — ДО того, як відкрився діалог.
-   *
-   * Знімається вкладка, тож кадр, зроблений при відкритому вікні, показав би
-   * саму скаргу замість екрана, на який скаржаться.
+   * Кадри цього зауваження. Перший знімається в мить натискання кнопки — ДО
+   * того, як відкрилося вікно; решту людина додає зі згорнутого стану, уже
+   * дійшовши до потрібного екрана.
    */
-  @state() private shot: File | null = null;
-  @state() private shotUrl = "";
+  @state() private shots: Shot[] = [];
 
   static override styles: CSSResultGroup = [
     ...(GlobalStyledLitElement.styles as CSSResultGroup[]),
@@ -74,6 +80,13 @@ export class UiRemark extends Base {
         background: #d97706; color: #fff; font-size: 11px; line-height: 16px;
         text-align: center; font-weight: 500;
       }
+      .capture { padding: 3px 6px; }
+      .dot {
+        width: 9px; height: 9px; border-radius: 50%;
+        border: 1px solid currentColor; opacity: .65;
+      }
+      .capture.on .dot { background: #dc2626; border-color: #dc2626; opacity: 1; }
+
       .form { display: flex; flex-direction: column; gap: 10px; min-width: 24rem; }
       .kinds { display: flex; gap: 6px; flex-wrap: wrap; }
       .ctx {
@@ -81,19 +94,33 @@ export class UiRemark extends Base {
         color: var(--app-muted, #5a6b7a); word-break: break-all;
       }
       .err { color: var(--color-error, #b42318); font-size: 13px; }
-      .capture { padding: 3px 6px; }
-      .dot {
-        width: 9px; height: 9px; border-radius: 50%;
-        border: 1px solid currentColor; opacity: .65;
-      }
-      .capture.on .dot { background: #dc2626; border-color: #dc2626; opacity: 1; }
-      .shot {
-        display: flex; align-items: flex-start; gap: 8px;
-      }
+
+      .shots { display: flex; gap: 8px; flex-wrap: wrap; }
+      .shot { position: relative; }
       .shot img {
-        max-height: 96px; max-width: 60%;
+        height: 64px; display: block;
         border: 1px solid var(--app-border, #b8c3cc); border-radius: 3px;
       }
+      .shot .drop {
+        position: absolute; top: -7px; right: -7px;
+        width: 18px; height: 18px; line-height: 15px; padding: 0;
+        border-radius: 50%; border: 1px solid var(--app-border-strong, #98a7b4);
+        background: var(--color-base-100, #fff); cursor: pointer; font-size: 12px;
+      }
+
+      /* Згорнуте вікно. position: fixed — воно належить екрану, а не шапці, у
+         якій компонент стоїть. z-index нижчий за модальні вікна: згорнуте не
+         має накривати те, що людина відкриє далі. */
+      .mini {
+        position: fixed; right: 14px; bottom: 14px; z-index: 40;
+        display: flex; align-items: center; gap: 4px;
+        padding: 4px 6px; border-radius: 6px;
+        background: var(--color-base-100, #fff);
+        border: 1px solid var(--app-border-strong, #98a7b4);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+        color: var(--color-base-content, #1f2937);
+      }
+      .mini .count { font-size: 12px; color: var(--app-muted, #5a6b7a); min-width: 10px; }
     `,
   ];
 
@@ -111,6 +138,7 @@ export class UiRemark extends Base {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.#off?.();
+    this.#dropShots();
   }
 
   #off: (() => void) | undefined;
@@ -146,31 +174,60 @@ export class UiRemark extends Base {
     writeUserScoped(DRAFT_KEY, { kind: this.kind, title: this.summary, body: this.body });
   }
 
+  /** Кадри живуть рівно одне зауваження: чернетка тексту переживає, знімки — ні. */
+  #dropShots(): void {
+    this.shots.forEach((s) => URL.revokeObjectURL(s.url));
+    this.shots = [];
+  }
+
+  #dropShot(index: number): void {
+    const shot = this.shots[index];
+    if (!shot) return;
+    URL.revokeObjectURL(shot.url);
+    this.shots = this.shots.filter((_, i) => i !== index);
+  }
+
+  #addShot = async (): Promise<void> => {
+    if (!capturing() && !await startCapture()) {
+      this.error = t("core.remark.captureRefused");
+      return;
+    }
+    const file = await grabFrame();
+    if (!file) return;
+    this.shots = [...this.shots, { file, url: URL.createObjectURL(file) }];
+  };
+
+  /**
+   * Відкрити вікно.
+   *
+   * Зі згорнутого стану — просто розгорнути: новий кадр тут був би зайвим, бо
+   * людина щойно сама вирішувала, що знімати. З закритого — зняти екран, на який
+   * скаржаться, ДО того як вікно його затулить.
+   */
   #show = async () => {
     this.error = "";
-    this.#dropShot();
-    if (capturing()) {
-      this.shot = await grabFrame();
-      if (this.shot) this.shotUrl = URL.createObjectURL(this.shot);
+    if (this.mode === "min") {
+      this.mode = "open";
+      return;
     }
-    this.open = true;
+    this.#dropShots();
+    if (capturing()) await this.#addShot();
+    this.mode = "open";
     this.updateComplete.then(() => {
       this.renderRoot.querySelector<HTMLInputElement>("#remark-title")?.focus();
     });
   };
 
-  #close = () => {
+  #minimize = () => {
     this.#saveDraft();
-    this.#dropShot();
-    this.open = false;
+    this.mode = "min";
   };
 
-  /** Кадр живе рівно один діалог: чернетка тексту переживає, знімок — ні. */
-  #dropShot(): void {
-    if (this.shotUrl) URL.revokeObjectURL(this.shotUrl);
-    this.shotUrl = "";
-    this.shot = null;
-  }
+  #close = () => {
+    this.#saveDraft();
+    this.#dropShots();
+    this.mode = "closed";
+  };
 
   #toggleCapture = async () => {
     if (capturing()) {
@@ -210,23 +267,26 @@ export class UiRemark extends Base {
         this.error = env?.messages?.[0]?.text ?? t("core.remark.sendFailed");
         return;
       }
-      // Кадр — окремим каналом і ПІСЛЯ запису: власника вкладення треба знати,
-      // а id зауваження з'являється лише тут. Невдале завантаження не скасовує
-      // зауваження — текст важливіший за картинку.
+
+      // Кадри — окремим каналом і ПІСЛЯ запису: власника вкладення треба знати,
+      // а id зауваження з'являється лише тут. Невдале завантаження зауваження не
+      // скасовує — текст важливіший за картинку.
       const id = (env as { data?: { item?: { id?: string } } }).data?.item?.id;
-      if (this.shot && id) {
-        try {
-          await uploadBlob(this.shot, { model: "remark", id });
-        } catch {
-          // мовчки: зауваження вже прийняте
+      if (id) {
+        for (const shot of this.shots) {
+          try {
+            await uploadBlob(shot.file, { model: "remark", id });
+          } catch {
+            // мовчки: зауваження вже прийняте
+          }
         }
       }
 
       this.summary = "";
       this.body = "";
-      this.#dropShot();
+      this.#dropShots();
       removeUserScoped(DRAFT_KEY);
-      this.open = false;
+      this.mode = "closed";
     } finally {
       this.busy = false;
     }
@@ -254,8 +314,34 @@ export class UiRemark extends Base {
         <span class="dot"></span>
       </button>
 
+      ${this.mode === "min" ? this.#renderMini() : ""}
+      ${this.#renderDialog()}
+    `;
+  }
+
+  /** Куток: зняти ще кадр і розгорнути. Більше тут нічого бути не мусить. */
+  #renderMini(): TemplateResult {
+    return html`
+      <div class="mini">
+        <button type="button" class="btn btn-ghost btn-xs px-1"
+          title=${t("core.remark.shotAdd")} aria-label=${t("core.remark.shotAdd")}
+          @click=${this.#addShot}>
+          ${icons.camera}
+        </button>
+        <span class="count">${this.shots.length || ""}</span>
+        <button type="button" class="btn btn-ghost btn-xs px-1"
+          title=${t("core.remark.restore")} aria-label=${t("core.remark.restore")}
+          @click=${this.#show}>
+          ${icons.expand}
+        </button>
+      </div>
+    `;
+  }
+
+  #renderDialog(): TemplateResult {
+    return html`
       <ui-dialog
-        .open=${this.open}
+        .open=${this.mode === "open"}
         heading=${t("core.remark.button")}
         style="--ui-dialog-width: 30rem"
         @ui-dialog-close=${this.#close}
@@ -280,15 +366,16 @@ export class UiRemark extends Base {
             .value=${this.body}
             @input=${(e: Event) => { this.body = (e.target as HTMLTextAreaElement).value; }}></textarea>
 
-          ${this.shotUrl
+          ${this.shots.length
             ? html`
-              <div class="shot">
-                <!-- Перший кадр показуємо одразу: це єдиний спосіб побачити, що
-                     знімається не те, до того як так знімуться сорок зауважень. -->
-                <img src=${this.shotUrl} alt=${t("core.remark.shot")} />
-                <button type="button" class="btn btn-sm" @click=${() => this.#dropShot()}>
-                  ${t("core.remark.shotDrop")}
-                </button>
+              <div class="shots">
+                ${this.shots.map((shot, i) => html`
+                  <div class="shot">
+                    <img src=${shot.url} alt=${t("core.remark.shot")} />
+                    <button type="button" class="drop" title=${t("core.remark.shotDrop")}
+                      @click=${() => this.#dropShot(i)}>×</button>
+                  </div>
+                `)}
               </div>`
             : ""}
 
@@ -297,6 +384,11 @@ export class UiRemark extends Base {
         </div>
 
         <div slot="actions">
+          <!-- Згорнути — головна дія цього вікна, а не службова: саме нею
+               роблять другий і третій знімок. -->
+          <button class="btn btn-sm" ?disabled=${this.busy} @click=${this.#minimize}>
+            ${t("core.remark.minimize")}
+          </button>
           <button class="btn btn-sm" ?disabled=${this.busy} @click=${this.#close}>
             ${t("common.cancel")}
           </button>

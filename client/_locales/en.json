@@ -148,5 +148,8 @@
   "core.remark.captureStop": "Capture session running — turn off",
   "core.remark.captureRefused": "Screen capture was not allowed",
   "core.remark.shot": "Screenshot",
-  "core.remark.shotDrop": "Drop the shot"
+  "core.remark.shotDrop": "Drop the shot",
+  "core.remark.minimize": "Minimise",
+  "core.remark.restore": "Restore the remark",
+  "core.remark.shotAdd": "Take another shot"
 }

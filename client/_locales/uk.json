@@ -148,5 +148,8 @@
   "core.remark.captureStop": "Сеанс знімків іде — вимкнути",
   "core.remark.captureRefused": "Знімок екрана не дозволено",
   "core.remark.shot": "Знімок екрана",
-  "core.remark.shotDrop": "Без знімка"
+  "core.remark.shotDrop": "Без знімка",
+  "core.remark.minimize": "Згорнути",
+  "core.remark.restore": "Розгорнути зауваження",
+  "core.remark.shotAdd": "Зняти ще кадр"
 }

@@ -73,6 +73,9 @@ Descriptions are quoted from the source as they are written there.
 | `icons.export` | Стрілка з лотка — вивантажити назовні. |
 | `icons.add` | Плюс — «Додати»: рядок табличної частини, елемент набору. |
 | `icons.data` | Циліндр бази — дані, сховище, службові розділи. |
+| `icons.camera` | Знімок екрана — сеанс зауважень. |
+| `icons.expand` | Розгорнути згорнуте вікно. |
+| `icons.collapse` | Згорнути вікно в куток. |
 
 ## Menu icons are a different set
 
