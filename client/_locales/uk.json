@@ -155,7 +155,9 @@
   "core.remark.shotCopy": "Скопіювати кадр",
   "core.remark.shotCopied": "✓",
   "core.remark.shotPaste": "Вставити з буфера",
-  "core.remark.shotPasteHint": "або Ctrl+V — щоб повернути дорисований кадр",
+  "core.remark.shotPasteHint": "збережіть кадр, дорисуйте будь-чим — і поверніть файлом або Ctrl+V",
   "core.remark.pasteEmpty": "У буфері немає картинки",
-  "core.remark.clipboardDenied": "Браузер не дав доступу до буфера обміну"
+  "core.remark.clipboardDenied": "Браузер не дав доступу до буфера обміну",
+  "core.remark.shotSave": "Зберегти кадр файлом",
+  "core.remark.shotFile": "Додати файл"
 }

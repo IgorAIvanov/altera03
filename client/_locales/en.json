@@ -155,7 +155,9 @@
   "core.remark.shotCopy": "Copy the shot",
   "core.remark.shotCopied": "✓",
   "core.remark.shotPaste": "Paste from clipboard",
-  "core.remark.shotPasteHint": "or Ctrl+V — to bring an annotated shot back",
+  "core.remark.shotPasteHint": "save a shot, annotate it anywhere, bring it back as a file or with Ctrl+V",
   "core.remark.pasteEmpty": "No image in the clipboard",
-  "core.remark.clipboardDenied": "The browser denied clipboard access"
+  "core.remark.clipboardDenied": "The browser denied clipboard access",
+  "core.remark.shotSave": "Save the shot to a file",
+  "core.remark.shotFile": "Add a file"
 }

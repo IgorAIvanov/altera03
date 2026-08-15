@@ -124,12 +124,15 @@ export class UiRemark extends Base {
         height: 64px; display: block;
         border: 1px solid var(--app-border, #b8c3cc); border-radius: 3px;
       }
-      .shot-actions { display: flex; align-items: center; gap: 8px; }
+      .shot-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
       .shot-actions .hint { font-size: 12px; color: var(--app-muted, #5a6b7a); }
       /* Копіювання — на самій мініатюрі: кнопка поруч зі списком не сказала б,
          який саме кадр вона візьме. */
-      .shot .copy {
+      .shot .tools {
         position: absolute; left: 3px; bottom: 3px;
+        display: flex; gap: 3px;
+      }
+      .shot .tools .btn {
         padding: 0 4px; min-height: 0; height: 18px; line-height: 16px;
         font-size: 11px;
       }
@@ -250,6 +253,34 @@ export class UiRemark extends Base {
     } catch {
       this.error = t("core.remark.clipboardDenied");
     }
+  };
+
+  /**
+   * Зберегти кадр файлом.
+   *
+   * Буфер обміну виявився не універсальним шляхом: Windows Snipping Tool —
+   * інструмент ЗАХОПЛЕННЯ, а не редактор, і картинку ззовні він не приймає
+   * взагалі. Файл приймають усі, тож коло замикається й без буфера: зберегти →
+   * дорисувати чим завгодно → повернути файлом.
+   */
+  #saveShot(index: number): void {
+    const shot = this.shots[index];
+    if (!shot) return;
+    const a = document.createElement("a");
+    a.href = shot.url;
+    a.download = shot.file.name;
+    a.click();
+  }
+
+  /** Повернути дорисований кадр файлом — або додати будь-яку свою картинку. */
+  #pickFiles = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    Array.from(input.files ?? [])
+      .filter((f) => f.type.startsWith("image/"))
+      .forEach((f) => this.#addFile(f));
+    // Той самий файл мають приймати двічі поспіль — без цього другий вибір
+    // не дає події зовсім.
+    input.value = "";
   };
 
   /** Додати картинку з буфера — сюди повертається дорисований кадр. */
@@ -459,6 +490,12 @@ export class UiRemark extends Base {
             <button type="button" class="btn btn-sm" @click=${this.#pasteShot}>
               ${icons.paste} ${t("core.remark.shotPaste")}
             </button>
+            <button type="button" class="btn btn-sm"
+              @click=${() => this.renderRoot.querySelector<HTMLInputElement>("#remark-file")?.click()}>
+              ${icons.import} ${t("core.remark.shotFile")}
+            </button>
+            <input id="remark-file" type="file" accept="image/*" multiple hidden
+              @change=${this.#pickFiles} />
             <span class="hint">${t("core.remark.shotPasteHint")}</span>
           </div>
 
@@ -470,11 +507,18 @@ export class UiRemark extends Base {
                     <img src=${shot.url} alt=${t("core.remark.shot")} />
                     <button type="button" class="drop" title=${t("core.remark.shotDrop")}
                       @click=${() => this.#dropShot(i)}>×</button>
-                    <button type="button" class="copy btn btn-xs"
-                      title=${t("core.remark.shotCopy")} aria-label=${t("core.remark.shotCopy")}
-                      @click=${() => this.#copyShot(i)}>
-                      ${this.copied === i ? t("core.remark.shotCopied") : icons.copy}
-                    </button>
+                    <div class="tools">
+                      <button type="button" class="btn btn-xs"
+                        title=${t("core.remark.shotCopy")} aria-label=${t("core.remark.shotCopy")}
+                        @click=${() => this.#copyShot(i)}>
+                        ${this.copied === i ? t("core.remark.shotCopied") : icons.copy}
+                      </button>
+                      <button type="button" class="btn btn-xs"
+                        title=${t("core.remark.shotSave")} aria-label=${t("core.remark.shotSave")}
+                        @click=${() => this.#saveShot(i)}>
+                        ${icons.export}
+                      </button>
+                    </div>
                   </div>
                 `)}
               </div>`
