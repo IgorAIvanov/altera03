@@ -1,6 +1,7 @@
 import { html } from "lit";
 import { customElement } from "lit/decorators.js";
-import { ModelListBase, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+import { icons } from "@client/ui-kit/icons.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
 import { REMARK_KINDS, REMARK_STATUSES, type RemarkRow } from "./remark.schema.ts";
 import "@client/ui-kit/components/ui-select.ts";
@@ -43,6 +44,15 @@ export class RemarkList extends ModelListBase<RemarkRow> {
     {
       key: "ctxRoute", title: "remark.ctxRoute", width: "13rem", muted: true, overflow: "ellipsis",
       tooltip: (row) => row.ctxRoute ?? "",
+    },
+    {
+      key: "_actions", title: "", width: "3rem", align: "center",
+      render: (row) => html`
+        <button class="btn btn-ghost btn-xs px-1" title=${this.t("common.open")}
+          @click=${stopRow(() => this.openEdit(row.id))}>
+          ${icons.open}
+        </button>
+      `,
     },
   ];
 

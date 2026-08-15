@@ -37,6 +37,7 @@ A complete list screen for a `bank` catalog — this is the entire file, nothing
 ```ts
 import { customElement } from "lit/decorators.js";
 import { ModelListBase, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
+import { icons } from "@client/ui-kit/icons.ts";
 import type { BankRow } from "./bank.schema.ts";
 
 export const tagName = "bank-list";
@@ -51,11 +52,38 @@ export class BankList extends ModelListBase<BankRow> {
     { key: "code", title: "common.code", width: "8rem", sortable: true },
     { key: "name", title: "common.name", sortable: true },
     { key: "mfo",  title: "bank.mfo", width: "7rem", muted: true, sortable: true },
+    // Остання колонка — «відкрити». Ставиться в КОЖЕН список, де є форма
+    // редагування, доки не сказано інакше (див. нижче).
+    {
+      key: "_actions", title: "", width: "3rem", align: "center",
+      render: (row) => html`
+        <button class="btn btn-ghost btn-xs px-1" title=${this.t("common.open")}
+          @click=${stopRow(() => this.openEdit(row.id))}>
+          ${icons.open}
+        </button>
+      `,
+    },
   ];
 }
 ```
 
 That is the whole file. Do not add `render()`, `static styles`, load logic, or pagination markup.
+
+## The open button: put it in unless told otherwise
+
+**Every list with an `editRoute` ends the row with an open button** — the last
+column above. It is not part of the base class and never has been: a list where
+the button does not belong (a journal that opens the *referenced* record instead
+of its own row, a read-only register) has to be able to simply not have it, and
+a base that draws it for everyone takes that away.
+
+So it is a rule of the screen, not of the framework: **declare it unless the task
+says otherwise.** A list without it is not broken — double-click and Enter open
+the same form — but the button is the only thing that says so with a mouse and
+without guessing, and its absence reads as "this row does not open".
+
+Where it differs, it differs on purpose: the audit journal draws the same glyph
+but opens the record the event was about, and only for rows that name one.
 
 ## Required members
 
