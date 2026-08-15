@@ -20,10 +20,13 @@ export const DocumentMovementRowSchema = Type.Object({
   creditAccountName: Type.Optional(Type.String()),
   creditAnalytics:   Type.Array(MovementAnalyticSchema, { default: [] }),
   amount:            Type.Number(),
-  currencyCode:      Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  currencyAmount:    Type.Optional(Type.Union([Type.Number(), Type.Null()])),
-  // Дві кількості, як у регістрі: у складній проводці вони різні за змістом
-  // (2 комплекти ← 6 корпусів), і одна колонка ховала б половину операції.
+  // Валюта й кількість — по боках, як у регістрі: у конвертації валюти боків
+  // різні (Дт USD ← Кт EUR), у складній проводці різні кількості (2 комплекти
+  // ← 6 корпусів), і спільна колонка ховала б половину операції.
+  currencyCodeDebit:    Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  currencyAmountDebit:  Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  currencyCodeCredit:   Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  currencyAmountCredit: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   quantityDebit:     Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   quantityCredit:    Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   description:       Type.Optional(Type.String()),

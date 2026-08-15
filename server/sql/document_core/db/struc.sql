@@ -137,12 +137,12 @@ create index if not exists ix_chart_of_account_analytic_account
 -- (кількість голови однаково лежить на одному рядку з N), а сверяти в ній
 -- нема чого — сума головної частини дорівнює сумі частин за побудовою.
 --
--- Валютна сума (currency_amount у валюті currency_id) поки лишається ОДНА на
--- проводку — той самий клас дефекту, знятий для кількості й свідомо
--- відкладений для валюти: обмін іде через рахунки «в дорозі» (333/334), тож у
--- кожній проводці валютний бік рівно один, і другої валютної суми не треба.
--- Вмикаються обидва виміри ознаками рахунку (is_currency, is_quantitative),
--- як і субконто.
+-- Валютна сума — теж небалансовий вимір, і теж по боках, причому В ПАРІ з
+-- валютою: конвертація «Дт 312 USD Кт 314 EUR» має ДВІ різні валюти й дві
+-- суми, і одна пара колонок могла виразити її лише через допоміжні рахунки
+-- «в дорозі» (333/334). Той обхід методологічно законний і лишається законним,
+-- але він був ЄДИНИМ способом — а тепер вибором. Вмикаються обидва виміри
+-- ознаками рахунку (is_currency, is_quantitative), як і субконто.
 
 -- Бік проводки може бути порожнім — але рівно один із двох. Забалансовий облік
 -- у плані рахунків України ОДНОБІЧНИЙ за визначенням: «Дт 021 Устаткування,
@@ -159,10 +159,12 @@ create table if not exists app.journal_entry (
   debit_account   varchar(10) references app.chart_of_account (code),
   credit_account  varchar(10) references app.chart_of_account (code),
   amount          numeric(18,2) not null,
-  currency_id     bigint references app.currency (id),  -- валюта проводки
-  currency_amount numeric(18,2),                         -- сума у валюті
-  quantity_debit  numeric(18,3),                         -- кількість боку Дт
-  quantity_credit numeric(18,3),                         -- кількість боку Кт
+  currency_id_debit      bigint references app.currency (id),  -- валюта боку Дт
+  currency_amount_debit  numeric(18,2),                         -- сума в ній
+  currency_id_credit     bigint references app.currency (id),  -- валюта боку Кт
+  currency_amount_credit numeric(18,2),                         -- сума в ній
+  quantity_debit         numeric(18,3),                         -- кількість боку Дт
+  quantity_credit        numeric(18,3),                         -- кількість боку Кт
   description     text,
   constraint uq_journal_entry_line unique (document_id, line_no),
   -- Проводка без жодного рахунку — не рух, а порожній рядок.

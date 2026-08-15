@@ -408,6 +408,8 @@
   "documentMovements.openDocument": "Відкрити документ",
   "documentMovements.quantityDebit": "К-сть Дт",
   "documentMovements.quantityCredit": "К-сть Кт",
+  "documentMovements.currencyDebit": "Вал. сума Дт",
+  "documentMovements.currencyCredit": "Вал. сума Кт",
   "turnoverBalance.title": "Оборотно-сальдова відомість",
   "turnoverBalance.drillHint": "Клік на рахунку відкриває картку рахунку за той самий період",
   "turnoverBalance.offBalance": "поза балансом, у підсумок не входить",

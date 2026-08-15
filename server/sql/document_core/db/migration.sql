@@ -1,11 +1,10 @@
 -- Міграції ядра документообігу.
 
--- Валютний облік: колонки додаються до вже наповненого регістру, тому окремою
--- міграцією, а не тільки в struc.sql (нові БД отримають їх звідти).
-alter table if exists app.journal_entry
-  add column if not exists currency_id bigint references app.currency (id);
-alter table if exists app.journal_entry
-  add column if not exists currency_amount numeric(18,2);
+-- Валютний облік колись додавався сюди парою колонок currency_id /
+-- currency_amount. Той блок ВИТІСНЕНИЙ міграцією «валюта по боках» нижче:
+-- лишившись, він повертав би зняті колонки на кожній публікації (`add column
+-- if not exists` після `drop column`). База, яка жодної з валютних колонок не
+-- бачила, отримує одразу бічні — зі struc.sql.
 
 -- Унікальність номера стала річною: у ключ додався рік дати документа.
 --
@@ -86,5 +85,50 @@ begin
     where je.quantity is not null;
 
     alter table app.journal_entry drop column quantity;
+  end if;
+end $$;
+
+-- ── Валюта по боках проводки ────────────────────────────────────────────────
+-- Той самий клас, що й кількість, лише в парі з валютою: конвертація
+-- «Дт 312 USD Кт 314 EUR» має дві валюти й дві суми, а колонка була одна на
+-- проводку. Наповнення — за ознакою рахунку (is_currency): значення дістає
+-- бік, що веде валюту; обидва ведуть — обидва дістають те саме (переказ
+-- усередині однієї валюти саме такий).
+alter table if exists app.journal_entry
+  add column if not exists currency_id_debit bigint references app.currency (id);
+alter table if exists app.journal_entry
+  add column if not exists currency_amount_debit numeric(18,2);
+alter table if exists app.journal_entry
+  add column if not exists currency_id_credit bigint references app.currency (id);
+alter table if exists app.journal_entry
+  add column if not exists currency_amount_credit numeric(18,2);
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'app' and table_name = 'journal_entry' and column_name = 'currency_id'
+  ) then
+    update app.journal_entry je
+    set currency_id_debit = case when exists (
+          select 1 from app.chart_of_account c
+          where c.code = je.debit_account and c.is_currency
+        ) then je.currency_id end,
+        currency_amount_debit = case when exists (
+          select 1 from app.chart_of_account c
+          where c.code = je.debit_account and c.is_currency
+        ) then je.currency_amount end,
+        currency_id_credit = case when exists (
+          select 1 from app.chart_of_account c
+          where c.code = je.credit_account and c.is_currency
+        ) then je.currency_id end,
+        currency_amount_credit = case when exists (
+          select 1 from app.chart_of_account c
+          where c.code = je.credit_account and c.is_currency
+        ) then je.currency_amount end
+    where je.currency_id is not null;
+
+    alter table app.journal_entry drop column currency_amount;
+    alter table app.journal_entry drop column currency_id;
   end if;
 end $$;

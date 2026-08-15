@@ -148,10 +148,14 @@ as $$
     coalesce(cc.name, '')                   as corr_account_name,
     case when s.side = 'debit' then je.amount else 0::numeric end as debit,
     case when s.side = 'debit' then 0::numeric else je.amount end as credit,
-    je.currency_id,
+    -- Валюта СВОГО боку. Доти сума була одна на проводку й діставалася обом
+    -- бокам без огляду на is_currency: картка гривневого рахунку в проводці
+    -- «Дт 312 Кт 311» показувала валютну суму. Тепер зберігається по боках
+    -- (конвертація «Дт USD Кт EUR» — дві валюти), і тут просто читається.
+    case when s.side = 'debit' then je.currency_id_debit else je.currency_id_credit end as currency_id,
     cur.name                                as currency_code,
-    case when s.side = 'debit' then je.currency_amount else null end as currency_debit,
-    case when s.side = 'debit' then null else je.currency_amount end as currency_credit,
+    case when s.side = 'debit'  then je.currency_amount_debit  end as currency_debit,
+    case when s.side = 'credit' then je.currency_amount_credit end as currency_credit,
     -- Кількість зберігається по боках (складна проводка: комплектація списує
     -- 6 корпусів і оприбутковує 2 комплекти одним рядком), тож тут вона просто
     -- читається. Що значення лежить лише на боці, який його веде, гарантує
@@ -169,7 +173,8 @@ as $$
     on ca.code = case when s.side = 'debit' then je.debit_account else je.credit_account end
   left join app.chart_of_account cc
     on cc.code = case when s.side = 'debit' then je.credit_account else je.debit_account end
-  left join app.currency cur on cur.id = je.currency_id
+  left join app.currency cur
+    on cur.id = case when s.side = 'debit' then je.currency_id_debit else je.currency_id_credit end
   -- Аналітика свого боку: `list` для показу, `map` для відбору. Два подання
   -- одного й того самого — щоб звіт не розбирав список, а відбір не будував
   -- рядки, які нікому не потрібні.
@@ -253,10 +258,13 @@ returns table (
   credit_account      varchar,
   credit_account_name varchar,
   amount              numeric,
-  currency_code       varchar,
-  currency_amount     numeric,
-  -- Дві кількості, як і в самій проводці: у складній вони РІЗНІ за змістом
-  -- операції (2 комплекти ← 6 корпусів), і одна колонка ховала б половину.
+  -- Валюта й кількість — по боках, як у самій проводці: у конвертації валюти
+  -- боків РІЗНІ (Дт USD ← Кт EUR), у складній проводці різні кількості
+  -- (2 комплекти ← 6 корпусів), і спільна колонка ховала б половину операції.
+  currency_code_debit    varchar,
+  currency_amount_debit  numeric,
+  currency_code_credit   varchar,
+  currency_amount_credit numeric,
   quantity_debit      numeric,
   quantity_credit     numeric,
   description         text,
@@ -273,7 +281,8 @@ as $$
     je.debit_account, coalesce(cd.name, ''),
     je.credit_account, coalesce(cc.name, ''),
     je.amount,
-    cur.name, je.currency_amount, je.quantity_debit, je.quantity_credit, je.description,
+    curd.name, je.currency_amount_debit, curc.name, je.currency_amount_credit,
+    je.quantity_debit, je.quantity_credit, je.description,
     coalesce(dan.list, '[]'::jsonb),
     coalesce(can.list, '[]'::jsonb)
   from app.document d
@@ -281,7 +290,8 @@ as $$
   join app.journal_entry je on je.document_id = d.id
   left join app.chart_of_account cd on cd.code = je.debit_account
   left join app.chart_of_account cc on cc.code = je.credit_account
-  left join app.currency cur on cur.id = je.currency_id
+  left join app.currency curd on curd.id = je.currency_id_debit
+  left join app.currency curc on curc.id = je.currency_id_credit
   left join lateral (
     select
       jsonb_agg(jsonb_build_object(

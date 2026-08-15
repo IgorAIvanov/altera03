@@ -482,6 +482,23 @@ the books do not have. The sums per account come out right by themselves: debit
 281 collects 2, credit 281 collects 8, and with dimensions the kit gains +2 while
 each component goes to zero.
 
+**Currency works the same way, and its side value is a pair.** A conversion
+`Дт 312 USD ← Кт 314 EUR` carries two different currencies in one entry:
+
+```sql
+perform app.doc_entry_add(doc_id, 1, '312', '314', 4100.00, null, 'конвертація',
+  dims_312, dims_314, null, null, null,
+  jsonb_build_object('debit',  jsonb_build_object('id', usd_id, 'amount', 100.00),
+                     'credit', jsonb_build_object('id', eur_id, 'amount', 92.00)));
+```
+
+The legacy pair `p_currency_id` + `p_currency_amount` stays strict as before —
+one currency and amount for every currency side, right for a transfer inside one
+currency. A side listed in `p_currencies` must be complete: an `id` without an
+`amount` is an error, not an intent — half a pair means nothing. Routing a
+conversion through the in-transit accounts (333/334) remains methodologically
+lawful; it is now a choice rather than the only way.
+
 ## One-sided entries: off-balance accounts
 
 `app.doc_entry_add` accepts an empty side — `null` for `debit_account` or for

@@ -221,9 +221,18 @@ $$;
 -- `p_quantity`, і забута кількість валить проведення, як і валила. Порожній
 -- об'єкт `{}` теж законний: сума без кількості на кількісному рахунку — це
 -- переоцінка, і доти вона не виражалася нічим.
+--
+-- Валюта влаштована так само, лише значення боку — пара «валюта + сума»:
+-- `p_currencies` = `{"debit": {"id": <currency_id>, "amount": <сума>}}`.
+-- Конвертація «Дт 312 USD Кт 314 EUR» — два різні `id` у двох боках; доти вона
+-- виражалася лише через рахунки «в дорозі». Legacy-пара `p_currency_id` +
+-- `p_currency_amount` діє як діяла: одна валюта й сума на кожен валютний бік,
+-- строго. Перелічений бік мусить бути повним — `id` без `amount` це помилка,
+-- а не намір.
 drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb);
 drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb, bigint, numeric);
 drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb, bigint, numeric, jsonb);
+drop function if exists app.doc_entry_add(bigint, int, varchar, varchar, numeric, numeric, text, jsonb, jsonb, bigint, numeric, jsonb, jsonb);
 create function app.doc_entry_add(
   p_document_id      bigint,
   p_line_no          int,
@@ -236,7 +245,8 @@ create function app.doc_entry_add(
   p_credit_analytics jsonb   default '{}'::jsonb,
   p_currency_id      bigint  default null,
   p_currency_amount  numeric default null,
-  p_quantities       jsonb   default null
+  p_quantities       jsonb   default null,
+  p_currencies       jsonb   default null
 ) returns bigint
 language plpgsql
 as $$
@@ -255,10 +265,12 @@ declare
   v_credit_off      boolean := false;
   v_needs_currency  boolean;
   v_needs_quantity  boolean;
-  v_currency_id     bigint;
-  v_currency_amount numeric;
-  v_quantity_debit  numeric;
-  v_quantity_credit numeric;
+  v_currency_id_debit      bigint;
+  v_currency_amount_debit  numeric;
+  v_currency_id_credit     bigint;
+  v_currency_amount_credit numeric;
+  v_quantity_debit         numeric;
+  v_quantity_credit        numeric;
 begin
   if p_amount is null or p_amount = 0 then
     raise exception '@[core.entryZeroAmount]%', jsonb_build_object('line', p_line_no, 'document', p_document_id)::text;
@@ -305,12 +317,32 @@ begin
   v_needs_currency := v_debit_currency or v_credit_currency;
   v_needs_quantity := v_debit_quantity or v_credit_quantity;
 
-  if v_needs_currency then
+  if p_currencies is not null then
+    -- Перелічені боки — висловлений намір (див. коментар до функції). На
+    -- відміну від кількості, значення боку тут ПАРА, і половина пари — не
+    -- намір, а помилка: сума без валюти (чи навпаки) не означає нічого.
+    if p_currencies ? 'debit' and v_debit_currency then
+      v_currency_id_debit     := (p_currencies->'debit'->>'id')::bigint;
+      v_currency_amount_debit := (p_currencies->'debit'->>'amount')::numeric;
+      if v_currency_id_debit is null or v_currency_amount_debit is null then
+        raise exception '@[core.entryNeedsCurrency]%', jsonb_build_object('line', p_line_no)::text;
+      end if;
+    end if;
+    if p_currencies ? 'credit' and v_credit_currency then
+      v_currency_id_credit     := (p_currencies->'credit'->>'id')::bigint;
+      v_currency_amount_credit := (p_currencies->'credit'->>'amount')::numeric;
+      if v_currency_id_credit is null or v_currency_amount_credit is null then
+        raise exception '@[core.entryNeedsCurrency]%', jsonb_build_object('line', p_line_no)::text;
+      end if;
+    end if;
+  elsif v_needs_currency then
     if p_currency_id is null or p_currency_amount is null then
       raise exception '@[core.entryNeedsCurrency]%', jsonb_build_object('line', p_line_no)::text;
     end if;
-    v_currency_id := p_currency_id;
-    v_currency_amount := p_currency_amount;
+    v_currency_id_debit      := case when v_debit_currency  then p_currency_id end;
+    v_currency_amount_debit  := case when v_debit_currency  then p_currency_amount end;
+    v_currency_id_credit     := case when v_credit_currency then p_currency_id end;
+    v_currency_amount_credit := case when v_credit_currency then p_currency_amount end;
   end if;  -- інакше лишаються null
 
   if p_quantities is not null then
@@ -330,11 +362,13 @@ begin
 
   insert into app.journal_entry (
     document_id, line_no, debit_account, credit_account, amount,
-    currency_id, currency_amount, quantity_debit, quantity_credit, description
+    currency_id_debit, currency_amount_debit, currency_id_credit, currency_amount_credit,
+    quantity_debit, quantity_credit, description
   )
   values (
     p_document_id, p_line_no, p_debit_account, p_credit_account, p_amount,
-    v_currency_id, v_currency_amount, v_quantity_debit, v_quantity_credit, p_description
+    v_currency_id_debit, v_currency_amount_debit, v_currency_id_credit, v_currency_amount_credit,
+    v_quantity_debit, v_quantity_credit, p_description
   )
   returning id into v_entry_id;
 

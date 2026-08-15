@@ -52,11 +52,13 @@ as $$
       j.credit_account_name as "creditAccountName",
       j.credit_dims         as "creditAnalytics",
       j.amount              as "amount",
-      j.currency_code       as "currencyCode",
-      j.currency_amount     as "currencyAmount",
-      j.quantity_debit      as "quantityDebit",
-      j.quantity_credit     as "quantityCredit",
-      j.description         as "description"
+      j.currency_code_debit    as "currencyCodeDebit",
+      j.currency_amount_debit  as "currencyAmountDebit",
+      j.currency_code_credit   as "currencyCodeCredit",
+      j.currency_amount_credit as "currencyAmountCredit",
+      j.quantity_debit         as "quantityDebit",
+      j.quantity_credit        as "quantityCredit",
+      j.description            as "description"
     from params p
     join app.document d on d.id = p.document_id
     cross join lateral app.acc_journal(

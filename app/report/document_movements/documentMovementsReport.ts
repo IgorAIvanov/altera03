@@ -95,13 +95,16 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
   }
 
   // Окремі числові колонки під валюту й кількість — щоб звіт, вивантажений в
-  // Excel, лишався придатним до обчислень. Кожна показується, лише коли є в даних.
-  private get showCurrency(): boolean {
-    return this.$root.rows.some((r) => r.currencyAmount);
+  // Excel, лишався придатним до обчислень. Валюта й кількість — по боках, як у
+  // регістрі: у конвертації валюти боків різні (Дт USD ← Кт EUR), у складній
+  // проводці різні кількості (2 комплекти ← 6 корпусів), і спільна колонка
+  // ховала б половину операції. Колонка малюється, лише коли її бік є в даних.
+  private get showCurrencyDebit(): boolean {
+    return this.$root.rows.some((r) => r.currencyAmountDebit);
   }
-  // Кількість — двома колонками, як у регістрі: у складній проводці кількості
-  // боків РІЗНІ (2 комплекти ← 6 корпусів), і спільна колонка ховала б половину
-  // операції. Коли в даних заповнений лише один бік, друга колонка не малюється.
+  private get showCurrencyCredit(): boolean {
+    return this.$root.rows.some((r) => r.currencyAmountCredit);
+  }
   private get showQuantityDebit(): boolean {
     return this.$root.rows.some((r) => r.quantityDebit);
   }
@@ -111,9 +114,12 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
 
   private renderExtraCells(row: DocumentMovementRow): TemplateResult | string {
     return html`
-      ${this.showCurrency ? html`
-        <td class="text-right tabular-nums">${amount(row.currencyAmount ?? 0)}</td>
-        <td class="text-muted">${row.currencyCode ?? ""}</td>` : ""}
+      ${this.showCurrencyDebit ? html`
+        <td class="text-right tabular-nums">${amount(row.currencyAmountDebit ?? 0)}</td>
+        <td class="text-muted">${row.currencyCodeDebit ?? ""}</td>` : ""}
+      ${this.showCurrencyCredit ? html`
+        <td class="text-right tabular-nums">${amount(row.currencyAmountCredit ?? 0)}</td>
+        <td class="text-muted">${row.currencyCodeCredit ?? ""}</td>` : ""}
       ${this.showQuantityDebit
         ? html`<td class="text-right tabular-nums">${row.quantityDebit ?? ""}</td>` : ""}
       ${this.showQuantityCredit
@@ -174,8 +180,11 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
               <th class="w-20">${t("manualEntry.credit")}</th>
               <th>${t("accountCard.analytics")}</th>
               <th class="w-32 text-right">${t("invoice.amount")}</th>
-              ${this.showCurrency ? html`
-                <th class="w-28 text-right">${t("manualEntry.currencyAmount")}</th>
+              ${this.showCurrencyDebit ? html`
+                <th class="w-28 text-right">${t("documentMovements.currencyDebit")}</th>
+                <th class="w-16">${t("manualEntry.currency")}</th>` : ""}
+              ${this.showCurrencyCredit ? html`
+                <th class="w-28 text-right">${t("documentMovements.currencyCredit")}</th>
                 <th class="w-16">${t("manualEntry.currency")}</th>` : ""}
               ${this.showQuantityDebit ? html`<th class="w-24 text-right">${t("documentMovements.quantityDebit")}</th>` : ""}
               ${this.showQuantityCredit ? html`<th class="w-24 text-right">${t("documentMovements.quantityCredit")}</th>` : ""}
@@ -189,7 +198,8 @@ export class DocumentMovementsReport extends ReportBase<DocumentMovementsRoot> {
             <tr>
               <th colspan="5" class="text-right">${t("invoice.total")}</th>
               <th class="text-right tabular-nums">${amount(doc.total)}</th>
-              ${this.showCurrency ? html`<th></th><th></th>` : ""}
+              ${this.showCurrencyDebit ? html`<th></th><th></th>` : ""}
+              ${this.showCurrencyCredit ? html`<th></th><th></th>` : ""}
               ${this.showQuantityDebit ? html`<th></th>` : ""}
               ${this.showQuantityCredit ? html`<th></th>` : ""}
               <th></th>

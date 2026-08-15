@@ -408,6 +408,8 @@
   "documentMovements.openDocument": "Open document",
   "documentMovements.quantityDebit": "Qty Dr",
   "documentMovements.quantityCredit": "Qty Cr",
+  "documentMovements.currencyDebit": "Cur. amount Dr",
+  "documentMovements.currencyCredit": "Cur. amount Cr",
   "turnoverBalance.title": "Turnover and balance sheet",
   "turnoverBalance.drillHint": "Click an account to open its card for the same period",
   "turnoverBalance.offBalance": "off balance, not in the total",

@@ -2,5 +2,7 @@
   "documentMovements.title": "Рух документа",
   "documentMovements.openDocument": "Відкрити документ",
   "documentMovements.quantityDebit": "К-сть Дт",
-  "documentMovements.quantityCredit": "К-сть Кт"
+  "documentMovements.quantityCredit": "К-сть Кт",
+  "documentMovements.currencyDebit": "Вал. сума Дт",
+  "documentMovements.currencyCredit": "Вал. сума Кт"
 }

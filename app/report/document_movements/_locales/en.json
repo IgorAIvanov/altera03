@@ -2,5 +2,7 @@
   "documentMovements.title": "Document movements",
   "documentMovements.openDocument": "Open document",
   "documentMovements.quantityDebit": "Qty Dr",
-  "documentMovements.quantityCredit": "Qty Cr"
+  "documentMovements.quantityCredit": "Qty Cr",
+  "documentMovements.currencyDebit": "Cur. amount Dr",
+  "documentMovements.currencyCredit": "Cur. amount Cr"
 }
