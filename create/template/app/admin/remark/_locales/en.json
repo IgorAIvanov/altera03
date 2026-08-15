@@ -34,5 +34,6 @@
   "remark.status.rejected": "Rejected",
   "remark.area.solution": "Solution",
   "remark.area.framework": "Framework",
-  "remark.attachments": "Attachments"
+  "remark.attachments": "Attachments",
+  "remark.id": "No."
 }

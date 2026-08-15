@@ -34,5 +34,6 @@
   "remark.status.rejected": "Відхилено",
   "remark.area.solution": "Рішення",
   "remark.area.framework": "Фреймворк",
-  "remark.attachments": "Вкладення"
+  "remark.attachments": "Вкладення",
+  "remark.id": "№"
 }

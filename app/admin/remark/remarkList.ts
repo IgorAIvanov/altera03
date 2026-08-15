@@ -18,6 +18,9 @@ export class RemarkList extends ModelListBase<RemarkRow> {
   protected override defaultSortDir: "desc" = "desc";
 
   protected columns: ListColumn<RemarkRow>[] = [
+    // Id виводиться навмисно: на зауваження посилаються словами — у листі, у
+    // розмові, у комміті, — і «те, про накладну» для цього не годиться.
+    { key: "id", title: "remark.id", width: "4.5rem", align: "right", muted: true },
     { key: "createdAt", title: "remark.createdAt", width: "9.5rem", format: dateFormat.dateTime, sortable: true },
     {
       key: "kind", title: "remark.kind", width: "7rem", sortable: true,
