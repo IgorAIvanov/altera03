@@ -186,6 +186,17 @@ async function checkPublishedContent(): Promise<{ skipped: string | null; proble
   const problems: string[] = [];
   const clockSlackMs = 10 * 60 * 1000;
 
+  // Мілка історія — чесний пропуск, а не сміттєвий вердикт. У клоні глибиною 1
+  // граничний коміт диффиться проти ПОРОЖНЬОГО дерева, тож `git log -- <пакет>`
+  // знаходить його для будь-якого каталогу — «у коміті з'явились усі файли», і
+  // перевірка звинуватила б коміт, який пакета не чіпав (саме так вона
+  // позначила client@0.12.4 комітом про сам цей гард). Checkout, який хоче
+  // справжнього вердикту, бере fetch-depth: 0.
+  const shallow = await git(["rev-parse", "--is-shallow-repository"]);
+  if (shallow === "true") {
+    return { skipped: "мілка історія (fetch-depth: 1) — git log тут бреше", problems: [] };
+  }
+
   // create — теж пакет реєстру, хоч і не лінкується (він сам і є scaffold).
   for (const pkg of [...LOCAL_PACKAGES, "create"]) {
     let local: { version: string };
