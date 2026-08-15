@@ -73,6 +73,7 @@ Descriptions are quoted from the source as they are written there.
 | `icons.export` | Стрілка з лотка — вивантажити назовні. |
 | `icons.add` | Плюс — «Додати»: рядок табличної частини, елемент набору. |
 | `icons.data` | Циліндр бази — дані, сховище, службові розділи. |
+| `icons.paste` | Планшет із затиском — узяти з буфера обміну. |
 | `icons.camera` | Знімок екрана — сеанс зауважень. |
 | `icons.expand` | Розгорнути згорнуте вікно. |
 | `icons.collapse` | Згорнути вікно в куток. |

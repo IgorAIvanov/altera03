@@ -25,6 +25,27 @@ interface Shot {
   url: string;
 }
 
+/**
+ * JPEG → PNG для буфера обміну.
+ *
+ * Буфер приймає від сторінки лише `image/png` — JPEG туди просто не кладеться,
+ * хоча кадри ми зберігаємо саме в ньому (учетверо менші). Тому перекодовуємо на
+ * місці, і повертаємо ПРОМІС: `ClipboardItem` уміє його чекати, а от `await`
+ * перед самим записом з'їдає жест користувача, без якого браузер запис забороняє.
+ */
+function toPngBlob(file: File): Promise<Blob> {
+  return createImageBitmap(file).then((bitmap) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    return new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => b ? resolve(b) : reject(new Error("canvas.toBlob")), "image/png")
+    );
+  });
+}
+
 const Base: typeof GlobalStyledLitElement = SignalWatcher(GlobalStyledLitElement);
 
 /**
@@ -63,6 +84,8 @@ export class UiRemark extends Base {
    * дійшовши до потрібного екрана.
    */
   @state() private shots: Shot[] = [];
+  /** Який кадр щойно скопійовано — щоб дія не виглядала беззвучною. */
+  @state() private copied = -1;
 
   static override styles: CSSResultGroup = [
     ...(GlobalStyledLitElement.styles as CSSResultGroup[]),
@@ -101,6 +124,15 @@ export class UiRemark extends Base {
         height: 64px; display: block;
         border: 1px solid var(--app-border, #b8c3cc); border-radius: 3px;
       }
+      .shot-actions { display: flex; align-items: center; gap: 8px; }
+      .shot-actions .hint { font-size: 12px; color: var(--app-muted, #5a6b7a); }
+      /* Копіювання — на самій мініатюрі: кнопка поруч зі списком не сказала б,
+         який саме кадр вона візьме. */
+      .shot .copy {
+        position: absolute; left: 3px; bottom: 3px;
+        padding: 0 4px; min-height: 0; height: 18px; line-height: 16px;
+        font-size: 11px;
+      }
       .shot .drop {
         position: absolute; top: -7px; right: -7px;
         width: 18px; height: 18px; line-height: 15px; padding: 0;
@@ -133,11 +165,15 @@ export class UiRemark extends Base {
     this.#off = bus.on("model.changed", (m) => {
       if ((m as { model?: string }).model === "remark") this.#loadUnread();
     });
+    // Вікно живе в тіньовому корені компонента, тож слухач тут ловить і вставку
+    // всередині нього.
+    this.addEventListener("paste", this.#onPaste as EventListener);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.#off?.();
+    this.removeEventListener("paste", this.#onPaste as EventListener);
     this.#dropShots();
   }
 
@@ -194,8 +230,61 @@ export class UiRemark extends Base {
     }
     const file = await grabFrame();
     if (!file) return;
-    this.shots = [...this.shots, { file, url: URL.createObjectURL(file) }];
+    this.#addFile(file);
   };
+
+  /**
+   * Кадр у буфер — щоб дорисувати стрілку в будь-якому редакторі й повернути
+   * назад. Це дешевший шлях, ніж власне полотно для малювання, і працює з тим
+   * інструментом, до якого людина звикла.
+   */
+  #copyShot = async (index: number): Promise<void> => {
+    const shot = this.shots[index];
+    if (!shot) return;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": toPngBlob(shot.file) }),
+      ]);
+      this.copied = index;
+      setTimeout(() => { if (this.copied === index) this.copied = -1; }, 1500);
+    } catch {
+      this.error = t("core.remark.clipboardDenied");
+    }
+  };
+
+  /** Додати картинку з буфера — сюди повертається дорисований кадр. */
+  #pasteShot = async (): Promise<void> => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((x) => x.startsWith("image/"));
+        if (!type) continue;
+        this.#addFile(new File([await item.getType(type)], `remark-paste.${type.split("/")[1]}`, { type }));
+        return;
+      }
+      this.error = t("core.remark.pasteEmpty");
+    } catch {
+      this.error = t("core.remark.clipboardDenied");
+    }
+  };
+
+  /**
+   * Ctrl+V у вікні — той самий шлях, але без дозволу на читання буфера: подія
+   * приносить дані сама. Текст не чіпаємо — інакше вставка в поле опису
+   * перестала б працювати.
+   */
+  #onPaste = (e: ClipboardEvent) => {
+    const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith("image/"));
+    if (!file) return;
+    e.preventDefault();
+    this.#addFile(file);
+  };
+
+  #addFile(file: File): void {
+    // Вставлене лишається тим, чим прийшло: у дорисованому кадрі стрілки й
+    // підписи, а JPEG псує саме такі краї.
+    this.shots = [...this.shots, { file, url: URL.createObjectURL(file) }];
+  }
 
   /**
    * Відкрити вікно.
@@ -366,6 +455,13 @@ export class UiRemark extends Base {
             .value=${this.body}
             @input=${(e: Event) => { this.body = (e.target as HTMLTextAreaElement).value; }}></textarea>
 
+          <div class="shot-actions">
+            <button type="button" class="btn btn-sm" @click=${this.#pasteShot}>
+              ${icons.paste} ${t("core.remark.shotPaste")}
+            </button>
+            <span class="hint">${t("core.remark.shotPasteHint")}</span>
+          </div>
+
           ${this.shots.length
             ? html`
               <div class="shots">
@@ -374,6 +470,11 @@ export class UiRemark extends Base {
                     <img src=${shot.url} alt=${t("core.remark.shot")} />
                     <button type="button" class="drop" title=${t("core.remark.shotDrop")}
                       @click=${() => this.#dropShot(i)}>×</button>
+                    <button type="button" class="copy btn btn-xs"
+                      title=${t("core.remark.shotCopy")} aria-label=${t("core.remark.shotCopy")}
+                      @click=${() => this.#copyShot(i)}>
+                      ${this.copied === i ? t("core.remark.shotCopied") : icons.copy}
+                    </button>
                   </div>
                 `)}
               </div>`

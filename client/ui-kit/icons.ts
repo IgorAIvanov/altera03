@@ -169,6 +169,10 @@ export const icons: Record<string, TemplateResult> = {
   add: glyph(svg`<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>`, { width: 2.5 }),
   /** Циліндр бази — дані, сховище, службові розділи. */
   data: glyph(svg`<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>`),
+  /** Планшет із затиском — узяти з буфера обміну. */
+  paste: glyph(
+    svg`<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>`,
+  ),
   /** Знімок екрана — сеанс зауважень. */
   camera: glyph(
     svg`<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>`,

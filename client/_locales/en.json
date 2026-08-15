@@ -151,5 +151,11 @@
   "core.remark.shotDrop": "Drop the shot",
   "core.remark.minimize": "Minimise",
   "core.remark.restore": "Restore the remark",
-  "core.remark.shotAdd": "Take another shot"
+  "core.remark.shotAdd": "Take another shot",
+  "core.remark.shotCopy": "Copy the shot",
+  "core.remark.shotCopied": "✓",
+  "core.remark.shotPaste": "Paste from clipboard",
+  "core.remark.shotPasteHint": "or Ctrl+V — to bring an annotated shot back",
+  "core.remark.pasteEmpty": "No image in the clipboard",
+  "core.remark.clipboardDenied": "The browser denied clipboard access"
 }

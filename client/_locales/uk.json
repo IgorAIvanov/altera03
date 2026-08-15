@@ -151,5 +151,11 @@
   "core.remark.shotDrop": "Без знімка",
   "core.remark.minimize": "Згорнути",
   "core.remark.restore": "Розгорнути зауваження",
-  "core.remark.shotAdd": "Зняти ще кадр"
+  "core.remark.shotAdd": "Зняти ще кадр",
+  "core.remark.shotCopy": "Скопіювати кадр",
+  "core.remark.shotCopied": "✓",
+  "core.remark.shotPaste": "Вставити з буфера",
+  "core.remark.shotPasteHint": "або Ctrl+V — щоб повернути дорисований кадр",
+  "core.remark.pasteEmpty": "У буфері немає картинки",
+  "core.remark.clipboardDenied": "Браузер не дав доступу до буфера обміну"
 }
