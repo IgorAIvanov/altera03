@@ -63,6 +63,12 @@ const Base: typeof GlobalStyledLitElement = SignalWatcher(GlobalStyledLitElement
  * зняти ще кадр і розгорнути назад.
  *
  * Згорнуте вікно не модальне навмисно: модальність — це й є те, що заважає.
+ *
+ * ДОЗВІЛ НА ЕКРАН живе рівно стільки, скільки саме зауваження: питається при
+ * відкритті вікна, знімається при закритті. Тобто ціна — одне системне вікно
+ * «чим поділитися» на кожне зауваження замість одного на весь сеанс перевірки;
+ * взамін екран не лишається розшареним увесь день, а в шапці немає ані
+ * перемикача, ані індикатора, за яким треба стежити.
  */
 @customElement("ui-remark")
 export class UiRemark extends Base {
@@ -103,13 +109,6 @@ export class UiRemark extends Base {
         background: #d97706; color: #fff; font-size: 11px; line-height: 16px;
         text-align: center; font-weight: 500;
       }
-      .capture { padding: 3px 6px; }
-      .dot {
-        width: 9px; height: 9px; border-radius: 50%;
-        border: 1px solid currentColor; opacity: .65;
-      }
-      .capture.on .dot { background: #dc2626; border-color: #dc2626; opacity: 1; }
-
       .form { display: flex; flex-direction: column; gap: 10px; min-width: 24rem; }
       .kinds { display: flex; gap: 6px; flex-wrap: wrap; }
       .ctx {
@@ -331,7 +330,10 @@ export class UiRemark extends Base {
       return;
     }
     this.#dropShots();
-    if (capturing()) await this.#addShot();
+    // Дозвіл питаємо тут — до того, як вікно затулить екран, і саме тому ж
+    // одразу знімаємо перший кадр. Відмова не заважає: зауваження без картинки
+    // це звичайне зауваження, а не помилка.
+    if (await startCapture()) await this.#addShot();
     this.mode = "open";
     this.updateComplete.then(() => {
       this.renderRoot.querySelector<HTMLInputElement>("#remark-title")?.focus();
@@ -346,15 +348,11 @@ export class UiRemark extends Base {
   #close = () => {
     this.#saveDraft();
     this.#dropShots();
+    // Дозвіл живе рівно стільки, скільки саме зауваження: згорнуте вікно його
+    // тримає (там і роблять другий кадр), закрите — віддає. Постійно ввімкнений
+    // доступ до екрана людина терпіти не мусить.
+    stopCapture();
     this.mode = "closed";
-  };
-
-  #toggleCapture = async () => {
-    if (capturing()) {
-      stopCapture();
-      return;
-    }
-    if (!await startCapture()) this.error = t("core.remark.captureRefused");
   };
 
   async #send(): Promise<void> {
@@ -405,6 +403,7 @@ export class UiRemark extends Base {
       this.summary = "";
       this.body = "";
       this.#dropShots();
+      stopCapture();
       removeUserScoped(DRAFT_KEY);
       this.mode = "closed";
     } finally {
@@ -424,14 +423,6 @@ export class UiRemark extends Base {
       <button class="trigger" type="button" title=${t("core.remark.hint")} @click=${this.#show}>
         <span>${t("core.remark.button")}</span>
         ${this.unread > 0 ? html`<span class="unread">${this.unread}</span>` : ""}
-      </button>
-
-      <!-- Індикатор сеансу — не прикраса: людина мусить бачити, що ділиться
-           екраном, не заглядаючи в смугу браузера. Він же й вимикач. -->
-      <button class="trigger capture ${capturing() ? "on" : ""}" type="button"
-        title=${capturing() ? t("core.remark.captureStop") : t("core.remark.captureStart")}
-        @click=${this.#toggleCapture}>
-        <span class="dot"></span>
       </button>
 
       ${this.mode === "min" ? this.#renderMini() : ""}
