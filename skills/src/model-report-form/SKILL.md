@@ -138,6 +138,25 @@ export const TurnoverBalanceFiltersSchema = Type.Object({
 });
 ```
 
+**The key you declare must be the key the label comes back under.** The echo is
+built from the target model's display column — by default its *first* field marked
+`x-lookup`, which is `name` in most catalogues and `code` in some (warehouse, unit
+of measure, bank account). The echo lands first in `v_filters || …`, so a mismatch
+overwrites the label the form had put there: the filter applies, the figures are
+right, and the picker in the panel goes blank. Name the column explicitly whenever
+the target's first `x-lookup` is not what you declared:
+
+```ts
+const refFilter = (model: string, display?: string) =>
+  Type.Union([Type.Object({ id: Type.String(), name: Type.String() }), Type.Null()],
+    { default: null, "x-ref": { model, ...(display ? { display } : {}) } });
+
+warehouse: Type.Optional(refFilter("warehouse", "name")),
+```
+
+`sql:gen` refuses on the mismatch and names both halves, so this is a generation
+error rather than something to find on the screen.
+
 Your function then starts with parsed values and returns only the contents of `data` —
 no envelope, no echo, and no check that a required filter is set:
 

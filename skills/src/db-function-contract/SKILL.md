@@ -407,6 +407,42 @@ Consequences for the screen come for free: `BaseUI` opens a posted document
 read-only, the toolbar shows «Розпровести», and the list shows the posted mark.
 Nothing extra to write.
 
+## Movements that are not entries: `<model>_unpost_records`
+
+`doc_unpost` clears `app.journal_entry` and nothing else, because nothing else is
+known to it. A document that also writes rows somewhere of its own — a periodic
+register of prices, a stock register, a VAT register — has to take those rows
+back itself, or unposting leaves them in force: the price of an unposted document
+keeps pricing invoices, and the screen says the document is not posted.
+
+Declare the symmetric half of `<model>_post_entries` and it will be called:
+
+```sql
+create function app.price_setting_unpost_records(user_id bigint, document_id bigint)
+returns void language plpgsql as $$
+begin
+  delete from app.nomenclature_price
+  where document_id = price_setting_unpost_records.document_id;
+end $$;
+```
+
+Three things worth knowing:
+
+- **it is optional, and switched on by creating the function** — the same rule as
+  `app.doc_before_write`. A document whose only movements are entries needs
+  nothing;
+- **the same name with a different signature refuses the unposting** instead of
+  being skipped. Silence here is the worse failure: the application would be sure
+  the movements were withdrawn while they went on being in force;
+- **do not reach for a trigger on `app.document`.** It works, and that is the
+  trap — the core puts its own triggers on that table, the firing order between
+  yours and theirs is written down nowhere, and the day they start to interfere
+  you find out from the data rather than from an error.
+
+The register whose rows you are deleting usually belongs to *another* model, with
+its own CRUD and its own screens. That is fine and is the point: the document
+knows what it wrote, and the core does not have to know anything about the table.
+
 ## One-sided entries: off-balance accounts
 
 `app.doc_entry_add` accepts an empty side — `null` for `debit_account` or for

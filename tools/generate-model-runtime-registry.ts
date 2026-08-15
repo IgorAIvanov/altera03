@@ -386,6 +386,14 @@ function renderViewManifest(
 
     return Object.entries(manifest.views).map(([viewName, view]) => {
       const route = `${routeBase}/${viewName}`;
+      // Промах у формі запису називаємо разом із манифестом і ключем: далі шлях
+      // іде в `resolve()`, і той скаже лише «Path must be a string».
+      if (!view || typeof view !== "object" || typeof view.module !== "string") {
+        throw new Error(
+          `${toPosixPath(relative(Deno.cwd(), manifestPath))}: в'ю «${viewName}» має бути ` +
+            `{ "module": "./…", "titleKey": "…" }`,
+        );
+      }
       const moduleAbs = resolve(modelDir, view.module);
       // moduleFile — відносно кореня репо, .tsx нормалізуємо в .ts (як у model-view)
       const moduleFile = toPosixPath(relative(Deno.cwd(), moduleAbs)).replace(/\.tsx?$/, ".ts");
@@ -462,6 +470,28 @@ function renderTsBindings(
   return { imports, block };
 }
 
+/**
+ * Ключі-коментарі (`"//picker": "…"`) — домовленість усього репозиторію: у JSON
+ * коментарів немає, а пояснити рядок треба. Генератор про неї не знав і обходив
+ * ключі `views` підряд, тож на коментарі діставав рядок замість опису в'ю й
+ * падав із `Path must be a string, received "undefined"` — повідомленням, яке
+ * не називає ні манифеста, ні ключа.
+ *
+ * Прибираємо при читанні, а не в кожному обході: інакше коментар у `views` не
+ * ламав би нічого, а той самий коментар у `commands.sql` тихо став би командою
+ * з іменем «//…» у реєстрі.
+ */
+export function stripCommentKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripCommentKeys);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !key.startsWith("//"))
+      .map(([key, nested]) => [key, stripCommentKeys(nested)]),
+  );
+}
+
 async function collectManifests(appDir: string) {
   const manifests: Array<{ manifestPath: string; manifest: ManifestRecord }> = [];
 
@@ -469,7 +499,7 @@ async function collectManifests(appDir: string) {
     const manifestPath = join(directoryPath, "manifest.json");
     try {
       const raw = await Deno.readTextFile(manifestPath);
-      const manifest = JSON.parse(raw) as ManifestRecord;
+      const manifest = stripCommentKeys(JSON.parse(raw)) as ManifestRecord;
       if (manifest.schema !== undefined && !IDENTIFIER_PATTERN.test(manifest.schema)) {
         throw new Error(`Manifest schema must be a lowercase SQL identifier: ${toPosixPath(relative(Deno.cwd(), manifestPath))}`);
       }
@@ -565,18 +595,12 @@ export async function generateModelRuntimeRegistry(
     const tsBindings = renderTsBindings(allManifests, tsCommandsPath);
     const registrySource = `// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}`;
 
-    await Deno.mkdir(dirname(outputPath), { recursive: true });
-    await Deno.writeTextFile(outputPath, `${registrySource}\n`);
-
     const headerImports = tsBindings.imports.join("\n");
     const tsCommandsSource = `${headerImports ? `${headerImports}\n\n` : ""}` +
       `// Generated from model manifests. Do not edit manually.\n` +
       `// Серверний бік реєстру: тут статичні import модулів TS-команд, тому цей\n` +
       `// файл імпортує ТІЛЬКИ app/server.ts. Клієнт бере дані з model-registry.\n\n` +
       `${tsBindings.block}`;
-
-    await Deno.mkdir(dirname(tsCommandsPath), { recursive: true });
-    await Deno.writeTextFile(tsCommandsPath, `${tsCommandsSource}\n`);
 
     // For agent routes, use the first appDir as base for route path computation
     // Each manifest's route is computed relative to its own source appDir
@@ -586,8 +610,6 @@ export async function generateModelRuntimeRegistry(
       `// Generated from model manifests. Do not edit manually.\n\n${
         renderAgentRoutesMulti(allManifests, appDirs, dictionaries)
       }`;
-    await Deno.mkdir(dirname(agentRoutesPath), { recursive: true });
-    await Deno.writeTextFile(agentRoutesPath, `${agentRoutesSource}\n`);
 
     // Опис інструментів агента: JSON Schema payload-ів із TypeBox-схем моделей.
     // Без нього агент бачить `item` як `{type: "object"}` — тобто не знає ні
@@ -615,12 +637,27 @@ export async function generateModelRuntimeRegistry(
 
 ` +
       `${renderAgentTools(agentTools)}`;
-    await Deno.mkdir(dirname(agentToolsPath), { recursive: true });
-    await Deno.writeTextFile(agentToolsPath, `${agentToolsSource}
-`);
 
     // View-manifest: route → moduleFile (відносно кореня репо) → titleKey
     const viewManifestSource = `// Generated from model manifests. Do not edit manually.\n\n${renderViewManifest(allManifests, appDirs)}`;
+
+    // Записи — усі разом і аж тепер, коли впасти вже нічому. Доти помилка в
+    // ОДНОМУ манифесті лишала застосунок із частково оновленою генерацією:
+    // реєстр, ts-commands, agent-routes й agent-tools уже на диску, а
+    // view-manifest — ні. Виглядає це як зламаний застосунок, а не як помилка
+    // в манифесті, і причини в повідомленні немає.
+    await Deno.mkdir(dirname(outputPath), { recursive: true });
+    await Deno.writeTextFile(outputPath, `${registrySource}\n`);
+
+    await Deno.mkdir(dirname(tsCommandsPath), { recursive: true });
+    await Deno.writeTextFile(tsCommandsPath, `${tsCommandsSource}\n`);
+
+    await Deno.mkdir(dirname(agentRoutesPath), { recursive: true });
+    await Deno.writeTextFile(agentRoutesPath, `${agentRoutesSource}\n`);
+
+    await Deno.mkdir(dirname(agentToolsPath), { recursive: true });
+    await Deno.writeTextFile(agentToolsPath, `${agentToolsSource}\n`);
+
     await Deno.mkdir(dirname(viewManifestPath), { recursive: true });
     await Deno.writeTextFile(viewManifestPath, `${viewManifestSource}\n`);
 

@@ -308,6 +308,16 @@ function isObjectType(s: TSchema): boolean {
   return Array.isArray(s.anyOf) && s.anyOf.some((m) => m.type === "object");
 }
 
+/**
+ * Поля об'єктної гілки — з тією ж поправкою на `Type.Union([…, Type.Null()])`.
+ * Порожній масив означає «форму значення не описували», а не «полів немає».
+ */
+function declaredObjectKeys(s: TSchema): string[] {
+  if (s.properties) return Object.keys(s.properties);
+  const branch = s.anyOf?.find((m) => m.properties);
+  return branch ? Object.keys(branch.properties!) : [];
+}
+
 function assertIdentifier(value: string, label: string) {
   if (!IDENTIFIER_PATTERN.test(value)) {
     throw new Error(`${label} «${value}» має містити лише lowercase, digits та underscore`);
@@ -1184,6 +1194,11 @@ $$;`;
 // Обгортки навколо ядра. Самі проводки формує рукописна
 // app.<model>_post_entries(user_id, document_id) у db/<model>.custom.sql —
 // логіка проведення лишається видимим SQL, а не декларацією в маніфесті.
+//
+// Симетрія неповна, і це видно лише на документі, який пише рухи КРІМ проводок:
+// проводки ядро прибирає саме (`doc_unpost` чистить app.journal_entry), а рядок
+// у чужій таблиці — ні, бо про неї не знає. Тому в unpost є пара до
+// `_post_entries` — необов'язковий `app.<model>_unpost_records`.
 
 function renderPost(spec: ModelSpec): string {
   return `drop function if exists ${spec.table}_post(bigint, jsonb);
@@ -1215,6 +1230,44 @@ end;
 $$;`;
 }
 
+/**
+ * Виклик гака «прибрати рухи, крім проводок» — тіло для згенерованого
+ * `<model>_unpost`.
+ *
+ * Проводки ядро прибирає саме (`doc_unpost` чистить `app.journal_entry`), а
+ * рядок, який документ поклав у ЧУЖУ таблицю — періодичний реєстр цін, склад,
+ * ПДВ, — ні: про неї воно не знає нічого. Доти застосунок закривав це власним
+ * тригером на `app.document` — тобто об'єктом на чужій таблиці, про який ядро
+ * не знає й порядок спрацювання з яким ніде не описаний.
+ *
+ * Гак необов'язковий і вмикається СТВОРЕННЯМ функції — рівно так, як
+ * `app.doc_before_write`: документи, у яких рухи лише проводками, не міняються
+ * зовсім, тож наявні застосунки нічого не переписують. А функція з ІНШИМ
+ * підписом валить розпроведення: мовчазний пропуск тут гірший за відмову —
+ * застосунок був би певен, що рухи зняті, а вони лишилися б діяти.
+ */
+export function unpostRecordsHookSql(table: string): string {
+  const hook = `${table}_unpost_records`;
+  const hookName = hook.split(".").pop()!;
+  const hookSchema = hook.slice(0, hook.length - hookName.length - 1);
+  const pair = `${hookName.replace(/_unpost_records$/, "")}_post_entries`;
+
+  return `  -- Рухи, які документ поклав НЕ в проводки: ядро про чужу таблицю не знає.
+  -- Пара до рукописної ${pair} — що документ поклав, те він і прибирає.
+  -- Гак необов'язковий: немає функції — немає й виклику.
+  v_records := to_regprocedure('${hook}(bigint, bigint)');
+  if v_records is not null then
+    perform ${hook}(user_id, v_id);
+  elsif exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = '${hookSchema}' and p.proname = '${hookName}'
+  ) then
+    raise exception '${hook} існує з іншим підписом і тому не кликається'
+      using hint = 'Очікую ${hook}(user_id bigint, document_id bigint)';
+  end if;`;
+}
+
 function renderUnpost(spec: ModelSpec): string {
   return `drop function if exists ${spec.table}_unpost(bigint, jsonb);
 create function ${spec.table}_unpost(user_id bigint, payload jsonb)
@@ -1222,13 +1275,16 @@ returns jsonb
 language plpgsql
 as $$
 declare
-  v_id bigint := nullif(payload->>'id', '')::bigint;
+  v_id      bigint := nullif(payload->>'id', '')::bigint;
+  v_records regprocedure;
 begin
   if v_id is null then
     raise exception 'id обов''язковий';
   end if;
 
   perform app.doc_unpost(user_id, v_id);
+
+${unpostRecordsHookSql(spec.table)}
 
   return ${
     envelope([
@@ -1934,6 +1990,38 @@ function assertJsonKey(value: string, label: string) {
   }
 }
 
+/**
+ * Дві половини одного оголошення мусять називати той самий ключ подання.
+ *
+ * Фільтр звіту — єдине місце, де форму ссылочного значення пишуть РУКАМИ
+ * (`Type.Object({ id, name })`); у моделі це скаляр `bankId`, і розійтися там
+ * нема з чим. А эхо обгортки віддає `{id, <displayKey>}`, де `displayKey` за
+ * умовчанням — перше поле цілі з `x-lookup`, тобто зовсім не завжди `name`.
+ * Эхо приходить першим у `v_out := v_filters || …`, тож воно ЗАТИРАЄ підпис,
+ * покладений формою: відбір діє, а назва в панелі порожня.
+ *
+ * Мовчить при цьому все — схема валідна, SQL зелений, числа правильні, — і
+ * шукати причину людина йде у форму й у пікер, а не в згенеровану обгортку.
+ * Довідники, у яких `x-lookup` стоїть на назві, ховають це роками; ламається
+ * воно на першому ж довіднику, у якого перший `x-lookup` — код.
+ *
+ * Мовчазне «оголосили лише `{id}`» помилкою не рахуємо: там нічого не
+ * суперечить, эхо просто дописує підпис.
+ */
+export function assertFilterDisplayKey(model: string, key: string, prop: TSchema, ref: Ref) {
+  const declared = declaredObjectKeys(prop);
+  const shape = declared.filter((name) => name !== "id");
+  if (!shape.length || declared.includes(ref.displayKey)) return;
+
+  throw new Error(
+    `${model}: фільтр «${key}» оголошений як { ${declared.join(", ")} }, ` +
+      `а подання моделі ${ref.targetTable} — колонка «${ref.display}»` +
+      `${prop["x-ref"]?.display ? "" : " (перше поле з x-lookup)"}. ` +
+      `Додайте display: "${camelToSnake(shape[0])}" в x-ref або оголосіть фільтр як ` +
+      `{ id, ${ref.displayKey} }`,
+  );
+}
+
 async function buildReportSpec(
   appRoot: string,
   modelPath: string,
@@ -1969,11 +2057,13 @@ async function buildReportSpec(
     assertJsonKey(key, `${model}.${key}`);
     const xref = prop["x-ref"];
     if (xref) {
+      const ref = resolveRef(xref, camelToSnake(key), map, `${model}.${key} (фільтр)`);
+      assertFilterDisplayKey(model, key, prop, ref);
       filters.push({
         key,
         normKey: `${key}Id`,
         required: required.has(key),
-        ref: resolveRef(xref, camelToSnake(key), map, `${model}.${key} (фільтр)`),
+        ref,
         isString: false,
       });
       continue;

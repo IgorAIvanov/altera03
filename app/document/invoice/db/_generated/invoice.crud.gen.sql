@@ -531,13 +531,29 @@ returns jsonb
 language plpgsql
 as $$
 declare
-  v_id bigint := nullif(payload->>'id', '')::bigint;
+  v_id      bigint := nullif(payload->>'id', '')::bigint;
+  v_records regprocedure;
 begin
   if v_id is null then
     raise exception 'id обов''язковий';
   end if;
 
   perform app.doc_unpost(user_id, v_id);
+
+  -- Рухи, які документ поклав НЕ в проводки: ядро про чужу таблицю не знає.
+  -- Пара до рукописної invoice_post_entries — що документ поклав, те він і прибирає.
+  -- Гак необов'язковий: немає функції — немає й виклику.
+  v_records := to_regprocedure('app.invoice_unpost_records(bigint, bigint)');
+  if v_records is not null then
+    perform app.invoice_unpost_records(user_id, v_id);
+  elsif exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'app' and p.proname = 'invoice_unpost_records'
+  ) then
+    raise exception 'app.invoice_unpost_records існує з іншим підписом і тому не кликається'
+      using hint = 'Очікую app.invoice_unpost_records(user_id bigint, document_id bigint)';
+  end if;
 
   return jsonb_build_object(
       'ok', true,

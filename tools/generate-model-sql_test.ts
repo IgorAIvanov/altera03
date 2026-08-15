@@ -13,6 +13,7 @@
 import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "@std/assert";
 import { join } from "@std/path";
 import {
+  assertFilterDisplayKey,
   booleanDefaultSql,
   collectModelDirs,
   documentHeaderSpecifier,
@@ -20,6 +21,7 @@ import {
   refDisplaySql,
   refJoinSql,
   resolveRef,
+  unpostRecordsHookSql,
 } from "./generate-model-sql.ts";
 
 /** Тимчасове дерево «застосунок»: `<root>/app` + `<root>/deno.json`. */
@@ -165,7 +167,28 @@ const META: ModelMetaMap = new Map([
     displayCol: "presentation",
     isDocument: true,
   }],
+  // Довідник, у якого перше поле з `x-lookup` — КОД, а не назва. Саме на такому
+  // ссылочний фільтр звіту й ламається (склад, номенклатура, одиниця виміру).
+  ["warehouse", {
+    schema: "app",
+    model: "warehouse",
+    table: "warehouse",
+    pk: "id",
+    displayCol: "code",
+    isDocument: false,
+  }],
 ]);
+
+/** Ссылочний фільтр звіту так і пишуть: об'єднання об'єкта з `null`. */
+function refFilterSchema(properties: string[], xref: Record<string, unknown>) {
+  return {
+    anyOf: [
+      { type: "object", properties: Object.fromEntries(properties.map((p) => [p, { type: "string" }])) },
+      { type: "null" },
+    ],
+    "x-ref": xref,
+  } as unknown as Parameters<typeof assertFilterDisplayKey>[2];
+}
 
 Deno.test("ссылка на документ: join за document_id плюс шапка", () => {
   const ref = resolveRef({ model: "goods_sale", as: "shipment" }, "shipment_id", META, "return.shipmentId");
@@ -279,4 +302,84 @@ Deno.test("searchable по нетекстовій колонці шапки — 
     "return.shipmentId",
   );
   assertEquals(ref.searchable, true);
+});
+
+/**
+ * Фільтр звіту — єдине місце, де форму ссылочного значення пишуть РУКАМИ, і
+ * єдине, де вона може розійтися з тим, що віддає эхо обгортки. Розходження
+ * мовчазне з усіх боків: схема валідна, SQL зелений, числа правильні — а назва
+ * у панелі відборів порожня, бо эхо приходить першим у `v_filters || …` і
+ * затирає підпис, покладений формою.
+ *
+ * Довідники, у яких `x-lookup` стоїть на назві, ховають це роками (у altera-buh
+ * пощастило чотирнадцять звітів поспіль). Ламається воно на першому довіднику,
+ * у якого перший `x-lookup` — код.
+ */
+Deno.test("фільтр { id, name } на модель із поданням-кодом — відмова на генерації", () => {
+  const prop = refFilterSchema(["id", "name"], { model: "warehouse" });
+  const ref = resolveRef({ model: "warehouse" }, "warehouse_id", META, "stock_balance.warehouse (фільтр)");
+
+  const error = assertThrows(
+    () => assertFilterDisplayKey("stock_balance", "warehouse", prop, ref),
+    Error,
+    "warehouse",
+  );
+
+  // Обидві половини названі, і сказано, чим лікувати: інакше людина йде шукати
+  // причину у форму й у пікер, а не в згенеровану обгортку.
+  assertStringIncludes(error.message, "{ id, name }");
+  assertStringIncludes(error.message, "«code»");
+  assertStringIncludes(error.message, `display: "name"`);
+});
+
+/** Явний `display` — те саме одне слово, яким це й лікується. */
+Deno.test("явний display примиряє половини", () => {
+  const prop = refFilterSchema(["id", "name"], { model: "warehouse", display: "name" });
+  const ref = resolveRef(
+    { model: "warehouse", display: "name" },
+    "warehouse_id",
+    META,
+    "stock_balance.warehouse (фільтр)",
+  );
+
+  assertFilterDisplayKey("stock_balance", "warehouse", prop, ref);
+});
+
+/**
+ * Оголошення без підпису суперечності не містить: эхо просто дописує ключ,
+ * якого форма не обіцяла. Відмовляти тут означало б вимагати оголошувати те, що
+ * й так приходить з бази.
+ */
+Deno.test("фільтр, оголошений лише як { id }, проходить", () => {
+  const prop = refFilterSchema(["id"], { model: "warehouse" });
+  const ref = resolveRef({ model: "warehouse" }, "warehouse_id", META, "stock_balance.warehouse (фільтр)");
+
+  assertFilterDisplayKey("stock_balance", "warehouse", prop, ref);
+});
+
+/** Довідник із `x-lookup` на назві — той випадок, що ховав помилку досі. */
+Deno.test("подання-назва: те, що працювало, працює далі", () => {
+  const prop = refFilterSchema(["id", "name"], { model: "bank" });
+  const ref = resolveRef({ model: "bank" }, "bank_id", META, "turnover.bank (фільтр)");
+
+  assertFilterDisplayKey("turnover", "bank", prop, ref);
+});
+
+/**
+ * Пара до рукописної `_post_entries`. Проводки ядро прибирає саме, а рядок у
+ * ЧУЖІЙ таблиці (періодичний реєстр цін, склад, ПДВ) — ні: про неї воно не знає
+ * нічого. Доти застосунок закривав це власним тригером на `app.document`.
+ */
+Deno.test("розпроведення кличе гак рухів, і лише коли він є", () => {
+  const sql = unpostRecordsHookSql("app.price_setting");
+
+  // Вмикається створенням функції — наявні документи не переписуються.
+  assertStringIncludes(sql, "to_regprocedure('app.price_setting_unpost_records(bigint, bigint)')");
+  assertStringIncludes(sql, "perform app.price_setting_unpost_records(user_id, v_id);");
+
+  // Функція з іншим підписом мовчки не пропускається: застосунок був би певен,
+  // що рухи зняті, а вони лишилися б діяти.
+  assertStringIncludes(sql, "proname = 'price_setting_unpost_records'");
+  assertStringIncludes(sql, "raise exception");
+  assertStringIncludes(sql, "Очікую app.price_setting_unpost_records(user_id bigint, document_id bigint)");
 });
