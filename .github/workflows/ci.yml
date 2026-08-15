@@ -107,7 +107,12 @@ jobs:
   scaffold:
     runs-on: ubuntu-latest
     steps:
+      # Уся історія: крок «вміст проти реєстру» шукає коміт, який поставив
+      # опубліковану версію, і за типового fetch-depth: 1 просто каже, що
+      # пропущений. А він тут і потрібен — саме цей джоб гейтить публікацію.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
