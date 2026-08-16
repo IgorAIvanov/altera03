@@ -37,5 +37,14 @@
   "remark.attachments": "Attachments",
   "remark.id": "No.",
   "remark.work": "Processing",
+  "remark.board": "Remark board",
+  "remark.boardColumnEmpty": "Empty",
+  "remark.showMore": "Show more",
+  "remark.order": "Order",
+  "remark.orderNewest": "Newest first",
+  "remark.orderOldest": "Oldest first",
+  "remark.clearFilters": "Clear filters",
+  "remark.moveLeft": "To previous state",
+  "remark.moveRight": "To next state",
   "remark.duplicateOf": "Related remark"
 }

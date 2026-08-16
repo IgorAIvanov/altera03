@@ -37,5 +37,14 @@
   "remark.attachments": "Вкладення",
   "remark.id": "№",
   "remark.work": "Обробка",
+  "remark.board": "Дошка зауважень",
+  "remark.boardColumnEmpty": "Порожньо",
+  "remark.showMore": "Показати ще",
+  "remark.order": "Порядок",
+  "remark.orderNewest": "Спочатку нові",
+  "remark.orderOldest": "Спочатку старі",
+  "remark.clearFilters": "Зняти відбір",
+  "remark.moveLeft": "У попередній стан",
+  "remark.moveRight": "У наступний стан",
   "remark.duplicateOf": "Пов'язане зауваження"
 }

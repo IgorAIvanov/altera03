@@ -40,6 +40,11 @@
       "module": "./remarkList.ts",
       "titleKey": "remark.titleMany"
     },
+    "//board": "Та сама модель іншим поданням: колонка — стан, картка — запис. Окреме в'ю, а не режим списку, бо це окрема вкладка й окреме посилання.",
+    "board": {
+      "module": "./remarkBoard.ts",
+      "titleKey": "remark.board"
+    },
     "edit": {
       "module": "./remarkEdit.ts",
       "titleKey": "remark.titleOne"

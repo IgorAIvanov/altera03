@@ -82,6 +82,51 @@ export const RemarkEditRootSchema = Type.Object({
 });
 export type RemarkEditRoot = Static<typeof RemarkEditRootSchema>;
 
+/**
+ * Одна колонка дошки: картки одного стану.
+ *
+ * Колонка тримає СВІЙ лік і СВОЮ сторінку, бо кожна вантажиться окремим
+ * запитом. Спокуса взяти всі картки одним `list` і розкласти їх на клієнті
+ * велика й хибна: `remark_list` віддає сторінку, а не набір, тож «розклали
+ * двадцять» означало б, що дошка мовчки показує двадцять із двохсот.
+ *
+ * `total` — скільки записів у стані ВЗАГАЛІ, а не скільки завантажено; на цю
+ * різницю й спирається «показати ще».
+ */
+export const RemarkBoardColumnSchema = Type.Object({
+  /** Значення поля `status`, яким колонка задана. */
+  key:   Type.String({ default: "" }),
+  rows:  Type.Array(RemarkRowSchema, { default: [] }),
+  total: Type.Number({ default: 0 }),
+  /** Скільки сторінок уже взято (не номер поточної). */
+  pages: Type.Number({ default: 1 }),
+});
+export type RemarkBoardColumn = Static<typeof RemarkBoardColumnSchema>;
+
+/**
+ * Корінь дошки.
+ *
+ * `columns` — дані (картки прийшли з сервера), `$query` — службовий стан
+ * відбору; `$`-префікс і тримає цю межу.
+ */
+export const RemarkBoardRootSchema = Type.Object({
+  columns: Type.Array(RemarkBoardColumnSchema, { default: [] }),
+  $query: Type.Object({
+    search:   Type.String({ default: "" }),
+    kind:     Type.String({ default: "" }),
+    openOnly: Type.String({ default: "" }),
+    /**
+     * Порядок карток у колонці — напрям, а не поле: сортувати дошку є чим лише
+     * по даті. Свого порядку («перетягнув — запам'яталося») у дошки немає й не
+     * буде тут: під нього потрібне поле в `app.remark`, а таблиця ядрова.
+     * Робити його датою не можна — це переписувало б `created_at`, тобто час
+     * подання зауваження.
+     */
+    sortDir: Type.Union([Type.Literal("asc"), Type.Literal("desc")], { default: "desc" }),
+  }),
+});
+export type RemarkBoardRoot = Static<typeof RemarkBoardRootSchema>;
+
 /** Відбори журналу. Ключі — контракт із `app.remark_list` (`payload->'filters'`). */
 export const RemarkFiltersSchema = Type.Object({
   kind:     Type.Optional(Type.String()),
