@@ -95,6 +95,20 @@ $$;
 -- Тут — і тільки тут — сказано, що вважається рухом: проведений документ, не
 -- позначений на видалення, потрібної організації. Забудеш `is_posted` в
 -- одному звіті — і він розійдеться з рештою; тому умова живе в одному місці.
+--
+-- ВХІД ВИБІРКИ ЗАЛЕЖИТЬ ВІД `p_dims`. Джерело пар (проводка, бік) — підзапит
+-- `src` із двох взаємовиключних гілок. Без відбору за субконто пари — всі
+-- (перша гілка; той самий cross join боків, що був тут завжди). З відбором
+-- перебирати весь журнал марно — ціна виклику не залежала від вибірковості:
+-- скан усього журналу організації плюс jsonb-агрегат аналітики на КОЖЕН рядок,
+-- і лише в кінці `@>`. Залишок номенклатури з 90 рухами коштував як із 6 000
+-- (~900 мс на 80 тис. проводок), а стоїть такий виклик у проведенні — на кожен
+-- рядок документа. Тому друга гілка входить з ix_journal_entry_analytic_value
+-- за заданими парами (вимір, значення) і віддає лише боки, де присутні ВСІ
+-- задані пари. Обидві гілки лише ЗВУЖУЮТЬ перебір: правило руху й контрольний
+-- `@>` стоять нижче, у спільному where, — семантика сказана один раз, і навіть
+-- розбіжність гілки з нею дала б не зайві рядки, а пропущені. Мертву гілку
+-- планувальник відкидає, коли значення `p_dims` відоме на момент планування.
 drop function if exists app.acc_entries(bigint, date, date, varchar[], jsonb);
 create function app.acc_entries(
   p_organization_id bigint,
@@ -139,40 +153,70 @@ as $$
     dt.code                                 as doc_type_code,
     coalesce(dt.short_name, dt.name)        as doc_type_name,
     je.line_no,
-    s.side::varchar,
-    case when s.side = 'debit' then je.debit_account else je.credit_account end as account,
+    src.side::varchar,
+    case when src.side = 'debit' then je.debit_account else je.credit_account end as account,
     coalesce(ca.name, '')                   as account_name,
-    case when s.side = 'debit' then je.credit_account else je.debit_account end as corr_account,
+    case when src.side = 'debit' then je.credit_account else je.debit_account end as corr_account,
     coalesce(cc.name, '')                   as corr_account_name,
-    case when s.side = 'debit' then je.amount else 0::numeric end as debit,
-    case when s.side = 'debit' then 0::numeric else je.amount end as credit,
+    case when src.side = 'debit' then je.amount else 0::numeric end as debit,
+    case when src.side = 'debit' then 0::numeric else je.amount end as credit,
     -- Валюта СВОГО боку. Доти сума була одна на проводку й діставалася обом
     -- бокам без огляду на is_currency: картка гривневого рахунку в проводці
     -- «Дт 312 Кт 311» показувала валютну суму. Тепер зберігається по боках
     -- (конвертація «Дт USD Кт EUR» — дві валюти), і тут просто читається.
-    case when s.side = 'debit' then je.currency_id_debit else je.currency_id_credit end as currency_id,
+    case when src.side = 'debit' then je.currency_id_debit else je.currency_id_credit end as currency_id,
     cur.name                                as currency_code,
-    case when s.side = 'debit'  then je.currency_amount_debit  end as currency_debit,
-    case when s.side = 'credit' then je.currency_amount_credit end as currency_credit,
+    case when src.side = 'debit'  then je.currency_amount_debit  end as currency_debit,
+    case when src.side = 'credit' then je.currency_amount_credit end as currency_credit,
     -- Кількість зберігається по боках (складна проводка: комплектація списує
     -- 6 корпусів і оприбутковує 2 комплекти одним рядком), тож тут вона просто
     -- читається. Що значення лежить лише на боці, який його веде, гарантує
     -- запис — doc_entry_add; сторожів удруге тут немає навмисно.
-    case when s.side = 'debit'  then je.quantity_debit  end as quantity_debit,
-    case when s.side = 'credit' then je.quantity_credit end as quantity_credit,
+    case when src.side = 'debit'  then je.quantity_debit  end as quantity_debit,
+    case when src.side = 'credit' then je.quantity_credit end as quantity_credit,
     je.description,
     coalesce(an.list, '[]'::jsonb)          as dims,
     coalesce(corr.list, '[]'::jsonb)        as corr_dims
-  from app.document d
+  from (
+    select je0.id as entry_id, v.side
+    from app.journal_entry je0
+    cross join (values ('debit'), ('credit')) v(side)
+    where p_dims is null or p_dims = '{}'::jsonb
+    union all
+    select m.journal_entry_id, m.side::text
+    from (
+      select a.journal_entry_id, a.side
+      from (
+        -- Пара відбору в індексній формі: значення — id, тобто bigint.
+        -- Регулярка відсіює те, що id бути не може (зокрема задовге для
+        -- bigint: у `@>` таке значення просто не збігалося, а cast упав би
+        -- помилкою); звірка канонічної форми нижче — щоб '007' не збіглося
+        -- із 7, як не збігалося і в `@>`.
+        select d2.key as dimension_code, d2.value::bigint as value_id, d2.value as value_text
+        from jsonb_each_text(coalesce(p_dims, '{}'::jsonb)) d2
+        where d2.value ~ '^[0-9]{1,18}$'
+      ) p
+      join app.journal_entry_analytic a
+        on a.dimension_code = p.dimension_code
+       and a.value_id = p.value_id
+      where a.value_id::text = p.value_text
+      group by a.journal_entry_id, a.side
+      -- Бік підходить, коли в ньому знайшлися ВСІ задані пари. Лічимо від
+      -- p_dims, а не від відсіяного списку: пара, що не пройшла регулярку,
+      -- не збіглася б і в `@>` — результат мусить лишитися порожнім.
+      having count(distinct a.dimension_code) = (select count(*) from jsonb_each_text(p_dims))
+    ) m
+    where p_dims is not null and p_dims <> '{}'::jsonb
+  ) src
+  join app.journal_entry je on je.id = src.entry_id
+  join app.document d on d.id = je.document_id
   join app.document_type dt on dt.id = d.document_type_id
-  join app.journal_entry je on je.document_id = d.id
-  cross join (values ('debit'), ('credit')) as s(side)
   left join app.chart_of_account ca
-    on ca.code = case when s.side = 'debit' then je.debit_account else je.credit_account end
+    on ca.code = case when src.side = 'debit' then je.debit_account else je.credit_account end
   left join app.chart_of_account cc
-    on cc.code = case when s.side = 'debit' then je.credit_account else je.debit_account end
+    on cc.code = case when src.side = 'debit' then je.credit_account else je.debit_account end
   left join app.currency cur
-    on cur.id = case when s.side = 'debit' then je.currency_id_debit else je.currency_id_credit end
+    on cur.id = case when src.side = 'debit' then je.currency_id_debit else je.currency_id_credit end
   -- Аналітика свого боку: `list` для показу, `map` для відбору. Два подання
   -- одного й того самого — щоб звіт не розбирав список, а відбір не будував
   -- рядки, які нікому не потрібні.
@@ -189,7 +233,7 @@ as $$
       jsonb_object_agg(a.dimension_code, a.value_id::text) as map
     from app.journal_entry_analytic a
     join app.analytic_dimension dim on dim.code = a.dimension_code
-    where a.journal_entry_id = je.id and a.side = s.side
+    where a.journal_entry_id = je.id and a.side = src.side
   ) an on true
   left join lateral (
     select jsonb_agg(jsonb_build_object(
@@ -203,7 +247,7 @@ as $$
     from app.journal_entry_analytic a
     join app.analytic_dimension dim on dim.code = a.dimension_code
     where a.journal_entry_id = je.id
-      and a.side = case when s.side = 'debit' then 'credit' else 'debit' end
+      and a.side = case when src.side = 'debit' then 'credit' else 'debit' end
   ) corr on true
   where d.organization_id = p_organization_id
     and d.is_posted
@@ -214,13 +258,13 @@ as $$
     -- визначенням («Дт 021» не кореспондує ні з чим), і без цієї умови її
     -- порожня сторона збиралася б у сальдо окремим рахунком «null» — з сумою,
     -- яка робить підсумки зведеними, хоча такого рахунку немає.
-    and (case when s.side = 'debit' then je.debit_account else je.credit_account end) is not null
+    and (case when src.side = 'debit' then je.debit_account else je.credit_account end) is not null
     and (p_accounts  is null or
-         (case when s.side = 'debit' then je.debit_account else je.credit_account end) = any (p_accounts))
+         (case when src.side = 'debit' then je.debit_account else je.credit_account end) = any (p_accounts))
     -- `@>` — саме та семантика, що потрібна: усі задані пари присутні, зайві
     -- субконто в проводці відбору не заважають.
     and (p_dims is null or p_dims = '{}'::jsonb or coalesce(an.map, '{}'::jsonb) @> p_dims)
-  order by d.doc_date, d.id, je.line_no, je.id, s.side desc;
+  order by d.doc_date, d.id, je.line_no, je.id, src.side desc;
 $$;
 
 -- ── Потік проводок (рядок = проводка, а не бік) ──────────────────────────────
@@ -234,6 +278,10 @@ $$;
 --
 -- Відбір за рахунком і субконто тут — «ХОЧ ОДИН бік», а не «свій бік»: у
 -- журналі проводок відбір за рахунком означає «проводки, які його торкаються».
+--
+-- Вхід вибірки — той самий `src`, що в `acc_entries` (див. коментар там), лише
+-- без боку: з відбором за субконто друга гілка віддає проводки, у яких усі
+-- задані пари знайшлися бодай на одному боці — індексом, а не перебором.
 drop function if exists app.acc_journal(bigint, date, date, varchar[], jsonb, bigint);
 create function app.acc_journal(
   p_organization_id bigint,
@@ -283,9 +331,32 @@ as $$
     je.quantity_debit, je.quantity_credit, je.description,
     coalesce(dan.list, '[]'::jsonb),
     coalesce(can.list, '[]'::jsonb)
-  from app.document d
+  from (
+    select je0.id as entry_id
+    from app.journal_entry je0
+    where p_dims is null or p_dims = '{}'::jsonb
+    union all
+    select m.journal_entry_id
+    from (
+      select a.journal_entry_id
+      from (
+        select d2.key as dimension_code, d2.value::bigint as value_id, d2.value as value_text
+        from jsonb_each_text(coalesce(p_dims, '{}'::jsonb)) d2
+        where d2.value ~ '^[0-9]{1,18}$'
+      ) p
+      join app.journal_entry_analytic a
+        on a.dimension_code = p.dimension_code
+       and a.value_id = p.value_id
+      where a.value_id::text = p.value_text
+      group by a.journal_entry_id, a.side
+      having count(distinct a.dimension_code) = (select count(*) from jsonb_each_text(p_dims))
+    ) m
+    where p_dims is not null and p_dims <> '{}'::jsonb
+    group by m.journal_entry_id
+  ) src
+  join app.journal_entry je on je.id = src.entry_id
+  join app.document d on d.id = je.document_id
   join app.document_type dt on dt.id = d.document_type_id
-  join app.journal_entry je on je.document_id = d.id
   left join app.chart_of_account cd on cd.code = je.debit_account
   left join app.chart_of_account cc on cc.code = je.credit_account
   left join app.currency curd on curd.id = je.currency_id_debit
