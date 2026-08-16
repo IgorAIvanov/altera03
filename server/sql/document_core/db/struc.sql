@@ -196,6 +196,19 @@ create table if not exists app.journal_entry_analytic (
   constraint pk_journal_entry_analytic primary key (journal_entry_id, side, slot_no)
 );
 
--- Відбір звіту за конкретним субконто («обороти по контрагенту»).
+-- Відбір звіту за конкретним субконто («обороти по контрагенту») і індексний
+-- вхід шару обчислень (`acc_entries` з `p_dims`, див. ledger.sql).
+--
+-- `journal_entry_id` і `side` — у КЛЮЧІ, а не в include, і це не дрібниця:
+-- вхід шару читає з індексу рівно ці дві колонки, тож із ними скан index-only —
+-- без походу в купу за кожним рухом (на річному журналі це тисячі випадкових
+-- сторінок на виклик, а виклик стоїть у проведенні на кожен рядок документа).
+-- Покриття дав би й include, але ключові колонки ще й тримають вивід
+-- упорядкованим за (journal_entry_id, side) у межах пари — планувальник вільний
+-- цим скористатися; сьогоднішній план усе одно сортує звужений набір під
+-- count(distinct), і це копійки проти прибраних походів у купу. Префікс
+-- (dimension_code, value_id) збережено, тож читачі рівності за виміром і
+-- значенням працюють як працювали. Зміна визначення на наявній базі — у
+-- migration.sql, за тим самим правилом, що uq_document_number.
 create index if not exists ix_journal_entry_analytic_value
-  on app.journal_entry_analytic (dimension_code, value_id);
+  on app.journal_entry_analytic (dimension_code, value_id, journal_entry_id, side);

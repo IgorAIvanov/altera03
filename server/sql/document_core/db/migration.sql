@@ -30,6 +30,25 @@ begin
 end
 $$;
 
+-- Індекс аналітики дістав journal_entry_id і side у ключ: індексний вхід шару
+-- обчислень (`acc_entries` з `p_dims`) читає рівно ці колонки, і з двоколонковим
+-- визначенням ходив у купу за кожним рухом. Перебудова — за ВИЗНАЧЕННЯМ, як у
+-- uq_document_number вище: на чистій базі struc.sql одразу створює
+-- чотириколонковий, і чіпати його на кожній публікації не можна.
+do $$
+begin
+  if exists (
+    select 1 from pg_indexes
+    where schemaname = 'app'
+      and indexname = 'ix_journal_entry_analytic_value'
+      and indexdef not like '%journal_entry_id%'
+  ) then
+    execute 'drop index app.ix_journal_entry_analytic_value';
+    execute 'create index ix_journal_entry_analytic_value on app.journal_entry_analytic '
+         || '(dimension_code, value_id, journal_entry_id, side)';
+  end if;
+end $$;
+
 -- Виправлення опису виміру «Банк» жило тут і переїхало в застосунок
 -- (`app/catalog/bank/db/migration.sql`): воно лікує рядок про ЙОГО довідник, а в
 -- пакеті ядра імені прикладної таблиці бути не має. Установка без банківського
