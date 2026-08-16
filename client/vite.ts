@@ -115,6 +115,13 @@ async function scanManifests(appRoot: string): Promise<Record<string, string>> {
         const routeBase = toPosix(relative(appRoot, modelDir));
 
         for (const [viewName, view] of Object.entries(manifest.views)) {
+          // Ключі-коментарі (`"//board": "чому це окрема в'ю"`) — домовленість
+          // усього репозиторію: у JSON коментарів немає, а пояснити рядок треба.
+          // Генератор реєстру її знає (`stripCommentKeys`), а сканер збірки — ні,
+          // і діставав рядок замість опису в'ю. Падало це вже після успішних
+          // `sql:registry` й `deno task check`, повідомленням, яке не називає ні
+          // манифеста, ні ключа: «The "path" argument must be of type string».
+          if (viewName.startsWith("//")) continue;
           input[`${routeBase}/${viewName}`] = resolve(modelDir, view.module);
         }
       }
