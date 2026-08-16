@@ -107,15 +107,37 @@ $$;
 -- за заданими парами (вимір, значення) і віддає лише боки, де присутні ВСІ
 -- задані пари. Обидві гілки лише ЗВУЖУЮТЬ перебір: правило руху й контрольний
 -- `@>` стоять нижче, у спільному where, — семантика сказана один раз, і навіть
--- розбіжність гілки з нею дала б не зайві рядки, а пропущені. Мертву гілку
--- планувальник відкидає, коли значення `p_dims` відоме на момент планування.
-drop function if exists app.acc_entries(bigint, date, date, varchar[], jsonb);
-create function app.acc_entries(
+-- розбіжність гілки з нею дала б не зайві рядки, а пропущені.
+--
+-- ЧОМУ ГІЛКУ ВИБИРАЄ ОКРЕМИЙ ПАРАМЕТР, А НЕ САМ `p_dims`. Бо вибір мусить
+-- відбуватися на ПЛАНУВАННІ, а `p_dims` на живому шляху не константа: застосунок
+-- кличе шар зі своєї функції й збирає відбір виразом
+-- (`jsonb_build_object('nomenclature', …) || case when … end`). Такий вузол
+-- `eval_const_expressions` не згортає — мертва гілка лишається в плані, і її
+-- оцінка (увесь журнал × 2 боки) їде в `Append` цілком. Далі все просто:
+-- планувальник бачить джерело на 160 тис. рядків там, де фактично буде 14, і
+-- обирає хеш-з'єднання з повним скануванням журналу. Індексний вхід при цьому
+-- у плані ПРИСУТНІЙ і виконується — тобто виправлення працює рівно до того
+-- місця, де починає коштувати: 52 мс замість 2.6 на 80 тис. проводок.
+--
+-- Тому тіло приймає `p_by_dims` — і кличуть його ДВІЧІ з літералами
+-- (`acc_entries` нижче). Літерал вбудовується в тіло, мертва гілка згортається
+-- ще на плануванні, і кожна половина дістає свій правильний план. Прикро, але
+-- жоден дешевший спосіб не працює: селективність псевдоконстантної умови
+-- планувальник бере за одиницю, тож ані переписування умови, ані ручки
+-- (`random_page_cost`, `join_collapse_limit`, `enable_hashjoin`) оцінки не
+-- міняють — вони рухають ВАРТІСТЬ, а промахнулася ОЦІНКА, і на чотири порядки.
+--
+-- ЦЕ ВНУТРІШНЄ ТІЛО. Кличте `app.acc_entries`; тут `p_by_dims` мусить збігатися
+-- з `p_dims` (є відбір — `true`), інакше функція просто віддасть не те.
+drop function if exists app.acc_entries_impl(bigint, date, date, varchar[], jsonb, boolean);
+create function app.acc_entries_impl(
   p_organization_id bigint,
-  p_date_from       date default null,
-  p_date_to         date default null,
-  p_accounts        varchar[] default null,
-  p_dims            jsonb default null
+  p_date_from       date,
+  p_date_to         date,
+  p_accounts        varchar[],
+  p_dims            jsonb,
+  p_by_dims         boolean
 )
 returns table (
   entry_id        bigint,
@@ -181,7 +203,7 @@ as $$
     select je0.id as entry_id, v.side
     from app.journal_entry je0
     cross join (values ('debit'), ('credit')) v(side)
-    where p_dims is null or p_dims = '{}'::jsonb
+    where not p_by_dims
     union all
     select m.journal_entry_id, m.side::text
     from (
@@ -206,7 +228,7 @@ as $$
       -- не збіглася б і в `@>` — результат мусить лишитися порожнім.
       having count(distinct a.dimension_code) = (select count(*) from jsonb_each_text(p_dims))
     ) m
-    where p_dims is not null and p_dims <> '{}'::jsonb
+    where p_by_dims
   ) src
   join app.journal_entry je on je.id = src.entry_id
   join app.document d on d.id = je.document_id
@@ -267,6 +289,73 @@ as $$
   order by d.doc_date, d.id, je.line_no, je.id, src.side desc;
 $$;
 
+-- Потік рухів: те, що кличуть звідусіль. Тіло одне (`acc_entries_impl`), а тут
+-- воно розгортається двічі — з `false` і з `true`, — і кожна половина закрита
+-- умовою на `p_dims`. Умова псевдоконстантна: рядків вона не перебирає, а
+-- одноразово вирішує, яку половину виконувати (`One-Time Filter`, друга —
+-- `never executed`).
+--
+-- Виглядає надлишково, але саме це й лікує оцінку. Літеральний `p_by_dims`
+-- вбудовується в тіло разом із ним, тож усередині КОЖНОЇ половини лишається
+-- рівно одне джерело — а отже, і правильні оцінки для з'єднань із журналом,
+-- документом і аналітикою. Причина, чому не можна просто лишити одне тіло, —
+-- у коментарі до `acc_entries_impl` вище.
+--
+-- Ціна рішення, названа чесно: у плані видно обидві половини, і сумарна оцінка
+-- рядків завищена на «увесь журнал» (мертва половина додає свою). На вибір
+-- шляху ВСЕРЕДИНІ це не впливає — половини плануються незалежно, — а всі
+-- споживачі шару над результатом лише агрегують. Якщо колись з'явиться той, хто
+-- ЗʼЄДНУЄ результат із чимось іще, дивитися треба саме сюди.
+--
+-- Порожній `p_dims` у першу половину передається літеральним `null`, а не своїм
+-- значенням: у ній він однаково нічого не відбирає (умова показу гарантує
+-- «немає або порожній»), зате так із мертвої половини зникає ще й контрольний
+-- `@>`.
+drop function if exists app.acc_entries(bigint, date, date, varchar[], jsonb);
+create function app.acc_entries(
+  p_organization_id bigint,
+  p_date_from       date default null,
+  p_date_to         date default null,
+  p_accounts        varchar[] default null,
+  p_dims            jsonb default null
+)
+returns table (
+  entry_id        bigint,
+  document_id     bigint,
+  doc_date        timestamp,
+  doc_number      varchar,
+  doc_type_code   varchar,
+  doc_type_name   varchar,
+  line_no         int,
+  side            varchar,
+  account         varchar,
+  account_name    varchar,
+  corr_account    varchar,
+  corr_account_name varchar,
+  debit           numeric,
+  credit          numeric,
+  currency_id     bigint,
+  currency_code   varchar,
+  currency_debit  numeric,
+  currency_credit numeric,
+  quantity_debit  numeric,
+  quantity_credit numeric,
+  description     text,
+  dims            jsonb,
+  corr_dims       jsonb
+)
+language sql
+stable
+as $$
+  select *
+  from app.acc_entries_impl(p_organization_id, p_date_from, p_date_to, p_accounts, null::jsonb, false)
+  where p_dims is null or p_dims = '{}'::jsonb
+  union all
+  select *
+  from app.acc_entries_impl(p_organization_id, p_date_from, p_date_to, p_accounts, p_dims, true)
+  where p_dims is not null and p_dims <> '{}'::jsonb;
+$$;
+
 -- ── Потік проводок (рядок = проводка, а не бік) ──────────────────────────────
 -- Другий погляд на той самий регістр. `acc_entries` дивиться ВІД РАХУНКУ (по
 -- рядку на кожен бік) — це потрібно картці, сальдо й оборотам. Тут навпаки:
@@ -282,14 +371,22 @@ $$;
 -- Вхід вибірки — той самий `src`, що в `acc_entries` (див. коментар там), лише
 -- без боку: з відбором за субконто друга гілка віддає проводки, у яких усі
 -- задані пари знайшлися бодай на одному боці — індексом, а не перебором.
-drop function if exists app.acc_journal(bigint, date, date, varchar[], jsonb, bigint);
-create function app.acc_journal(
+--
+-- І розгортається воно так само двічі, з тієї ж причини: гілку мусить вибирати
+-- ПЛАНУВАЛЬНИК, а `p_dims` на живому шляху не константа. Пояснення повністю —
+-- у коментарі до `acc_entries_impl`; тут його не повторюємо, щоб дві копії не
+-- розійшлися.
+--
+-- ЦЕ ВНУТРІШНЄ ТІЛО — кличте `app.acc_journal`.
+drop function if exists app.acc_journal_impl(bigint, date, date, varchar[], jsonb, bigint, boolean);
+create function app.acc_journal_impl(
   p_organization_id bigint,
-  p_date_from       date default null,
-  p_date_to         date default null,
-  p_accounts        varchar[] default null,
-  p_dims            jsonb default null,
-  p_document_id     bigint default null
+  p_date_from       date,
+  p_date_to         date,
+  p_accounts        varchar[],
+  p_dims            jsonb,
+  p_document_id     bigint,
+  p_by_dims         boolean
 )
 returns table (
   entry_id            bigint,
@@ -334,7 +431,7 @@ as $$
   from (
     select je0.id as entry_id
     from app.journal_entry je0
-    where p_dims is null or p_dims = '{}'::jsonb
+    where not p_by_dims
     union all
     select m.journal_entry_id
     from (
@@ -351,7 +448,7 @@ as $$
       group by a.journal_entry_id, a.side
       having count(distinct a.dimension_code) = (select count(*) from jsonb_each_text(p_dims))
     ) m
-    where p_dims is not null and p_dims <> '{}'::jsonb
+    where p_by_dims
     group by m.journal_entry_id
   ) src
   join app.journal_entry je on je.id = src.entry_id
@@ -398,6 +495,52 @@ as $$
          or coalesce(dan.map, '{}'::jsonb) @> p_dims
          or coalesce(can.map, '{}'::jsonb) @> p_dims)
   order by d.doc_date, d.id, je.line_no, je.id;
+$$;
+
+-- Потік проводок: те, що кличуть звідусіль. Розгортання тіла двічі — як в
+-- `acc_entries`; чому саме так, сказано там.
+drop function if exists app.acc_journal(bigint, date, date, varchar[], jsonb, bigint);
+create function app.acc_journal(
+  p_organization_id bigint,
+  p_date_from       date default null,
+  p_date_to         date default null,
+  p_accounts        varchar[] default null,
+  p_dims            jsonb default null,
+  p_document_id     bigint default null
+)
+returns table (
+  entry_id            bigint,
+  document_id         bigint,
+  doc_date            timestamp,
+  doc_number          varchar,
+  doc_type_code       varchar,
+  doc_type_name       varchar,
+  line_no             int,
+  debit_account       varchar,
+  debit_account_name  varchar,
+  credit_account      varchar,
+  credit_account_name varchar,
+  amount              numeric,
+  currency_code_debit    varchar,
+  currency_amount_debit  numeric,
+  currency_code_credit   varchar,
+  currency_amount_credit numeric,
+  quantity_debit      numeric,
+  quantity_credit     numeric,
+  description         text,
+  debit_dims          jsonb,
+  credit_dims         jsonb
+)
+language sql
+stable
+as $$
+  select *
+  from app.acc_journal_impl(p_organization_id, p_date_from, p_date_to, p_accounts, null::jsonb, p_document_id, false)
+  where p_dims is null or p_dims = '{}'::jsonb
+  union all
+  select *
+  from app.acc_journal_impl(p_organization_id, p_date_from, p_date_to, p_accounts, p_dims, p_document_id, true)
+  where p_dims is not null and p_dims <> '{}'::jsonb;
 $$;
 
 -- ── Сальдо й обороти за один прохід ──────────────────────────────────────────

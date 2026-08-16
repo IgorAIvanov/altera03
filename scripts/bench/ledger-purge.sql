@@ -13,5 +13,8 @@ delete from app.analytic_dimension where code in ('warehouse','nomenclature','ba
 delete from app.organization where id = 9001;
 drop table if exists public.ledger_before;
 drop table if exists public.ledger_after;
+-- Обгортка живого виклику (ledger-live-call.sql): вона в public і своїх даних
+-- не має, але лишати її після стенду ні до чого.
+drop function if exists public.bench_live_balance(bigint, varchar, bigint, bigint);
 commit;
 select 'left in journal: '||count(*)||' entries' from app.journal_entry;
