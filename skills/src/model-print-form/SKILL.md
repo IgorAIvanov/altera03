@@ -155,7 +155,8 @@ jump while typing; `resolvePrintTemplateBlockPlacement` converts them).
 }
 ```
 
-Block types: `text`, `field-list`, `table`, `image`, `horizontal-line`, `vertical-line`.
+Block types: `text`, `field-list`, `table`, `image`, `barcode`, `char-cells`,
+`horizontal-line`, `vertical-line`.
 Every block has `key`, `placement` (`xPercent`/`yPercent`/`widthPercent`/`heightPercent`
 in % of the print area = A4 minus 40pt margins) and `text` (fontSize, align, fontWeight, color).
 
@@ -220,6 +221,73 @@ two short words split across two lines happily — one long word never does.
 
 Test with a realistic amount, not the demo one. A blank built around `12 000.00` looks
 finished until the first invoice for `1 234 567.89`.
+
+To check how it *looks* rather than whether it fits, build the PDF in the probe — same
+renderer the runtime uses:
+
+```ts
+import { normalizePrintTemplateSchema } from "@altera/server/print";
+import { renderPrintPdf } from "@altera/server/print/render";
+
+const schema = normalizePrintTemplateSchema(JSON.parse(await Deno.readTextFile(file)));
+if (!schema) throw new Error("not schemaVersion 2, or no blocks");
+
+await Deno.writeFile("out.pdf", await renderPrintPdf(
+  { code, name, targetModel, dataCommand, orientation: "portrait", schema },
+  printData,                       // the same `data.item` the data command returns
+));
+```
+
+Normalise a template you read yourself — a file in `prints/` has not been through
+`normalizePrintTemplateSchema`, and a half-described table is where
+`Cannot read properties of undefined` comes from.
+
+### A regulated form: character cells and rotated text
+
+Two things a Ukrainian approved blank needs and nothing else can express. Both are
+renderer features — there is no way around them from the application side, and a
+simplified blank is not a simpler document, it is the wrong one.
+
+**One value per cell** — tax number, personal number, date, declaration number:
+
+```json
+{
+  "key": "seller_tax", "type": "char-cells",
+  "path": "doc.sellerTaxNumber", "count": "12",
+  "borderColor": "#262626", "lineWidth": "1",
+  "placement": { "mode": "absolute", "xPercent": "22", "yPercent": "14", "widthPercent": "36", "heightPercent": "3" }
+}
+```
+
+`count` comes from the **approved form**, not from the length of the value (tax number
+12, personal number 10, date 8) — empty cells stay empty, that is how the blank looks.
+
+**The renderer slices, the data command formats.** `22.06.2026` in eight cells prints
+`2 2 . 0 6 . 2 0` — dots are characters too. Return a separate field for it
+(`to_char(d, 'DDMMYYYY')`), exactly as you return every other date as a string. This is
+the trap worth remembering: the blank looks filled in.
+
+Alignment says **where the value sits in the frame** (each character is always centred in
+its own cell), and it also decides which end of an over-long value survives: `left` keeps
+the head, `right` keeps the tail. The frame never stretches.
+
+**Rotated text** — `"textOrientation": "90"`, reading bottom to top, on a `text` block and
+on a table cell:
+
+```json
+{ "type": "text", "value": "Звіт про використання коштів…", "textOrientation": "90" }
+{ "text": "Ставка ПДВ", "fontWeight": "bold", "textOrientation": "90" }
+```
+
+Use it where the approved form does: the whole title running up the left edge (advance
+report), or a caption in a column too narrow for it horizontally. Two consequences:
+
+- a rotated **block** makes `heightPercent` affect print — it becomes the length the line
+  wraps at; leave it unset and the text runs as one line of its full length;
+- a rotated **cell** does not wrap at all: the length of its caption becomes the row
+  height.
+
+Alignment in both runs along the reading direction: `left` sticks to the bottom.
 
 ### Conditional parts: `visibleWhen`
 

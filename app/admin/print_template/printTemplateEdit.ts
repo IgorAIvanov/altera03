@@ -33,12 +33,17 @@ import {
   splitCell,
   type GridRange,
 } from "./printTemplate.grid.ts";
-// Єдиний рантайм-виняток серед імпортів ядра тут: правило істинності умови
-// показу мусить бути ОДНЕ з друком. Полотно, яке рахує «видно» інакше, ніж
-// рендерер, — гірше за полотно, яке не рахує цього зовсім: воно обіцяє те,
-// чого на папері не буде. `@altera/server/print` — вузький вхід (сам формат
-// шаблону), барель із контролерами Danet він не тягне.
-import { isPrintTemplateElementVisible } from "@altera/server/print";
+// Рантайм-винятки серед імпортів ядра тут одні й ті самі за суттю: правило, за
+// яким полотно показує вміст, мусить бути ОДНЕ з друком. Полотно, яке рахує
+// «видно» чи «яка цифра в якій клітинці» інакше, ніж рендерер, — гірше за
+// полотно, яке не рахує цього зовсім: воно обіцяє те, чого на папері не буде.
+// `@altera/server/print` — вузький вхід (сам формат шаблону), барель із
+// контролерами Danet він не тягне.
+import {
+  distributePrintTemplateCharCells,
+  isPrintTemplateElementVisible,
+  resolvePrintTemplateCharCellCount,
+} from "@altera/server/print";
 // Решта — тільки типи: цей import стирається при збірці.
 import type {
   PrintTemplateBlock,
@@ -49,6 +54,7 @@ import type {
   PrintTemplateTableCell,
   PrintTemplateTableRow,
   PrintTemplateTableSectionName,
+  PrintTemplateTextOrientation,
   PrintTemplateValueFormat,
 } from "@altera/server/print";
 
@@ -76,6 +82,17 @@ const PRINT_TEMPLATE_TABLE_SECTIONS: PrintTemplateTableSectionName[] = ["header"
 
 /** Скільки рядків таблиці показувати на схемі — решта не додає інформації. */
 const SCHEMATIC_TABLE_ROWS = 8;
+
+/**
+ * Поворот тексту на полотні. `vertical-rl` сам собою читається згори вниз, а
+ * рендерер друкує знизу вгору — тому додається розворот на 180°. Без нього
+ * схема показувала б правильний поворот у неправильний бік, а напрямок читання
+ * — саме те, заради чого поворот і вмикають.
+ */
+const VERTICAL_TEXT_STYLE: Record<PrintTemplateTextOrientation, string> = {
+  "0": "",
+  "90": "writing-mode:vertical-rl;transform:rotate(180deg)",
+};
 
 /**
  * Значення для схеми — як у рендерері: порожнє лишається порожнім.
@@ -229,6 +246,9 @@ function blockLabel(block: PrintTemplateBlock): string {
   if (block.type === "text") return (block.value || block.path).slice(0, 40) || t("printTemplate.blockType.text");
   if (block.type === "table") return block.title || block.source || t("printTemplate.blockType.table");
   if (block.type === "field-list") return block.items.map((item) => item.label).filter(Boolean).join(", ").slice(0, 40);
+  if (block.type === "char-cells") {
+    return (block.value || block.path).slice(0, 40) || t("printTemplate.blockType.char-cells");
+  }
   return t(`printTemplate.blockType.${block.type}`);
 }
 
@@ -444,13 +464,20 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
   }
 
   /**
-   * Чи впливає висота на друк. Рендерер читає її для зображень і ліній; для
-   * тексту, списку полів і таблиці вміст ллється від верху рамки, і висота
-   * лишається розміткою — місцем, яке блок займає на аркуші. Міняти її можна
-   * скрізь (це зручно при компонуванні), але підказку показуємо чесно.
+   * Чи впливає висота на друк. Рендерер читає її для зображень, ліній,
+   * штрих-кода й поля по клітинках; для тексту, списку полів і таблиці вміст
+   * ллється від верху рамки, і висота лишається розміткою — місцем, яке блок
+   * займає на аркуші. Міняти її можна скрізь (це зручно при компонуванні), але
+   * підказку показуємо чесно.
+   *
+   * ПОВЕРНУТИЙ текст — виняток: у нього ролі сторін міняються місцями, і висота
+   * стає тим, чим у звичайного блока є ширина, — довжиною, на якій рядок
+   * переноситься.
    */
   private heightAffectsPrint(block: PrintTemplateBlock) {
-    return block.type === "image" || block.type === "barcode" ||
+    if (block.type === "text") return block.textOrientation === "90";
+
+    return block.type === "image" || block.type === "barcode" || block.type === "char-cells" ||
       block.type === "horizontal-line" || block.type === "vertical-line";
   }
 
@@ -1010,6 +1037,25 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     `;
   }
 
+  /**
+   * Поворот тексту — двома кнопками, а не випадайкою: значень два, і кут тут
+   * рівно один (у джерелі регламентованих форм інших не буває).
+   */
+  private orientationSelect(
+    value: PrintTemplateTextOrientation,
+    onChange: (value: PrintTemplateTextOrientation) => void,
+  ) {
+    const items: Array<[PrintTemplateTextOrientation, string]> = [["0", "A"], ["90", "⤺A"]];
+    return html`
+      <span class="join">
+        ${items.map(([orientation, glyph]) => html`
+          <button class="join-item btn btn-xs ${value === orientation ? "btn-primary" : ""}"
+            @click=${() => onChange(orientation)}>${glyph}</button>
+        `)}
+      </span>
+    `;
+  }
+
   // ── Панель властивостей ─────────────────────────────────────────────────────
 
   private renderProperties(): TemplateResult {
@@ -1103,6 +1149,15 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               `)}
             </select>
           `)}
+          <!-- Поворот міняє ролі сторін рамки: рядок переноситься по ВИСОТІ, а
+               не по ширині. Тому підказку про висоту показуємо тут же. -->
+          ${this.field(t("printTemplate.textOrientation"), this.orientationSelect(
+            block.textOrientation,
+            (v) => this.updateBlock(block.key, (b) => (b.type === "text" ? { ...b, textOrientation: v } : b)),
+          ))}
+          ${block.textOrientation === "90"
+            ? html`<div class="text-xs text-muted">${t("printTemplate.textOrientationHint")}</div>`
+            : nothing}
         ` : nothing}
 
         ${block.type === "image" ? html`
@@ -1183,6 +1238,33 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           `)}
 
           <div class="text-xs text-muted">${t(`printTemplate.barcodeHint.${block.symbology}`)}</div>
+        ` : nothing}
+
+        ${block.type === "char-cells" ? html`
+          <!-- Значення: або з даних, або вписане руками — те саме правило, що
+               в тексті й штрих-коді. Розкладає його рендерер САМ, тому під
+               клітинки команда даних віддає рядок без роздільників. -->
+          ${this.field(t("printTemplate.charCellsPath"), this.pathSelect(block.path, scalarPaths, (v) => this.updateBlock(block.key, (b) => (
+            b.type === "char-cells" ? { ...b, path: v } : b
+          ))))}
+          ${this.field(t("printTemplate.charCellsValue"), this.textInput(block.value, (v) => this.updateBlock(block.key, (b) => (
+            b.type === "char-cells" ? { ...b, value: v } : b
+          ))))}
+          ${block.value && block.path
+            ? html`<div class="text-xs text-warning">${t("printTemplate.staticValueWins")}</div>`
+            : nothing}
+          <div class="grid grid-cols-2 gap-2">
+            ${this.field(t("printTemplate.charCellsCount"), this.textInput(block.count, (v) => this.updateBlock(block.key, (b) => (
+              b.type === "char-cells" ? { ...b, count: v } : b
+            ))))}
+            ${this.field(t("printTemplate.lineWidth"), this.textInput(block.lineWidth, (v) => this.updateBlock(block.key, (b) => (
+              b.type === "char-cells" ? { ...b, lineWidth: v } : b
+            ))))}
+            ${this.field(t("printTemplate.charCellsBorderColor"), this.colorInput(block.borderColor, (v) => this.updateBlock(block.key, (b) => (
+              b.type === "char-cells" ? { ...b, borderColor: v } : b
+            ))))}
+          </div>
+          <div class="text-xs text-muted">${t("printTemplate.charCellsHint")}</div>
         ` : nothing}
 
         ${block.type === "field-list" ? this.renderFieldListProperties(block, scalarPaths) : nothing}
@@ -1519,7 +1601,14 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               `)}
               ${this.field(t("printTemplate.fontSize"), this.textInput(cell.fontSize, (v) => this.updateSelectedCell({ fontSize: v })))}
               ${this.field(t("printTemplate.fontColor"), this.colorInput(cell.color, (v) => this.updateSelectedCell({ color: v })))}
+              ${this.field(t("printTemplate.textOrientation"), this.orientationSelect(
+                cell.textOrientation,
+                (v) => this.updateSelectedCell({ textOrientation: v }),
+              ))}
             </div>
+            ${cell.textOrientation === "90"
+              ? html`<div class="text-xs text-muted">${t("printTemplate.cellOrientationHint")}</div>`
+              : nothing}
           </div>
         ` : html`<div class="text-xs text-muted">${t("printTemplate.cellSelectHint")}</div>`}
       </div>
@@ -1645,7 +1734,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       // прив'язку.
       const text = block.value ||
         (block.path ? stringifyValue(resolvePath(this.previewData, block.path)) : "");
-      return html`<div class="frame-body" style="${common(block.text)};white-space:pre-wrap">${text}</div>`;
+      return html`<div class="frame-body" style="${common(block.text)};white-space:pre-wrap;${VERTICAL_TEXT_STYLE[block.textOrientation]}">${text}</div>`;
     }
 
     if (block.type === "field-list") {
@@ -1687,7 +1776,8 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
                   font-size:${pt(cell.fontSize || block.text.fontSize)};
                   color:${cell.color || block.text.color};
                 "
-              >${cell.text || (cell.path ? stringifyValue(resolvePath(scope, cell.path)) : "")}</td>
+              ><span style="display:inline-block;${VERTICAL_TEXT_STYLE[cell.textOrientation]}"
+                >${cell.text || (cell.path ? stringifyValue(resolvePath(scope, cell.path)) : "")}</span></td>
             `)}
           </tr>
         `);
@@ -1746,6 +1836,33 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           ${block.showText
             ? html`<div style="font-size:${pt(block.text.fontSize)};color:${block.text.color}">${value || "—"}</div>`
             : nothing}
+        </div>
+      `;
+    }
+
+    if (block.type === "char-cells") {
+      // Клітинки рахує ядро — тією ж функцією, що й друк: вирівнювання тут не
+      // косметика, воно вирішує, який кінець задовгого значення лишиться.
+      const value = block.value ||
+        (block.path ? stringifyValue(resolvePath(this.previewData, block.path)) : "");
+      const cells = distributePrintTemplateCharCells(
+        value,
+        resolvePrintTemplateCharCellCount(block.count),
+        block.text.align,
+      );
+
+      return html`
+        <div class="frame-body" style="display:flex;height:100%;font-size:${pt(block.text.fontSize)};color:${block.text.color}">
+          ${cells.map((character) => html`
+            <span style="
+              flex:1;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              border:${block.lineWidth}px solid ${block.borderColor};
+              margin-right:-${block.lineWidth}px;
+            ">${character}</span>
+          `)}
         </div>
       `;
     }

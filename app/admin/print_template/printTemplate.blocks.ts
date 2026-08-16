@@ -21,6 +21,7 @@ export const BLOCK_TYPES: PrintTemplateBlockType[] = [
   "table",
   "image",
   "barcode",
+  "char-cells",
   "horizontal-line",
   "vertical-line",
 ];
@@ -74,6 +75,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       value: "Текст",
       path: "",
       format: "",
+      textOrientation: "0",
       visibleWhen: "",
       placement: createPlacement({ heightPercent: "6" }),
       text: createTextOptions(),
@@ -140,6 +142,22 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
     };
   }
 
+  if (type === "char-cells") {
+    return {
+      key: newKey(),
+      type: "char-cells",
+      value: "",
+      path: "",
+      // 12 — ІПН: найчастіше поле по клітинках на українських бланках.
+      count: "12",
+      borderColor: "#262626",
+      lineWidth: "1",
+      visibleWhen: "",
+      placement: createPlacement({ widthPercent: "40", heightPercent: "3" }),
+      text: createTextOptions({ fontSize: "11" }),
+    };
+  }
+
   if (type === "horizontal-line") {
     return {
       key: newKey(),
@@ -199,6 +217,7 @@ export function createDefaultBlocks(): PrintTemplateBlock[] {
       value: "Друкована форма",
       path: "",
       format: "",
+      textOrientation: "0",
       visibleWhen: "",
       placement: createPlacement({ heightPercent: "8" }),
       text: createTextOptions({ fontSize: "16", align: "center", fontWeight: "bold" }),

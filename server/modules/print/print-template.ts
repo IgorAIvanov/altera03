@@ -25,9 +25,24 @@ export type PrintTemplateBlockType =
   | "table"
   | "image"
   | "barcode"
+  | "char-cells"
   | "horizontal-line"
   | "vertical-line";
 export type PrintTemplateTextStyle = "title" | "section" | "body";
+
+/**
+ * Поворот тексту: `"0"` — звичайний, `"90"` — знизу вгору.
+ *
+ * ЧОМУ ЛИШЕ ДВА ЗНАЧЕННЯ. У вузькій колонці регламентованої форми
+ * горизонтальний заголовок не вміщується взагалі, і поворот там — єдиний спосіб
+ * надрукувати бланк таким, яким його затвердили. Але кут потрібен рівно один:
+ * серед 1590 макетів джерела (BAS Бухгалтерія УКР) `textOrientation` стоїть у
+ * 27, і скрізь це 900 — тобто 90°. Довільний кут дав би поле, яким ніхто не
+ * користується, і арифметику розкладки, яку нічим перевірити.
+ *
+ * Порожнє означає `"0"`, тож наявні шаблони чинні без міграції.
+ */
+export type PrintTemplateTextOrientation = "0" | "90";
 export type PrintTemplateLineStyle = "solid" | "dashed" | "dotted" | "double";
 
 export interface PrintTemplateBlockPlacement {
@@ -135,6 +150,17 @@ export interface PrintTemplateTableCell {
   fontWeight: PrintTemplateFontWeight;
   fontSize: string;
   color: string;
+  /**
+   * Поворот тексту комірки. Повернута комірка **не переноситься по словах**:
+   * її текст іде одним рядком, а висоту рядка таблиці визначає довжина цього
+   * тексту. Інакше вийшла б рекурсія — щоб перенести, треба знати висоту, а
+   * висота якраз і залежить від переносу.
+   *
+   * Заради цього поворот і потрібен: у вузькій колонці («Ставка ПДВ» у 6 %)
+   * горизонтальний заголовок або лізе на сусідню колонку, або розсипається на
+   * стовпчик літер.
+   */
+  textOrientation: PrintTemplateTextOrientation;
 }
 
 export interface PrintTemplateTableRow {
@@ -205,6 +231,15 @@ export interface PrintTemplateTextBlock extends PrintTemplateBlockBase {
   /** Шлях у даних друку (від того самого кореня, що й у списку полів). */
   path: string;
   format: PrintTemplateValueFormat;
+  /**
+   * Поворот. У повернутого блока **висота рамки починає діяти на друк**: вона
+   * задає довжину, на якій текст переноситься, — те, чим у звичайного блока є
+   * ширина. Не задана — текст іде одним рядком на всю свою довжину.
+   *
+   * Так друкується заголовок авансового звіту: він стоїть уздовж лівого краю
+   * аркуша, і горизонтально його нема куди подіти.
+   */
+  textOrientation: PrintTemplateTextOrientation;
 }
 
 export interface PrintTemplateFieldListBlock extends PrintTemplateBlockBase {
@@ -264,6 +299,41 @@ export interface PrintTemplateBarcodeBlock extends PrintTemplateBlockBase {
   showText: boolean;
 }
 
+/**
+ * Поле, розкладене ПО КЛІТИНКАХ: одна літера — одна клітинка з рамкою.
+ *
+ * ЧОМУ ЦЕ ОКРЕМИЙ ТИП, А НЕ ТАБЛИЦЯ. Українська регламентована звітність
+ * побудована на таких полях: ІПН і ЄДРПОУ, РНОКПП, дата складання, порядковий
+ * номер декларації. У затвердженій формі це рамка з квадратиків, і бланк без
+ * неї формально інший — у клітинки податкова вписує цифри від руки. Таблицею це
+ * не виражається: там рядки ДАНИХ, а тут ОДНЕ значення, розрізане на символи, і
+ * стоїть воно в шапці бланка поруч із підписами.
+ *
+ * Значення береться за тим самим правилом, що всюди у форматі: статичний `value`
+ * перекриває прив'язку `path`.
+ *
+ * **Розкладає рендерер, а форматує команда даних.** Блок ріже рядок таким, яким
+ * його дали: `22.06.2026` у восьми клітинках дасть `2 2 . 0 6 . 2 0` — крапки
+ * теж символи. Дату під клітинки команда даних віддає окремим полем
+ * (`to_char(d, 'DDMMYYYY')`), як і все інше в друку: рендерер не форматує.
+ */
+export interface PrintTemplateCharCellsBlock extends PrintTemplateBlockBase {
+  type: "char-cells";
+  /** Статичне значення. Непорожнє — перекриває прив'язку. */
+  value: string;
+  /** Шлях у даних друку (від того самого кореня, що й у списку полів). */
+  path: string;
+  /**
+   * Скільки клітинок малювати. Береться із ЗАТВЕРДЖЕНОЇ форми (ІПН — 12,
+   * РНОКПП — 10, дата — 8), а не з довжини значення: порожні клітинки на бланку
+   * лишаються порожніми, і це нормальний його вигляд.
+   */
+  count: string;
+  /** Колір рамки клітинок. Колір самих символів — у `text`, як у решти блоків. */
+  borderColor: string;
+  lineWidth: string;
+}
+
 export interface PrintTemplateHorizontalLineBlock extends PrintTemplateBlockBase {
   type: "horizontal-line";
   color: string;
@@ -284,6 +354,7 @@ export type PrintTemplateBlock =
   | PrintTemplateTableBlock
   | PrintTemplateImageBlock
   | PrintTemplateBarcodeBlock
+  | PrintTemplateCharCellsBlock
   | PrintTemplateHorizontalLineBlock
   | PrintTemplateVerticalLineBlock;
 
@@ -324,6 +395,13 @@ export interface ResolvedPrintTemplateLineOptions {
   lineWidth: number;
 }
 
+/** Рамка поля по клітинках: скільки їх і чим вони обведені. */
+export interface ResolvedPrintTemplateCharCellsOptions {
+  count: number;
+  borderColor: string;
+  lineWidth: number;
+}
+
 export interface RenderablePrintTemplateTableColumn extends PrintTemplateTableColumn {
   widthWeight: number;
 }
@@ -355,6 +433,15 @@ function normalizeValueFormat(value: unknown): PrintTemplateValueFormat {
 
 function normalizeFontWeight(value: unknown): PrintTemplateFontWeight {
   return value === "bold" ? "bold" : "normal";
+}
+
+/**
+ * Приймає і рядок, і число (`90` так само, як `"90"`): шаблон пишуть руками, а
+ * у форматі числа зберігаються рядками — розбіжність написання не має мовчки
+ * випрямляти повернутий заголовок.
+ */
+function normalizeTextOrientation(value: unknown): PrintTemplateTextOrientation {
+  return String(value ?? "").trim() === "90" ? "90" : "0";
 }
 
 function normalizeLineStyle(value: unknown): PrintTemplateLineStyle {
@@ -502,6 +589,7 @@ function normalizeTableCell(value: unknown): PrintTemplateTableCell | null {
     fontWeight: normalizeFontWeight(value.fontWeight),
     fontSize: normalizeString(value.fontSize),
     color: normalizeColor(value.color, ""),
+    textOrientation: normalizeTextOrientation(value.textOrientation),
   };
 }
 
@@ -539,6 +627,7 @@ function createTableCell(patch: Partial<PrintTemplateTableCell>): PrintTemplateT
     fontWeight: "normal",
     fontSize: "",
     color: "",
+    textOrientation: "0",
     ...patch,
   };
 }
@@ -610,6 +699,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       value: normalizeString(value.value),
       path: normalizeString(value.path),
       format: normalizeValueFormat(value.format),
+      textOrientation: normalizeTextOrientation(value.textOrientation),
       visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type, textStyle)),
@@ -676,6 +766,23 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       // Підпис під кодом за замовчуванням увімкнений: він потрібен людині, коли
       // сканера немає під рукою, і саме його очікують у EAN-13.
       showText: value.showText !== false,
+      visibleWhen: normalizeString(value.visibleWhen),
+      placement: normalizeBlockPlacement(value.placement),
+      text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
+    };
+  }
+
+  if (type === "char-cells") {
+    return {
+      key,
+      type,
+      value: normalizeString(value.value),
+      path: normalizeString(value.path),
+      count: normalizeString(value.count) || "1",
+      // Рамка клітинок темніша за лінію-роздільник: це частина поля, а не
+      // оформлення аркуша, і на затвердженій формі вона чорна.
+      borderColor: normalizeColor(value.borderColor, "#262626"),
+      lineWidth: normalizeLineWidth(value.lineWidth, "1"),
       visibleWhen: normalizeString(value.visibleWhen),
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
@@ -918,6 +1025,65 @@ export function resolvePrintTemplateBlockTextOptions(text: PrintTemplateBlockTex
     fontWeight: text.fontWeight,
     color: normalizeColor(text.color, "#262626"),
   };
+}
+
+/**
+ * Стеля кількості клітинок. Взята з запасом до найдовшого регламентованого поля
+ * (ІПН — 12): рамка з півсотні клітинок на аркуші A4 вже нечитна, а верхня межа
+ * тут потрібна, щоб описка в шаблоні не малювала мільйон прямокутників.
+ */
+export const PRINT_TEMPLATE_CHAR_CELLS_MAX = 64;
+
+export function resolvePrintTemplateCharCellCount(count: string): number {
+  return Math.trunc(clampNumber(parseTemplateNumber(count, 1), 1, PRINT_TEMPLATE_CHAR_CELLS_MAX));
+}
+
+export function resolvePrintTemplateCharCellsOptions(block: PrintTemplateCharCellsBlock): ResolvedPrintTemplateCharCellsOptions {
+  return {
+    count: resolvePrintTemplateCharCellCount(block.count),
+    borderColor: normalizeColor(block.borderColor, "#262626"),
+    // Рамка тонша за лінію-роздільник: 1pt — це те, що на затвердженій формі
+    // виглядає як клітинка, а не як обведення таблиці.
+    lineWidth: clampNumber(parseTemplateNumber(block.lineWidth, 1), 0.25, 6),
+  };
+}
+
+/**
+ * Значення → клітинки. Довжина результату завжди дорівнює `count`; клітинка без
+ * символу лишається порожньою.
+ *
+ * `align` каже, ДЕ саме значення сидить у рамці, а не як воно виглядає всередині
+ * клітинки: символ у своїй клітинці завжди центрований — так надруковані всі
+ * затверджені форми. Виходить одне правило на два нових блоки: вирівнювання
+ * діє вздовж напрямку читання.
+ *
+ * Значення, довше за рамку, обрізається — покласти зайві символи нікуди, а
+ * розтягнути рамку рендерер не має права: кількість клітинок задана
+ * ЗАТВЕРДЖЕНОЮ формою. Обрізається при цьому той бік, який вирівнювання назвало
+ * неважливим: при `left` лишається початок, при `right` — хвіст.
+ */
+export function distributePrintTemplateCharCells(
+  value: string,
+  count: number,
+  align: PrintTemplateColumnAlign = "left",
+): string[] {
+  // Посимвольно за кодовими точками, а не по `charAt`: сурогатна пара — один
+  // знак, і різати її навпіл означало б надрукувати дві порожні рамки.
+  const characters = [...value];
+  const cells = new Array<string>(count).fill("");
+
+  const offset = align === "right"
+    ? count - characters.length
+    : align === "center"
+    ? Math.floor((count - characters.length) / 2)
+    : 0;
+
+  characters.forEach((character, index) => {
+    const cell = offset + index;
+    if (cell >= 0 && cell < count) cells[cell] = character;
+  });
+
+  return cells;
 }
 
 export function resolvePrintTemplateLineOptions(block: PrintTemplateHorizontalLineBlock | PrintTemplateVerticalLineBlock): ResolvedPrintTemplateLineOptions {

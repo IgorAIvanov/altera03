@@ -8,12 +8,14 @@
 import { buildBarcode } from "./barcode/barcode.ts";
 import type { BarcodeShape } from "./barcode/barcode.ts";
 import {
+  distributePrintTemplateCharCells,
   getRenderablePrintTemplateBlocks,
   getRenderablePrintTemplateTableColumns,
   isPrintTemplateElementVisible,
   layoutPrintTemplateGrid,
   resolvePrintTemplateBlockPlacement,
   resolvePrintTemplateBlockTextOptions,
+  resolvePrintTemplateCharCellsOptions,
   resolvePrintTemplateLineOptions,
   resolvePrintTemplatePath,
   stringifyPrintTemplateValue,
@@ -23,9 +25,11 @@ import type {
   PrintTemplateFontWeight,
   PrintTemplateSchema,
   PrintTemplateTableRow,
+  PrintTemplateTextOrientation,
   PrintTemplateValueContext,
   ResolvedPrintTemplateBlockPlacement,
   ResolvedPrintTemplateBlockTextOptions,
+  ResolvedPrintTemplateCharCellsOptions,
   ResolvedPrintTemplateLineOptions,
   RenderablePrintTemplateTableColumn,
 } from "./print-template.ts";
@@ -34,6 +38,7 @@ export interface PrintTemplateRenderTextBlock {
   key: string;
   type: "text";
   text: string;
+  textOrientation: PrintTemplateTextOrientation;
   placement: ResolvedPrintTemplateBlockPlacement;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
@@ -65,6 +70,7 @@ export interface PrintTemplateRenderTableCell {
   /** `null` — успадкувати від блока. */
   fontSize: number | null;
   color: string;
+  textOrientation: PrintTemplateTextOrientation;
 }
 
 export interface PrintTemplateRenderTableRow {
@@ -116,6 +122,23 @@ export interface PrintTemplateRenderBarcodeBlock {
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
+/**
+ * Поле по клітинках із уже розрізаним значенням.
+ *
+ * Різання лежить тут, а не в рендерері, з тієї ж причини, що й побудова
+ * штрих-кода: план — єдине місце, де шаблон зустрічається з даними. Рендереру
+ * лишається намалювати рамки й покласти в кожну по символу.
+ */
+export interface PrintTemplateRenderCharCellsBlock {
+  key: string;
+  type: "char-cells";
+  /** Рівно `count` елементів; порожня клітинка — порожній рядок. */
+  cells: string[];
+  placement: ResolvedPrintTemplateBlockPlacement;
+  textOptions: ResolvedPrintTemplateBlockTextOptions;
+  cellOptions: ResolvedPrintTemplateCharCellsOptions;
+}
+
 export interface PrintTemplateRenderHorizontalLineBlock {
   key: string;
   type: "horizontal-line";
@@ -136,6 +159,7 @@ export type PrintTemplateRenderBlock =
   | PrintTemplateRenderTableBlock
   | PrintTemplateRenderImageBlock
   | PrintTemplateRenderBarcodeBlock
+  | PrintTemplateRenderCharCellsBlock
   | PrintTemplateRenderHorizontalLineBlock
   | PrintTemplateRenderVerticalLineBlock;
 
@@ -183,6 +207,7 @@ function buildSectionRows(
       fontWeight: cell.fontWeight,
       fontSize: cell.fontSize ? Number.parseFloat(cell.fontSize) || null : null,
       color: cell.color,
+      textOrientation: cell.textOrientation,
     });
   }
 
@@ -218,6 +243,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         key: block.key,
         type: "text",
         text: block.value || bound,
+        textOrientation: block.textOrientation,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
@@ -309,6 +335,28 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         showText: block.showText,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
+      }];
+    }
+
+    if (block.type === "char-cells") {
+      // Те саме правило, що всюди: статичне значення перекриває прив'язку.
+      // Через `stringifyPrintTemplateValue` тут іти можна — форматів це поле не
+      // приймає, а число (номер, ІПН) саме числом і приходить.
+      const bound = block.path ? resolvePrintTemplatePath(source, block.path) : null;
+      const cellOptions = resolvePrintTemplateCharCellsOptions(block);
+      const textOptions = resolvePrintTemplateBlockTextOptions(block.text);
+
+      return [{
+        key: block.key,
+        type: "char-cells",
+        cells: distributePrintTemplateCharCells(
+          block.value || stringifyPrintTemplateValue(bound),
+          cellOptions.count,
+          textOptions.align,
+        ),
+        placement: resolvePrintTemplateBlockPlacement(block.placement),
+        textOptions,
+        cellOptions,
       }];
     }
 

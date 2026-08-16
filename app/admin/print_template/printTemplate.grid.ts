@@ -43,6 +43,7 @@ export function createCell(patch: Partial<PrintTemplateTableCell> = {}): PrintTe
     fontWeight: "normal",
     fontSize: "",
     color: "",
+    textOrientation: "0",
     ...patch,
   };
 }

@@ -7,8 +7,11 @@
  */
 import { assertEquals } from "@std/assert";
 import {
+  distributePrintTemplateCharCells,
   isPrintTemplateElementVisible,
   normalizePrintTemplateSchema,
+  PRINT_TEMPLATE_CHAR_CELLS_MAX,
+  resolvePrintTemplateCharCellCount,
   stringifyPrintTemplateValue,
 } from "./print-template.ts";
 import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
@@ -370,4 +373,146 @@ Deno.test("текстовий блок: без значення й прив'яз
 
   const plan = buildPrintTemplateRenderPlan(schema!, {});
   assertEquals(plan[0].type === "text" ? plan[0].text : "?", "");
+});
+
+// ── Поворот тексту ─────────────────────────────────────────────────────────
+
+Deno.test("поворот: приймається і рядком, і числом", () => {
+  // Шаблон пишуть руками, а числа у форматі зберігаються рядками: розбіжність
+  // написання не має мовчки випрямляти повернутий заголовок.
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [
+      { key: "b1", type: "text", value: "Звіт", textOrientation: 90 },
+      { key: "b2", type: "text", value: "Звіт", textOrientation: "90" },
+      { key: "b3", type: "text", value: "Звіт", textOrientation: "вбік" },
+    ],
+  });
+
+  const plan = buildPrintTemplateRenderPlan(schema!, {});
+  assertEquals(plan[0].type === "text" ? plan[0].textOrientation : "?", "90");
+  assertEquals(plan[1].type === "text" ? plan[1].textOrientation : "?", "90");
+  // Невідоме значення — це «як звичайно», а не відмова друкувати.
+  assertEquals(plan[2].type === "text" ? plan[2].textOrientation : "?", "0");
+});
+
+Deno.test("поворот: шаблони без нього лишаються чинними", () => {
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [{
+      key: "t",
+      type: "table",
+      source: "lines",
+      columns: [{ key: "c1", widthPercent: "100" }],
+      sections: { header: { rows: [{ cells: [{ text: "Ставка" }] }] } },
+    }],
+  });
+
+  const plan = buildPrintTemplateRenderPlan(schema!, { lines: [] });
+  const block = plan[0];
+  assertEquals(block.type, "table");
+  if (block.type !== "table") return;
+
+  assertEquals(block.header[0].cells[0].textOrientation, "0");
+});
+
+Deno.test("поворот: комірка несе його до рендерера", () => {
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [{
+      key: "t",
+      type: "table",
+      source: "lines",
+      columns: [{ key: "c1", widthPercent: "100" }],
+      sections: { header: { rows: [{ cells: [{ text: "Ставка ПДВ", textOrientation: "90" }] }] } },
+    }],
+  });
+
+  const plan = buildPrintTemplateRenderPlan(schema!, { lines: [] });
+  const block = plan[0];
+  if (block.type !== "table") throw new Error("очікувалася таблиця");
+
+  assertEquals(block.header[0].cells[0].textOrientation, "90");
+});
+
+// ── Поле по клітинках ──────────────────────────────────────────────────────
+//
+// Регламентована форма друкує ІПН, РНОКПП, дату й номер поклітинно, і саме тут
+// найлегше отримати мовчки НЕ ТОЙ бланк: значення коротше за рамку, довше за
+// рамку, з роздільниками. Перевіряється розкладка, а не малювання рамок.
+
+Deno.test("клітинки: значення розкладається зліва, решта лишається порожньою", () => {
+  assertEquals(
+    distributePrintTemplateCharCells("391234", 8),
+    ["3", "9", "1", "2", "3", "4", "", ""],
+  );
+});
+
+Deno.test("клітинки: вирівнювання каже, де сидить коротке значення", () => {
+  assertEquals(distributePrintTemplateCharCells("12", 4, "right"), ["", "", "1", "2"]);
+  assertEquals(distributePrintTemplateCharCells("12", 4, "center"), ["", "1", "2", ""]);
+});
+
+Deno.test("клітинки: задовге значення втрачає той бік, який назвали неважливим", () => {
+  // Рамку розтягнути не можна — кількість клітинок задана затвердженою формою.
+  assertEquals(distributePrintTemplateCharCells("123456", 4), ["1", "2", "3", "4"]);
+  assertEquals(distributePrintTemplateCharCells("123456", 4, "right"), ["3", "4", "5", "6"]);
+});
+
+Deno.test("клітинки: сурогатна пара — один знак, а не дві порожні рамки", () => {
+  assertEquals(distributePrintTemplateCharCells("№🙂", 3), ["№", "🙂", ""]);
+});
+
+Deno.test("клітинки: план бере значення за прив'язкою, статичне сильніше", () => {
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [
+      { key: "b1", type: "char-cells", path: "org.taxNumber", count: "12" },
+      { key: "b2", type: "char-cells", value: "0000", path: "org.taxNumber", count: "4" },
+    ],
+  });
+
+  const plan = buildPrintTemplateRenderPlan(schema!, { org: { taxNumber: "391234526543" } });
+  assertEquals(
+    plan[0].type === "char-cells" ? plan[0].cells.join("") : "?",
+    "391234526543",
+  );
+  assertEquals(plan[1].type === "char-cells" ? plan[1].cells.join("") : "?", "0000");
+});
+
+Deno.test("клітинки: число з даних розкладається так само, як рядок", () => {
+  // Команда даних може віддати номер числом — це не привід друкувати порожнє.
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [{ key: "b1", type: "char-cells", path: "number", count: "7" }],
+  });
+
+  const plan = buildPrintTemplateRenderPlan(schema!, { number: 1234567 });
+  assertEquals(plan[0].type === "char-cells" ? plan[0].cells.join("") : "?", "1234567");
+});
+
+Deno.test("клітинки: кількість — це число з рамками, а не побажання", () => {
+  // Описка в шаблоні не має малювати мільйон прямокутників; нуль і від'ємне —
+  // це одна клітинка, а не жодної (порожнє місце на бланку ніхто не помітить).
+  assertEquals(resolvePrintTemplateCharCellCount("12"), 12);
+  assertEquals(resolvePrintTemplateCharCellCount(""), 1);
+  assertEquals(resolvePrintTemplateCharCellCount("0"), 1);
+  assertEquals(resolvePrintTemplateCharCellCount("1000000"), PRINT_TEMPLATE_CHAR_CELLS_MAX);
+});
+
+Deno.test("клітинки: рамка й товщина мають умовчання", () => {
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [{ key: "b1", type: "char-cells", path: "x", count: "3" }],
+  });
+
+  const plan = buildPrintTemplateRenderPlan(schema!, {});
+  const block = plan[0];
+  assertEquals(block.type, "char-cells");
+  if (block.type !== "char-cells") return;
+
+  assertEquals(block.cellOptions.borderColor, "#262626");
+  assertEquals(block.cellOptions.lineWidth, 1);
+  // Порожня прив'язка — порожні клітинки, а не прочерки в кожній.
+  assertEquals(block.cells, ["", "", ""]);
 });

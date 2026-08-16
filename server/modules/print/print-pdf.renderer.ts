@@ -2,8 +2,16 @@
 // жодного знання про моделі — на вхід шаблон і дані, на вихід байти PDF.
 //
 // Викликається з `print.handlers.ts`, який і дістає шаблон та дані.
+//
+// ЦЕ ПУБЛІЧНИЙ ВХІД пакета (`@altera/server/print/render`), і з тієї ж причини,
+// що й метрика поруч: перевірити бланк без застосунку можна лише зібравши його.
+// Доки рендерер лишався всередині, проба верстки в застосунку імпортувала його
+// з `vendor/` і запускалася з `--no-config` (при `vendor: true` Deno такий
+// імпорт забороняє) — тобто трималася на імені файлу в чужому пакеті й ламалася
+// б від першого перейменування. Окремо від `./print` тому, що pdf-lib не має
+// потрапити в бандл фронтенду: `./print` імпортує екран редактора шаблонів.
 
-import { PDFDocument, rgb } from "pdf-lib";
+import { degrees, PDFDocument, rgb } from "pdf-lib";
 import { embedPrintFonts } from "./print-text-metrics.ts";
 import { layoutPrintTemplateGrid } from "./print-template.ts";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
@@ -11,6 +19,7 @@ import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
 import type {
   PrintTemplateRenderBarcodeBlock,
   PrintTemplateRenderBlock,
+  PrintTemplateRenderCharCellsBlock,
   PrintTemplateRenderTableBlock,
   PrintTemplateRenderTableColumn,
   PrintTemplateRenderTableRow,
@@ -35,6 +44,32 @@ const BARCODE_DEFAULT_HEIGHT = 40;
 
 /** Проміжок між кодом і підписом під ним. */
 const BARCODE_CAPTION_GAP = 3;
+
+/**
+ * Висота клітинки поля-рамки, коли її не задали в розкладці: кегль плюс поля.
+ * 1.8 — те, що на затвердженій формі виглядає квадратиком під цифру, а не
+ * смугою; нижня межа тримає читність на дрібному кеглі.
+ */
+const CHAR_CELL_HEIGHT_RATIO = 1.8;
+const CHAR_CELL_MIN_HEIGHT = 14;
+
+/**
+ * Частка кегля від базової лінії до верху цифри. Точна метрика тут не потрібна:
+ * вона потрібна для ЦЕНТРУВАННЯ символу в клітинці, а різниця між гарнітурами
+ * менша за похибку, яку око бачить.
+ */
+const CAP_HEIGHT_RATIO = 0.7;
+
+/**
+ * Скільки кегля лежить над базовою лінією і скільки під нею.
+ *
+ * Потрібне лише повернутому тексту: у нього «над базовою лінією» — це вліво від
+ * стовпчика, і без цих часток рядок не поставити ані краєм рамки, ані по центру
+ * комірки. Точність тут зайва — різниця між гарнітурами менша за похибку, яку
+ * око бачить на папері.
+ */
+const ASCENT_RATIO = 0.75;
+const DESCENT_RATIO = 0.25;
 
 // Кирилиці у StandardFonts немає — Roboto їде вбудованим у модуль
 // (`deno task print:fonts`). З диска його читати не можна: у встановленому
@@ -147,6 +182,29 @@ export async function renderPrintPdf(
     }
   };
 
+  /**
+   * Той самий рядок, але повернутий на 90°: читається знизу вгору.
+   *
+   * `x` — стовпчик базової лінії, `y` — початок рядка (низ). Відрізки різними
+   * шрифтами розставляються так само, як у горизонтального, тільки зсув іде по
+   * вертикалі: поворот не скасовує того, що кирилиця й латиниця в бланку
+   * малюються різними гарнітурами.
+   */
+  const drawRotatedTextLine = (
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    bold: boolean,
+    color?: ReturnType<typeof rgb>,
+  ) => {
+    let offsetY = y;
+    for (const run of getTextRuns(text, bold)) {
+      page.drawText(run.text, { x, y: offsetY, size: fontSize, font: run.font, color, rotate: degrees(90) });
+      offsetY += run.font.widthOfTextAtSize(run.text, fontSize);
+    }
+  };
+
   /** Малює абзац із перенесенням і повертає використану висоту. */
   const drawParagraph = (text: string, options: {
     x: number;
@@ -173,6 +231,44 @@ export async function renderPrintPdf(
     }
 
     return lines.length * (options.fontSize + 3) + 3;
+  };
+
+  /**
+   * Абзац, повернутий на 90°, і використана ним висота.
+   *
+   * Розкладка та сама, повернута цілком: рядок іде вгору, перенос рахується по
+   * `length` (це висота рамки, а не ширина), а наступні рядки лягають ПРАВОРУЧ
+   * від попередніх — так само, як у звичайного абзацу вони лягають нижче.
+   * Вирівнювання діє вздовж напрямку читання: `left` притискає до низу рамки,
+   * `right` — до верху.
+   */
+  const drawRotatedParagraph = (text: string, options: {
+    x: number;
+    bottomY: number;
+    length: number;
+    fontSize: number;
+    bold: boolean;
+    align: PrintTemplateColumnAlign;
+    color?: ReturnType<typeof rgb>;
+  }) => {
+    const lines = wrapText(text, options.length, (value) => measure(value, options.fontSize, options.bold));
+    // Стовпчик базової лінії: тіло літер лежить ЛІВОРУЧ від нього, тож перший
+    // рядок відсувається від краю рамки на висоту літери.
+    let lineX = options.x + options.fontSize * ASCENT_RATIO;
+
+    for (const line of lines) {
+      const lineLength = measure(line, options.fontSize, options.bold);
+      const y = options.align === "right"
+        ? options.bottomY + options.length - lineLength
+        : options.align === "center"
+        ? options.bottomY + (options.length - lineLength) / 2
+        : options.bottomY;
+
+      drawRotatedTextLine(line, lineX, y, options.fontSize, options.bold, options.color);
+      lineX += options.fontSize + 3;
+    }
+
+    return options.length;
   };
 
   /**
@@ -284,6 +380,58 @@ export async function renderPrintPdf(
     return height;
   };
 
+  /**
+   * Малює поле, розкладене по клітинках, і повертає використану висоту.
+   *
+   * Геометрія — з рамки блока, як у решти блоків: ширина клітинки це ширина
+   * рамки, поділена на їхню кількість. Окремого «розміру клітинки в міліметрах»
+   * навмисно немає — він завів би другу систему координат поруч із розкладкою,
+   * і полотно редактора почало б показувати не те, що піде на папір.
+   *
+   * Символ центрований у СВОЇЙ клітинці завжди; вирівнювання блока вирішило вже
+   * інше питання — де в рамці сидить коротке значення (`distributePrintTemplateCharCells`).
+   */
+  const drawCharCells = (block: PrintTemplateRenderCharCellsBlock, blockX: number, topY: number, blockWidth: number) => {
+    const height = block.placement.heightPercent > 0
+      ? contentHeight * (block.placement.heightPercent / 100)
+      : Math.max(block.textOptions.fontSize * CHAR_CELL_HEIGHT_RATIO, CHAR_CELL_MIN_HEIGHT);
+
+    const cellWidth = blockWidth / block.cells.length;
+    const bold = block.textOptions.fontWeight === "bold";
+    const color = hexToRgb(block.textOptions.color);
+    const borderColor = hexToRgb(block.cellOptions.borderColor);
+    const baselineY = topY - height + (height - block.textOptions.fontSize * CAP_HEIGHT_RATIO) / 2;
+
+    block.cells.forEach((character, index) => {
+      const cellX = blockX + index * cellWidth;
+
+      page.drawRectangle({
+        x: cellX,
+        y: topY - height,
+        width: cellWidth,
+        height,
+        borderColor,
+        borderWidth: block.cellOptions.lineWidth,
+      });
+
+      // Порожня клітинка лишається порожньою: саме так виглядає затверджений
+      // бланк, у який цифри дописують від руки.
+      if (!character) return;
+
+      const characterWidth = measure(character, block.textOptions.fontSize, bold);
+      drawTextLine(
+        character,
+        cellX + (cellWidth - characterWidth) / 2,
+        baselineY,
+        block.textOptions.fontSize,
+        bold,
+        color,
+      );
+    });
+
+    return height;
+  };
+
   type TableColumn = PrintTemplateRenderTableColumn & { width: number; x: number };
 
   const CELL_PADDING = 4;
@@ -302,6 +450,8 @@ export async function renderPrintPdf(
     bold: boolean;
     align: PrintTemplateColumnAlign;
     color: string;
+    /** Повернута комірка: один рядок, а висоту рядка задає його ДОВЖИНА. */
+    rotated: boolean;
   }
 
   interface SectionLayout {
@@ -311,7 +461,11 @@ export async function renderPrintPdf(
   }
 
   const cellContentHeight = (cell: PlacedCell) =>
-    Math.max(cell.lines.length, 1) * (cell.fontSize + 2) + CELL_PADDING * 2;
+    cell.rotated
+      // Повернутий текст росте вгору, тож висоту рядка задає ДОВЖИНА напису, а
+      // не кількість рядків: саме так вузька колонка й отримує високу шапку.
+      ? measure(cell.lines[0] ?? "", cell.fontSize, cell.bold) + CELL_PADDING * 2
+      : Math.max(cell.lines.length, 1) * (cell.fontSize + 2) + CELL_PADDING * 2;
 
   /**
    * Розкладка секції по сітці колонок.
@@ -336,6 +490,7 @@ export async function renderPrintPdf(
         .reduce((sum, column) => sum + column.width, 0);
       const fontSize = cell.fontSize ?? fallbackFontSize;
       const bold = cell.fontWeight === "bold";
+      const rotated = cell.textOrientation === "90";
 
       return {
         columnIndex: item.columnIndex,
@@ -347,7 +502,11 @@ export async function renderPrintPdf(
         bold,
         align: cell.align,
         color: cell.color,
-        lines: wrapText(
+        rotated,
+        // Повернутий текст не переноситься: щоб перенести, треба знати висоту
+        // рядка, а вона якраз від переносу й залежить. Замкнене коло тут
+        // розривається на користь напису — його довжина і стає висотою.
+        lines: rotated ? [cell.value] : wrapText(
           cell.value,
           Math.max(width - CELL_PADDING * 2, 12),
           (value) => measure(value, fontSize, bold),
@@ -410,6 +569,32 @@ export async function renderPrintPdf(
 
       const color = cell.color ? hexToRgb(cell.color) : fallbackColor;
 
+      if (cell.rotated) {
+        const line = cell.lines[0] ?? "";
+        const lineLength = measure(line, cell.fontSize, cell.bold);
+        const available = cellHeight - CELL_PADDING * 2;
+        const bottom = cellTop - cellHeight + CELL_PADDING;
+        // Вирівнювання діє вздовж напрямку читання — знизу вгору: `left`
+        // притискає напис до низу комірки, `right` — до верху.
+        const lineY = cell.align === "right"
+          ? bottom + available - lineLength
+          : cell.align === "center"
+          ? bottom + (available - lineLength) / 2
+          : bottom;
+
+        drawRotatedTextLine(
+          line,
+          // Стовпчик базової лінії по центру комірки: тіло літер лежить
+          // ліворуч від нього, тож центр напису зсунутий на півсмуги.
+          cellX + cell.width / 2 + cell.fontSize * (ASCENT_RATIO - DESCENT_RATIO) / 2,
+          lineY,
+          cell.fontSize,
+          cell.bold,
+          color,
+        );
+        continue;
+      }
+
       cell.lines.forEach((line, lineIndex) => {
         const lineWidth = measure(line, cell.fontSize, cell.bold);
         const textX = cell.align === "right"
@@ -441,12 +626,34 @@ export async function renderPrintPdf(
     const blockWidth = contentWidth * (block.placement.widthPercent / 100);
 
     if (block.type === "text") {
+      const bold = block.textOptions.fontWeight === "bold";
+
+      if (block.textOrientation === "90") {
+        // У повернутого блока роль ширини й висоти міняється місцями: рядок
+        // переноситься по ВИСОТІ рамки. Не задана — переносити нема по чому,
+        // і текст іде одним рядком на всю свою довжину (саме так стоїть
+        // заголовок авансового звіту вздовж краю аркуша).
+        const length = block.placement.heightPercent > 0
+          ? contentHeight * (block.placement.heightPercent / 100)
+          : measure(block.text, block.textOptions.fontSize, bold);
+
+        return drawRotatedParagraph(block.text, {
+          x: blockX,
+          bottomY: topY - length,
+          length,
+          fontSize: block.textOptions.fontSize,
+          bold,
+          align: block.textOptions.align,
+          color: hexToRgb(block.textOptions.color),
+        });
+      }
+
       return drawParagraph(block.text, {
         x: blockX,
         y: topY,
         width: blockWidth,
         fontSize: block.textOptions.fontSize,
-        bold: block.textOptions.fontWeight === "bold",
+        bold,
         align: block.textOptions.align,
         color: hexToRgb(block.textOptions.color),
       });
@@ -490,6 +697,10 @@ export async function renderPrintPdf(
 
     if (block.type === "barcode") {
       return drawBarcode(block, blockX, topY, blockWidth);
+    }
+
+    if (block.type === "char-cells") {
+      return drawCharCells(block, blockX, topY, blockWidth);
     }
 
     if (block.type === "horizontal-line" || block.type === "vertical-line") {
