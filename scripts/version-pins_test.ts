@@ -36,7 +36,10 @@ const PIN_FILES = [
   "create/template/docker-compose.yml",
   "tools/deno.json",
   // Запис MCP-сервера в конфізі хоста: обгортка береться з реєстру, тож пін
-  // тут такий самий контракт, як у задачах шаблону.
+  // тут такий самий контракт, як у задачах шаблону. Ім'я пакета мусить бути й у
+  // переліку нижче: файл додали до списку, а `mcp` у розбір рядка — ні, і пів
+  // дня сторож дивився на цей пін НЕ бачачи його. Проба, яка нічого не
+  // перевіряє, гірша за відсутню: на неї покладаються.
   ".mcp.json",
 ];
 
@@ -62,7 +65,7 @@ Deno.test("піни @altera/* збігаються з версіями паке�
     const lines = text.split("\n");
 
     for (let index = 0; index < lines.length; index++) {
-      for (const match of lines[index].matchAll(/@altera\/(server|client|tools|skills)@\^?(\d+\.\d+\.\d+)/g)) {
+      for (const match of lines[index].matchAll(/@altera\/(server|client|tools|skills|mcp)@\^?(\d+\.\d+\.\d+)/g)) {
         const [, name, pinned] = match;
         const actual = versions.get(name)!;
         if (pinned !== actual) {
