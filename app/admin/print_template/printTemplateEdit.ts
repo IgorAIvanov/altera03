@@ -63,12 +63,33 @@ export const tagName = "print-template-edit";
 /** Пауза після правки, через яку перемальовується прев'ю. */
 const PREVIEW_DEBOUNCE_MS = 700;
 
+/** Аркуш A4 і поля друку в пунктах — ті самі числа, що в рендерері. */
+const PAGE_SIZE_PT = { width: 595.28, height: 841.89 };
+const PAGE_MARGIN_PT = 40;
+
 /**
- * Поля друку (40pt) у відсотках від аркуша A4 (595.28 × 841.89pt).
+ * Поля друку у відсотках від аркуша.
  * Ті самі числа, що в рендерері, — тому рамка на полотні стоїть там само,
  * де блок опиниться в PDF.
  */
-const PAGE_PADDING_PERCENT = { x: (40 / 595.28) * 100, y: (40 / 841.89) * 100 };
+const PAGE_PADDING_PERCENT = {
+  x: (PAGE_MARGIN_PT / PAGE_SIZE_PT.width) * 100,
+  y: (PAGE_MARGIN_PT / PAGE_SIZE_PT.height) * 100,
+};
+
+/**
+ * Співвідношення сторін ОБЛАСТІ ДРУКУ: у скільки разів вона ширша, ніж вища.
+ *
+ * Ним переводиться відсоток з осі на вісь. Потрібно це рівно там, де розмір
+ * задано по одній осі, а стояти він мусить по обох, — у квадратній клітинці:
+ * ширина рахується від ширини області, висота від висоти, тож один і той самий
+ * квадрат по двох осях записується різними числами.
+ */
+function contentAspect(landscape: boolean): number {
+  const width = (landscape ? PAGE_SIZE_PT.height : PAGE_SIZE_PT.width) - PAGE_MARGIN_PT * 2;
+  const height = (landscape ? PAGE_SIZE_PT.width : PAGE_SIZE_PT.height) - PAGE_MARGIN_PT * 2;
+  return width / height;
+}
 
 /** Поріг прилипання до напрямної, у відсотках області друку. */
 const SNAP_THRESHOLD_PERCENT = 1.2;
@@ -313,6 +334,20 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
        зникає навмисно: сховане треба лишити чим рухати й куди клікати, а на
        порожньому місці блока не виділиш. Тому він блідне й дістає штрихування
        — видно, що на папір він зараз не піде. */
+    /* Блок, який стає ПОТОКОМ: на полотні він стоїть там, куди його поклали,
+       а на папері — під попереднім. Позначка потрібна саме тому: інакше
+       полотно виглядало б як обіцянка, якої воно не дає. */
+    .frame.frame-flow { border-style: solid; border-color: rgba(22, 119, 255, 0.35); }
+    .frame.frame-flow::before {
+      content: "⇵";
+      position: absolute;
+      top: 0;
+      left: 2px;
+      font-size: 1.6cqw;
+      line-height: 1;
+      color: rgba(22, 119, 255, 0.8);
+      pointer-events: none;
+    }
     .frame.frame-hidden { opacity: 0.4; }
     .frame.frame-hidden::after {
       content: "";
@@ -461,6 +496,21 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       w: toNumber(block.placement.widthPercent, 100),
       h: toNumber(block.placement.heightPercent, 0),
     };
+  }
+
+  /**
+   * Висота КВАДРАТНОЇ клітинки у відсотках висоти області друку.
+   *
+   * Рендерер малює квадрат тоді, коли висоту не задали: бере ширину клітинки
+   * (ширина рамки поділена на кількість) і робить її ж висотою. Тут те саме,
+   * тільки в одиницях полотна — звідси співвідношення сторін.
+   */
+  private squareCellHeightPercent(block: PrintTemplateBlock, widthPercent: number): number {
+    if (block.type !== "char-cells") return 0;
+
+    const count = resolvePrintTemplateCharCellCount(block.count);
+    const landscape = this.$root.item.orientation === "landscape";
+    return (widthPercent / count) * contentAspect(landscape);
   }
 
   /**
@@ -1086,9 +1136,26 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           ? html`<div class="text-xs text-warning">${t("printTemplate.visibleWhenHiddenNow")}</div>`
           : nothing}
 
+        <!-- Режим розкладки по вертикалі. Координата в потоці лишається, але
+             нічого не вирішує: полотно ставить рамку на неї, а на папері блок
+             стане під попереднім — тому поле підписане чесно. -->
+        ${this.field(t("printTemplate.placementMode"), html`
+          <span class="join">
+            ${(["absolute", "flow"] as const).map((mode) => html`
+              <button class="join-item btn btn-xs ${block.placement.mode === mode ? "btn-primary" : ""}"
+                @click=${() => this.updatePlacement(block.key, { mode })}>${t(`printTemplate.placementMode.${mode}`)}</button>
+            `)}
+          </span>
+        `)}
+
         <div class="grid grid-cols-2 gap-2">
           ${this.field(t("printTemplate.placementX"), this.textInput(block.placement.xPercent, (v) => this.updatePlacement(block.key, { xPercent: v })))}
-          ${this.field(t("printTemplate.placementY"), this.textInput(block.placement.yPercent, (v) => this.updatePlacement(block.key, { yPercent: v })))}
+          ${this.field(
+            block.placement.mode === "flow"
+              ? t("printTemplate.placementYFlow")
+              : t("printTemplate.placementY"),
+            this.textInput(block.placement.yPercent, (v) => this.updatePlacement(block.key, { yPercent: v })),
+          )}
           ${this.field(t("printTemplate.placementWidth"), this.textInput(block.placement.widthPercent, (v) => this.updatePlacement(block.key, { widthPercent: v })))}
           ${this.field(
             this.heightAffectsPrint(block)
@@ -1097,6 +1164,17 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
             this.textInput(block.placement.heightPercent, (v) => this.updatePlacement(block.key, { heightPercent: v })),
           )}
         </div>
+
+        ${block.placement.mode === "flow" ? html`
+          <div class="grid grid-cols-2 gap-2">
+            ${this.field(t("printTemplate.placementGap"), this.textInput(block.placement.gapPt, (v) => this.updatePlacement(block.key, { gapPt: v })))}
+            ${block.type === "table" ? nothing : this.field(t("printTemplate.keepTogether"), html`
+              <input type="checkbox" class="checkbox checkbox-sm" .checked=${block.keepTogether}
+                @change=${(e: Event) => this.updateBlock(block.key, (b) => ({ ...b, keepTogether: (e.target as HTMLInputElement).checked }))} />
+            `)}
+          </div>
+          <div class="text-xs text-muted">${t("printTemplate.placementFlowHint")}</div>
+        ` : nothing}
 
         ${supportsText ? html`
           <div class="grid grid-cols-2 gap-2">
@@ -1915,19 +1993,26 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           ${this.blocks.map((block) => {
             const box = this.boxOf(block);
             const selected = block.key === this.selectedBlockKey;
+            // Порожня висота в полі по клітинках означає КВАДРАТНУ клітинку —
+            // рендерер бере її з ширини. Полотно мусить показувати те саме:
+            // інакше рамка тут схлопнулась би в смужку, а на папір пішли б
+            // квадрати. Число тільки для показу — у схему воно не потрапляє,
+            // бо в схемі його й немає.
+            const height = box.h > 0 ? box.h : this.squareCellHeightPercent(block, box.w);
             const style = [
               `left:${box.x}%`,
               `top:${box.y}%`,
               `width:${box.w}%`,
-              box.h > 0 ? `height:${box.h}%` : "",
+              height > 0 ? `height:${height}%` : "",
             ].filter(Boolean).join(";");
 
             const hidden = !this.isConditionMet(this.previewData, block.visibleWhen);
-            const label = `${t(`printTemplate.blockType.${block.type}`)}: ${blockLabel(block)}`;
+            const label = `${t(`printTemplate.blockType.${block.type}`)}: ${blockLabel(block)}` +
+              (block.placement.mode === "flow" ? ` · ${t("printTemplate.placementMode.flow")}` : "");
 
             return html`
               <div
-                class="frame ${selected ? "selected" : ""} ${hidden ? "frame-hidden" : ""}"
+                class="frame ${selected ? "selected" : ""} ${hidden ? "frame-hidden" : ""} ${block.placement.mode === "flow" ? "frame-flow" : ""}"
                 style=${style}
                 title=${hidden ? `${label} — ${t("printTemplate.visibleWhenHiddenNow")}` : label}
                 @pointerdown=${(e: PointerEvent) => this.startDrag(e, "move", block)}

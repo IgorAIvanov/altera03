@@ -160,6 +160,63 @@ Block types: `text`, `field-list`, `table`, `image`, `barcode`, `char-cells`,
 Every block has `key`, `placement` (`xPercent`/`yPercent`/`widthPercent`/`heightPercent`
 in % of the print area = A4 minus 40pt margins) and `text` (fontSize, align, fontWeight, color).
 
+**`yPercent` is the TOP of the block, the same for every type.** The content sits below
+that edge — the cell frame hangs from it, the image and the table start at it, text is
+pushed down from it by one letter height. So two blocks that must line up carry the *same*
+`yPercent`; you do not compensate for the type of either. (Before server 0.23.0 a `text`
+block anchored its first **baseline** at `yPercent`, so its letters stuck out above the
+frame — old blanks carry hand-tuned offsets that no longer mean anything.)
+
+### Coordinates for the header, flow for everything below it
+
+A coordinate is right for the **header** — it matches the approved form to the millimetre.
+Below the header a blank is made of blocks whose height is only known *after* rendering:
+how many rows the header of a nineteen-column table took, how far the item description
+wrapped, where the first table ended. Writing a coordinate there means predicting what the
+renderer will compute later, and the only way to check the prediction is a finished PDF.
+
+So a block can stand **under the previous one instead**:
+
+```json
+{ "key": "section_b_caption", "type": "text", "value": "Розділ Б",
+  "placement": { "mode": "flow", "gapPt": "10", "xPercent": "0", "widthPercent": "100" } }
+{ "key": "section_b", "type": "table",
+  "placement": { "mode": "flow", "gapPt": "4", "xPercent": "0", "widthPercent": "100" } }
+```
+
+- «previous» means **the previous entry in `blocks`**, not the one above by coordinate; an
+  absolute block moves the cursor too, so a stack naturally starts under the header;
+- `yPercent` stays in a flow block and decides nothing on paper — it is where the frame sits
+  on the editor canvas;
+- a block that does not fit moves to the next page whole; `keepTogether` holds this block
+  and the next one on one page (that is how «do not tear the signature off the statement»
+  is said). A table ignores it — it splits itself, by record;
+- **one flow block switches the footer heuristic off for the whole blank.** Without flow the
+  renderer treats everything below the *first* table as footer and glues it under the *last*
+  one — which is why a caption between two tables used to drag the whole footer onto sheet
+  two. Do not mix the two: put the header on coordinates and everything from the first table
+  down into flow.
+
+### Where did it actually land
+
+`renderPrintPdfWithLayout` returns the bytes **and** a layout report — key, type, start and
+end page, `topPt`/`bottomPt` (PDF axis, y grows upwards) and `overflow`. Use it in a probe
+instead of unpacking the content stream of a finished PDF:
+
+```ts
+import { renderPrintPdfWithLayout } from "@altera/server/print/render";
+
+const { bytes, layout } = await renderPrintPdfWithLayout(template, data);
+layout.filter((block) => block.overflow);            // what did not fit
+layout.find((block) => block.key === "section_b");   // where the table ended up
+```
+
+**The two axes are measured against different sides**: width against the width of the
+print area (515.28 pt on portrait A4), height against its height (761.89 pt). The same
+square is therefore two different numbers — 13 pt is `2.52 %` wide and `1.71 %` tall. Where
+a square is what you actually need — the character cells — leave the height at `0` and the
+renderer makes it square for you.
+
 ### Binding paths
 
 | Where | Root | Example |
@@ -255,12 +312,24 @@ simplified blank is not a simpler document, it is the wrong one.
   "key": "seller_tax", "type": "char-cells",
   "path": "doc.sellerTaxNumber", "count": "12",
   "borderColor": "#262626", "lineWidth": "1",
-  "placement": { "mode": "absolute", "xPercent": "22", "yPercent": "14", "widthPercent": "36", "heightPercent": "3" }
+  "placement": { "mode": "absolute", "xPercent": "22", "yPercent": "14", "widthPercent": "30.3", "heightPercent": "0" }
 }
 ```
 
 `count` comes from the **approved form**, not from the length of the value (tax number
 12, personal number 10, date 8) — empty cells stay empty, that is how the blank looks.
+
+**The frame is the geometry**: cell width = frame width ÷ `count`, and a zero height
+makes the cell **square**. So you size the frame from the cell you want —
+`widthPercent = count × cellPt ÷ 5.1528` — and leave the height alone. Twelve 13 pt cells
+= `30.3`; eight = `20.2`. Set a height only where the approved form has an oblong cell;
+never set it to "roughly the same number" as the width, because the two axes count against
+different sides of the sheet.
+
+A caption beside the cells takes the **same** `yPercent` as the cells — both anchor their
+top edge. It ends up higher than the digits (a 7 pt caption in a 13 pt cell), which is what
+the approved forms show; centring it by eye is what the old, pre-0.23.0 blanks did, and
+those offsets are now wrong.
 
 **The renderer slices, the data command formats.** `22.06.2026` in eight cells prints
 `2 2 . 0 6 . 2 0` — dots are characters too. Return a separate field for it

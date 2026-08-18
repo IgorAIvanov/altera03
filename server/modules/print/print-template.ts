@@ -18,7 +18,23 @@ export type PrintTemplatePaperSize = "A4";
 export type PrintTemplateOrientation = "portrait" | "landscape";
 export type PrintTemplateColumnAlign = "left" | "center" | "right";
 export type PrintTemplateFontWeight = "normal" | "bold";
-export type PrintTemplateBlockPlacementMode = "absolute";
+/**
+ * Як блок знаходить своє місце по вертикалі.
+ *
+ * `absolute` — за координатою `yPercent`; так стоїть шапка затвердженого бланка,
+ * і інакше не можна: вона відповідає формі до міліметра.
+ *
+ * `flow` — під ПОПЕРЕДНІМ блоком списку, хай де той скінчився. Потрібне нижче
+ * шапки, де висота відома лише після рендера: скільки рядків займе шапка
+ * таблиці з дев'ятнадцяти колонок, на скільки рядків розсипався опис товару,
+ * де саме скінчилася перша таблиця. Без цього застосунок мусив ПЕРЕДБАЧИТИ те,
+ * що ядро порахує пізніше, і записати передбачення числом — а робилося це
+ * єдиним способом: відрендерити, розібрати готовий PDF, посунути, повторити.
+ *
+ * Змішувати можна й треба: шапка на координатах, усе від першої таблиці й
+ * нижче — стосом.
+ */
+export type PrintTemplateBlockPlacementMode = "absolute" | "flow";
 export type PrintTemplateBlockType =
   | "text"
   | "field-list"
@@ -45,12 +61,37 @@ export type PrintTemplateTextStyle = "title" | "section" | "body";
 export type PrintTemplateTextOrientation = "0" | "90";
 export type PrintTemplateLineStyle = "solid" | "dashed" | "dotted" | "double";
 
+/**
+ * Місце блока на аркуші — у відсотках ОБЛАСТІ ДРУКУ (аркуш мінус поля), від її
+ * лівого верхнього кута.
+ *
+ * **`yPercent` — це ВЕРХ блока, для всіх типів однаково.** Вміст стоїть під цією
+ * межею: рамка з клітинок висить під нею, картинка й таблиця починаються з неї,
+ * текст відсунутий від неї вниз на висоту літери. Правило варте окремого
+ * абзацу, бо колись воно було не таке: у тексту `y` означала базову лінію
+ * першого рядка, тобто літери стирчали НАД рамкою, і два блоки з однаковою
+ * `yPercent` опинялися по різні боки однієї координати. Підпис поруч із
+ * клітинками через це підганяли на око, у кожному бланку заново.
+ *
+ * **Відсотки по двох осях рахуються від різних сторін** — ширина від ширини
+ * області друку (515.28 pt на книжковій A4), висота від висоти (761.89 pt).
+ * Один і той самий квадрат через це записується двома різними числами; там, де
+ * квадрат саме й потрібен — у полі по клітинках, — його дає порожня висота
+ * (див. `PrintTemplateCharCellsBlock`).
+ */
 export interface PrintTemplateBlockPlacement {
   mode: PrintTemplateBlockPlacementMode;
   xPercent: string;
   yPercent: string;
   widthPercent: string;
   heightPercent: string;
+  /**
+   * Проміжок над блоком у пунктах — читається лише в режимі `flow`.
+   *
+   * В абсолютному режимі його заміняє сама координата, тож поле там мовчить, а
+   * не сперечається з `yPercent`.
+   */
+  gapPt: string;
 }
 
 export interface PrintTemplateBlockTextOptions {
@@ -90,6 +131,20 @@ interface PrintTemplateBlockBase {
    * означало б лишити на бланку висячу риску.
    */
   visibleWhen: PrintTemplateVisibleWhen;
+  /**
+   * «Не відривати від наступного» — тримає блок і той, що йде за ним, на ОДНІЙ
+   * сторінці. Читається лише в режимі `flow`: в абсолютному місце блока названо
+   * координатою, і переносити його нікуди.
+   *
+   * Позначені підряд блоки утворюють нерозривну групу — саме так виражається
+   * «підпис не відривати від твердження, під яким він стоїть». Доти те саме
+   * робив поріг у 64 pt під підвалом: він вгадував, що підпис не можна лишати
+   * самого, і вгадував по відстані між блоками, а не по їхньому змісту.
+   *
+   * Таблиця цього не слухає: вона розривається сама, по записах, і вимога
+   * «цілком на одній сторінці» для неї означала б бланк, який не друкується.
+   */
+  keepTogether: boolean;
 }
 
 /**
@@ -312,6 +367,17 @@ export interface PrintTemplateBarcodeBlock extends PrintTemplateBlockBase {
  * Значення береться за тим самим правилом, що всюди у форматі: статичний `value`
  * перекриває прив'язку `path`.
  *
+ * **Геометрія — з рамки блока**: ширина клітинки це ширина рамки, поділена на
+ * `count`. Окремого «розміру клітинки в міліметрах» немає навмисно — він завів
+ * би другу систему координат поруч із розкладкою, і полотно редактора почало б
+ * показувати не те, що піде на папір. Натомість **порожня висота означає
+ * КВАДРАТ** — клітинку заввишки в саму себе завширшки, тобто те, що стоїть на
+ * затверджених формах. Це не зручність, а єдиний спосіб дістати квадрат не
+ * рахуючи: відсотки по двох осях рахуються від різних сторін аркуша, і той
+ * самий квадратик записується двома різними числами (12 клітинок по 13 pt —
+ * 30.3 % завширшки й 1.71 % заввишки). Задана висота сильніша: клітинка
+ * затвердженої форми буває й видовженою.
+ *
  * **Розкладає рендерер, а форматує команда даних.** Блок ріже рядок таким, яким
  * його дали: `22.06.2026` у восьми клітинках дасть `2 2 . 0 6 . 2 0` — крапки
  * теж символи. Дату під клітинки команда даних віддає окремим полем
@@ -380,6 +446,7 @@ export interface ResolvedPrintTemplateBlockPlacement {
   yPercent: number;
   widthPercent: number;
   heightPercent: number;
+  gapPt: number;
 }
 
 export interface ResolvedPrintTemplateBlockTextOptions {
@@ -461,6 +528,7 @@ function createDefaultBlockPlacement(): PrintTemplateBlockPlacement {
     yPercent: "0",
     widthPercent: "100",
     heightPercent: "0",
+    gapPt: "",
   };
 }
 
@@ -501,11 +569,14 @@ function normalizeBlockPlacement(value: unknown): PrintTemplateBlockPlacement {
   }
 
   return {
-    mode: "absolute",
+    // Невідомий режим — абсолютний, а не відмова: шаблон із майбутнього поля
+    // мусить лишитися друкованим, і координата в ньому є завжди.
+    mode: value.mode === "flow" ? "flow" : "absolute",
     xPercent: normalizeString(value.xPercent) || "0",
     yPercent: normalizeString(value.yPercent) || "0",
     widthPercent: normalizeString(value.widthPercent) || "100",
     heightPercent: normalizeString(value.heightPercent) || "0",
+    gapPt: normalizeString(value.gapPt),
   };
 }
 
@@ -701,6 +772,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       format: normalizeValueFormat(value.format),
       textOrientation: normalizeTextOrientation(value.textOrientation),
       visibleWhen: normalizeString(value.visibleWhen),
+      keepTogether: value.keepTogether === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type, textStyle)),
     };
@@ -714,6 +786,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
         ? value.items.map((item) => normalizeFieldListItem(item)).filter((item): item is PrintTemplateFieldListItem => Boolean(item))
         : [],
       visibleWhen: normalizeString(value.visibleWhen),
+      keepTogether: value.keepTogether === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -738,6 +811,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       })),
       sections: normalizeTableSections(value.sections, legacyColumns),
       visibleWhen: normalizeString(value.visibleWhen),
+      keepTogether: value.keepTogether === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -751,6 +825,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       path: normalizeString(value.path),
       alt: normalizeString(value.alt),
       visibleWhen: normalizeString(value.visibleWhen),
+      keepTogether: value.keepTogether === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -767,6 +842,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       // сканера немає під рукою, і саме його очікують у EAN-13.
       showText: value.showText !== false,
       visibleWhen: normalizeString(value.visibleWhen),
+      keepTogether: value.keepTogether === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -784,6 +860,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       borderColor: normalizeColor(value.borderColor, "#262626"),
       lineWidth: normalizeLineWidth(value.lineWidth, "1"),
       visibleWhen: normalizeString(value.visibleWhen),
+      keepTogether: value.keepTogether === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -794,6 +871,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       key,
       type,
       visibleWhen: normalizeString(value.visibleWhen),
+      keepTogether: value.keepTogether === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
       color: normalizeColor(value.color, "#595959"),
@@ -1015,6 +1093,10 @@ export function resolvePrintTemplateBlockPlacement(placement: PrintTemplateBlock
     yPercent: clampNumber(parseTemplateNumber(placement.yPercent, 0), 0, 100),
     widthPercent: clampNumber(parseTemplateNumber(placement.widthPercent, 100), 1, 100),
     heightPercent: clampNumber(parseTemplateNumber(placement.heightPercent, 0), 0, 100),
+    // Проміжок за умовчанням — не нуль: блок, поставлений упритул до
+    // попереднього, на папері читається як його продовження. Верхня межа є, бо
+    // проміжок у півсторінки — це вже не проміжок, а порожня сторінка.
+    gapPt: clampNumber(parseTemplateNumber(placement.gapPt, PRINT_TEMPLATE_DEFAULT_GAP_PT), 0, 200),
   };
 }
 
@@ -1026,6 +1108,15 @@ export function resolvePrintTemplateBlockTextOptions(text: PrintTemplateBlockTex
     color: normalizeColor(text.color, "#262626"),
   };
 }
+
+/**
+ * Проміжок над блоком у режимі `flow`, коли його не назвали.
+ *
+ * Не нуль: блок, поставлений упритул, на папері читається як продовження
+ * попереднього. 6 pt — приблизно міжрядковий інтервал бланка, тобто відстань,
+ * яку око вже бачить як «наступний блок», але яка ще не розриває розділ.
+ */
+export const PRINT_TEMPLATE_DEFAULT_GAP_PT = 6;
 
 /**
  * Стеля кількості клітинок. Взята з запасом до найдовшого регламентованого поля

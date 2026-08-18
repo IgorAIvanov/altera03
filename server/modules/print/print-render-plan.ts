@@ -40,6 +40,8 @@ export interface PrintTemplateRenderTextBlock {
   text: string;
   textOrientation: PrintTemplateTextOrientation;
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -54,6 +56,8 @@ export interface PrintTemplateRenderFieldListBlock {
   type: "field-list";
   items: PrintTemplateRenderFieldItem[];
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -93,6 +97,8 @@ export interface PrintTemplateRenderTableBlock {
   /** Підвал: друкується один раз, після останнього запису. */
   footer: PrintTemplateRenderTableRow[];
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -102,6 +108,8 @@ export interface PrintTemplateRenderImageBlock {
   src: string;
   alt: string;
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
 }
 
 /**
@@ -119,6 +127,8 @@ export interface PrintTemplateRenderBarcodeBlock {
   error: string;
   showText: boolean;
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -135,6 +145,8 @@ export interface PrintTemplateRenderCharCellsBlock {
   /** Рівно `count` елементів; порожня клітинка — порожній рядок. */
   cells: string[];
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
   cellOptions: ResolvedPrintTemplateCharCellsOptions;
 }
@@ -143,6 +155,8 @@ export interface PrintTemplateRenderHorizontalLineBlock {
   key: string;
   type: "horizontal-line";
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
   lineOptions: ResolvedPrintTemplateLineOptions;
 }
 
@@ -150,6 +164,8 @@ export interface PrintTemplateRenderVerticalLineBlock {
   key: string;
   type: "vertical-line";
   placement: ResolvedPrintTemplateBlockPlacement;
+  /** «Не відривати від наступного» — читає розкладка потоком. */
+  keepTogether: boolean;
   lineOptions: ResolvedPrintTemplateLineOptions;
 }
 
@@ -245,6 +261,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         text: block.value || bound,
         textOrientation: block.textOrientation,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -265,6 +282,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
             ),
           })),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -298,6 +316,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         body: items.map((record) => buildSectionRows(block.sections.row, record, context, columnCount, isColumnVisible)),
         footer: buildSectionRows(block.sections.footer, source, context, columnCount, isColumnVisible),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -315,6 +334,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         src: block.src || (typeof bound === "string" ? bound : ""),
         alt: block.alt,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
       }];
     }
 
@@ -334,6 +354,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         error: built.ok ? "" : built.message,
         showText: block.showText,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -355,6 +376,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
           textOptions.align,
         ),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
         textOptions,
         cellOptions,
       }];
@@ -365,6 +387,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         key: block.key,
         type: "horizontal-line",
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
         lineOptions: resolvePrintTemplateLineOptions(block),
       }];
     }
@@ -374,6 +397,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         key: block.key,
         type: "vertical-line",
         placement: resolvePrintTemplateBlockPlacement(block.placement),
+        keepTogether: block.keepTogether,
         lineOptions: resolvePrintTemplateLineOptions(block),
       }];
     }

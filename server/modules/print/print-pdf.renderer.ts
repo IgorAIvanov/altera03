@@ -11,7 +11,7 @@
 // б від першого перейменування. Окремо від `./print` тому, що pdf-lib не має
 // потрапити в бандл фронтенду: `./print` імпортує екран редактора шаблонів.
 
-import { degrees, PDFDocument, rgb } from "pdf-lib";
+import { degrees, PDFDocument, type PDFImage, rgb } from "pdf-lib";
 import { embedPrintFonts } from "./print-text-metrics.ts";
 import { layoutPrintTemplateGrid } from "./print-template.ts";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
@@ -46,14 +46,6 @@ const BARCODE_DEFAULT_HEIGHT = 40;
 const BARCODE_CAPTION_GAP = 3;
 
 /**
- * Висота клітинки поля-рамки, коли її не задали в розкладці: кегль плюс поля.
- * 1.8 — те, що на затвердженій формі виглядає квадратиком під цифру, а не
- * смугою; нижня межа тримає читність на дрібному кеглі.
- */
-const CHAR_CELL_HEIGHT_RATIO = 1.8;
-const CHAR_CELL_MIN_HEIGHT = 14;
-
-/**
  * Частка кегля від базової лінії до верху цифри. Точна метрика тут не потрібна:
  * вона потрібна для ЦЕНТРУВАННЯ символу в клітинці, а різниця між гарнітурами
  * менша за похибку, яку око бачить.
@@ -63,10 +55,13 @@ const CAP_HEIGHT_RATIO = 0.7;
 /**
  * Скільки кегля лежить над базовою лінією і скільки під нею.
  *
- * Потрібне лише повернутому тексту: у нього «над базовою лінією» — це вліво від
- * стовпчика, і без цих часток рядок не поставити ані краєм рамки, ані по центру
- * комірки. Точність тут зайва — різниця між гарнітурами менша за похибку, яку
- * око бачить на папері.
+ * Цим текст ставиться ВІД КРАЮ РАМКИ: `drawText` бере базову лінію, а рамку
+ * задано верхньою межею, тож перший рядок відсувається від неї вниз на висоту
+ * літери. Повернутому тексту потрібне те саме, тільки «над базовою лінією» в
+ * нього — це вліво від стовпчика.
+ *
+ * Точність тут зайва — різниця між гарнітурами менша за похибку, яку око
+ * бачить на папері.
  */
 const ASCENT_RATIO = 0.75;
 const DESCENT_RATIO = 0.25;
@@ -141,11 +136,38 @@ function wrapText(text: string, maxWidth: number, measure: (value: string) => nu
   return lines;
 }
 
-/** Малює блочний шаблон у PDF і повертає байти. */
-export async function renderPrintPdf(
+/**
+ * Де саме опинився блок — рядок звіту про розкладку.
+ *
+ * Координати в системі PDF: `topPt` більший за `bottomPt`, бо вісь y росте
+ * ВГОРУ від низу аркуша. Так їх бачить і той, хто розбирає готовий файл, —
+ * а саме цим доти й доводилось займатися, щоб узнати, куди що стало.
+ */
+export interface PrintPdfLayoutEntry {
+  key: string;
+  type: PrintTemplateRenderBlock["type"];
+  /** Сторінка, на якій блок ПОЧАВСЯ (з одиниці). */
+  page: number;
+  /** Сторінка, на якій він скінчився: таблиця гортається сама. */
+  endPage: number;
+  topPt: number;
+  bottomPt: number;
+  /** Блок виліз за нижнє поле сторінки — на папері це обрізаний бланк. */
+  overflow: boolean;
+}
+
+/**
+ * Малює блочний шаблон у PDF і віддає байти РАЗОМ зі звітом про розкладку.
+ *
+ * Звіт існує тому, що висота більшості блоків відома лише після рендера, і без
+ * нього застосунок дізнавався про своє місце єдиним способом — розпаковував
+ * потік вмісту готового PDF і шукав там лінії. Ядро при цьому знає все потрібне
+ * у момент малювання й доти просто викидало це знання.
+ */
+export async function renderPrintPdfWithLayout(
   template: PrintTemplateRuntimeItem,
   printData: unknown,
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; layout: PrintPdfLayoutEntry[] }> {
   const renderPlan = buildPrintTemplateRenderPlan(template.schema, printData);
 
   const pdf = await PDFDocument.create();
@@ -166,6 +188,9 @@ export async function renderPrintPdf(
   let page = pdf.addPage(pageSize);
   const contentWidth = page.getWidth() - MARGIN * 2;
   const contentHeight = page.getHeight() - MARGIN * 2;
+
+  /** Вбудовані картинки за їхнім `src` — щоб пробний прогін не подвоював файл. */
+  const embeddedImages = new Map<string, PDFImage>();
 
   const drawTextLine = (
     text: string,
@@ -205,7 +230,21 @@ export async function renderPrintPdf(
     }
   };
 
-  /** Малює абзац із перенесенням і повертає використану висоту. */
+  /**
+   * Малює абзац із перенесенням і повертає використану висоту.
+   *
+   * `y` — ВЕРХ рамки, а не базова лінія: перший рядок відсувається від нього
+   * вниз на висоту літери. Так само стоїть вміст у решти блоків — комірка
+   * таблиці, картинка, штрих-код і поле по клітинках усі малюються ВІД верхньої
+   * межі вниз, і повернутий текст теж (`drawRotatedParagraph`).
+   *
+   * Доти базова лінія лежала рівно на `y`, тобто тіло літер стирчало НАД рамкою.
+   * Блок тексту й поле по клітинках, поставлені на ту саму `yPercent`, через це
+   * опинялися по різні боки однієї координати — на цілу висоту блока, — а
+   * полотно редактора малювало текст УСЕРЕДИНІ рамки, тобто показувало не те,
+   * що піде на папір. Підпис поруч із клітинками доводилось підганяти на око, і
+   * в кожному бланку заново.
+   */
   const drawParagraph = (text: string, options: {
     x: number;
     y: number;
@@ -216,7 +255,7 @@ export async function renderPrintPdf(
     color?: ReturnType<typeof rgb>;
   }) => {
     const lines = wrapText(text, options.width, (value) => measure(value, options.fontSize, options.bold));
-    let lineY = options.y;
+    let lineY = options.y - options.fontSize * ASCENT_RATIO;
 
     for (const line of lines) {
       const lineWidth = measure(line, options.fontSize, options.bold);
@@ -388,15 +427,24 @@ export async function renderPrintPdf(
    * навмисно немає — він завів би другу систему координат поруч із розкладкою,
    * і полотно редактора почало б показувати не те, що піде на папір.
    *
+   * Висота без значення означає КВАДРАТНУ клітинку — див. нижче, чому саме це
+   * умовчання: інакше квадрат довелося б рахувати руками, і в двох різних
+   * знаменниках.
+   *
    * Символ центрований у СВОЇЙ клітинці завжди; вирівнювання блока вирішило вже
    * інше питання — де в рамці сидить коротке значення (`distributePrintTemplateCharCells`).
    */
   const drawCharCells = (block: PrintTemplateRenderCharCellsBlock, blockX: number, topY: number, blockWidth: number) => {
+    const cellWidth = blockWidth / block.cells.length;
+    // Порожня висота — КВАДРАТ: клітинка заввишки в саму себе завширшки. Це те,
+    // що стоїть на затверджених формах, і єдиний спосіб дістати його не рахуючи:
+    // ширина йде у відсотках від ширини області друку, висота — від висоти, тож
+    // ОДИН І ТОЙ САМИЙ квадратик записується двома різними числами (12 клітинок
+    // по 13pt — це 30.3 % завширшки й 1.71 % заввишки). Задана висота сильніша:
+    // клітинка затвердженої форми буває й видовженою.
     const height = block.placement.heightPercent > 0
       ? contentHeight * (block.placement.heightPercent / 100)
-      : Math.max(block.textOptions.fontSize * CHAR_CELL_HEIGHT_RATIO, CHAR_CELL_MIN_HEIGHT);
-
-    const cellWidth = blockWidth / block.cells.length;
+      : cellWidth;
     const bold = block.textOptions.fontWeight === "bold";
     const color = hexToRgb(block.textOptions.color);
     const borderColor = hexToRgb(block.cellOptions.borderColor);
@@ -683,9 +731,15 @@ export async function renderPrintPdf(
       const parsed = parseImageDataUrl(block.src);
       if (!parsed) return 0;
 
-      const image = parsed.mimeType === "image/png"
-        ? await pdf.embedPng(parsed.bytes)
-        : await pdf.embedJpg(parsed.bytes);
+      // Кеш за самим `src`: пробний прогін (`measureBlockHeight`) малює блок
+      // двічі, і без кеша та сама печатка лягла б у файл двома копіями.
+      let image = embeddedImages.get(block.src);
+      if (!image) {
+        image = parsed.mimeType === "image/png"
+          ? await pdf.embedPng(parsed.bytes)
+          : await pdf.embedJpg(parsed.bytes);
+        embeddedImages.set(block.src, image);
+      }
       const width = Math.max(blockWidth, 1);
       const height = block.placement.heightPercent > 0
         ? contentHeight * (block.placement.heightPercent / 100)
@@ -823,9 +877,143 @@ export async function renderPrintPdf(
     return tableY;
   };
 
+  const layout: PrintPdfLayoutEntry[] = [];
+  const contentTop = () => page.getHeight() - MARGIN;
+  const pageNumber = () => pdf.getPages().indexOf(page) + 1;
+
+  const topYOf = (block: PrintTemplateRenderBlock) =>
+    contentTop() - contentHeight * (block.placement.yPercent / 100);
+
+  /** Малює блок і записує, де він став. Повертає низ намальованого. */
+  const drawAndReport = async (block: PrintTemplateRenderBlock, topY: number): Promise<number> => {
+    const startPage = pageNumber();
+
+    if (block.type === "table") {
+      const bottomY = drawTable(block, topY);
+      // Таблиця гортається сама, тому «не влізла» до неї не застосовне: вона
+      // або перенесла запис, або скінчилася там, де скінчилася.
+      layout.push({
+        key: block.key,
+        type: block.type,
+        page: startPage,
+        endPage: pageNumber(),
+        topPt: topY,
+        bottomPt: bottomY,
+        overflow: false,
+      });
+      return bottomY;
+    }
+
+    const height = await drawBlock(block, topY);
+    const bottomY = topY - height;
+    layout.push({
+      key: block.key,
+      type: block.type,
+      page: startPage,
+      endPage: pageNumber(),
+      topPt: topY,
+      bottomPt: bottomY,
+      overflow: bottomY < MARGIN - 0.01,
+    });
+    return bottomY;
+  };
+
+  /**
+   * Висота блока ДО малювання — пробним прогоном на тимчасовій сторінці.
+   *
+   * Спосіб навмисно такий, а не окрема арифметика поруч із малюванням: друга
+   * копія правил («скільки займе абзац», «яка висота штрих-коду без заданої»)
+   * розійшлася б із першою мовчки, і розходження вилізло б на папері — тобто
+   * рівно там, де його вже пізно ловити. Тут же міряє САМ рендерер, і збігтися
+   * вони не можуть інакше як точно.
+   *
+   * Таблиця не міряється: вона розривається по записах і сама вирішує, що
+   * переносити, тож «висота» в неї не число, а розкладка по сторінках.
+   */
+  const measureBlockHeight = async (block: PrintTemplateRenderBlock): Promise<number> => {
+    if (block.type === "table") return Number.NaN;
+
+    const scratch = pdf.addPage(pageSize);
+    const restore = page;
+    page = scratch;
+
+    try {
+      return await drawBlock(block, scratch.getHeight() - MARGIN);
+    } finally {
+      page = restore;
+      pdf.removePage(pdf.getPageCount() - 1);
+    }
+  };
+
+  const hasFlow = renderPlan.some((block) => block.placement.mode === "flow");
+
+  if (hasFlow) {
+    // ПОТОЧНА РОЗКЛАДКА. Курсор — низ останнього намальованого блока; блок у
+    // режимі `flow` стає під ним, абсолютний — на свою координату (і теж рухає
+    // курсор, бо стос після нього має тривати від нього).
+    //
+    // Евристика підвала (нижче) тут вимкнена ЦІЛКОМ, і це не спрощення: два
+    // механізми вертикалі в одному бланку — це той самий здогад, від якого
+    // потік і рятує. Досить одного блока з `flow`, щоб бланк рахувався
+    // складеним вручну.
+    let cursorY: number | null = null;
+
+    for (let index = 0; index < renderPlan.length; index += 1) {
+      const block = renderPlan[index]!;
+
+      if (block.placement.mode !== "flow") {
+        cursorY = await drawAndReport(block, topYOf(block));
+        continue;
+      }
+
+      // Нерозривна група: блок і всі, кого він тримає за собою.
+      const group = [block];
+      while (
+        group[group.length - 1]!.keepTogether &&
+        index + 1 < renderPlan.length &&
+        renderPlan[index + 1]!.placement.mode === "flow"
+      ) {
+        index += 1;
+        group.push(renderPlan[index]!);
+      }
+
+      const heights: number[] = [];
+      for (const member of group) heights.push(await measureBlockHeight(member));
+
+      // Перший блок стосу на порожній сторінці притискається до верху області
+      // друку: проміжок над ним ні від чого відміряти.
+      let top: number = cursorY === null ? contentTop() : cursorY - block.placement.gapPt;
+
+      // Група з таблицею не міряється (NaN), і переносити її наперед нічим —
+      // таблиця перенесе себе сама.
+      const groupHeight = heights.reduce((sum, value) => sum + value, 0) +
+        group.slice(1).reduce((sum, member) => sum + member.placement.gapPt, 0);
+
+      if (Number.isFinite(groupHeight) && top - groupHeight < MARGIN) {
+        page = pdf.addPage(pageSize);
+        top = contentTop();
+      }
+
+      // Проміжок першого вже враховано у `top`; кожен наступний відсувається
+      // від низу попереднього на свій власний.
+      for (let member = 0; member < group.length; member += 1) {
+        const target = group[member]!;
+        top = await drawAndReport(target, member === 0 ? top : top - target.placement.gapPt);
+      }
+
+      cursorY = top;
+    }
+
+    return { bytes: await pdf.save(), layout };
+  }
+
   // Блоки вище першої таблиці — «шапка» форми, вони лишаються на першій
   // сторінці. Блоки нижче — підвал (разом, підписи): їх треба малювати після
   // таблиці й на останній сторінці, інакше довга таблиця налізе на них.
+  //
+  // Це ЗДОГАД, і бланк із двома таблицями його ламає: підпис між ними
+  // зараховується до підвалу й їде на другий аркуш разом із ним. Лишається він
+  // тільки заради наявних шаблонів — нове верстається потоком (`mode: "flow"`).
   const tables = renderPlan.filter((block): block is PrintTemplateRenderTableBlock => block.type === "table");
   const firstTableTop = tables.length
     ? Math.min(...tables.map((table) => table.placement.yPercent))
@@ -833,11 +1021,8 @@ export async function renderPrintPdf(
   const headerBlocks = renderPlan.filter((block) => block.type !== "table" && block.placement.yPercent < firstTableTop);
   const footerBlocks = renderPlan.filter((block) => block.type !== "table" && block.placement.yPercent >= firstTableTop);
 
-  const topYOf = (block: PrintTemplateRenderBlock) =>
-    page.getHeight() - MARGIN - contentHeight * (block.placement.yPercent / 100);
-
   for (const block of headerBlocks) {
-    await drawBlock(block, topYOf(block));
+    await drawAndReport(block, topYOf(block));
   }
 
   let tableEndY: number | null = null;
@@ -846,7 +1031,7 @@ export async function renderPrintPdf(
     // та вже зайняла це місце (або перенеслася на іншу сторінку).
     const naturalTop = topYOf(table);
     const startY = tableEndY === null ? naturalTop : Math.min(naturalTop, tableEndY - BLOCK_GAP);
-    tableEndY = drawTable(table, startY);
+    tableEndY = await drawAndReport(table, startY);
   }
 
   if (footerBlocks.length) {
@@ -863,16 +1048,24 @@ export async function renderPrintPdf(
     const lowestFooterTop = Math.min(...naturalTops) + shift;
     if (lowestFooterTop < MARGIN + FOOTER_MIN_SPACE) {
       page = pdf.addPage(pageSize);
-      const offset = page.getHeight() - MARGIN - highestFooterTop;
+      const offset = contentTop() - highestFooterTop;
       for (const block of footerBlocks) {
-        await drawBlock(block, topYOf(block) + offset);
+        await drawAndReport(block, topYOf(block) + offset);
       }
     } else {
       for (const block of footerBlocks) {
-        await drawBlock(block, topYOf(block) + shift);
+        await drawAndReport(block, topYOf(block) + shift);
       }
     }
   }
 
-  return await pdf.save();
+  return { bytes: await pdf.save(), layout };
+}
+
+/** Малює блочний шаблон у PDF і повертає байти. */
+export async function renderPrintPdf(
+  template: PrintTemplateRuntimeItem,
+  printData: unknown,
+): Promise<Uint8Array> {
+  return (await renderPrintPdfWithLayout(template, printData)).bytes;
 }

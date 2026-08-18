@@ -42,6 +42,27 @@ export const PRINT_MARGIN = 40;
 /** Внутрішній відступ комірки таблиці з кожного боку. */
 export const PRINT_CELL_PADDING = 4;
 
+export type PrintOrientation = "portrait" | "landscape";
+
+/**
+ * Орієнтація, названа явно — або відмова.
+ *
+ * Доти невідоме значення означало «книжкова», і мовчки: виклик
+ * `printContentWidth("A4", "landscape")` (аргументів у функції один) віддавав
+ * 515.28 замість 761.89, а неправильними ставали ВСІ ширини, пораховані від
+ * нього. Помилка при цьому не діагностується ніде, крім готового паперу, тож
+ * тут єдиний безпечний бік — упасти.
+ */
+function pageBox(orientation: PrintOrientation): { width: number; height: number } {
+  if (orientation !== "portrait" && orientation !== "landscape") {
+    throw new TypeError(`Невідома орієнтація друку: ${JSON.stringify(orientation)}`);
+  }
+
+  return orientation === "landscape"
+    ? { width: PRINT_PAGE_SIZE_A4.height, height: PRINT_PAGE_SIZE_A4.width }
+    : PRINT_PAGE_SIZE_A4;
+}
+
 /**
  * Ширина області друку — саме її ділять між собою колонки таблиці.
  *
@@ -49,9 +70,21 @@ export const PRINT_CELL_PADDING = 4;
  * місцями. Константа тут навмисно не «515.28»: число залежить від двох інших,
  * і виписане окремо воно розійшлося б із ними на першій же зміні поля.
  */
-export function printContentWidth(orientation: "portrait" | "landscape" = "portrait"): number {
-  const width = orientation === "landscape" ? PRINT_PAGE_SIZE_A4.height : PRINT_PAGE_SIZE_A4.width;
-  return width - PRINT_MARGIN * 2;
+export function printContentWidth(orientation: PrintOrientation = "portrait"): number {
+  return pageBox(orientation).width - PRINT_MARGIN * 2;
+}
+
+/**
+ * Висота області друку — те, від чого рахується `yPercent` і `heightPercent`.
+ *
+ * Друга сторона потрібна нарівні з першою, бо відсотки в розкладці беруться від
+ * РІЗНИХ сторін: `widthPercent` від ширини, `heightPercent` від висоти. Тому
+ * розмір, який мусить бути однаковим по обох осях (квадратна клітинка, кругла
+ * печатка), записується двома різними числами, і рахувати їх на око — це та
+ * помилка, яку видно лише з паперу.
+ */
+export function printContentHeight(orientation: PrintOrientation = "portrait"): number {
+  return pageBox(orientation).height - PRINT_MARGIN * 2;
 }
 
 /** Ширина рядка в пунктах при заданому кеглі. */

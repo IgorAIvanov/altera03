@@ -43,6 +43,7 @@ export function createPlacement(patch?: Partial<PrintTemplateBlockPlacement>): P
     yPercent: "0",
     widthPercent: "100",
     heightPercent: "0",
+    gapPt: "",
     ...patch,
   };
 }
@@ -77,6 +78,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       format: "",
       textOrientation: "0",
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ heightPercent: "6" }),
       text: createTextOptions(),
     };
@@ -88,6 +90,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       type: "field-list",
       items: [createFieldItem(1)],
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ heightPercent: "12" }),
       text: createTextOptions(),
     };
@@ -108,6 +111,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
         footer: [],
       },
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ heightPercent: "20" }),
       text: createTextOptions(),
     };
@@ -121,6 +125,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       path: "",
       alt: "",
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ widthPercent: "24", heightPercent: "12" }),
       text: createTextOptions(),
     };
@@ -137,6 +142,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       // Пропорції під лінійний код: приблизно 45×15 мм на A4. Для QR ширину
       // зазвичай зменшують — він квадратний і бере меншу зі сторін.
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ widthPercent: "30", heightPercent: "7" }),
       text: createTextOptions({ fontSize: "8", align: "center" }),
     };
@@ -153,6 +159,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       borderColor: "#262626",
       lineWidth: "1",
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ widthPercent: "40", heightPercent: "3" }),
       text: createTextOptions({ fontSize: "11" }),
     };
@@ -163,6 +170,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       key: newKey(),
       type: "horizontal-line",
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ widthPercent: "100", heightPercent: "1" }),
       text: createTextOptions(),
       color: "#595959",
@@ -175,6 +183,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
     key: newKey(),
     type: "vertical-line",
     visibleWhen: "",
+    keepTogether: false,
     placement: createPlacement({ widthPercent: "1", heightPercent: "18" }),
     text: createTextOptions(),
     color: "#595959",
@@ -219,6 +228,7 @@ export function createDefaultBlocks(): PrintTemplateBlock[] {
       format: "",
       textOrientation: "0",
       visibleWhen: "",
+      keepTogether: false,
       placement: createPlacement({ heightPercent: "8" }),
       text: createTextOptions({ fontSize: "16", align: "center", fontWeight: "bold" }),
     },

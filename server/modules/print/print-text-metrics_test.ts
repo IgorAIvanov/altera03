@@ -7,10 +7,11 @@
  * величинах, що в записі прикладників (1 234 567.89 у вузькій колонці, «Ставка
  * ПДВ» у шапці на 9pt).
  */
-import { assert, assertAlmostEquals, assertEquals } from "@std/assert";
+import { assert, assertAlmostEquals, assertEquals, assertThrows } from "@std/assert";
 import {
   createPrintTextMeasurer,
   PRINT_CELL_PADDING,
+  printContentHeight,
   printContentWidth,
   printFontIndexFor,
 } from "./print-text-metrics.ts";
@@ -66,8 +67,16 @@ Deno.test("шрифт: невідомий символ не валить док�
 
 Deno.test("область друку рахується з аркуша й полів, а не константою", () => {
   assertAlmostEquals(printContentWidth(), 515.28, 0.001);
-  // Альбомна орієнтація — та сама арифметика на довшій стороні.
+  assertAlmostEquals(printContentHeight(), 761.89, 0.001);
+  // Альбомна орієнтація — та сама арифметика, сторони міняються місцями.
   assertAlmostEquals(printContentWidth("landscape"), 761.89, 0.001);
+  assertAlmostEquals(printContentHeight("landscape"), 515.28, 0.001);
+
+  // Невідома орієнтація — відмова, а не мовчазна книжкова: зайвий аргумент
+  // (`printContentWidth("A4", "landscape")`) інакше віддавав би 515.28, і всі
+  // ширини, пораховані від нього, були б тихо неправильні.
+  assertThrows(() => printContentWidth("A4" as unknown as "portrait"), TypeError);
+  assertThrows(() => printContentHeight("" as unknown as "portrait"), TypeError);
 });
 
 Deno.test("порожній рядок нічого не займає, довший — ширший", async () => {
