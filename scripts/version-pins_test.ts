@@ -16,7 +16,7 @@ import { parse as parseJsonc } from "jsr:@std/jsonc@^1";
 const ROOT = new URL("../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
 /** Пакети фреймворку — джерело істини для власних пінів. */
-const PACKAGES = ["server", "client", "tools", "skills"] as const;
+const PACKAGES = ["server", "client", "tools", "skills", "mcp"] as const;
 
 /**
  * Файли, у яких піни повторюються (і в `imports`, і в рядках задач).
@@ -35,6 +35,9 @@ const PIN_FILES = [
   "create/template/Dockerfile",
   "create/template/docker-compose.yml",
   "tools/deno.json",
+  // Запис MCP-сервера в конфізі хоста: обгортка береться з реєстру, тож пін
+  // тут такий самий контракт, як у задачах шаблону.
+  ".mcp.json",
 ];
 
 async function readJsonc(path: string): Promise<Record<string, unknown>> {
