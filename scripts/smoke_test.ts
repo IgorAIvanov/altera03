@@ -1439,6 +1439,23 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertEquals(write.body.ok, false);
         assertEquals(write.body.messages.join(" ").includes("тільки для читання"), true);
 
+        // …і не пише ІНШИМ ВХОДОМ. Байти вкладень ходять власним каналом, повз
+        // рантайм моделей, тож перевірка прапорця мусить стояти і там. Доти не
+        // стояла: токеном для читання можна було залити в базу будь-який файл,
+        // і жодна проба цього не бачила — цей крок і є та проба.
+        const readerForm = new FormData();
+        readerForm.set(
+          "file",
+          new File([bytes("denied") as BufferSource], "smoke-readonly.txt", { type: "text/plain" }),
+        );
+        const readerUpload = await client.json<Envelope>("/api/blob/upload", {
+          method: "POST",
+          headers: { authorization: `Bearer ${reader.token}` },
+          body: readerForm,
+        });
+        assertEquals(readerUpload.status, 403);
+        assertEquals(readerUpload.body.messages.join(" ").includes("тільки для читання"), true);
+
         // Звіт — те, заради чого агента здебільшого й кличуть: звірка
         // починається з читання регістру, а не з запису. Він є і в каталозі, і
         // в схемах (право прийшло з `commands.access`, а не з виводу за іменем)...

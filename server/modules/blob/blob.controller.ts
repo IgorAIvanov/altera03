@@ -1,5 +1,11 @@
 import { Controller, Get, Param, Post, Req } from "@danet/core";
-import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../../common/http.ts";
+import {
+  AuthenticationRequiredError,
+  assertTokenMayWrite,
+  type HttpRequest,
+  jsonResponse,
+  ReadOnlyTokenError,
+} from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { BlobService, getMaxUploadBytes, isInlineSafe } from "./blob.service.ts";
 
@@ -55,6 +61,10 @@ export class BlobController {
   ) {
     try {
       const auth = await this.requestUserService.resolveAuthContext(req);
+      // Вкладення — це запис, хай і не командою моделі. Перевірка мусить стояти
+      // ДО читання тіла: інакше токен для читання змусив би сервер прийняти й
+      // розібрати файл на десятки мегабайт, щоб потім його відкинути.
+      assertTokenMayWrite(auth, "завантаження файлу");
 
       const form = await req.formData();
       const file = form.get("file");
@@ -100,6 +110,9 @@ export class BlobController {
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
         return jsonResponse(errorEnvelope(error.message), 401);
+      }
+      if (error instanceof ReadOnlyTokenError) {
+        return jsonResponse(errorEnvelope(error.message), error.status);
       }
       return jsonResponse(
         errorEnvelope(error instanceof Error ? error.message : "Помилка завантаження файлу"),

@@ -513,8 +513,12 @@ skill — [`model-form-root`](skills/src/model-form-root/SKILL.md). Головн
 (`app.access_token`) — `Authorization: Bearer`, прав не несе, видається лише з браузера
 по сесії; керування на `/api/auth/tokens`, поза правами моделей. **Запобіжники запису
 діють лише на токен**: `delete`/`post`/`unpost` вимагають `"confirm": true`, токен
-`isReadOnly` відсікає запис узагалі — стоїть у `ModelRuntimeService.execute`, обійти
-іншим входом не вийде. **MCP-обгортка** — окремий пакет `mcp/` (три інструменти замість
+`isReadOnly` відсікає запис узагалі. Перевірок ДВІ, і це не дубль: рантайм моделей
+(`ModelRuntimeService.execute`) і приймання вкладень (`POST /api/blob/upload`) — байти
+ходять власним каналом, повз команди моделей, і доти прапорця не бачили взагалі
+(server 0.23.1). Тому новий вхід, який ПИШЕ, зобов'язаний покликати
+`assertTokenMayWrite` з `server/common/http.ts`: обіцянка стосується токена, а не
+одного споживача. **MCP-обгортка** — окремий пакет `mcp/` (три інструменти замість
 дзеркала команд, одна база на процес) — [`mcp/README.md`](mcp/README.md). Рішення й
 план — [`docs/external-agent-plan.md`](docs/external-agent-plan.md).
 
