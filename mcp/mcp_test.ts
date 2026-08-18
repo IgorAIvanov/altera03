@@ -17,11 +17,22 @@ import { fromFileUrl } from "@std/path";
 const MAIN = fromFileUrl(new URL("./main.ts", import.meta.url));
 const TOKEN = "probe-token";
 
+/** Те, з чим прийшло завантаження: саме це й перевіряє проба вкладення. */
+interface FakeUpload {
+  fileName: string;
+  mime: string;
+  size: number;
+  content: string;
+  ownerModel: string | null;
+  ownerId: string | null;
+}
+
 interface FakeAltera {
   url: string;
   /** Заголовки авторизації, які прийшли: доказ, що токен їде саме так. */
   authorizations: string[];
   paths: string[];
+  uploads: FakeUpload[];
   close(): Promise<void>;
 }
 
@@ -29,14 +40,36 @@ interface FakeAltera {
 function fakeAltera(rows: unknown[], callEnvelope: unknown): FakeAltera {
   const authorizations: string[] = [];
   const paths: string[] = [];
+  const uploads: FakeUpload[] = [];
   const controller = new AbortController();
 
   const server = Deno.serve(
     { port: 0, signal: controller.signal, onListen: () => {} },
-    (request) => {
+    async (request) => {
       const url = new URL(request.url);
       authorizations.push(request.headers.get("authorization") ?? "");
       paths.push(url.pathname + url.search);
+
+      // Завантаження розбираємо по-справжньому: перевіряти треба саме те, що
+      // доїхало до бази — ім'я, тип і власника, — а не те, що ми відправляли.
+      if (url.pathname === "/api/blob/upload") {
+        const form = await request.formData();
+        const file = form.get("file") as File;
+        uploads.push({
+          fileName: file.name,
+          mime: file.type,
+          size: file.size,
+          content: await file.text(),
+          ownerModel: form.get("ownerModel") as string | null,
+          ownerId: form.get("ownerId") as string | null,
+        });
+
+        return Response.json({
+          ok: true,
+          data: { item: { id: "77", name: file.name, mime: file.type, size: file.size } },
+          messages: [],
+        });
+      }
 
       const body = url.pathname === "/api/agent/call"
         ? callEnvelope
@@ -52,6 +85,7 @@ function fakeAltera(rows: unknown[], callEnvelope: unknown): FakeAltera {
     url: `http://localhost:${(server.addr as Deno.NetAddr).port}`,
     authorizations,
     paths,
+    uploads,
     close: async () => {
       controller.abort();
       await server.finished;
@@ -174,11 +208,13 @@ Deno.test("обгортка: рукостискання, перелік і ви�
     const info = (initialized.result as { serverInfo?: { name?: string } }).serverInfo;
     assertEquals(info?.name, "altera");
 
-    // Три інструменти, а не дзеркало команд: опис лежить у контексті завжди,
-    // тож його розмір і є ціна рішення.
+    // Чотири інструменти, а не дзеркало команд: опис лежить у контексті завжди,
+    // тож його розмір і є ціна рішення. Четвертий тут не тому, що моделей
+    // побільшало, а тому що каналів у базі два — команди й байти.
     const list = await probe.request("tools/list");
     const tools = (list.result as { tools: Array<Record<string, unknown>> }).tools;
     assertEquals(tools.map((tool) => tool.name).sort(), [
+      "altera_attach",
       "altera_call",
       "altera_describe",
       "altera_models",
@@ -242,6 +278,87 @@ Deno.test("обгортка: старіша база названа прямо, 
     const { text, isError } = toolResult(catalog);
     assertEquals(isError, true);
     assertEquals(text.includes("0.19.0"), true);
+  } finally {
+    await probe.close();
+    await altera.close();
+  }
+});
+
+Deno.test("обгортка: вкладення їде шляхом, а власник — разом із ним", async () => {
+  const altera = fakeAltera(CATALOG, CALL_ENVELOPE);
+  const probe = new McpProbe({ ALTERA_URL: altera.url, ALTERA_TOKEN: TOKEN });
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/накладна.pdf`;
+  await Deno.writeTextFile(path, "%PDF-1.4 проба");
+
+  try {
+    await handshake(probe);
+
+    const attached = await probe.request("tools/call", {
+      name: "altera_attach",
+      arguments: { path, model: "goods_receipt", id: "1032" },
+    });
+
+    assertEquals(toolResult(attached).isError, false);
+    const item = (JSON.parse(toolResult(attached).text) as { data: { item: { id: string } } }).data
+      .item;
+    assertEquals(item.id, "77");
+
+    // Дійшло саме те, що треба базі: байти, ім'я з ШЛЯХУ (кирилиця включно),
+    // тип за розширенням і власник. Власник тут головний: без нього вкладення
+    // «сирота», і його за добу прибере attachment_gc.
+    assertEquals(altera.uploads.length, 1);
+    const upload = altera.uploads[0];
+    assertEquals(upload.fileName, "накладна.pdf");
+    assertEquals(upload.mime, "application/pdf");
+    assertEquals(upload.content, "%PDF-1.4 проба");
+    assertEquals(upload.ownerModel, "goods_receipt");
+    assertEquals(upload.ownerId, "1032");
+
+    // Пішло туди ж, куди ходить браузер, і з тим самим токеном.
+    assertEquals(altera.paths.includes("/api/blob/upload"), true);
+    assertEquals(altera.authorizations.at(-1), `Bearer ${TOKEN}`);
+
+    // Ім'я можна назвати своє — файл на диску буває названий як завгодно.
+    await probe.request("tools/call", {
+      name: "altera_attach",
+      arguments: { path, model: "goods_receipt", id: "1032", name: "scan.png" },
+    });
+    assertEquals(altera.uploads.at(-1)?.fileName, "scan.png");
+    assertEquals(altera.uploads.at(-1)?.mime, "image/png");
+  } finally {
+    await probe.close();
+    await altera.close();
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("обгортка: файлу немає — це помилка шляху, а не бази", async () => {
+  const altera = fakeAltera(CATALOG, CALL_ENVELOPE);
+  const probe = new McpProbe({ ALTERA_URL: altera.url, ALTERA_TOKEN: TOKEN });
+
+  try {
+    await handshake(probe);
+
+    const missing = await probe.request("tools/call", {
+      name: "altera_attach",
+      arguments: { path: "/no/such/file.pdf", model: "goods_receipt", id: "1032" },
+    });
+
+    // Різницю видно з тексту: інакше агент лікує базу замість шляху.
+    const result = toolResult(missing);
+    assertEquals(result.isError, true);
+    assertEquals(result.text.includes("Файлу немає"), true);
+    assertEquals(altera.uploads.length, 0);
+
+    // Власник обов'язковий: інструмент, який мовчки лишає файл сиротою, гірший
+    // за його відсутність.
+    const noOwner = await probe.request("tools/call", {
+      name: "altera_attach",
+      arguments: { path: "/no/such/file.pdf", model: "goods_receipt" },
+    });
+    assertEquals(toolResult(noOwner).isError, true);
+    assertEquals(toolResult(noOwner).text.includes("id"), true);
   } finally {
     await probe.close();
     await altera.close();

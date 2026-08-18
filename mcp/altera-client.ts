@@ -148,6 +148,45 @@ export class AlteraClient {
     });
   }
 
+  /**
+   * Прикріпити файл до запису: `POST /api/blob/upload` (multipart).
+   *
+   * ЧОМУ ЦЕ ОКРЕМИЙ ІНСТРУМЕНТ, А НЕ КОМАНДА МОДЕЛІ. Байти в Altera ходять
+   * власним каналом — команда моделі возить JSON, а картинка потрібна браузеру
+   * звичайним GET-URL без заголовка авторизації. Тобто `altera_call` фізично не
+   * має чим передати файл, і скільки б команд не додали в модель, це не
+   * зміниться.
+   *
+   * ФАЙЛ БЕРЕТЬСЯ ШЛЯХОМ, А НЕ ВМІСТОМ. Аргументи інструмента їдуть у JSON-RPC і
+   * лишаються в контексті агента: накладна на 420 КБ у base64 — це 560 КБ у
+   * розмові, за які платять щоразу, коли до неї повертаються. Обгортка працює на
+   * тій самій машині, що й хост, тож шлях коштує сорок байтів, а файл читає вона
+   * сама. Ціна рішення названа чесно: обгортка читає БУДЬ-ЯКИЙ файл, доступний
+   * користувачу, і відправляє його в базу — тобто `--allow-read` у конфізі це
+   * саме те, на що схоже.
+   *
+   * ВЛАСНИК ЗАДАЄТЬСЯ ОДРАЗУ. Вкладення без власника — «сирота», і його за добу
+   * прибирає `attachment_gc`; у браузері власника проставляє збереження форми,
+   * а агенту тієї форми нема де зберігати. Тому `model` і `id` тут обов'язкові:
+   * інструмент, який мовчки лишає файл на видалення, гірший за його відсутність.
+   */
+  async attach(
+    bytes: Uint8Array,
+    name: string,
+    mime: string,
+    ownerModel: string,
+    ownerId: string,
+  ): Promise<unknown> {
+    const form = new FormData();
+    form.set("file", new File([bytes as BufferSource], name, { type: mime }));
+    form.set("ownerModel", ownerModel);
+    form.set("ownerId", ownerId);
+
+    // `content-type` не задаємо: його разом із межею частин ставить fetch, і
+    // заданий руками він розійшовся б із тілом.
+    return await this.request("/api/blob/upload", { method: "POST", body: form });
+  }
+
   private async rows(path: string): Promise<unknown[]> {
     const envelope = await this.request(path) as ListEnvelope;
     return Array.isArray(envelope.data?.rows) ? envelope.data.rows : [];

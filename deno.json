@@ -79,7 +79,7 @@
     // Проба MCP-обгортки — окремою задачею, бо вона піднімає підроблену базу на
     // порту й запускає обгортку ПІДПРОЦЕСОМ (протокол інакше не перевіриш), а
     // test:unit за домовленістю не ходить ні в БД, ні в мережу.
-    "mcp:test": "deno test --allow-net --allow-env --allow-read --allow-run ./mcp/",
+    "mcp:test": "deno test --allow-net --allow-env --allow-read --allow-write --allow-run ./mcp/",
     "api": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/api.ts",
     "passwd": "DENO_EMIT_CACHE_MODE=disable deno run --allow-net --allow-read --allow-env --env-file ./tools/set-password.ts",
     // Видача персонального токена: `deno task token <назва> [--write]`. Той самий
