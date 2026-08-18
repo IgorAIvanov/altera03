@@ -550,17 +550,27 @@ its own query:
 
 | Function | A row is | For |
 |---|---|---|
-| `app.acc_entries(org, from, to, accounts, dims)` | one **side** of an entry | account card, anything looking *from an account* |
+| `app.acc_entries(org, from, to, accounts, dims)` | one **side** of an entry, with its analytics | account card, anything showing *rows* |
+| `app.acc_entries_agg(org, from, to, accounts, dims)` | the same side, **no analytics** | anything that *sums*: balances, cost pickup, reconciliation |
 | `app.acc_journal(org, from, to, accounts, dims, document_id)` | one **entry**, both sides | entry journal, document movements |
 | `app.acc_balance_turnover(org, from, to, accounts, dims)` | one account | turnover sheet — opening, turnover and closing in one pass |
 | `app.acc_balance(org, before, …)` / `app.acc_turnover(org, from, to, …)` | one account | a single figure |
 | `app.acc_account_tree(code)` | — | an account together with its sub-accounts |
 
+**Which of the two movement entries you call is not a matter of taste.**
+`acc_entries` builds `dims`/`corr_dims` — a jsonb array per movement, assembled
+against the dimension dictionary — and that is 85% of the cost of a filtered
+call. Anything that folds the result into a sum reads none of it. So: showing
+rows → `acc_entries`; computing a figure → `acc_entries_agg`. The narrow entry
+has fewer columns, so the mistake does not compile rather than merely running
+slowly, and it returns rows **unordered** — sorting what is about to be summed
+is work for nobody.
+
 Two rules the layer exists to keep, both of which have already cost real money:
 
 - **what counts as a movement** — posted, not marked for deletion, of that
-  organization — is stated once, in `acc_entries`. Forget `is_posted` in one
-  report and it silently disagrees with every other;
+  organization — is stated once, in the body both entries share. Forget
+  `is_posted` in one report and it silently disagrees with every other;
 - **an opening balance with an open start date is zero.** A movement cannot be
   both the balance brought forward and a turnover of the period. Take the
   opening figure from `acc_balance_turnover`, never from
