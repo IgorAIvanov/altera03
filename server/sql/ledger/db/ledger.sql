@@ -53,6 +53,24 @@
 --                       рахунку з субрахунками є app.acc_account_tree();
 --   p_dims            — відбір за субконто: {"counterparty": "42", "cost_item": "7"}.
 --                       Умови поєднуються І. Значення — id як рядок.
+--   p_absent          — ВІДСУТНІСТЬ виміру на боці: array['contract'] означає
+--                       «договору немає». Окремим параметром, а не парою
+--                       {"contract": null} у p_dims: p_dims працює на
+--                       ВХОДЖЕННЯ, і той самий об'єкт не може нести дві
+--                       протилежні вимоги. Різниця не косметична — у
+--                       розрахунках «без договору» це ЗНАЧЕННЯ, і без такої
+--                       вимоги всі договори контрагента змішуються в один
+--                       залишок, а зарахування авансу йде не проти того боргу.
+--                       Приймають `acc_entries` і `acc_entries_agg`, тобто й
+--                       усе, що рахується через них.
+--                       ДВІ МЕЖІ, обидві виміряні (docs/ledger-performance.md):
+--                       відсутність УТОЧНЮЄ відбір і вимагає хоча б однієї пари
+--                       в `p_dims` — самої по собі її не буває, порожній
+--                       `p_dims` разом із `p_absent` дає порожній результат;
+--                       `acc_journal` її не приймає взагалі — там рядок це
+--                       проводка, а не бік, і відбір означає «хоч один бік несе
+--                       всі пари», тож «на цьому боці виміру немає» не має там
+--                       однієї чесної відповіді.
 --
 -- ПАСТКА ВІДКРИТОЇ МЕЖІ, про яку варто знати заздалегідь. `acc_balance(…, null)`
 -- означає «усі рухи», тобто сальдо на цей момент, — і це корисно саме по собі.
@@ -128,6 +146,25 @@ $$;
 -- (`random_page_cost`, `join_collapse_limit`, `enable_hashjoin`) оцінки не
 -- міняють — вони рухають ВАРТІСТЬ, а промахнулася ОЦІНКА, і на чотири порядки.
 --
+-- ВІДСУТНІСТЬ ВИМІРУ (`p_absent`) — не вхід, а відсів: індексом «немає» не
+-- шукається. Тому анти-join по первинному ключу аналітики (`journal_entry_id,
+-- side, slot_no`) — щонайбільше три рядки на кандидата — стоїть у спільному
+-- `where`, однаково для обох гілок.
+--
+-- І ТУТ ДІЄ ТЕ САМЕ ПРАВИЛО, ЩО З `p_by_dims`, лише дорожче. `p_absent is null`
+-- попереду підзапиту — це не оптимізація виконання, це умова згортання: з
+-- ЛІТЕРАЛЬНИМ `null::varchar[]` вона стає константою, і підзапит зникає з плану
+-- разом зі своєю вартістю. Половини `union all` нижче тому й передають сюди
+-- саме літерал, коли відсутності немає.
+--
+-- Чому це критично, хоч половина й мертва: оцінка мертвої половини входить у
+-- сумарну вартість `Append`, а сумарна вартість вмикає JIT. Перша версія цієї
+-- правки передавала обчислений `p_absent` в обидві половини — вартість мертвої
+-- виросла до 1.4 млн (160 тис. боків × підзапит), перевалила
+-- `jit_inline_above_cost`, і PostgreSQL компілював 97 функцій ДЛЯ ГІЛКИ, ЯКУ НЕ
+-- ВИКОНУЄ: живий виклик подорожчав із 5 мс до 1240. Заміряно; `set jit=off`
+-- повертало 4.9 мс, тобто час був цілком компіляційний.
+--
 -- ЦЕ ВНУТРІШНЄ ТІЛО, і воно ВУЗЬКЕ: правило руху, суми, кількість, валюта — усе,
 -- що читається з самої проводки. Назв рахунків, типу документа, коду валюти й
 -- аналітики тут немає навмисно (див. `acc_entries` нижче). Кличте
@@ -142,7 +179,8 @@ create function app.acc_entries_core_impl(
   p_date_to         date,
   p_accounts        varchar[],
   p_dims            jsonb,
-  p_by_dims         boolean
+  p_by_dims         boolean,
+  p_absent          varchar[]
 )
 returns table (
   entry_id        bigint,
@@ -246,6 +284,22 @@ as $$
     and not d.is_deleted
     and (p_date_from is null or d.doc_date::date >= p_date_from)
     and (p_date_to   is null or d.doc_date::date <= p_date_to)
+    -- «Цього виміру на боці немає». Відбір `p_dims` працює на ВХОДЖЕННЯ: задані
+    -- пари мають бути присутні, зайві не заважають, — тож вимогу відсутності
+    -- ним не висловити, і той, кому вона потрібна, відсіював рядки поіменно вже
+    -- після шару, читаючи `dims`. А `dims` є лише в широкому вході — тобто
+    -- функція, яка ПІДСУМОВУЄ, платила за складання jsonb-аналітики на кожен рух
+    -- (85% часу відбіркового виклику) і саме на шляху проведення.
+    --
+    -- `p_absent is null` попереду — умова згортання, а не швидкий вихід: див.
+    -- коментар до функції, там і ціна помилки в мілісекундах.
+    and (p_absent is null
+         or not exists (
+              select 1
+              from app.journal_entry_analytic ax
+              where ax.journal_entry_id = src.entry_id
+                and ax.side = src.side
+                and ax.dimension_code = any (p_absent)))
     -- Бік без рахунку рядка не дає взагалі. Забалансова проводка однобічна за
     -- визначенням («Дт 021» не кореспондує ні з чим), і без цієї умови її
     -- порожня сторона збиралася б у сальдо окремим рахунком «null» — з сумою,
@@ -275,7 +329,8 @@ create function app.acc_entries_agg(
   p_date_from       date default null,
   p_date_to         date default null,
   p_accounts        varchar[] default null,
-  p_dims            jsonb default null
+  p_dims            jsonb default null,
+  p_absent          varchar[] default null
 )
 returns table (
   entry_id        bigint,
@@ -299,13 +354,33 @@ returns table (
 language sql
 stable
 as $$
+  -- Три половини замість двох, і третя — не симетрія, а єдиний спосіб мати
+  -- відсутність, не оподаткувавши нею тих, кому вона не потрібна. Літерал
+  -- `null::varchar[]` у перших двох згортає анти-join разом із його вартістю;
+  -- обчислений `p_absent` там підняв би оцінку мертвої половини до 1.4 млн і
+  -- увімкнув JIT усім (див. коментар до `acc_entries_core_impl`).
+  --
+  -- ЧЕТВЕРТОЇ ПОЛОВИНИ — «відсутність без жодної присутньої пари» — тут немає
+  -- свідомо, і це ЄДИНЕ обмеження контракту. Вона входила б перебором усіх
+  -- боків, тобто мала б ту саму вартість 1.4 млн, — і мала б її В КОЖНОМУ
+  -- ПЛАНІ шару, бо мертві половини теж рахуються в `Append`. Тобто «залишок
+  -- усіх контрагентів без договору» коштував би секунди компіляції кожному
+  -- проведенню в системі. Відсутність тому УТОЧНЮЄ відбір: порожній `p_dims`
+  -- разом із `p_absent` не підходить під жодну половину й дає порожньо.
   select *
-  from app.acc_entries_core_impl(p_organization_id, p_date_from, p_date_to, p_accounts, null::jsonb, false)
-  where p_dims is null or p_dims = '{}'::jsonb
+  from app.acc_entries_core_impl(p_organization_id, p_date_from, p_date_to, p_accounts,
+         null::jsonb, false, null::varchar[])
+  where (p_dims is null or p_dims = '{}'::jsonb) and p_absent is null
   union all
   select *
-  from app.acc_entries_core_impl(p_organization_id, p_date_from, p_date_to, p_accounts, p_dims, true)
-  where p_dims is not null and p_dims <> '{}'::jsonb;
+  from app.acc_entries_core_impl(p_organization_id, p_date_from, p_date_to, p_accounts,
+         p_dims, true, null::varchar[])
+  where p_dims is not null and p_dims <> '{}'::jsonb and p_absent is null
+  union all
+  select *
+  from app.acc_entries_core_impl(p_organization_id, p_date_from, p_date_to, p_accounts,
+         p_dims, true, p_absent)
+  where p_dims is not null and p_dims <> '{}'::jsonb and p_absent is not null;
 $$;
 
 -- ── Рухи З аналітикою: вхід для тих, хто показує рядки ───────────────────────
@@ -330,13 +405,15 @@ $$;
 -- фільтром з'єднання, 36 млн порівнянь на 6 000 рухів, тобто 18 секунд замість
 -- 94 мс. Кому аналітика не потрібна, тому дано окремий вхід — `acc_entries_agg`.
 drop function if exists app.acc_entries_rich_impl(bigint, date, date, varchar[], jsonb, boolean);
+drop function if exists app.acc_entries_rich_impl(bigint, date, date, varchar[], jsonb, boolean, varchar[]);
 create function app.acc_entries_rich_impl(
   p_organization_id bigint,
   p_date_from       date,
   p_date_to         date,
   p_accounts        varchar[],
   p_dims            jsonb,
-  p_by_dims         boolean
+  p_by_dims         boolean,
+  p_absent          varchar[]
 )
 returns table (
   entry_id        bigint,
@@ -390,7 +467,7 @@ as $$
     m.description,
     coalesce(an.own_list,  '[]'::jsonb) as dims,
     coalesce(an.corr_list, '[]'::jsonb) as corr_dims
-  from app.acc_entries_core_impl(p_organization_id, p_date_from, p_date_to, p_accounts, p_dims, p_by_dims) m
+  from app.acc_entries_core_impl(p_organization_id, p_date_from, p_date_to, p_accounts, p_dims, p_by_dims, p_absent) m
   join app.document_type dt on dt.id = m.document_type_id
   left join app.chart_of_account ca on ca.code = m.account
   left join app.chart_of_account cc on cc.code = m.corr_account
@@ -421,12 +498,14 @@ as $$
 $$;
 
 drop function if exists app.acc_entries(bigint, date, date, varchar[], jsonb);
+drop function if exists app.acc_entries(bigint, date, date, varchar[], jsonb, varchar[]);
 create function app.acc_entries(
   p_organization_id bigint,
   p_date_from       date default null,
   p_date_to         date default null,
   p_accounts        varchar[] default null,
-  p_dims            jsonb default null
+  p_dims            jsonb default null,
+  p_absent          varchar[] default null
 )
 returns table (
   entry_id        bigint,
@@ -456,13 +535,21 @@ returns table (
 language sql
 stable
 as $$
+  -- Три половини й чому їх три — див. `acc_entries_agg`; тут те саме.
   select *
-  from app.acc_entries_rich_impl(p_organization_id, p_date_from, p_date_to, p_accounts, null::jsonb, false)
-  where p_dims is null or p_dims = '{}'::jsonb
+  from app.acc_entries_rich_impl(p_organization_id, p_date_from, p_date_to, p_accounts,
+         null::jsonb, false, null::varchar[])
+  where (p_dims is null or p_dims = '{}'::jsonb) and p_absent is null
   union all
   select *
-  from app.acc_entries_rich_impl(p_organization_id, p_date_from, p_date_to, p_accounts, p_dims, true)
-  where p_dims is not null and p_dims <> '{}'::jsonb;
+  from app.acc_entries_rich_impl(p_organization_id, p_date_from, p_date_to, p_accounts,
+         p_dims, true, null::varchar[])
+  where p_dims is not null and p_dims <> '{}'::jsonb and p_absent is null
+  union all
+  select *
+  from app.acc_entries_rich_impl(p_organization_id, p_date_from, p_date_to, p_accounts,
+         p_dims, true, p_absent)
+  where p_dims is not null and p_dims <> '{}'::jsonb and p_absent is not null;
 $$;
 
 -- ── Потік проводок (рядок = проводка, а не бік) ──────────────────────────────
