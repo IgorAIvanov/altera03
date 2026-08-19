@@ -13,6 +13,10 @@ export const CurrencyRateItemSchema = Type.Object({
     title: "Валюта",
     "x-db-type": "bigint",
     "x-ref": { model: "currency", display: "name", as: "currency", sortable: true, searchable: true },
+    // Відбір потрібен не самому списку курсів, а панелі в картці валюти:
+    // підпорядкований регістр звужує перелік по власникові. Ключ відбору —
+    // ІМ'Я ССЫЛКИ (`currency`), а не поля.
+    "x-filter": true,
     "x-form": { order: 1, width: "sm" },
     "x-list": { width: "sm", sortable: true },
   }),

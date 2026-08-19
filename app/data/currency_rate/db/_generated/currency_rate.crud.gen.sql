@@ -12,6 +12,9 @@ declare
   v_page_size int  := greatest(coalesce((payload->>'pageSize')::int, 20), 1);
   v_sort_by   text := coalesce(payload->>'sortBy', 'currency');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
+  v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);
+  v_f_currency_id bigint := nullif(v_filters->'currency'->>'id', '')::bigint;
+  v_filters_out jsonb;
   v_rows      jsonb;
   v_total     int;
 begin
@@ -19,13 +22,21 @@ begin
     v_sort_by := 'currency';
   end if;
 
+  v_filters_out := v_filters;
+  v_filters_out := v_filters_out || jsonb_strip_nulls(jsonb_build_object(
+    'currency',
+    (select jsonb_build_object('id', x.id::text, 'name', x.name)
+     from app.currency x where x.id = v_f_currency_id)
+  ));
+
   select count(*)::int into v_total
   from app.currency_rate t
   left join app.currency r_currency on r_currency.id = t.currency_id
   where (
     coalesce(payload->>'search', '') = ''
     or r_currency.name ilike '%' || (payload->>'search') || '%'
-  );
+  )
+  and (v_f_currency_id is null or t.currency_id = v_f_currency_id);
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
@@ -43,6 +54,7 @@ begin
       coalesce(payload->>'search', '') = ''
       or r_currency.name ilike '%' || (payload->>'search') || '%'
     )
+    and (v_f_currency_id is null or t.currency_id = v_f_currency_id)
     order by
       case when v_sort_by = 'currency' and v_sort_dir = 'asc'  then r_currency.name end asc,
       case when v_sort_by = 'currency' and v_sort_dir = 'desc' then r_currency.name end desc,
@@ -59,6 +71,7 @@ begin
         'item',   null,
         'options', '{}'::jsonb,
         'totals', jsonb_build_object('count', v_total, 'page', v_page, 'pageSize', v_page_size),
+        '$filters', v_filters_out,
         'extra',  '{}'::jsonb
       ),
       'messages', '[]'::jsonb,

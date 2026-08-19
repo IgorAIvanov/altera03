@@ -39,15 +39,15 @@
     "solution:update": "deno run -A --env-file jsr:@altera/tools@^0.14.2/update-solution",
 
     "//skills:sync": "Розкладає скіли фреймворку в .claude/skills. Файли комітяться (як згенерований SQL): той, хто склонував репозиторій, має отримати їх без запуску задач. Діапазон версії підіймається РАЗОМ з @altera/client — скіли описують саме його поверхню, і відставши, вони починають радити те, чого в клієнті вже немає. Свій скіл із тим самим іменем задача не чіпає.",
-    "skills:sync": "deno run -A jsr:@altera/skills@^0.1.40 ./",
+    "skills:sync": "deno run -A jsr:@altera/skills@^0.1.41 ./",
 
     "startdb": "docker compose up -d",
     "stopdb": "docker compose down"
   },
 
   "imports": {
-    "@altera/client": "jsr:@altera/client@^0.12.5",
-    "@client/": "jsr:/@altera/client@^0.12.5/",
+    "@altera/client": "jsr:@altera/client@^0.12.6",
+    "@client/": "jsr:/@altera/client@^0.12.6/",
     "@altera/server": "jsr:@altera/server@^0.24.0",
     "@altera/server/sql": "jsr:/@altera/server@^0.24.0/sql",
     "@altera/tools/": "jsr:/@altera/tools@^0.14.2/",

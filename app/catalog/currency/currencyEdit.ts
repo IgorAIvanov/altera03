@@ -1,7 +1,11 @@
 import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { SubordinateRegister } from "@client/ui-kit/subordinate/subordinate-register.ts";
+import "@client/ui-kit/subordinate/ui-subordinate-register.ts";
+import { dateFormat } from "@client/shared/datetime.ts";
 import { CurrencyEditRootSchema, type CurrencyEditRoot } from "./currency.schema.ts";
+import type { CurrencyRateRow } from "../../data/currency_rate/currency_rate.schema.ts";
 
 export const tagName = "currency-edit";
 
@@ -15,6 +19,35 @@ export class CurrencyEdit extends BaseUI<CurrencyEditRoot> {
   constructor() {
     super(CurrencyEditRootSchema);
   }
+
+  /**
+   * Курси валюти просто в її картці — еталон підпорядкованого регістру.
+   *
+   * Оголошення тут, а не в манифесті: ключі колонок і полів перевіряє
+   * компілятор, а панель ядра малює решту — «Додати», порожній стан, редактор
+   * рядка, підказку «спершу збережіть картку» й запис ОДРАЗУ командами моделі
+   * `currency_rate`. Відбір по власнику панель виводить сама: `currencyId` →
+   * ключ `currency`, тобто ім'я ссылки, як його читає згенерований `_list`.
+   */
+  private rates = new SubordinateRegister<CurrencyRateRow>(this, {
+    model: "currency_rate",
+    ownerField: "currencyId",
+    ownerId: () => this.$root.item.id,
+    titleKey: "currencyRate.titleMany",
+    sortBy: "period",
+    readonly: () => this.readonlyMode,
+    columns: [
+      { key: "period", title: "currencyRate.period", width: "8rem", format: dateFormat.date },
+      { key: "rate", title: "currencyRate.rate", width: "8rem", align: "right" },
+      { key: "multiplicity", title: "currencyRate.multiplicity", width: "8rem", align: "right" },
+    ],
+    fields: [
+      { kind: "date", key: "period", title: "currencyRate.period", required: true },
+      { kind: "decimal", key: "rate", title: "currencyRate.rate", precision: 6, width: "8rem", required: true },
+      { kind: "decimal", key: "multiplicity", title: "currencyRate.multiplicity", precision: 0, width: "6rem" },
+    ],
+    createRow: () => ({ id: "", currency: { id: "", name: "" }, period: "", rate: 0, multiplicity: 1 }),
+  });
 
   override connectedCallback() {
     super.connectedCallback();
@@ -67,6 +100,7 @@ export class CurrencyEdit extends BaseUI<CurrencyEditRoot> {
             )}
           </div>
 
+          <ui-subordinate-register .register=${this.rates}></ui-subordinate-register>
               </div>
     `);
   }

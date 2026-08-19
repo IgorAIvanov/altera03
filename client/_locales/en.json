@@ -157,5 +157,7 @@
   "core.remark.pasteEmpty": "No image in the clipboard",
   "core.remark.clipboardDenied": "The browser denied clipboard access",
   "core.remark.shotSave": "Save the shot to a file",
-  "core.remark.shotFile": "Add a file"
+  "core.remark.shotFile": "Add a file",
+  "core.subordinate.saveOwnerFirst": "Save the record to keep this list",
+  "core.subordinate.lockedByDocument": "This row was written by a document — change it there"
 }

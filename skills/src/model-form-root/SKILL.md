@@ -203,6 +203,60 @@ defaults in SQL guarantees drift from the schema. A `get` for a missing record r
 or invalid id) and return a valid envelope. See
 [db-function-contract](../db-function-contract/SKILL.md).
 
+## A subordinate register inside the owner's card
+
+"Value X for Y, starting from a date" — exchange rates in the currency card, prices in
+the nomenclature card, the VAT flag in an organization's accounting policy, depreciation
+parameters in a fixed asset. The records live in their **own** model with their own screen
+(own table, own CRUD, own effective date), and that is right — but the person who opened
+the card looks for them there, not in the menu.
+
+Do not hand-write that panel. Declare it and place the core component:
+
+```ts
+private rates = new SubordinateRegister<CurrencyRateRow>(this, {
+  model: "currency_rate",
+  ownerField: "currencyId",
+  ownerId: () => this.$root.item.id,
+  titleKey: "currencyRate.titleMany",
+  sortBy: "period",
+  readonly: () => this.readonlyMode,
+  columns: [
+    { key: "period", title: "currencyRate.period", width: "8rem", format: dateFormat.date },
+    { key: "rate",   title: "currencyRate.rate",   width: "8rem", align: "right" },
+  ],
+  fields: [
+    { kind: "date",    key: "period", title: "currencyRate.period", required: true },
+    { kind: "decimal", key: "rate",   title: "currencyRate.rate", precision: 6, required: true },
+  ],
+  createRow: () => ({ id: "", period: "", rate: 0, multiplicity: 1 }),
+});
+// render(): <ui-subordinate-register .register=${this.rates}></ui-subordinate-register>
+```
+
+Field kinds: `text`, `decimal`, `date`, `checkbox`, `picker`, `select`, and `custom`.
+Columns take `format` (a date template), `align`, `width` and `render`.
+
+Four things the panel decides for you, and all four fail **silently** when hand-written:
+
+- **rows are written immediately, not with the card.** The register is a separate model
+  with its own checks and generated CRUD; saving it "together" means either a second set
+  of rules or a two-phase write that breaks halfway;
+- **a new card has no id yet**, so there is nothing to attach rows to — the panel is
+  disabled and *says so*; a silently empty list is indistinguishable from "no records";
+- **the filter goes by the REFERENCE name** (`currency`), not the field
+  (`currencyId`) — that is what the generated `_list` reads. The panel derives it from
+  `ownerField` by dropping the `Id` suffix; if `x-ref.as` was named differently, pass
+  `ownerFilterKey`;
+- **a row written by a DOCUMENT is not editable from the card** — the document rewrites
+  its rows from scratch on re-posting, so the edit would vanish without a word. The
+  default mark is a non-empty `documentId`; another rule goes in `lockedWhen`.
+
+One thing you must do on the model side: the owner field in the subordinate model's
+schema needs `"x-filter": true`, or the generated `_list` will answer "unknown filter".
+
+Reference: `app/catalog/currency/currencyEdit.ts`. Requires `@altera/client` 0.12.6.
+
 ## Checklist
 
 - [ ] Root schema in `<model>.schema.ts`, `id` has `default: null`
