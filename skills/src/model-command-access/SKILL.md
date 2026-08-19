@@ -53,6 +53,26 @@ Then run `deno task sql:registry` — the declaration is copied into
 `app/_generated/model-registry.generated.ts` as an `access` map. Without that step the
 runtime still sees the command as undeclared.
 
+### `commands` has exactly three keys
+
+`sql`, `ts`, `access` — nothing else. The block is plain JSON, so a command written one
+level too high parses fine and reaches nothing:
+
+```json
+"commands": { "fill": { "access": "edit" } }
+```
+
+The generator reads only the three keys, so the model lands in the registry as though it
+had no non-standard commands at all, and the runtime refuses the call. Everything else
+stays green — the SQL function is in the database and works, a demo dataset that calls it
+directly passes, `deno task check` passes, publishing passes. Only pressing the button
+shows it.
+
+Since tools 0.13.26 this is a generation error rather than silence, and the same check
+rejects an `access` value outside the runtime's vocabulary — `view`, `create`, `edit`,
+`delete`, `post`, `unpost`, `authenticated`. A string like `"vat_compensating.update"` can
+be satisfied by no permission row that exists, so it is a typo, not a strict policy.
+
 ## Choosing the action
 
 | What the command does | Declare |
@@ -85,6 +105,9 @@ An undeclared non-standard command returns 501 with the exact fix in the message
 is deliberate: a forgotten declaration surfaces on the first call, a silent allow never
 surfaces. Never "fix" this by loosening the command to `authenticated` just to make the
 error go away.
+
+A command the registry never saw returns 404 instead — and the message names the manifest
+key that declares it, because the usual cause is the shape above, not a misspelled name.
 
 ## Derived automatically
 

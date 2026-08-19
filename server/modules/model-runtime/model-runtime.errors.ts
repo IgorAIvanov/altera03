@@ -14,9 +14,22 @@ export class ModelCommandError extends Error {
     this.name = "ModelCommandError";
   }
 
-  /** Команди немає: ані TS-хендлера, ані SQL-функції для неї не оголошено. */
+  /**
+   * Команди немає: ані TS-хендлера, ані SQL-функції для неї не оголошено.
+   *
+   * Текст називає КЛЮЧ манифеста, а не лише факт. Найчастіша причина цієї
+   * відмови — не друкарська помилка в імені, а команда, оголошена формою, якої
+   * генератор реєстру не читає (`"commands": { "fill": … }` замість
+   * `"commands": { "sql": { "fill": … } }`). Ззовні це виглядає так, ніби зламався
+   * рантайм: SQL-функція в базі є й працює. Тепер відмова сама каже, куди дивитися.
+   */
   static notConfigured(model: string, command: string): ModelCommandError {
-    return new ModelCommandError(404, `Команду «${model}/${command}» не налаштовано.`);
+    return new ModelCommandError(
+      404,
+      `Команду «${model}/${command}» не налаштовано. Нестандартну команду оголошують ` +
+        `у commands.sql (SQL-функція) або commands.ts (TS-хендлер) у manifest.json моделі, ` +
+        `право — у commands.access; після правки — sql:registry.`,
+    );
   }
 
   /**

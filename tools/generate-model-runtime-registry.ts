@@ -68,6 +68,74 @@ type ManifestRecord = {
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 /**
+ * Ключі, які генератор читає всередині `commands`.
+ *
+ * Перелік знає він один — і саме тому мусить лаятися на решту. Манифест це
+ * звичайний JSON: він приймає будь-який ключ, а прочитаний буде лише той, що
+ * тут. Запис виду `"commands": { "fill": { "access": "…" } }` доти проходив
+ * усе — генерацію, `deno task check`, публікацію SQL, — і давав модель, у якої
+ * нестандартних команд ніби немає взагалі. Далі рантайм чесно відмовляв, але
+ * помічав це вже той, хто натиснув кнопку, через тижні після того, як команду
+ * написали: SQL-функція в базі є й працює, демо-набір кличе її напряму й
+ * проходить — тобто проба зелена саме тому, що обходить рантайм.
+ */
+const COMMAND_BLOCK_KEYS = ["sql", "ts", "access"];
+
+/**
+ * Дії, які рантайм уміє задовольнити правом.
+ *
+ * Копія словника, і це свідомо. Канонічний перелік стоїть check-constraint'ом
+ * на `app.user_group_permission.action` (пакет ядра `@core/access`), плюс
+ * `authenticated` — оголошення «досить бути авторизованим», яке рантайм
+ * розуміє повз права. Тримати копію тут можна рівно тому, що розбіжність із
+ * нею падає ГОЛОСНО: з'явиться нова дія — генерація почне лаятися на чинний
+ * манифест і це побачать одразу. Мовчазної розбіжності, задля якої й написана
+ * ця перевірка, тут не буває.
+ */
+const ACCESS_ACTIONS = ["view", "create", "edit", "delete", "post", "unpost", "authenticated"];
+
+/**
+ * Блок `commands` прочитано так, як його написали.
+ *
+ * Дві перевірки, і обидві про одне: рантайм fail-closed, а мовчазна відмова
+ * коштує тижнів. Незнайомий ключ означає команду, якої не буде в реєстрі;
+ * значення `access` не з того словника («model.update») неможливо задовольнити
+ * ніяким правом — тобто це помилка запису, а не сувора політика.
+ */
+export function assertCommandsBlock(manifestPath: string, manifest: ManifestRecord): void {
+  const commands = manifest.commands;
+  if (!commands || typeof commands !== "object") return;
+
+  const problems: string[] = [];
+
+  for (const key of Object.keys(commands)) {
+    if (COMMAND_BLOCK_KEYS.includes(key)) continue;
+    problems.push(
+      `  "${key}" — невідомий ключ. Команду оголошують у "commands.sql" (SQL-функція) ` +
+        `або "commands.ts" (TS-хендлер), її право — у "commands.access".`,
+    );
+  }
+
+  const access = commands.access;
+  if (access && typeof access === "object") {
+    for (const [command, action] of Object.entries(access)) {
+      if (typeof action === "string" && ACCESS_ACTIONS.includes(action)) continue;
+      problems.push(
+        `  "access.${command}": ${JSON.stringify(action)} — такої дії рантайм не знає. ` +
+          `Дозволені: ${ACCESS_ACTIONS.join(", ")}.`,
+      );
+    }
+  }
+
+  if (problems.length === 0) return;
+
+  throw new Error(
+    `${toPosixPath(relative(Deno.cwd(), manifestPath))}: блок "commands" не буде прочитаний ` +
+      `так, як написаний:\n${problems.join("\n")}`,
+  );
+}
+
+/**
  * Команди, які модель віддає агенту.
  *
  * Умовчання — стандартна п'ятірка плюс проведення для документів; це рівно те,
@@ -503,6 +571,7 @@ async function collectManifests(appDir: string) {
       if (manifest.schema !== undefined && !IDENTIFIER_PATTERN.test(manifest.schema)) {
         throw new Error(`Manifest schema must be a lowercase SQL identifier: ${toPosixPath(relative(Deno.cwd(), manifestPath))}`);
       }
+      assertCommandsBlock(manifestPath, manifest);
       // Політика журналу переїхала в базу (`app.audit_setting`, екран
       // `admin/audit_setting`). Мовчки проковтнути залишений блок не можна:
       // модель виглядала б журнальованою, а журнал би не писався — і побачив

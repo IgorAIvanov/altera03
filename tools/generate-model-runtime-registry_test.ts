@@ -6,7 +6,7 @@
 // реєстрі, а зіткнення вилазило б аж при публікації SQL — або не вилазило
 // зовсім, і застосунок працював би не з тією моделлю.
 import { assertEquals, assertThrows } from "@std/assert";
-import { assertUniqueModels, stripCommentKeys } from "./generate-model-runtime-registry.ts";
+import { assertCommandsBlock, assertUniqueModels, stripCommentKeys } from "./generate-model-runtime-registry.ts";
 
 Deno.test("унікальні імена проходять", () => {
   assertUniqueModels([
@@ -71,4 +71,52 @@ Deno.test("масиви й скаляри лишаються собою", () => 
   assertEquals(manifest.agent.aliases, ["банк", "банки"]);
   assertEquals(manifest.agent.allow, true);
   assertEquals(manifest.agent.priority, 10);
+});
+
+/**
+ * Незнайома форма запису в `commands`.
+ *
+ * Генератор читає рівно три ключі, а манифест — звичайний JSON і приймає будь-який.
+ * Три документи ПДВ у застосунку прожили з непрацездатною кнопкою «Заповнити» від
+ * дня, коли їх зробили, до дня, коли хтось порівняв два манифести очима: у реєстрі
+ * команди немає, рантайм fail-closed відмовляє, а SQL-функція в базі є й працює —
+ * тобто проба на SQL зелена саме тому, що обходить рантайм.
+ */
+Deno.test("незнайомий ключ у commands валить генерацію", () => {
+  const error = assertThrows(() =>
+    assertCommandsBlock("app/document/vat_compensating/manifest.json", {
+      model: "vat_compensating",
+      commands: { fill: { access: "edit" } } as never,
+    })
+  );
+
+  const message = error instanceof Error ? error.message : String(error);
+  assertEquals(message.includes("vat_compensating/manifest.json"), true);
+  assertEquals(message.includes('"fill" — невідомий ключ'), true);
+  // Текст мусить називати правильну форму: помилку читає той, хто її й зробив.
+  assertEquals(message.includes("commands.sql"), true);
+});
+
+Deno.test("access поза словником дій валить генерацію", () => {
+  const error = assertThrows(() =>
+    assertCommandsBlock("app/document/vat_compensating/manifest.json", {
+      commands: { sql: { fill: "vat_compensating_fill" }, access: { fill: "vat_compensating.update" } },
+    })
+  );
+
+  const message = error instanceof Error ? error.message : String(error);
+  assertEquals(message.includes("access.fill"), true);
+  assertEquals(message.includes("vat_compensating.update"), true);
+});
+
+Deno.test("правильна форма проходить мовчки", () => {
+  assertCommandsBlock("app/document/vat_compensating/manifest.json", {
+    commands: {
+      sql: { fill: "vat_compensating_fill" },
+      ts: { printPdf: { handlerKey: "runtime.printPdf" } },
+      access: { fill: "edit", current: "authenticated" },
+    },
+  });
+  // Моделі без нестандартних команд перевіряти нема чого.
+  assertCommandsBlock("app/catalog/bank/manifest.json", { model: "bank" });
 });

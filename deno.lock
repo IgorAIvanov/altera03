@@ -13,6 +13,7 @@
     "jsr:@std/encoding@^1.0.11": "1.0.11",
     "jsr:@std/fmt@0.223.0": "0.223.0",
     "jsr:@std/fmt@^1.0.10": "1.0.10",
+    "jsr:@std/fs@1": "1.0.24",
     "jsr:@std/fs@^1.0.19": "1.0.24",
     "jsr:@std/fs@^1.0.24": "1.0.24",
     "jsr:@std/html@^1.0.7": "1.0.7",
@@ -1485,7 +1486,7 @@
       },
       "create": {
         "dependencies": [
-          "jsr:@altera/skills@~0.1.37",
+          "jsr:@altera/skills@~0.1.38",
           "jsr:@std/path@^1.1.2"
         ]
       },
@@ -1519,7 +1520,7 @@
       },
       "tools": {
         "dependencies": [
-          "jsr:@altera/server@~0.23.1",
+          "jsr:@altera/server@~0.23.2",
           "jsr:@std/jsonc@^1.0.2",
           "jsr:@std/path@^1.1.2",
           "jsr:@std/tar@~0.1.10",

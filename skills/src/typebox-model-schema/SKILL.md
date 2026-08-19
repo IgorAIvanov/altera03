@@ -287,6 +287,17 @@ export type BankLookupData = Static<typeof BankLookupDataSchema>;
   ], { "x-transient": true })),
   ```
   The default caption is the header's `presentation` falling back to `number`, so the picker needs `display-field="presentation"`. `presentation` is written by the document's own optional `_denormalize` hook — a document that does not fill it shows its number, never an empty field. `display` picks another column explicitly (`"number"`, `"doc_date"`, or one of the document's own columns); the nested key is the camelCase of that column, so `display: "doc_date"` gives `{ id, docDate }`. `searchable` is only allowed on a text caption — `ilike` over a date is refused at generation time. Requires `@altera/tools` 0.13.11.
+- **When the writer is not one document, name the entity instead of a model** — `"x-ref": { entity: "document", as: "document" }`. An information register is written by several documents by design: an asset's location is set by commissioning *and* by transfer, its state by commissioning, disposal and handover. A reference that names one model joins through that model's table, so a row written by the second document is not found there and the column is **silently empty** — the screen says "this row was entered by hand". The symptom is specific: the FK is in place, `select` on the table shows `document_id`, and the list shows nothing; generation, `check` and publishing all stay green, because the join is valid — it is just not about that document.
+  ```ts
+  documentId: Type.Optional(Type.Union([Type.String(), Type.Null()], {
+    title: "Документ", "x-db-type": "bigint",
+    "x-ref": { entity: "document", as: "document" },
+  })),
+  document: Type.Optional(Type.Union([
+    Type.Object({ id: Type.String(), presentation: Type.String() }), Type.Null(),
+  ], { "x-transient": true })),
+  ```
+  The join is single (`app.document` directly) and the caption is the same `presentation`-or-`number`. Name the target **exactly one way** — `model` or `entity`, never both and never neither. The cost is that only a shared-header column can be shown (`number`, `doc_date`, `total`, `presentation`, `description`, `is_posted`, `is_deleted`, `organization_id`): "any document" has no own attributes by definition, and a `display` outside that set is refused at generation time. This gives no picker over the document journal — `<ui-picker url>` names a **view route**, and the journal is a screen of your application. For a register's registrar that does not matter: the column is filled by posting, not by hand. Requires `@altera/tools` 0.14.0.
 - `x-form`, `x-list`, `x-lookup` annotations are the canonical way to declare UI roles — do not create separate display configuration objects.
 - `options` in `GetDataSchema` is typed explicitly per model — list every dropdown the form needs (currencies, statuses, groups, etc.).
 - Payload schemas are validated at runtime by the backend using `Value.Check()` or TypeBox-compatible validator.

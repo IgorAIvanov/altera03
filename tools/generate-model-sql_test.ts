@@ -20,6 +20,7 @@ import {
   type ModelMetaMap,
   refDisplaySql,
   refJoinSql,
+  refLookupSql,
   resolveRef,
   unpostRecordsHookSql,
 } from "./generate-model-sql.ts";
@@ -401,4 +402,80 @@ Deno.test("проведення теж кличе гак — інакше пер
 
   // На розпроведенні причина інша, і плутати їх не можна.
   assertStringIncludes(unpostRecordsHookSql("app.price_setting"), "Пара до рукописної price_setting_post_entries");
+});
+
+/**
+ * Реєстратор регістра — БУДЬ-ЯКИЙ документ, а не одна названа модель.
+ *
+ * Регістр відомостей на те й регістр, що в нього пише кілька документів:
+ * місцезнаходження основного засобу ставить і введення в експлуатацію, і
+ * переміщення. Названа `model` давала подвійний join через таблицю ОДНІЄЇ
+ * моделі — рядок від другого документа в ньому не знаходився, і колонка
+ * «Документ» була мовчки порожня, тобто екран казав «завели руками». Ані
+ * генерація, ані публікація не заперечували: join валідний, він просто не про
+ * той документ.
+ */
+Deno.test("ссылка на будь-який документ: join одинарний, прямо в шапку", () => {
+  const ref = resolveRef({ entity: "document" }, "document_id", META, "fa_location.documentId");
+
+  assertEquals(ref.as, "document");
+  assertEquals(ref.targetSchema, "app");
+  assertEquals(ref.targetTable, "document");
+  assertEquals(ref.targetPk, "id");
+  assertEquals(ref.displayInHeader, true);
+  assertEquals(ref.headerAlias, undefined);
+  assertEquals(refJoinSql(ref, "t"), [
+    "left join app.document r_document on r_document.id = t.document_id",
+  ]);
+  // Подання те саме, що в ссылки на названий документ, але з одного аліаса.
+  assertEquals(
+    refDisplaySql(ref),
+    "coalesce(nullif(r_document.presentation, ''), r_document.number)",
+  );
+});
+
+Deno.test("эхо ссылочного фільтра: будь-який документ добирається без другого join", () => {
+  const anyDoc = refLookupSql(resolveRef({ entity: "document" }, "document_id", META, "reg.documentId"));
+  assertEquals(anyDoc.from, "app.document x");
+  assertEquals(anyDoc.display, "coalesce(nullif(x.presentation, ''), x.number)");
+
+  // Названий документ як був: своя таблиця плюс шапка.
+  const named = refLookupSql(resolveRef({ model: "goods_sale", as: "shipment" }, "shipment_id", META, "return.shipmentId"));
+  assertEquals(named.from, "app.goods_sale x join app.document xh on xh.id = x.document_id");
+  assertEquals(named.display, "coalesce(nullif(xh.presentation, ''), xh.number)");
+
+  // Довідник — один join і подання зі своєї ж таблиці.
+  const catalog = refLookupSql(resolveRef({ model: "warehouse" }, "warehouse_id", META, "reg.warehouseId"));
+  assertEquals(catalog.from, "app.warehouse x");
+  assertEquals(catalog.display, "x.code");
+});
+
+Deno.test("ціль називають рівно одним способом", () => {
+  const both = assertThrows(() =>
+    resolveRef({ model: "goods_sale", entity: "document" }, "document_id", META, "reg.documentId")
+  );
+  assertStringIncludes(both instanceof Error ? both.message : "", "рівно одним способом");
+
+  const neither = assertThrows(() => resolveRef({}, "document_id", META, "reg.documentId"));
+  assertStringIncludes(neither instanceof Error ? neither.message : "", "рівно одним способом");
+});
+
+/**
+ * У «будь-якого документа» власних реквізитів немає за визначенням: не знаючи
+ * моделі, про нього відомо рівно те, що лежить у спільній шапці. Промах інакше
+ * виїхав би join'ом у колонку, якої в `app.document` немає, — тобто падінням на
+ * публікації, за два кроки від причини.
+ */
+Deno.test("display поза шапкою з entity: document — відмова на генерації", () => {
+  const error = assertThrows(() =>
+    resolveRef({ entity: "document", display: "counterparty_id" }, "document_id", META, "reg.documentId")
+  );
+  assertStringIncludes(error instanceof Error ? error.message : "", "у шапці документа немає");
+});
+
+Deno.test("невідома сутність названа поіменно", () => {
+  const error = assertThrows(() =>
+    resolveRef({ entity: "catalog" } as never, "x_id", META, "reg.xId")
+  );
+  assertStringIncludes(error instanceof Error ? error.message : "", "лише \"document\"");
 });

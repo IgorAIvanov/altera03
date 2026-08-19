@@ -16,13 +16,40 @@ const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 // ── TypeBox schema shape (рантайм = JSON Schema об'єкт) ───────────────────────
 
 export type XRef = {
-  model: string;
+  /** Ціль — конкретна модель застосунку. Взаємно виключне з `entity`. */
+  model?: string;
+  /**
+   * Ціль — БУДЬ-ЯКИЙ документ: сама шапка `app.document`, без імені моделі.
+   *
+   * Потрібне тому, у кого писар не один. Регістр відомостей на те й регістр, що
+   * в нього пише кілька документів: місцезнаходження основного засобу ставить і
+   * введення в експлуатацію, і переміщення; стан — введення, списання, передача.
+   * Названа `model` дає join через таблицю ОДНІЄЇ моделі, і рядок, записаний
+   * другим документом, у ньому не знаходиться — колонка мовчки порожня, тобто
+   * екран каже неправду: «цей рядок завели руками». Тут join одинарний, прямо в
+   * шапку, і показати можна будь-який документ.
+   *
+   * Ціна — подання лише зі спільної шапки (`DOCUMENT_HEADER_COLS`): власних
+   * реквізитів у «будь-якого документа» немає за визначенням.
+   */
+  entity?: "document";
   fk?: string;
   display?: string;
   as?: string;
   sortable?: boolean;
   searchable?: boolean;
 };
+
+/**
+ * Ключ вкладеного об'єкта ссылки — до резолву, коли карта моделей ще не потрібна.
+ *
+ * Умовчання тут те саме, що в `resolveRef`, і живе воно в одному місці навмисно:
+ * розбіжність дала б поле, яке генератор бачить під двома різними іменами (об'єкт
+ * у схемі — під одним, join — під іншим), а падало б це аж на `create function`.
+ */
+export function refKeyOf(xref: XRef): string {
+  return xref.as ?? xref.model ?? xref.entity ?? "";
+}
 type XTable = { table: string; parentFk: string; orderBy?: string };
 /**
  * Поле бере участь у фільтрі списку (панель фільтрів праворуч).
@@ -279,6 +306,23 @@ const DOCUMENT_HEADER_TEXT_COLS = new Set(["number", "presentation", "descriptio
 /** Подання документа за умовчанням: денормалізований рядок для списків посилань. */
 const DOCUMENT_DISPLAY_COL = "presentation";
 
+/**
+ * Ціль ссылки `entity: "document"` — сама шапка, а не модель.
+ *
+ * Тому вона й не в карті моделей: карта будується з манифестів застосунку, а
+ * `app.document` належить ядру й існує завжди — навіть у застосунку, де жодного
+ * документа ще не оголошено. Ключ у неї свій (`id`, а не `document_id`): це вона
+ * і є та таблиця, на яку дивиться `document_id` усіх інших.
+ */
+const DOCUMENT_ENTITY_META: ModelMeta = {
+  schema: "app",
+  model: "document",
+  table: "document",
+  pk: "id",
+  displayCol: DOCUMENT_DISPLAY_COL,
+  isDocument: true,
+};
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function camelToSnake(value: string): string {
@@ -372,11 +416,24 @@ function assertDbType(value: string, label: string) {
  * `id`, якої в таблиці документа немає, і падало це аж на публікації).
  */
 export function resolveRef(xref: XRef, fkColumn: string, map: ModelMetaMap, owner: string): Ref {
-  const target = map.get(xref.model);
+  // Ціль називають РІВНО одним способом. Обидва разом — суперечність (яка з
+  // двох цілей?), жодного — ссылка в нікуди; і те, й те мовчки дало б join, який
+  // не про той документ.
+  if (!!xref.model === !!xref.entity) {
+    throw new Error(
+      `${owner}: x-ref мусить назвати ціль рівно одним способом — ` +
+        `model: "<модель>" або entity: "document" (будь-який документ)`,
+    );
+  }
+  if (xref.entity !== undefined && xref.entity !== "document") {
+    throw new Error(`${owner}: x-ref.entity «${xref.entity}» невідомий; сьогодні є лише "document"`);
+  }
+
+  const target = xref.entity ? DOCUMENT_ENTITY_META : map.get(xref.model!);
   if (!target) {
     throw new Error(`${owner} → модель '${xref.model}' не знайдена (x-ref)`);
   }
-  const as = xref.as ?? xref.model;
+  const as = refKeyOf(xref);
   const display = xref.display ?? target.displayCol;
   // Подання їде в SQL іменем колонки — тобто підставляється в запит текстом.
   assertIdentifier(display, `${owner}: x-ref.display`);
@@ -384,6 +441,16 @@ export function resolveRef(xref: XRef, fkColumn: string, map: ModelMetaMap, owne
   // представлення — у шапці. Куди йти за поданням, вирішує саме колонка, а не
   // тип цілі: `display` цілком може називати власний реквізит документа.
   const displayInHeader = target.isDocument && DOCUMENT_HEADER_COLS.has(display);
+  // У «будь-якого документа» власних реквізитів немає за визначенням: спільна
+  // шапка — це все, що про нього відомо, не знаючи його моделі. Промах тут інакше
+  // виїхав би не помилкою, а join'ом у колонку, якої в app.document немає, —
+  // тобто падінням на публікації, за два кроки від причини.
+  if (xref.entity && !displayInHeader) {
+    throw new Error(
+      `${owner}: x-ref.display «${display}» у шапці документа немає; ` +
+        `з entity: "document" показати можна лише ${[...DOCUMENT_HEADER_COLS].join(", ")}`,
+    );
+  }
   // Пошук по подання йде `ilike`, а в шапці документа є і дата, і сума, і
   // прапорці. Мовчки це не зламається на генерації й не зламається на
   // публікації — `list` плпгсиловий, тіло не перевіряється, — а вилізе на
@@ -405,7 +472,8 @@ export function resolveRef(xref: XRef, fkColumn: string, map: ModelMetaMap, owne
     alias: `r_${as}`,
     sortable: xref.sortable === true,
     searchable: xref.searchable === true,
-    headerAlias: displayInHeader ? `d_${as}` : undefined,
+    // Ціль САМА є шапкою — другого join'а немає, і подання береться з першого.
+    headerAlias: displayInHeader && !xref.entity ? `d_${as}` : undefined,
     displayInHeader,
   };
 }
@@ -603,15 +671,11 @@ function buildFilters(fields: Field[], model: string): FilterSpec[] {
     // знав би id, але показував порожнє поле.
     if (f.ref) {
       const r = f.ref;
-      const from = r.displayInHeader
-        ? `${r.targetSchema}.${r.targetTable} x join app.document xh on xh.id = x.${r.targetPk}`
-        : `${r.targetSchema}.${r.targetTable} x`;
+      const lookup = refLookupSql(r);
       spec.mirror = {
         key: r.as,
-        expr: `(select jsonb_build_object('id', x.${r.targetPk}::text, '${r.displayKey}', ${
-          refDisplaySql(r, "x", "xh")
-        })
-     from ${from} where x.${r.targetPk} = ${varName2})`,
+        expr: `(select jsonb_build_object('id', x.${r.targetPk}::text, '${r.displayKey}', ${lookup.display})
+     from ${lookup.from} where x.${r.targetPk} = ${varName2})`,
       };
     }
 
@@ -650,7 +714,7 @@ function parseObject(
     Object.values(props)
       .map((p) => p["x-ref"])
       .filter((x): x is XRef => !!x)
-      .map((x) => x.as ?? x.model),
+      .map(refKeyOf),
   );
 
   for (const [key, prop] of Object.entries(props)) {
@@ -711,9 +775,29 @@ function displaySql(
   headerAlias: string | undefined,
 ): string {
   if (!inHeader) return `${targetAlias}.${display}`;
+  // Немає окремого аліаса шапки — значить ціллю є вона сама (`entity: "document"`).
+  const a = headerAlias ?? targetAlias;
   return display === DOCUMENT_DISPLAY_COL
-    ? `coalesce(nullif(${headerAlias}.${display}, ''), ${headerAlias}.number)`
-    : `${headerAlias}.${display}`;
+    ? `coalesce(nullif(${a}.${display}, ''), ${a}.number)`
+    : `${a}.${display}`;
+}
+
+/**
+ * Одиночний добір ссылки: `from` і подання під власними аліасами.
+ *
+ * Потрібен эху ссылочного фільтра — і в списку моделі, і в обгортці звіту.
+ * Раніше обидва складали це самі, однаково й окремо; варіантів тепер три
+ * (довідник, документ через свою таблицю, будь-який документ), і третій мовчки
+ * дописався б лише в те з двох місць, куди дійшли руки.
+ */
+export function refLookupSql(r: Ref, alias = "x", headerAlias = "xh"): { from: string; display: string } {
+  const target = `${r.targetSchema}.${r.targetTable} ${alias}`;
+  return r.headerAlias
+    ? {
+      from: `${target} join app.document ${headerAlias} on ${headerAlias}.id = ${alias}.${r.targetPk}`,
+      display: refDisplaySql(r, alias, headerAlias),
+    }
+    : { from: target, display: refDisplaySql(r, alias, undefined) };
 }
 
 export function refDisplaySql(r: Ref, targetAlias = r.alias, headerAlias = r.headerAlias): string {
@@ -2164,15 +2248,10 @@ function renderReportIndex(spec: ReportSpec): string {
   // тобто нічого не змінилося, а документ показується представленням шапки.
   const echoPairs = spec.filters.filter((f) => f.ref).map((f) => {
     const r = f.ref!;
-    const target = `${r.targetSchema}.${r.targetTable}`;
-    const from = r.displayInHeader
-      ? `${target} x join app.document xh on xh.id = x.${r.targetPk}`
-      : `${target} x`;
+    const lookup = refLookupSql(r);
     return `    '${f.key}',\n` +
-      `    (select jsonb_build_object('id', x.${r.targetPk}::text, '${r.displayKey}', ${
-        refDisplaySql(r, "x", "xh")
-      })\n` +
-      `       from ${from} where x.${r.targetPk} = (v_norm->>'${f.normKey}')::bigint)`;
+      `    (select jsonb_build_object('id', x.${r.targetPk}::text, '${r.displayKey}', ${lookup.display})\n` +
+      `       from ${lookup.from} where x.${r.targetPk} = (v_norm->>'${f.normKey}')::bigint)`;
   });
 
   const echo = echoPairs.length
