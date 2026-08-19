@@ -12,7 +12,9 @@
 // потрапити в бандл фронтенду: `./print` імпортує екран редактора шаблонів.
 
 import { degrees, PDFDocument, type PDFImage, rgb } from "pdf-lib";
-import { embedPrintFonts } from "./print-text-metrics.ts";
+import { embedPrintFonts, wrapPrintText } from "./print-text-metrics.ts";
+import { resolvePrintColumnWidths } from "./print-column-widths.ts";
+import type { PrintSizedCell } from "./print-column-widths.ts";
 import { layoutPrintTemplateGrid } from "./print-template.ts";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
 import { buildPrintTemplateRenderPlan } from "./print-render-plan.ts";
@@ -115,25 +117,48 @@ function parseImageDataUrl(source: string) {
   return { mimeType, bytes: decodeBase64(match[3]!) };
 }
 
-function wrapText(text: string, maxWidth: number, measure: (value: string) => number) {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (!words.length) return [""];
 
-  const lines: string[] = [];
-  let currentLine = "";
+/**
+ * Усі комірки таблиці однією купою — вхід для рахівника ширин.
+ *
+ * Рахівникові потрібні САМЕ ВСІ: шапка каже, який підпис має вміститися, а
+ * рядки — які значення. Порахувати ширини по одній шапці спокусливо (її мало),
+ * але тоді колонка з числами на 12 знаків отримає ширину слова «Сума».
+ *
+ * Обхід сітки той самий, що в рендері: `colSpan`/`rowSpan` зсувають усе, що
+ * правіше й нижче, тож без нього неможливо сказати, ЯКІЙ колонці належить
+ * комірка. Саме цього не вміла прикидка на боці застосунку — вона мапила
+ * комірки шапки позиційно й на тризначній шапці показувала чужі числа.
+ *
+ * Кожна група тіла — своя сітка: запис може друкуватися кількома рядками, і
+ * `rowSpan` усередині запису не переходить у наступний.
+ */
+function collectSizingCells(
+  block: PrintTemplateRenderTableBlock,
+  bodyFontSize: number,
+  headerFontSize: number,
+): PrintSizedCell[] {
+  const columnCount = block.columns.length;
+  const collected: PrintSizedCell[] = [];
 
-  for (const word of words) {
-    const candidate = currentLine ? `${currentLine} ${word}` : word;
-    if (!currentLine || measure(candidate) <= maxWidth) {
-      currentLine = candidate;
-      continue;
+  const take = (rows: PrintTemplateRenderTableRow[], fallbackFontSize: number) => {
+    for (const item of layoutPrintTemplateGrid(rows, columnCount)) {
+      collected.push({
+        columnIndex: item.columnIndex,
+        colSpan: item.colSpan,
+        value: item.cell.value,
+        fontSize: item.cell.fontSize ?? fallbackFontSize,
+        bold: item.cell.fontWeight === "bold",
+        rotated: item.cell.textOrientation === "90",
+      });
     }
-    lines.push(currentLine);
-    currentLine = word;
-  }
+  };
 
-  if (currentLine) lines.push(currentLine);
-  return lines;
+  take(block.header, headerFontSize);
+  for (const group of block.body) take(group, bodyFontSize);
+  take(block.footer, bodyFontSize);
+
+  return collected;
 }
 
 /**
@@ -254,7 +279,7 @@ export async function renderPrintPdfWithLayout(
     align: PrintTemplateColumnAlign;
     color?: ReturnType<typeof rgb>;
   }) => {
-    const lines = wrapText(text, options.width, (value) => measure(value, options.fontSize, options.bold));
+    const lines = wrapPrintText(text, options.width, (value) => measure(value, options.fontSize, options.bold));
     let lineY = options.y - options.fontSize * ASCENT_RATIO;
 
     for (const line of lines) {
@@ -290,7 +315,7 @@ export async function renderPrintPdfWithLayout(
     align: PrintTemplateColumnAlign;
     color?: ReturnType<typeof rgb>;
   }) => {
-    const lines = wrapText(text, options.length, (value) => measure(value, options.fontSize, options.bold));
+    const lines = wrapPrintText(text, options.length, (value) => measure(value, options.fontSize, options.bold));
     // Стовпчик базової лінії: тіло літер лежить ЛІВОРУЧ від нього, тож перший
     // рядок відсувається від краю рамки на висоту літери.
     let lineX = options.x + options.fontSize * ASCENT_RATIO;
@@ -480,7 +505,10 @@ export async function renderPrintPdfWithLayout(
     return height;
   };
 
-  type TableColumn = PrintTemplateRenderTableColumn & { width: number; x: number };
+  // Ширина тут `widthPt`, а не `width`: `width` у колонці шаблону — це НАМІР
+  // (`auto`/`fit`/відсоток), і одне ім'я на дві різні речі перетворило б
+  // помилку на тиху.
+  type TableColumn = PrintTemplateRenderTableColumn & { widthPt: number; x: number };
 
   const CELL_PADDING = 4;
   const GRID_COLOR = rgb(0.82, 0.82, 0.82);
@@ -535,7 +563,7 @@ export async function renderPrintPdfWithLayout(
       const cell = item.cell;
       const width = columns
         .slice(item.columnIndex, item.columnIndex + item.colSpan)
-        .reduce((sum, column) => sum + column.width, 0);
+        .reduce((sum, column) => sum + column.widthPt, 0);
       const fontSize = cell.fontSize ?? fallbackFontSize;
       const bold = cell.fontWeight === "bold";
       const rotated = cell.textOrientation === "90";
@@ -554,7 +582,7 @@ export async function renderPrintPdfWithLayout(
         // Повернутий текст не переноситься: щоб перенести, треба знати висоту
         // рядка, а вона якраз від переносу й залежить. Замкнене коло тут
         // розривається на користь напису — його довжина і стає висотою.
-        lines: rotated ? [cell.value] : wrapText(
+        lines: rotated ? [cell.value] : wrapPrintText(
           cell.value,
           Math.max(width - CELL_PADDING * 2, 12),
           (value) => measure(value, fontSize, bold),
@@ -826,14 +854,37 @@ export async function renderPrintPdfWithLayout(
       });
     }
 
-    // Ваги колонок нормалізуємо до ширини блока: сума може не дорівнювати 100,
-    // але таблиця однаково має заповнити відведене місце.
-    const totalWeight = block.columns.reduce((sum, column) => sum + column.widthWeight, 0) || 1;
+    // Ширини: або старим шляхом (ваги у відсотках), або рахунком по даних.
+    //
+    // Розвилка тут, а не всередині рахівника, і саме на «чи оголосив хоч хтось
+    // намір». Причина проста: переважна більшість бланків задає відсотки, і їхня
+    // розкладка не має змінитися ані на пункт від появи цієї можливості. Рахунок
+    // по даних дає інші числа за визначенням — він на те й потрібен, — тож
+    // вмикати його всім означало б переверстати всі наявні бланки мовчки.
+    const sized = block.columns.some((column) => column.sizing.kind !== "percent");
+    const widths = sized
+      ? resolvePrintColumnWidths(
+        block.columns.map((column) => ({ sizing: column.sizing, minPt: column.minPtValue })),
+        collectSizingCells(block, block.textOptions.fontSize, headerFontSize),
+        blockWidth,
+        {
+          measure,
+          cellPadding: CELL_PADDING,
+          lineStep: (fontSize) => fontSize + 2,
+        },
+      )
+      : (() => {
+        // Ваги колонок нормалізуємо до ширини блока: сума може не дорівнювати
+        // 100, але таблиця однаково має заповнити відведене місце.
+        const totalWeight = block.columns.reduce((sum, column) => sum + column.widthWeight, 0) || 1;
+        return block.columns.map((column) => blockWidth * (column.widthWeight / totalWeight));
+      })();
+
     let columnX = blockX;
-    const columns: TableColumn[] = block.columns.map((column) => {
-      const width = blockWidth * (column.widthWeight / totalWeight);
-      const placed = { ...column, width, x: columnX };
-      columnX += width;
+    const columns: TableColumn[] = block.columns.map((column, index) => {
+      const widthPt = widths[index] ?? 0;
+      const placed = { ...column, widthPt, x: columnX };
+      columnX += widthPt;
       return placed;
     });
 

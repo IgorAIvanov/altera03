@@ -7,6 +7,7 @@
 // Файл лежить в `app/shared/`, бо ним користуються і фронтенд-редактор, і
 // TS-команда `printPdf` — напрямок залежностей `app → client/server` збережено.
 
+import { type PrintColumnSizing } from "./print-column-widths.ts";
 import { normalizeBarcodeSymbology } from "./barcode/symbology.ts";
 import type { BarcodeSymbology } from "./barcode/symbology.ts";
 import { amountInWords } from "./money/money-in-words.ts";
@@ -180,6 +181,24 @@ export interface PrintTemplateFieldListItem {
  */
 export interface PrintTemplateTableColumn {
   key: string;
+  /**
+   * Намір колонки: `"auto"`, `"fit"`, `"12%"` або просто число (відсотки).
+   *
+   * `fit` — рівно стільки, щоб значення не переносилося (числа, коди);
+   * `auto` — забирає лишок (опис товару). Ширину в цих двох випадках рахує
+   * ядро: воно єдине знає шрифт, перенос по словах і те, як об'єднані комірки
+   * шапки лягають на реальні колонки. Порожнє поле означає стару форму —
+   * `widthPercent` нижче.
+   */
+  width: string;
+  /** Нижня межа ширини в пунктах для `auto`/`fit`. Порожньо — немає. */
+  minPt: string;
+  /**
+   * Стара форма ширини: тільки відсоток, і тільки числом. Лишається чинною й
+   * не збирається зникати — переважна більшість бланків саме така, а `width`
+   * потрібен там, де склад колонок міняється або їх забагато, щоб рахувати
+   * руками. Непорожній `width` цю форму перекриває.
+   */
   widthPercent: string;
   /**
    * Умова показу колонки (від кореня даних: колонка або є на весь бланк, або
@@ -251,6 +270,8 @@ interface LegacyPrintTemplateTableColumn {
   visibleWhen: string;
   title: string;
   path: string;
+  width: string;
+  minPt: string;
   widthPercent: string;
   headerAlign: PrintTemplateColumnAlign;
   headerFontWeight: PrintTemplateFontWeight;
@@ -471,6 +492,10 @@ export interface ResolvedPrintTemplateCharCellsOptions {
 
 export interface RenderablePrintTemplateTableColumn extends PrintTemplateTableColumn {
   widthWeight: number;
+  /** Розібраний намір: саме за ним рендерер вирішує, рахувати ширини чи ділити ваги. */
+  sizing: PrintColumnSizing;
+  /** Нижня межа в пунктах; 0 — немає. */
+  minPtValue: number;
 }
 
 function clampNumber(value: number, min: number, max: number) {
@@ -627,6 +652,8 @@ function normalizeLegacyTableColumn(value: unknown): LegacyPrintTemplateTableCol
     visibleWhen: normalizeString(value.visibleWhen),
     title: normalizeString(value.title),
     path: normalizeString(value.path),
+    width: normalizeString(value.width),
+    minPt: normalizeString(value.minPt),
     widthPercent: normalizeString(value.widthPercent),
     headerAlign: normalizeColumnAlign(value.headerAlign ?? value.align),
     headerFontWeight: normalizeFontWeight(value.headerFontWeight ?? value.fontWeight),
@@ -806,6 +833,8 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       source: normalizeString(value.source),
       columns: legacyColumns.map((column) => ({
         key: column.key,
+        width: column.width,
+        minPt: column.minPt,
         widthPercent: column.widthPercent,
         visibleWhen: column.visibleWhen,
       })),
@@ -1071,14 +1100,45 @@ export function stringifyPrintTemplateValue(
 }
 
 /**
+ * Намір колонки з того, що написано в шаблоні.
+ *
+ * Порядок читання: спершу `width` (нова форма), потім `widthPercent` (стара).
+ * Невідоме слово — це `auto`, а не відмова: бланк із чужого майбутнього мусить
+ * лишитися друкованим, а `auto` — єдина відповідь, яка не бреше про намір.
+ */
+export function parsePrintColumnSizing(column: PrintTemplateTableColumn): PrintColumnSizing {
+  const width = normalizeString(column.width).toLowerCase();
+
+  if (width === "fit") return { kind: "fit" };
+  if (width === "auto") return { kind: "auto" };
+
+  if (width) {
+    const percent = Number.parseFloat(width.endsWith("%") ? width.slice(0, -1) : width);
+    if (Number.isFinite(percent) && percent > 0) return { kind: "percent", percent };
+    return { kind: "auto" };
+  }
+
+  const legacy = Number(column.widthPercent);
+  return { kind: "percent", percent: legacy > 0 ? legacy : 1 };
+}
+
+/**
  * Сітка колонок для рендеру. Колонка без ширини важить 1 — тоді таблиця без
  * заданих ширин ділиться нарівно, а не зникає.
  */
 export function getRenderablePrintTemplateTableColumns(columns: PrintTemplateTableColumn[]): RenderablePrintTemplateTableColumn[] {
-  return columns.map((column) => ({
-    ...column,
-    widthWeight: Number(column.widthPercent) > 0 ? Number(column.widthPercent) : 1,
-  }));
+  return columns.map((column) => {
+    const sizing = parsePrintColumnSizing(column);
+    return {
+      ...column,
+      // Вага виводиться з розібраного наміру, а не читається окремо: інакше
+      // колонка, у якої `width` уже поправили, а `widthPercent` лишився старим,
+      // малювалася б за старим числом — і мовчки.
+      widthWeight: sizing.kind === "percent" ? sizing.percent : 1,
+      sizing,
+      minPtValue: Math.max(parseTemplateNumber(normalizeString(column.minPt), 0), 0),
+    };
+  });
 }
 
 function parseTemplateNumber(value: string, fallback: number) {

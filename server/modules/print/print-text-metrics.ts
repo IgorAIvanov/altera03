@@ -90,6 +90,95 @@ export function printContentHeight(orientation: PrintOrientation = "portrait"): 
 /** Ширина рядка в пунктах при заданому кеглі. */
 export type PrintTextMeasurer = (text: string, fontSize: number, bold?: boolean) => number;
 
+/**
+ * Розкласти текст по рядках заданої ширини — ОДНЕ правило переносу на весь друк.
+ *
+ * Тут воно тому, що читачів у нього два: рендерер, який малює, і рахівник ширин
+ * колонок, який вирішує, скільки кожній дати. Дві копії цього правила розійшлися
+ * б мовчки — ширина рахувалася б за одним переносом, а на папір ліг би інший, і
+ * побачити це можна було б лише з готового PDF.
+ *
+ * Три речі, які воно вміє, і кожна з них — з болю:
+ *
+ * **Поважає явний `\n`.** У затверджених формах підписи довгі
+ * («сільськогосподарська»), і той, хто малює бланк, часто знає краще за
+ * алгоритм, де рядок має розірватися. Доти єдиним способом було вставити
+ * пробіли з дефісами прямо в текст («сіль- сько- госпо- дарська») — тобто
+ * зіпсувати дані заради верстки.
+ *
+ * **Розриває слово, ширше за комірку.** Доти таке слово не переносилося взагалі
+ * й вилазило на сусідню колонку: сітка намальована, текст поверх неї, і бланк
+ * зіпсований мовчки. Розрив некрасивий, але він у МЕЖАХ комірки, а вихід за
+ * межі не має жодного правильного прочитання.
+ *
+ * **Ніколи не віддає порожній список.** Порожній текст — це один порожній
+ * рядок: висота комірки рахується від кількості рядків, і нуль тут означав би
+ * комірку без висоти.
+ */
+export function wrapPrintText(
+  text: string,
+  maxWidth: number,
+  measure: (value: string) => number,
+): string[] {
+  const lines: string[] = [];
+
+  for (const paragraph of String(text ?? "").split(/\r?\n/)) {
+    const words = paragraph.split(/[ \t]+/).filter(Boolean);
+    if (!words.length) {
+      lines.push("");
+      continue;
+    }
+
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (measure(candidate) <= maxWidth) {
+        current = candidate;
+        continue;
+      }
+      if (current) lines.push(current);
+      // Саме слово може не влізти й саме по собі — тоді ріжемо його.
+      const pieces = breakLongWord(word, maxWidth, measure);
+      lines.push(...pieces.slice(0, -1));
+      current = pieces[pieces.length - 1]!;
+    }
+    lines.push(current);
+  }
+
+  return lines.length ? lines : [""];
+}
+
+/**
+ * Порізати слово на шматки, що влазять у ширину.
+ *
+ * Символ за раз, а не двійковим пошуком: рядок може складатися з відрізків
+ * різними шрифтами (кирилиця Roboto, латиниця Helvetica), тож ширина не є сумою
+ * ширин символів, і «поділити навпіл» тут не працює. Слова, які доводиться
+ * різати, короткі за визначенням — довгих у бланках не буває.
+ *
+ * Один символ у рядок кладеться беззастережно, навіть якщо не влазить і він:
+ * інакше вузька колонка зациклила б розбір.
+ */
+function breakLongWord(word: string, maxWidth: number, measure: (value: string) => number): string[] {
+  if (measure(word) <= maxWidth) return [word];
+
+  const pieces: string[] = [];
+  let piece = "";
+
+  for (const char of word) {
+    const candidate = piece + char;
+    if (piece && measure(candidate) > maxWidth) {
+      pieces.push(piece);
+      piece = char;
+      continue;
+    }
+    piece = candidate;
+  }
+
+  if (piece) pieces.push(piece);
+  return pieces.length ? pieces : [word];
+}
+
 function decodeBase64(base64: string): Uint8Array {
   const binary = atob(base64.replace(/\s+/g, ""));
   const bytes = new Uint8Array(binary.length);

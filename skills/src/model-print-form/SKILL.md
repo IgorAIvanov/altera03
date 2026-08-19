@@ -420,8 +420,37 @@ in digits, as blanks require.
 
 ### Table = column grid + three sections
 
-Columns carry **only** `key` and `widthPercent`. Titles live in cells, because one column
+Columns carry **only** their key and their width. Titles live in cells, because one column
 can sit under several header levels.
+
+A column may state a **width** instead of a number, and then the core computes the points —
+it is the only side that knows the font, the word wrapping, and how merged header cells fall
+onto real columns:
+
+```json
+{ "key": "num",  "width": "fit" }
+{ "key": "name", "width": "auto", "minPt": "60" }
+{ "key": "vat",  "width": "8%" }
+```
+
+`fit` is "never wrap this value" (numbers, codes, dates); `auto` takes the slack (a name, a
+description); a percentage is the fixed share it always was. `minPt` is a floor in points for
+`auto`/`fit`.
+
+Reach for it when the column set changes with the data, or when there are too many columns to
+size by hand — that is where hand-written percentages cost the most: on a nineteen-column
+landscape form the sum of what the columns *needed* was 970.5 pt against a 761.9 pt sheet, and
+without redistribution the header ran to eleven lines instead of six. The room was there from
+the start; the distribution was not.
+
+**`widthPercent` stays valid and is not going away.** The renderer switches to computing widths
+only when at least one column states a `width`, so a form built on percentages lays out exactly
+as before, to the point. Requires `@altera/server` 0.24.0.
+
+Two wrapping rules come with it, and both are about long captions in approved forms: an explicit
+`\n` in a cell breaks the line where you say, and a word wider than its cell is now broken
+instead of spilling onto the neighbour. If you inserted hyphens by hand to work around that
+("сіль- сько- госпо- дарська"), that is what the `\n` replaces.
 
 | Section | Printed |
 |---|---|

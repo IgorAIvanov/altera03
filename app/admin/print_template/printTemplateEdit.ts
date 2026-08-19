@@ -1591,8 +1591,12 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
           ${block.columns.map((column, index) => html`
             <span class="flex items-center gap-1">
               <span class="w-5 text-xs text-muted">${index + 1}</span>
-              <input class="input input-xs w-12" .value=${column.widthPercent}
+              <input class="input input-xs w-16" title=${t("printTemplate.columnWidth")}
+                .value=${column.width || column.widthPercent}
                 @input=${(e: Event) => this.updateGridColumn(block, column.key, (e.target as HTMLInputElement).value)} />
+              <input class="input input-xs w-12" title=${t("printTemplate.columnMinPt")}
+                placeholder="pt" .value=${column.minPt}
+                @input=${(e: Event) => this.updateGridColumnMinPt(block, column.key, (e.target as HTMLInputElement).value)} />
               <span class="flex-1">
                 ${this.pathSelect(column.visibleWhen, rootPaths, (v) => this.updateGridColumnCondition(block, column.key, v))}
               </span>
@@ -1728,10 +1732,23 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     ));
   }
 
-  private updateGridColumn(block: Extract<PrintTemplateBlock, { type: "table" }>, columnKey: string, widthPercent: string) {
+  /**
+   * Ширина колонки. Пишемо в `width` — поле, яке читає рендерер; `widthPercent`
+   * лишається недоторканим, бо це стара форма, і чіпати її означало б міняти
+   * шаблони, яких ніхто не редагував.
+   */
+  private updateGridColumn(block: Extract<PrintTemplateBlock, { type: "table" }>, columnKey: string, width: string) {
     this.updateBlock(block.key, (entry) => (
       entry.type === "table"
-        ? { ...entry, columns: entry.columns.map((column) => (column.key === columnKey ? { ...column, widthPercent } : column)) }
+        ? { ...entry, columns: entry.columns.map((column) => (column.key === columnKey ? { ...column, width } : column)) }
+        : entry
+    ));
+  }
+
+  private updateGridColumnMinPt(block: Extract<PrintTemplateBlock, { type: "table" }>, columnKey: string, minPt: string) {
+    this.updateBlock(block.key, (entry) => (
+      entry.type === "table"
+        ? { ...entry, columns: entry.columns.map((column) => (column.key === columnKey ? { ...column, minPt } : column)) }
         : entry
     ));
   }

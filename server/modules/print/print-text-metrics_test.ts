@@ -14,6 +14,7 @@ import {
   printContentHeight,
   printContentWidth,
   printFontIndexFor,
+  wrapPrintText,
 } from "./print-text-metrics.ts";
 
 /** Індекс шрифту для символу; -1 — Helvetica. */
@@ -122,4 +123,53 @@ Deno.test("заголовок міряють по найдовшому СЛОВ�
   // колонку. Саме тому перевіряти треба слово.
   assert(measure(longestWord, 9, true) <= usable);
   assert(measure(longestWord, 14, true) > usable, "а на 14pt уже не влізе й слово");
+});
+
+/**
+ * Перенос тексту — правило, спільне для рендерера й рахівника ширин.
+ *
+ * Проба стереже саме три його властивості, і кожна з них колись коштувала
+ * зіпсованого бланка: слово, ширше за комірку, вилазило на сусідню; явний
+ * розрив у тексті не поважався взагалі (доводилося вставляти дефіси з пробілами
+ * в самі дані); порожнє значення давало комірку без висоти.
+ */
+Deno.test("перенос: слово, ширше за комірку, ріжеться, а не вилазить", async () => {
+  const measure = await createPrintTextMeasurer();
+  const width = (value: string) => measure(value, 9);
+  const cell = width("сільсько");
+
+  const lines = wrapPrintText("сільськогосподарська", cell, width);
+
+  assert(lines.length > 1, "довге слово мусить розкластися на кілька рядків");
+  for (const line of lines) {
+    assert(width(line) <= cell + 0.01, `рядок «${line}» ширший за комірку`);
+  }
+  // Текст не губиться: склеєні шматки дають те саме слово.
+  assertEquals(lines.join(""), "сільськогосподарська");
+});
+
+Deno.test("перенос: явний розрив поважається", async () => {
+  const measure = await createPrintTextMeasurer();
+  const width = (value: string) => measure(value, 9);
+
+  // Місця вистачає на все — і однаково має бути два рядки: розрив поставив той,
+  // хто малює форму, і алгоритм його не переграє.
+  assertEquals(wrapPrintText("Ставка\nПДВ", 500, width), ["Ставка", "ПДВ"]);
+  assertEquals(wrapPrintText("Ставка\r\nПДВ", 500, width), ["Ставка", "ПДВ"]);
+});
+
+Deno.test("перенос: порожнє значення — це один рядок, а не нуль", async () => {
+  const measure = await createPrintTextMeasurer();
+  const width = (value: string) => measure(value, 9);
+
+  assertEquals(wrapPrintText("", 100, width), [""]);
+  assertEquals(wrapPrintText("   ", 100, width), [""]);
+});
+
+Deno.test("перенос: звичайні слова розкладаються по словах, як і раніше", async () => {
+  const measure = await createPrintTextMeasurer();
+  const width = (value: string) => measure(value, 9);
+
+  assertEquals(wrapPrintText("Ставка ПДВ", width("Ставка") + 1, width), ["Ставка", "ПДВ"]);
+  assertEquals(wrapPrintText("Ставка ПДВ", 500, width), ["Ставка ПДВ"]);
 });

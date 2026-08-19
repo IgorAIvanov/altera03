@@ -60,7 +60,9 @@ export function createTextOptions(patch?: Partial<PrintTemplateBlockTextOptions>
 
 /** Колонка сітки — лише ключ і ширина: заголовки живуть у комірках секцій. */
 export function createTableColumn(): PrintTemplateTableColumn {
-  return { key: newKey(), widthPercent: "20", visibleWhen: "" };
+  // Обидва поля ширини заповнені однаково: `width` читає рендерер, `widthPercent`
+  // лишається для шаблонів, збережених старішою версією редактора.
+  return { key: newKey(), width: "20", minPt: "", widthPercent: "20", visibleWhen: "" };
 }
 
 export function createFieldItem(index: number): PrintTemplateFieldListItem {
