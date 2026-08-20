@@ -564,6 +564,13 @@ export interface ImportOptions {
   verbose?: boolean;
   /** Ім'я ассета, якщо в релізі кілька пакетів (див. `resolve-solution-source.ts`). */
   asset?: string;
+  /**
+   * Ланцюжок після розпакування виконає той, хто покликав (`solution:update`),
+   * тож друкувати його інструкцією не треба. Надрукований і НЕ виконаний
+   * список — рівно те, на чому загубився `deno install`: адміністратор бачив
+   * правильний порядок і мав підстави думати, що інструмент його й пройшов.
+   */
+  runsChain?: boolean;
 }
 
 export interface ImportResult {
@@ -715,12 +722,14 @@ async function importLocalSolution(
   await writeInstalledManifest(appDir, manifest, config);
 
   console.log(`\n✅ Записано ${manifest.files.length} файлів у ${appDir}`);
-  console.log("\nДалі — штатний ланцюжок:");
-  console.log("   deno install");
-  console.log("   deno task sql:registry");
-  console.log("   deno task sql:assemble");
-  console.log("   deno task sql:publish");
-  console.log("   deno task build:front");
+  if (!options.runsChain) {
+    console.log("\nДалі — штатний ланцюжок:");
+    console.log("   deno install");
+    console.log("   deno task sql:registry");
+    console.log("   deno task sql:assemble");
+    console.log("   deno task sql:publish");
+    console.log("   deno task build:front");
+  }
 
   return { manifest, written: manifest.files.length, mode };
 }

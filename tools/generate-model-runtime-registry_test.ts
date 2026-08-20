@@ -6,7 +6,12 @@
 // реєстрі, а зіткнення вилазило б аж при публікації SQL — або не вилазило
 // зовсім, і застосунок працював би не з тією моделлю.
 import { assertEquals, assertThrows } from "@std/assert";
-import { assertCommandsBlock, assertUniqueModels, stripCommentKeys } from "./generate-model-runtime-registry.ts";
+import {
+  assertCommandsBlock,
+  assertUniqueModels,
+  formatAgentSchemaFailures,
+  stripCommentKeys,
+} from "./generate-model-runtime-registry.ts";
 
 Deno.test("унікальні імена проходять", () => {
   assertUniqueModels([
@@ -119,4 +124,40 @@ Deno.test("правильна форма проходить мовчки", () =>
   });
   // Моделі без нестандартних команд перевіряти нема чого.
   assertCommandsBlock("app/catalog/bank/manifest.json", { model: "bank" });
+});
+
+
+/**
+ * Відмова замість порожніх схем агента.
+ *
+ * Перевіряємо не факт кидка, а ТЕКСТ: адміністратор бачить рівно його, і саме
+ * тексту тут бракувало найдовше. Випадок, який це коштував, — `sql:registry`
+ * до `deno install` у ланцюжку `solution:update`: не завантажилася жодна схема,
+ * генератор дописав порожній `agent-tools.generated.ts` і вийшов з нулем.
+ */
+Deno.test("не завантажилася ЖОДНА схема — у відмові названо deno install", () => {
+  const message = formatAgentSchemaFailures(
+    [
+      { model: "bank", schemaPath: "app/catalog/bank/bank.schema.ts", cause: new Error("not found") },
+      { model: "invoice", schemaPath: "app/document/invoice/invoice.schema.ts", cause: new Error("not found") },
+    ],
+    2,
+  );
+
+  assertEquals(message.includes("deno install"), true);
+  assertEquals(message.includes("bank"), true);
+  assertEquals(message.includes("invoice"), true);
+});
+
+Deno.test("зламана схема однієї моделі не радить ставити залежності", () => {
+  const message = formatAgentSchemaFailures(
+    [{ model: "bank", schemaPath: "app/catalog/bank/bank.schema.ts", cause: new Error("Unexpected token") }],
+    40,
+  );
+
+  // Тридцять дев'ять моделей завантажилися — справа не в залежностях, і
+  // порада ставити їх повела б шукати не там.
+  assertEquals(message.includes("deno install"), false);
+  assertEquals(message.includes("Unexpected token"), true);
+  assertEquals(message.includes("(1 з 40)"), true);
 });

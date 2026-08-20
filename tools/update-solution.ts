@@ -54,9 +54,7 @@ export interface UpdateResult {
   applied: boolean;
 }
 
-async function runTask(projectRoot: string, task: string): Promise<UpdateStep> {
-  const args = ["task", ...task.split(/\s+/).filter(Boolean)];
-
+async function runDeno(projectRoot: string, title: string, args: string[]): Promise<UpdateStep> {
   try {
     const command = new Deno.Command(Deno.execPath(), {
       args,
@@ -67,7 +65,7 @@ async function runTask(projectRoot: string, task: string): Promise<UpdateStep> {
     const { code, stdout, stderr } = await command.output();
     const decoder = new TextDecoder();
     return {
-      title: `deno task ${task}`,
+      title,
       ok: code === 0,
       output: `${decoder.decode(stdout)}${decoder.decode(stderr)}`.trim(),
     };
@@ -76,11 +74,46 @@ async function runTask(projectRoot: string, task: string): Promise<UpdateStep> {
     // видно лише «PermissionDenied» без підказки, що саме дозволяти.
     const message = error instanceof Error ? error.message : String(error);
     return {
-      title: `deno task ${task}`,
+      title,
       ok: false,
       output: `${message}\n\nІмовірно, команду запущено без --allow-run і --allow-write.`,
     };
   }
+}
+
+function runTask(projectRoot: string, task: string): Promise<UpdateStep> {
+  return runDeno(projectRoot, `deno task ${task}`, ["task", ...task.split(/\s+/).filter(Boolean)]);
+}
+
+/**
+ * Установка залежностей — ПЕРШИЙ крок, і до розпакування.
+ *
+ * Доти інструмент друкував правильний порядок («deno install», далі задачі), а
+ * виконував його з другого рядка. На свіжій установці це означало `sql:registry`
+ * без залежностей — а він у такому стані не падав, а мовчки випускав порожні
+ * схеми інструментів агента (див. `agent-tool-schemas.ts`). Тобто крок,
+ * надрукований як обов'язковий, був єдиним, якого ніхто не робив.
+ *
+ * До розпакування, а не між ним і ланцюжком: якщо залежності поставити не
+ * вдалося, установка мусить лишитися ЦІЛОЮ. Поставка заміняє тільки `app/`, а
+ * піни живуть у `deno.json` каркаса — тобто нічого «з нового пакета» тут не
+ * ставиться, і порядок нічого не ламає.
+ */
+async function installDependencies(projectRoot: string): Promise<UpdateStep> {
+  const step = await runDeno(projectRoot, "deno install", ["install"]);
+  if (step.ok) return step;
+
+  // Політика мінімального віку залежності. На щойно розгорнутій установці
+  // `deno.lock` ще немає, тож піни резолвляться з реєстру — і свіжий реліз
+  // фреймворку (молодший за добу) впирається в неї. Знімати політику за
+  // адміністратора не можна: це означало б мовчки поставити щойно опублікований
+  // пакет. Тому кажемо, чим це лікується, а вибір лишаємо йому.
+  if (/min-dep-age|minimum.{0,24}age|dependency age/i.test(step.output)) {
+    step.output += `\n\nЗалежність молодша за добу — спрацювала політика supply-chain.\n` +
+      `   Якщо джерелу довіряєте, поставте залежності явно й повторіть оновлення:\n` +
+      `   deno install --min-dep-age=0`;
+  }
+  return step;
 }
 
 export interface UpdateOptions {
@@ -88,6 +121,11 @@ export interface UpdateOptions {
   force?: boolean;
   verbose?: boolean;
   tasks?: string[];
+  /**
+   * Ставити залежності перед оновленням. Умовчання — так; `false` лишили для
+   * проб, яким не потрібна мережа.
+   */
+  install?: boolean;
   /** Ім'я ассета, якщо в релізі кілька пакетів (див. `resolve-solution-source.ts`). */
   asset?: string;
 }
@@ -129,10 +167,28 @@ async function runUpdate(
     );
   }
 
+  // Залежності — до розпакування (чому саме так, див. `installDependencies`).
+  // У режимі `--check` не ставимо: він нічого не змінює й нічого не запускає.
+  if (!options.check && options.install !== false) {
+    console.log("\n▶ deno install");
+    const step = await installDependencies(projectRoot);
+    steps.push(step);
+    if (step.output) console.log(step.output);
+    if (!step.ok) {
+      console.error(
+        "\n❌ Залежності не встановилися — оновлення НЕ починалося, установка лишилася як була.",
+      );
+      return { steps, ok: false, applied: false };
+    }
+  }
+
   const imported = await importSolution(archivePath, projectRoot, {
     check: options.check,
     force: options.force,
     verbose: options.verbose,
+    // Ланцюжок жену я — друкувати його ще й інструкцією означало б показати
+    // адміністраторові список, який він виконувати не мусить.
+    runsChain: !options.check,
   });
 
   if (options.check) {

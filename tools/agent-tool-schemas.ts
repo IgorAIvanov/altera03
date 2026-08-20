@@ -221,11 +221,37 @@ function payloadSchemaFor(
 }
 
 /**
+ * Схема моделі Є на диску, але не завантажилася.
+ *
+ * Окремий тип, а не рядок: генератор мусить відрізнити цей випадок від
+ * «схеми немає» — і зупинитися, а не дописати порожньо (див. нижче).
+ */
+export class AgentSchemaLoadError extends Error {
+  constructor(
+    readonly model: string,
+    readonly schemaPath: string,
+    override readonly cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "AgentSchemaLoadError";
+  }
+}
+
+/**
  * Інструменти однієї моделі.
  *
  * `schemaPath` може не існувати — модель із рукописним SQL або admin-екран без
  * TypeBox. Тоді описів немає, і це не помилка: агент просто не побачить цієї
  * моделі, що чесніше за опис навмання.
+ *
+ * А от схема, яка Є, але не завантажилася, — помилка, і мовчати про неї не
+ * можна. Доти тут стояв `catch { return [] }` на обидва випадки, і найдешевший
+ * спосіб у нього потрапити — запустити `sql:registry` до `deno install`: жоден
+ * імпорт не резолвиться, кожна модель віддає порожньо, файл виходить розміром
+ * 14 КБ замість 376 КБ, і код виходу нуль. Установка при цьому працює екранами
+ * й мовчки лишається з агентом БЕЗ інструментів; помітити це можна тільки
+ * звіривши розмір файлу з тим, що приїхав у поставці. Тихий неповний вихідник
+ * гірший за відмову: він переживає поставку й виглядає як норма.
  */
 export async function buildAgentToolsForModel(
   model: string,
@@ -233,11 +259,21 @@ export async function buildAgentToolsForModel(
   commands: string[],
   documentHeader: Record<string, unknown> | null = null,
 ): Promise<AgentToolDescriptor[]> {
+  // Наявність питаємо ОКРЕМО, до імпорту: `import()` на обидва випадки кидає
+  // однаково, і розрізнити їх за текстом помилки — це вгадувати формулювання
+  // Deno.
+  try {
+    await Deno.stat(schemaPath);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return [];
+    throw new AgentSchemaLoadError(model, schemaPath, error);
+  }
+
   let exports: Record<string, unknown>;
   try {
     exports = await import(toFileUrl(schemaPath).href) as Record<string, unknown>;
-  } catch {
-    return [];
+  } catch (error) {
+    throw new AgentSchemaLoadError(model, schemaPath, error);
   }
 
   const tools: AgentToolDescriptor[] = [];

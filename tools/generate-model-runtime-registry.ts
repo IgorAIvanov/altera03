@@ -1,5 +1,5 @@
 import { dirname, join, relative, resolve, SEPARATOR } from "@std/path";
-import { buildAgentToolsForModel, renderAgentTools } from "./agent-tool-schemas.ts";
+import { AgentSchemaLoadError, buildAgentToolsForModel, renderAgentTools } from "./agent-tool-schemas.ts";
 import { documentHeaderSpecifier } from "./generate-model-sql.ts";
 
 type ManifestSqlCommand = string | {
@@ -622,6 +622,51 @@ export async function collectAppModelKeys(appDirArg = "./app"): Promise<string[]
   return [...keys].sort((left, right) => left.localeCompare(right));
 }
 
+/**
+ * Текст відмови, коли схеми моделей не завантажилися.
+ *
+ * Окремою функцією й з експортом — щоб проба перевіряла саме те, що побачить
+ * адміністратор: тут важливий не факт кидка, а те, чи названо причину. Промах
+ * у цьому місці коштував поставки altera-buh: генератор мовчки писав порожні
+ * схеми, і встановлений застосунок лишався з агентом без інструментів.
+ */
+export function formatAgentSchemaFailures(
+  failures: Array<{ model: string; schemaPath: string; cause: unknown }>,
+  totalModels: number,
+): string {
+  const shown = failures.slice(0, 5).map(({ model, schemaPath, cause }) =>
+    `  ${model} — ${toPosixPath(relative(Deno.cwd(), schemaPath))}: ` +
+    `${cause instanceof Error ? cause.message.split("\n")[0] : String(cause)}`
+  );
+  if (failures.length > shown.length) shown.push(`  …і ще ${failures.length - shown.length}`);
+
+  const lines = [
+    `Схеми моделей не завантажилися (${failures.length} з ${totalModels}) — реєстр НЕ записано:`,
+    ...shown,
+  ];
+
+  // Не завантажилася жодна — справа не в схемах. Найдешевший спосіб сюди
+  // потрапити: `sql:registry` до `deno install` (нова установка, нова машина
+  // розробника, ланцюжок оновлення поставки).
+  if (failures.length === totalModels) {
+    lines.push(
+      "",
+      "Схема не завантажилася в ЖОДНОЇ моделі — найімовірніше, залежності ще не встановлені:",
+      "   deno install",
+      "   deno task sql:registry",
+    );
+  }
+
+  lines.push(
+    "",
+    "Генерація або проходить цілком, або не міняє нічого: файли в _generated/ лишилися " +
+      "попередніми. Раніше на цьому місці виходив порожній agent-tools.generated.ts і код " +
+      "виходу нуль — установка отримувала агента без інструментів мовчки.",
+  );
+
+  return lines.join("\n");
+}
+
 export async function generateModelRuntimeRegistry(
   appDirArgs: string | string[] = "./app",
   outputPathArg = "./app/_generated/model-registry.generated.ts",
@@ -689,16 +734,45 @@ export async function generateModelRuntimeRegistry(
     // просто не згенерувався б).
     const documentHeader = await loadDocumentHeaderSchema(appDirs[0]!);
 
+    // Та сама межа, що й у схемах моделей: «шапки немає» законно лише доти,
+    // доки в застосунку немає ЖОДНОГО документа. Інакше мовчазний `null`
+    // означав би інструменти документів без дати, організації й номера — тобто
+    // агент не зміг би створити жодного, а виглядало б це як норма.
+    if (!documentHeader && allManifests.some(({ manifest }) => manifest.type === "document")) {
+      throw new Error(
+        "Схему шапки документа (@client/shared/schema.ts) не завантажено, а документи в " +
+          "застосунку є — реєстр НЕ записано. Інструменти агента вийшли б без дати, " +
+          "організації й номера. Найімовірніше, залежності ще не встановлені: спершу " +
+          "`deno install`, потім `deno task sql:registry`.",
+      );
+    }
+
+    // Схеми збираємо з поіменним переліком невдач, а не «до першої»: коли
+    // залежності не встановлені, не завантажується ЖОДНА, і сорок повідомлень
+    // поспіль сховали б головне — причина в них одна.
+    const schemaFailures: AgentSchemaLoadError[] = [];
     const agentTools = (await Promise.all(
-      allManifests.map(({ manifestPath, manifest }) =>
-        buildAgentToolsForModel(
-          manifest.model ?? "",
-          join(dirname(manifestPath), `${manifest.model}.schema.ts`),
-          agentCommandsFor(manifest),
-          manifest.type === "document" ? documentHeader : null,
-        )
-      ),
+      allManifests.map(async ({ manifestPath, manifest }) => {
+        try {
+          return await buildAgentToolsForModel(
+            manifest.model ?? "",
+            join(dirname(manifestPath), `${manifest.model}.schema.ts`),
+            agentCommandsFor(manifest),
+            manifest.type === "document" ? documentHeader : null,
+          );
+        } catch (error) {
+          if (error instanceof AgentSchemaLoadError) {
+            schemaFailures.push(error);
+            return [];
+          }
+          throw error;
+        }
+      }),
     )).flat();
+
+    if (schemaFailures.length > 0) {
+      throw new Error(formatAgentSchemaFailures(schemaFailures, allManifests.length));
+    }
 
     const agentToolsSource = `// Generated from model schemas. Do not edit manually.
 ` +
