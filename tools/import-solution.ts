@@ -29,10 +29,14 @@
  * `app/sql.json` — навпаки, дописується: він належить рішенню, і без запису в
  * ньому дозавантажена модель не потрапить у зібраний SQL-пакет.
  *
+ * Джерелом може бути файл, URL або реліз GitHub — форми розбирає
+ * `resolve-solution-source.ts`, а сюди приходить уже локальний шлях.
+ *
  * Запуск:
  *   deno task solution:import -- ./erp-solution.tar.gz --check
  *   deno task solution:import -- ./erp-solution.tar.gz --force
  *   deno task solution:import -- ./erp-models.tar.gz          # частковий: додає моделі
+ *   deno task solution:import -- IgorAIvanov/altera-buh@1.2.0 # реліз GitHub
  */
 import { dirname, join, resolve } from "@std/path";
 import { UntarStream } from "@std/tar";
@@ -46,6 +50,7 @@ import {
   stripJsonComments,
   SUPPORTED_FORMAT_VERSIONS,
 } from "./export-solution.ts";
+import { resolveSolutionSource } from "./resolve-solution-source.ts";
 import { readSolutionStatus, type SolutionStatus } from "./solution-status.ts";
 
 /** Вид пакета; старі пакети поля не мають і читаються як повні. */
@@ -557,6 +562,8 @@ export interface ImportOptions {
   /** Замінити непорожній `app/` і пройти повз розбіжності версій. */
   force?: boolean;
   verbose?: boolean;
+  /** Ім'я ассета, якщо в релізі кілька пакетів (див. `resolve-solution-source.ts`). */
+  asset?: string;
 }
 
 export interface ImportResult {
@@ -571,7 +578,35 @@ export interface ImportResult {
   mode: ImportMode;
 }
 
+/**
+ * Завантажити рішення з будь-якого джерела: файл, URL або реліз GitHub.
+ *
+ * Форми специфікатора описані в `resolve-solution-source.ts`; локальний шлях
+ * проходить наскрізь без жодної дії, тож повторний резолв (його робить іще
+ * `update-solution`, який мусить прочитати манифест ДО розпакування) нічого не
+ * завантажує вдруге.
+ */
 export async function importSolution(
+  sourceSpec: string,
+  targetDirArg: string,
+  options: ImportOptions = {},
+): Promise<ImportResult> {
+  const source = await resolveSolutionSource(sourceSpec, { asset: options.asset });
+  try {
+    return await importLocalSolution(source.path, targetDirArg, options);
+  } finally {
+    await source.cleanup();
+  }
+}
+
+/**
+ * Розпакувати пакет, який уже лежить на диску.
+ *
+ * Завантаження відділене від розпакування навмисно: сюди приходить локальний
+ * шлях і тільки він, тож жоден із численних виходів нижче не мусить пам'ятати
+ * про прибирання тимчасового файлу.
+ */
+async function importLocalSolution(
   archivePathArg: string,
   targetDirArg: string,
   options: ImportOptions = {},
@@ -691,12 +726,21 @@ export async function importSolution(
 }
 
 if (import.meta.main) {
-  const args = Deno.args.filter((arg) => !arg.startsWith("--"));
+  // `--asset <ім'я>` витягується ПЕРШИМ: його значення не має префікса, тож у
+  // позиційних воно виглядало б каталогом-приймачем.
+  const rest = [...Deno.args];
+  const assetIndex = rest.indexOf("--asset");
+  const asset = assetIndex === -1 ? undefined : rest.splice(assetIndex, 2)[1];
+
+  const args = rest.filter((arg) => !arg.startsWith("--"));
   const archivePath = args[0];
   const targetDir = args[1] ?? ".";
 
   if (!archivePath) {
-    console.error("Використання: import-solution <пакет.tar.gz> [каталог-приймача] [--check] [--force] [--verbose]");
+    console.error(
+      "Використання: import-solution <пакет.tar.gz | URL | власник/репозиторій@тег> [каталог-приймача]\n" +
+        "              [--check] [--force] [--verbose] [--asset <ім'я>]",
+    );
     Deno.exit(1);
   }
 
@@ -705,9 +749,10 @@ if (import.meta.main) {
   // повідомлення, заради якого перевірка й робилася.
   try {
     await importSolution(archivePath, targetDir, {
-      check: Deno.args.includes("--check"),
-      force: Deno.args.includes("--force"),
-      verbose: Deno.args.includes("--verbose"),
+      check: rest.includes("--check"),
+      force: rest.includes("--force"),
+      verbose: rest.includes("--verbose"),
+      asset,
     });
   } catch (error) {
     console.error(`\n❌ ${error instanceof Error ? error.message : String(error)}`);

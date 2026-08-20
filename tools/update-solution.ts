@@ -13,14 +13,21 @@
  * до сокета Docker (фактично root на хості), під systemd — свої повноваження.
  * Це справа того, хто керує сервісом; ми лише кажемо, що час настав.
  *
+ * Джерелом може бути файл, URL або реліз GitHub — форми розбирає
+ * `resolve-solution-source.ts`. Приватний репозиторій потребує `GITHUB_TOKEN`;
+ * задача передає `--env-file`, тож достатньо рядка в `.env` установки.
+ *
  * Запуск:
  *   deno task solution:update -- ./erp-1.2.0.tar.gz            # оновити
  *   deno task solution:update -- ./erp-1.2.0.tar.gz --check    # лише подивитися
  *   deno task solution:update -- ./erp-1.2.0.tar.gz --force    # затерти правки
+ *   deno task solution:update -- IgorAIvanov/altera-buh@1.2.0  # реліз GitHub
+ *   deno task solution:update -- IgorAIvanov/altera-buh@latest # останній реліз
  */
 import { resolve } from "@std/path";
 
 import { importSolution, readPackageManifest } from "./import-solution.ts";
+import { resolveSolutionSource } from "./resolve-solution-source.ts";
 import { printSolutionStatus, readSolutionStatus } from "./solution-status.ts";
 
 /**
@@ -81,16 +88,36 @@ export interface UpdateOptions {
   force?: boolean;
   verbose?: boolean;
   tasks?: string[];
+  /** Ім'я ассета, якщо в релізі кілька пакетів (див. `resolve-solution-source.ts`). */
+  asset?: string;
 }
 
 export async function updateSolution(
-  archivePath: string,
+  sourceSpec: string,
   targetDirArg = ".",
   options: UpdateOptions = {},
 ): Promise<UpdateResult> {
   const projectRoot = resolve(Deno.cwd(), targetDirArg);
   const steps: UpdateStep[] = [];
 
+  // Джерело резолвиться ТУТ, а не всередині кожного кроку: пакет читається
+  // двічі — спершу манифест, потім усе дерево, — і завантажувати його двічі
+  // означало б і подвійний трафік, і ризик узяти два різні пакети, якщо реліз
+  // між читаннями перезаписали.
+  const source = await resolveSolutionSource(sourceSpec, { asset: options.asset });
+  try {
+    return await runUpdate(source.path, projectRoot, steps, options);
+  } finally {
+    await source.cleanup();
+  }
+}
+
+async function runUpdate(
+  archivePath: string,
+  projectRoot: string,
+  steps: UpdateStep[],
+  options: UpdateOptions,
+): Promise<UpdateResult> {
   // Частковий пакет — інструмент розробника, а не поставка: він не описує
   // рішення цілком, тож поняття «оновити установку до нього» не існує. Беремо
   // це до розпакування, бо манифест лежить першим записом і читається дешево.
@@ -138,22 +165,30 @@ export async function updateSolution(
 }
 
 if (import.meta.main) {
-  const positional = Deno.args.filter((arg) => !arg.startsWith("--"));
-  const archivePath = positional[0];
+  // `--asset <ім'я>` витягується ПЕРШИМ: його значення не має префікса, тож у
+  // позиційних воно виглядало б каталогом установки.
+  const rest = [...Deno.args];
+  const assetIndex = rest.indexOf("--asset");
+  const asset = assetIndex === -1 ? undefined : rest.splice(assetIndex, 2)[1];
+
+  const positional = rest.filter((arg) => !arg.startsWith("--"));
+  const source = positional[0];
   const targetDir = positional[1] ?? ".";
 
-  if (!archivePath) {
+  if (!source) {
     console.error(
-      "Використання: update-solution <пакет.tar.gz> [каталог] [--check] [--force] [--verbose]",
+      "Використання: update-solution <пакет.tar.gz | URL | власник/репозиторій@тег> [каталог]\n" +
+        "              [--check] [--force] [--verbose] [--asset <ім'я>]",
     );
     Deno.exit(1);
   }
 
   try {
-    const result = await updateSolution(archivePath, targetDir, {
-      check: Deno.args.includes("--check"),
-      force: Deno.args.includes("--force"),
-      verbose: Deno.args.includes("--verbose"),
+    const result = await updateSolution(source, targetDir, {
+      check: rest.includes("--check"),
+      force: rest.includes("--force"),
+      verbose: rest.includes("--verbose"),
+      asset,
     });
 
     if (!result.ok) Deno.exit(1);

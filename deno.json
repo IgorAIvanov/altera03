@@ -58,7 +58,10 @@
     // scaffold. Після завантаження — штатні sql:registry → sql:assemble →
     // sql:publish → build:front, які інструмент навмисно не запускає сам.
     "solution:export": "deno run -A ./tools/export-solution.ts ./app --verbose",
-    "solution:import": "deno run -A ./tools/import-solution.ts",
+    // `--env-file` — заради GITHUB_TOKEN: джерелом пакета може бути реліз
+    // приватного репозиторію, і токен береться звідти ж, звідки решта
+    // налаштувань установки.
+    "solution:import": "deno run -A --env-file ./tools/import-solution.ts",
     // Чи чіпали app/ після завантаження: звірка сум із app/.solution.json.
     "solution:status": "deno run -A ./tools/solution-status.ts .",
     // Оновлення одним проходом: розпакування + весь ланцюжок збірки й публікації.

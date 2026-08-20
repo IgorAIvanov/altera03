@@ -1,6 +1,6 @@
 {
   "name": "@altera/tools",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "//": "Збіркові й дев-інструменти фреймворку: codegen SQL/реєстру, публікація, in-process клієнт застосунку. Знання про конкретний застосунок у пакет не зашите: codegen/publish отримують каталог аргументом, а AppClient — фабрику `createServer` інжекцією. Тонкі обгортки (api/smoke) живуть у застосунку й передають сюди свій createServer.",
   "//issue-access-token": "Видача персонального токена з консолі — потрібна там, де браузера немає (сервер без інтерфейсу, перша установка): сам ендпойнт видає токен лише по сесії. Коментар навмисно ПОРУЧ із exports, а не всередині: ключі мапи мусять починатися з крапки, і один \"//\"-ключ усередині робить невалідною всю мапу — резолвінг @altera/tools/* мовчки падає в усьому воркспейсі.",
   "exports": {
@@ -18,6 +18,7 @@
     "./publish-sql": "./publish-sql.ts",
     "./export-solution": "./export-solution.ts",
     "./import-solution": "./import-solution.ts",
+    "./resolve-solution-source": "./resolve-solution-source.ts",
     "./solution-status": "./solution-status.ts",
     "./update-solution": "./update-solution.ts",
     "./app-client": "./app-client.ts",
