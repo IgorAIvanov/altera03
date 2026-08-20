@@ -294,10 +294,20 @@ export type BankLookupData = Static<typeof BankLookupDataSchema>;
     "x-ref": { entity: "document", as: "document" },
   })),
   document: Type.Optional(Type.Union([
-    Type.Object({ id: Type.String(), presentation: Type.String() }), Type.Null(),
+    Type.Object({ id: Type.String(), presentation: Type.String(), typeCode: Type.String() }), Type.Null(),
   ], { "x-transient": true })),
   ```
-  The join is single (`app.document` directly) and the caption is the same `presentation`-or-`number`. Name the target **exactly one way** — `model` or `entity`, never both and never neither. The cost is that only a shared-header column can be shown (`number`, `doc_date`, `total`, `presentation`, `description`, `is_posted`, `is_deleted`, `organization_id`): "any document" has no own attributes by definition, and a `display` outside that set is refused at generation time. This gives no picker over the document journal — `<ui-picker url>` names a **view route**, and the journal is a screen of your application. For a register's registrar that does not matter: the column is filled by posting, not by hand. Requires `@altera/tools` 0.14.0.
+  The join into the header is direct (a named document takes two — its own table plus the header) and the caption is the same `presentation`-or-`number`. Name the target **exactly one way** — `model` or `entity`, never both and never neither.
+
+  **`typeCode` is what makes the row navigable**, and it comes only with `entity` (a reference that names a `model` already knows it). The code *is* the model key, so the route is derived from it directly — the first thing a person does when they see a registrar column is try to open it:
+  ```ts
+  const doc = row.document;
+  const route = doc && viewRoute(doc.typeCode, "edit");
+  if (route) bus.emit({ type: "tab.open", route, id: doc.id });
+  ```
+  Without it the row knows WHICH document wrote it and not of WHAT type, so the column looks like a link and leads nowhere, and the only way out is to ask the server for the type before every jump. Requires `@altera/tools` 0.14.5 — and a `sql:gen` of that model, since the code comes from the generated SQL.
+
+  The cost of `entity` is that only a shared-header column can be shown (`number`, `doc_date`, `total`, `presentation`, `description`, `is_posted`, `is_deleted`, `organization_id`): "any document" has no own attributes by definition, and a `display` outside that set is refused at generation time. This gives no picker over the document journal either — `<ui-picker url>` names a **view route**, and the journal is a screen of your application. For a register's registrar that does not matter: the column is filled by posting, not by hand. Requires `@altera/tools` 0.14.0.
 - `x-form`, `x-list`, `x-lookup` annotations are the canonical way to declare UI roles — do not create separate display configuration objects.
 - `options` in `GetDataSchema` is typed explicitly per model — list every dropdown the form needs (currencies, statuses, groups, etc.).
 - Payload schemas are validated at runtime by the backend using `Value.Check()` or TypeBox-compatible validator.

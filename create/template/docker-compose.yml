@@ -57,7 +57,7 @@ services:
       - ./packages:/srv/packages
     depends_on:
       db: { condition: service_healthy }
-    entrypoint: ["deno", "run", "-A", "--env-file", "jsr:@altera/tools@0.14.4/update-solution"]
+    entrypoint: ["deno", "run", "-A", "--env-file", "jsr:@altera/tools@0.14.5/update-solution"]
 
   schema:
     profiles: ["prod"]

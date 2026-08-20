@@ -21,6 +21,7 @@ import {
   refDisplaySql,
   refJoinSql,
   refLookupSql,
+  refObjectSql,
   resolveRef,
   unpostRecordsHookSql,
 } from "./generate-model-sql.ts";
@@ -415,7 +416,7 @@ Deno.test("проведення теж кличе гак — інакше пер
  * генерація, ані публікація не заперечували: join валідний, він просто не про
  * той документ.
  */
-Deno.test("ссылка на будь-який документ: join одинарний, прямо в шапку", () => {
+Deno.test("ссылка на будь-який документ: у шапку прямо, без таблиці моделі", () => {
   const ref = resolveRef({ entity: "document" }, "document_id", META, "fa_location.documentId");
 
   assertEquals(ref.as, "document");
@@ -424,14 +425,44 @@ Deno.test("ссылка на будь-який документ: join одина
   assertEquals(ref.targetPk, "id");
   assertEquals(ref.displayInHeader, true);
   assertEquals(ref.headerAlias, undefined);
-  assertEquals(refJoinSql(ref, "t"), [
-    "left join app.document r_document on r_document.id = t.document_id",
-  ]);
+  // До шапки — ОДИН join (у названого документа їх було б два: своя таблиця
+  // плюс шапка). Другий тут не про подання, а про тип, — див. пробу нижче.
+  assertEquals(refJoinSql(ref, "t")[0], "left join app.document r_document on r_document.id = t.document_id");
   // Подання те саме, що в ссылки на названий документ, але з одного аліаса.
   assertEquals(
     refDisplaySql(ref),
     "coalesce(nullif(r_document.presentation, ''), r_document.number)",
   );
+});
+
+/**
+ * Код типу в об'єкті ссылки.
+ *
+ * Без нього рядок регістру відомостей знає, ЯКИЙ документ його поставив, і не
+ * знає, ЯКОГО той типу, — а код типу і є ключем моделі, з якого виводиться
+ * маршрут в'ю. Тобто подання показати можна, а відкрити документ не можна:
+ * колонка з реєстратором виглядає як посилання й нікуди не веде. Обійти це
+ * застосунок міг лише зайвим запитом ПЕРЕД кожним переходом.
+ */
+Deno.test("будь-який документ несе код свого типу — інакше з рядка нема куди піти", () => {
+  const ref = resolveRef({ entity: "document" }, "document_id", META, "fa_location.documentId");
+
+  assertEquals(ref.typeAlias, "dt_document");
+  assertEquals(refJoinSql(ref, "t")[1], "left join app.document_type dt_document on dt_document.id = r_document.document_type_id");
+  assertStringIncludes(refObjectSql(ref), "'typeCode', dt_document.code");
+});
+
+Deno.test("названий документ коду типу не несе — модель уже в оголошенні", () => {
+  const ref = resolveRef({ model: "goods_sale", as: "shipment" }, "shipment_id", META, "return.shipmentId");
+
+  assertEquals(ref.typeAlias, undefined);
+  assertEquals(refJoinSql(ref, "t").length, 2); // своя таблиця плюс шапка, і все
+  assertEquals(refObjectSql(ref).includes("typeCode"), false);
+
+  // Довідник — тим паче.
+  const catalog = resolveRef({ model: "warehouse" }, "warehouse_id", META, "reg.warehouseId");
+  assertEquals(catalog.typeAlias, undefined);
+  assertEquals(refObjectSql(catalog).includes("typeCode"), false);
 });
 
 Deno.test("эхо ссылочного фільтра: будь-який документ добирається без другого join", () => {

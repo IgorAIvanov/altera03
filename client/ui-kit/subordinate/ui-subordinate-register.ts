@@ -309,6 +309,9 @@ export class UiSubordinateRegister extends Base {
    * Комірка дій. У рядку в правці — ✓ і ✗ (та сама пара, що на клавішах Enter
    * і Escape), у звичайному — правка й видалення. Кнопки не зникають у режимі
    * перегляду, а гаснуть: відсутня кнопка читається як «дії тут немає ніколи».
+   *
+   * Плюс слот застосунку — `config.rowActions` (див. його опис): своєї кнопки
+   * тут не було куди поставити взагалі, і вона виносилася окремою колонкою.
    */
   #renderActions(row: AnyRow | null, editing: boolean, locked: boolean): TemplateResult {
     const register = this.register!;
@@ -333,8 +336,20 @@ export class UiSubordinateRegister extends Base {
     // означали б два незаписані стани й питання, який із них пише Enter.
     const busy = register.draft !== null;
     const disabled = busy || register.readonly || !register.ready || locked;
+    // Дія застосунку (найчастіше — «відкрити документ, що поставив рядок»)
+    // стоїть ЛІВОРУЧ від штатної пари: комірка притиснута до правого краю, тож
+    // правка й видалення лишаються на місці й у тих рядках, де своєї дії немає.
+    // Вимкненою вона не буває: чужа дія — не наша справа, а найпевніший її
+    // випадок (перехід у документ) саме на заблокованому рядку й потрібен.
+    const extra = row ? register.config.rowActions?.(row) ?? "" : "";
     return html`
       <td class="text-right whitespace-nowrap">
+        ${extra
+        // Клік по своїй кнопці не має вважатися вибором рядка — рівно як і по
+        // штатних: у них це робить stopPropagation у кожному обробнику, а тут
+        // обробник чужий, і забути про це легко.
+        ? html`<span @click=${(e: Event) => e.stopPropagation()}>${extra}</span>`
+        : nothing}
         <button class="btn btn-ghost btn-xs" ?disabled=${disabled}
           title=${locked ? register.lockedReason(row!) : t("common.open")}
           @click=${(e: Event) => {

@@ -145,6 +145,18 @@ export type Ref = {
   headerAlias?: string;
   /** `display` — колонка шапки документа, а не таблиці цілі. */
   displayInHeader: boolean;
+  /**
+   * Ціль — БУДЬ-ЯКИЙ документ (`entity: "document"`): аліас join у
+   * `app.document_type`, звідки береться КОД типу.
+   *
+   * Тільки для `entity`, і не з міркувань економії. Ссылка, що назвала
+   * `model`, і так знає модель — код у неї сталий, він у самому оголошенні;
+   * а «будь-який документ» не знає ЯКОГО типу той, на який показує рядок, —
+   * і саме код типу є ключем моделі, з якого виводиться маршрут в'ю. Без
+   * нього подання документа можна показати, а відкрити його не можна: рядок
+   * знає, ЩО його поставило, і не знає, як туди піти.
+   */
+  typeAlias?: string;
 };
 
 type Field = {
@@ -475,6 +487,7 @@ export function resolveRef(xref: XRef, fkColumn: string, map: ModelMetaMap, owne
     // Ціль САМА є шапкою — другого join'а немає, і подання береться з першого.
     headerAlias: displayInHeader && !xref.entity ? `d_${as}` : undefined,
     displayInHeader,
+    typeAlias: xref.entity ? `dt_${as}` : undefined,
   };
 }
 
@@ -806,9 +819,26 @@ export function refDisplaySql(r: Ref, targetAlias = r.alias, headerAlias = r.hea
 
 // вивід вкладеного об'єкта ссылки
 function refEntry(f: Field): string {
-  const r = f.ref!;
-  return `'${r.as}', case when ${r.alias}.${r.targetPk} is null then null ` +
-    `else jsonb_build_object('id', ${r.alias}.${r.targetPk}::text, '${r.displayKey}', ${refDisplaySql(r)}) end`;
+  return `'${f.ref!.as}', ${refObjectSql(f.ref!)}`;
+}
+
+/**
+ * Сам вкладений об'єкт ссылки — без ключа, під яким він стоїть.
+ *
+ * Окремо й з експортом заради проб: склад цього об'єкта є КОНТРАКТОМ з екраном
+ * (форма тримає в `$root` саме його, пікер віддає саме його), а видно його лише
+ * в згенерованому SQL.
+ */
+export function refObjectSql(r: Ref): string {
+  // `typeCode` — КЛЮЧ МОДЕЛІ документа, тобто те, з чого екран виводить маршрут
+  // в'ю. Без нього подання «будь-якого документа» показати можна, а відкрити
+  // його — ні: колонка з реєстратором у регістрі відомостей виглядає як
+  // посилання й нікуди не веде. Ключ стоїть ПОРУЧ із поданням, а не окремим
+  // полем рядка, бо належить саме цій ссылці: рядок може посилатися на два
+  // різні документи.
+  const type = r.typeAlias ? `, 'typeCode', ${r.typeAlias}.code` : "";
+  return `case when ${r.alias}.${r.targetPk} is null then null ` +
+    `else jsonb_build_object('id', ${r.alias}.${r.targetPk}::text, '${r.displayKey}', ${refDisplaySql(r)}${type}) end`;
 }
 
 /**
@@ -854,6 +884,15 @@ export function refJoinSql(r: Ref, ownerAlias: string): string[] {
   ];
   if (r.headerAlias) {
     joins.push(`left join app.document ${r.headerAlias} on ${r.headerAlias}.id = ${r.alias}.${r.targetPk}`);
+  }
+  // Тип документа — лише для «будь-якого документа»: він і є те, чого рядку
+  // бракує, щоб дорога до документа існувала. `left` з тієї ж причини, що й
+  // решта, хоч тип у шапці й `not null`: join висить на ссылці, яка законно
+  // порожня, і `join` викинув би рядки без документа зі списку.
+  if (r.typeAlias) {
+    joins.push(
+      `left join app.document_type ${r.typeAlias} on ${r.typeAlias}.id = ${r.alias}.document_type_id`,
+    );
   }
   return joins;
 }
@@ -2680,9 +2719,17 @@ async function buildSpec(
     .filter((f) => !f.ref && f.sortable && lookupKeys.has(f.key))
     .map((f) => ({ token: f.key, expr: `${f.alias}.${f.col}` }));
 
-  // joins для list: ref-поля, які потрібні у виводі/пошуку/сортуванні
+  // joins для list: ref-поля, які потрібні у виводі/пошуку/сортуванні.
+  //
+  // `rowKeys.has(f.key)` — не для повноти: вкладений об'єкт ссылки виводиться
+  // разом зі СВОЇМ полем (`fieldEntries`), тож рядок, що назвав у RowSchema
+  // `documentId` і не назвав `document`, однаково діставав у вивід
+  // `'document', … r_document.…`, а join під нього не будувався. SQL при цьому
+  // генерувався, публікувався й падав аж на першому виклику
+  // (`missing FROM-clause entry for table "r_document"`) — тіло plpgsql при
+  // створенні не перевіряється.
   const listRefFields = itemFields.filter((f) =>
-    f.ref && (f.ref.searchable || f.ref.sortable || rowKeys.has(f.ref.as))
+    f.ref && (f.ref.searchable || f.ref.sortable || rowKeys.has(f.ref.as) || rowKeys.has(f.key))
   );
   const listJoins = refJoins(listRefFields);
 

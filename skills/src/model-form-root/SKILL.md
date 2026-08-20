@@ -283,6 +283,28 @@ Four things the panel decides for you, and all four fail **silently** when hand-
 One thing you must do on the model side: the owner field in the subordinate model's
 schema needs `"x-filter": true`, or the generated `_list` will answer "unknown filter".
 
+**Your own action in the row goes in `rowActions`** — the panel draws the actions cell,
+so there is nowhere else to put it, and a separate column costs 3rem for one icon. It
+renders to the LEFT of the standard edit/delete pair, which stays put in the rows that
+have no action of their own:
+
+```ts
+rowActions: (row) => {
+  const doc = row.document;                       // x-ref: { entity: "document" }
+  const route = doc && viewRoute(doc.typeCode, "edit");
+  return route
+    ? html`<button class="btn btn-ghost btn-xs" title=${t("common.open")}
+        @click=${() => bus.emit({ type: "tab.open", route, id: doc.id })}>${icons.open}</button>`
+    : "";
+},
+```
+
+That case is the predictable one: it is the very row the panel locks, the one a document
+wrote — and the first thing a person does with such a row is try to open that document.
+The route is built by the APPLICATION because `viewRoute` reads the view manifest
+generated from your manifests, which the framework cannot see. Requires
+`@altera/client` 0.13.2 and `@altera/tools` 0.14.5 for `typeCode` in the reference.
+
 Reference: `app/catalog/currency/currencyEdit.ts`. Requires `@altera/client` 0.13.0
 (0.12.6 had a separate editor strip and a second `fields` list — see the changelog).
 
