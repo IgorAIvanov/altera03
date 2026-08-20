@@ -14,6 +14,8 @@ declare
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir','asc')) = 'desc' then 'desc' else 'asc' end;
   v_filters   jsonb := coalesce(payload->'filters', '{}'::jsonb);
   v_f_currency_id bigint := nullif(v_filters->'currency'->>'id', '')::bigint;
+  v_f_period_from date := nullif(v_filters->>'periodFrom', '')::date;
+  v_f_period_to date := nullif(v_filters->>'periodTo', '')::date;
   v_filters_out jsonb;
   v_rows      jsonb;
   v_total     int;
@@ -36,7 +38,9 @@ begin
     coalesce(payload->>'search', '') = ''
     or r_currency.name ilike '%' || (payload->>'search') || '%'
   )
-  and (v_f_currency_id is null or t.currency_id = v_f_currency_id);
+  and (v_f_currency_id is null or t.currency_id = v_f_currency_id)
+  and (v_f_period_from is null or t.period >= v_f_period_from)
+  and (v_f_period_to is null or t.period <= v_f_period_to);
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
   from (
@@ -55,6 +59,8 @@ begin
       or r_currency.name ilike '%' || (payload->>'search') || '%'
     )
     and (v_f_currency_id is null or t.currency_id = v_f_currency_id)
+    and (v_f_period_from is null or t.period >= v_f_period_from)
+    and (v_f_period_to is null or t.period <= v_f_period_to)
     order by
       case when v_sort_by = 'currency' and v_sort_dir = 'asc'  then r_currency.name end asc,
       case when v_sort_by = 'currency' and v_sort_dir = 'desc' then r_currency.name end desc,

@@ -23,6 +23,11 @@ export const CurrencyRateItemSchema = Type.Object({
   period: Type.String({
     title: "Діє з",
     "x-db-type": "date",
+    // Діапазон потрібен не списку курсів, а панелі в картці валюти: «Перейти
+    // до дати» шле `periodTo` (перегляд іде за спаданням), і вікно стає на
+    // названу дату. Без цієї анотації згенерований `_list` ключа не знає й
+    // відповість «невідомий фільтр».
+    "x-filter": { op: "range" },
     "x-form": { order: 2, width: "sm" },
     "x-list": { width: "sm", sortable: true },
   }),

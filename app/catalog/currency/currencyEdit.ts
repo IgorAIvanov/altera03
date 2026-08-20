@@ -23,10 +23,11 @@ export class CurrencyEdit extends BaseUI<CurrencyEditRoot> {
   /**
    * Курси валюти просто в її картці — еталон підпорядкованого регістру.
    *
-   * Оголошення тут, а не в манифесті: ключі колонок і полів перевіряє
-   * компілятор, а панель ядра малює решту — «Додати», порожній стан, редактор
-   * рядка, підказку «спершу збережіть картку» й запис ОДРАЗУ командами моделі
-   * `currency_rate`. Відбір по власнику панель виводить сама: `currencyId` →
+   * Оголошення тут, а не в манифесті: ключі колонок перевіряє компілятор, а
+   * панель ядра малює решту — смугу дій, сітку з правкою в рядку, порожній
+   * стан, підказку «спершу збережіть картку» й запис ОДРАЗУ командами моделі
+   * `currency_rate`. Колонка одна на показ і на правку: `kind` каже, чим
+   * комірка правиться. Відбір по власнику панель виводить сама: `currencyId` →
    * ключ `currency`, тобто ім'я ссылки, як його читає згенерований `_list`.
    */
   private rates = new SubordinateRegister<CurrencyRateRow>(this, {
@@ -35,16 +36,22 @@ export class CurrencyEdit extends BaseUI<CurrencyEditRoot> {
     ownerId: () => this.$root.item.id,
     titleKey: "currencyRate.titleMany",
     sortBy: "period",
+    // Курсів за десять років тисячі: видно вікно останніх, а «Перейти до
+    // дати» ставить його на будь-яку іншу. Поле мусить нести
+    // `x-filter: { op: "range" }` — воно й дає ключ `periodTo`.
+    dateField: "period",
     readonly: () => this.readonlyMode,
     columns: [
-      { key: "period", title: "currencyRate.period", width: "8rem", format: dateFormat.date },
-      { key: "rate", title: "currencyRate.rate", width: "8rem", align: "right" },
-      { key: "multiplicity", title: "currencyRate.multiplicity", width: "8rem", align: "right" },
-    ],
-    fields: [
-      { kind: "date", key: "period", title: "currencyRate.period", required: true },
-      { kind: "decimal", key: "rate", title: "currencyRate.rate", precision: 6, width: "8rem", required: true },
-      { kind: "decimal", key: "multiplicity", title: "currencyRate.multiplicity", precision: 0, width: "6rem" },
+      {
+        kind: "date",
+        key: "period",
+        title: "currencyRate.period",
+        width: "8rem",
+        format: dateFormat.date,
+        required: true,
+      },
+      { kind: "decimal", key: "rate", title: "currencyRate.rate", width: "8rem", precision: 6, required: true },
+      { kind: "decimal", key: "multiplicity", title: "currencyRate.multiplicity", width: "8rem", precision: 0 },
     ],
     createRow: () => ({ id: "", currency: { id: "", name: "" }, period: "", rate: 0, multiplicity: 1 }),
   });

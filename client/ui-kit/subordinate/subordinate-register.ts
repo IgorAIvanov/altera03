@@ -33,12 +33,24 @@
  *    мовчки. Ознака — заповнений реєстратор (`documentId`), і це не здогад:
  *    так називається колонка-реєстратор в усьому фреймворку.
  *
- * ЧОГО ТУТ НЕМАЄ СВІДОМО. Колонки й поля редактора оголошуються ТИПІЗОВАНО в
- * коді форми, а не виводяться з манифеста підпорядкованої моделі. Причина та
- * сама, що в табличної частини: ключі перевіряє компілятор. Друга причина —
- * граф чанків: щоб вивести редактор зі схеми чужої моделі, її схема мусила б
- * приїхати в бандл разом із реєстром, тобто кожен застосунок платив би за
- * схеми всіх своїх моделей на кожному екрані.
+ * ЯК ЦЕ ВИГЛЯДАЄ. Тулбар над сіткою й правка ПРЯМО В РЯДКУ — той самий вигляд і
+ * та сама клавіатура, що в табличної частини документа. Окремої смуги редактора
+ * над таблицею немає: вона повторювала ту саму сітку другим разом, змушувала
+ * оголошувати кожне поле двічі (показ і правку) і робила з двох однакових на
+ * вигляд таблиць сусідніх екранів два різні способи вводу.
+ *
+ * Але межа запису лишається ЯВНОЮ: рядок у правці — це чернетка, і вона їде на
+ * сервер натисканням (✓ або Enter), а не «сама», коли курсор пішов з рядка.
+ * Причина та ж, що й у рішення 1: пише команда чужої моделі, яка МОЖЕ
+ * ВІДМОВИТИ, — а мовчазний запис по виходу з рядка означав би, що недописаний
+ * рядок зникає без слова саме тоді, коли користувач перемкнув вкладку.
+ *
+ * ЧОГО ТУТ НЕМАЄ СВІДОМО. Колонки оголошуються ТИПІЗОВАНО в коді форми, а не
+ * виводяться з манифеста підпорядкованої моделі. Причина та сама, що в
+ * табличної частини: ключі перевіряє компілятор. Друга причина — граф чанків:
+ * щоб вивести редактор зі схеми чужої моделі, її схема мусила б приїхати в
+ * бандл разом із реєстром, тобто кожен застосунок платив би за схеми всіх своїх
+ * моделей на кожному екрані.
  */
 import type { ReactiveControllerHost } from "lit";
 import type { TObject } from "@sinclair/typebox";
@@ -47,8 +59,18 @@ import type { TemplateResult } from "lit";
 import { bus } from "../../bus/bus.ts";
 import { t } from "../../locale.ts";
 
-/** Колонка переліку. Те саме, що в списку моделі, лише без сортування. */
+/**
+ * Колонка переліку — вона ж поле редактора.
+ *
+ * Оголошення ОДНЕ, як у табличної частини: колонка каже, що показує і чим
+ * правиться. Доти показ і правка описувалися двома переліками (`columns` і
+ * `fields`), і для регістру з двох колонок це було те саме, написане двічі, —
+ * з правом мовчки розійтися: колонка є, поля до неї немає, і значення
+ * показується, але не правиться.
+ */
 export interface SubordinateColumn<Row extends object> {
+  /** Вид комірки в режимі правки; умовчання — `text`. */
+  kind?: "text" | "decimal" | "date" | "checkbox" | "picker" | "select" | "custom";
   key: string;
   /** Заголовок — ключ локалізації (проходить через t()). */
   title: string;
@@ -56,26 +78,28 @@ export interface SubordinateColumn<Row extends object> {
   align?: "left" | "right" | "center";
   /** Шаблон дати/часу (`dateFormat.date`), як у колонці списку. */
   format?: string;
-  render?: (row: Row) => TemplateResult | string;
-}
-
-/** Поле редактора рядка. */
-export interface SubordinateField<Row extends object> {
-  kind: "text" | "decimal" | "date" | "checkbox" | "picker" | "select" | "custom";
-  key: string;
-  title: string;
-  width?: string;
   /** decimal: кількість знаків (умовчання 2). */
   precision?: number;
   /** picker: маршрут в'ю (`family/model`), як у `<ui-picker url>`. */
   url?: string;
   /** picker: ключ вкладеного об'єкта; умовчання — `key` без суфікса Id. */
   refKey?: string;
+  /** picker: поле подання й підказки. */
+  displayField?: string;
+  hintField?: string;
+  showClear?: boolean;
   /** select: перелік значень. */
   options?: () => Array<{ value: string; label: string }>;
   required?: boolean;
-  /** custom: повна розмітка поля. */
-  render?: (draft: Row) => TemplateResult;
+  /**
+   * Колонка лише показує — у режимі правки лишається текстом (реєстратор,
+   * обчислена сума, службова позначка).
+   */
+  readonly?: boolean;
+  /** Показ значення в непорожньому рядку. */
+  render?: (row: Row) => TemplateResult | string;
+  /** kind: "custom" — розмітка комірки в режимі правки. */
+  editor?: (draft: Row) => TemplateResult;
 }
 
 export interface SubordinateConfig<Row extends object> {
@@ -91,14 +115,34 @@ export interface SubordinateConfig<Row extends object> {
   /** Id власника; порожньо — картка ще не збережена. */
   ownerId: () => string | null | undefined;
   columns: Array<SubordinateColumn<Row>>;
-  fields: Array<SubordinateField<Row>>;
   /** Порожній рядок: схема (Value.Create) або фабрика. */
   schema?: TObject;
   createRow?: () => Row;
   /** `sortBy` для `list`; типово — поле періоду за спаданням. */
   sortBy?: string;
   sortDir?: "asc" | "desc";
-  /** Скільки рядків показувати. Перелік у картці — не журнал. */
+  /**
+   * Поле дати, за яким працює «Перейти до дати». Оголошене — панель показує
+   * поле дати в смузі дій; не оголошене — не показує взагалі (fail-closed:
+   * кнопка, за якою немає відбору, гірша за відсутню).
+   *
+   * Вимога до моделі: це поле мусить нести `"x-filter": { "op": "range" }` —
+   * саме воно дає згенерованому `_list` ключі `<field>From` / `<field>To`.
+   * Панель шле ОДИН із них: при спаданні (умовчання) — `To`, при зростанні —
+   * `From`, тобто названа дата завжди стає ПЕРШИМ рядком вікна, а не десь
+   * усередині нього.
+   */
+  dateField?: string;
+  /**
+   * Скільки рядків показувати за раз (умовчання 10) і на скільки росте вікно
+   * по «Показати ще».
+   *
+   * Перелік у картці — НЕ журнал: курсів валюти за десять років тисячі, і
+   * картка, яка вивалює їх усі, перестає бути карткою — форма власника їде за
+   * екран, а потрібні майже завжди останні. Тому вікно мале, а решта
+   * дістається натисканням; скільки саме записів є, панель каже словами —
+   * мовчки обрізаний перелік не відрізнити від «це все».
+   */
   pageSize?: number;
   /** Режим перегляду форми-власника (функція: права — сигнал). */
   readonly?: () => boolean;
@@ -113,16 +157,59 @@ export interface SubordinateConfig<Row extends object> {
 
 interface Envelope {
   ok?: boolean;
-  data?: { rows?: unknown[]; item?: unknown };
+  // `totals.count` — усього рядків за відбором; його віддає згенерований
+  // `_list` того ж конверта, тож окремої команди «порахуй» не треба.
+  data?: { rows?: unknown[]; item?: unknown; totals?: { count?: number } };
   messages?: Array<{ type?: string; text?: string }>;
 }
 
-const DEFAULT_PAGE_SIZE = 50;
+/**
+ * Розмір вікна за замовчуванням. Десять, а не «сторінка списку»: у картці
+ * дивляться на останні значення, а не гортають історію.
+ */
+const DEFAULT_PAGE_SIZE = 10;
 
-/** Ключ відбору з імені поля: `organizationId` → `organization`. */
-export function ownerFilterKeyOf(ownerField: string, explicit?: string): string {
+/**
+ * Ім'я ссылки з імені поля: `organizationId` → `organization`.
+ *
+ * Конвенція одна на два випадки — ключ відбору по власнику й ключ вкладеного
+ * об'єкта в колонці-пікері, — і саме тому вона тут одна функцією: розписана
+ * двічі, вона розійшлася б на першому ж винятку (`x-ref.as` названо інакше).
+ */
+export function refNameOf(field: string, explicit?: string): string {
   if (explicit) return explicit;
-  return ownerField.endsWith("Id") ? ownerField.slice(0, -2) : ownerField;
+  return field.endsWith("Id") ? field.slice(0, -2) : field;
+}
+
+/** Ключ відбору по власнику. Та сама конвенція, що в `x-ref.as`. */
+export function ownerFilterKeyOf(ownerField: string, explicit?: string): string {
+  return refNameOf(ownerField, explicit);
+}
+
+/**
+ * Куди веде перехід до дати: сторінка й номер рядка на ній.
+ *
+ * `total` — усього рядків у власника, `beyond` — скільки їх по той бік дати
+ * (при спаданні — не пізніших за неї). Різниця й є номером ПЕРШОГО рядка, що
+ * діяв на цю дату; він же — найближчий заповнений запис, бо порожніх дат у
+ * регістрі не існує: значення діє з дати й до наступного запису.
+ *
+ * Номер притискається до наявного рядка: дата, старша за весь регістр, дає
+ * `beyond = 0` і вивела б за межі — треба останній рядок, а не порожня
+ * сторінка за ним.
+ *
+ * Чиста функція заради проби: помилка на одиницю тут не падає, а тихо показує
+ * сусідню сторінку — тобто виглядає як «перехід трохи не туди», і причину в
+ * такому вигляді не шукають.
+ */
+export function dateLanding(
+  total: number,
+  beyond: number,
+  pageSize: number,
+): { page: number; row: number } {
+  const last = Math.max(0, total - 1);
+  const index = Math.min(Math.max(0, total - beyond), last);
+  return { page: Math.floor(index / pageSize) + 1, row: index % pageSize };
 }
 
 /**
@@ -140,17 +227,43 @@ export class SubordinateRegister<Row extends object> {
   readonly config: SubordinateConfig<Row>;
 
   rows: Row[] = [];
+  /** Скільки рядків у власника всього — не лише на сторінці. */
+  total = 0;
+  /** Поточна сторінка, від 1. */
+  page = 1;
+  /** Дата останнього переходу — показується в полі; відбором вона НЕ є. */
+  anchorDate = "";
   loading = false;
-  /** Рядок, який зараз редагують; `null` — редактор закритий. */
+  /**
+   * Чернетка рядка, який зараз правлять; `null` — правки немає.
+   *
+   * Правка йде В СІТЦІ (рядок перетворюється на контроли), але чернетка все
+   * одно окрема: рядок пишеться командою чужої моделі й сервер може
+   * відмовити — тоді в таблиці мусить лишитися ЗАПИСАНЕ значення, а на екрані
+   * те, що набрали. Правка «прямо в рядку» цієї різниці не тримає.
+   */
   draft: Row | null = null;
-  /** Id рядка, що редагується; порожньо — новий. */
+  /** Id рядка, що правиться; `null` — новий рядок. */
   editingId: string | null = null;
+  /**
+   * Номер відкриття правки — росте на кожен `startAdd`/`startEdit`.
+   *
+   * Потрібен в'ю, щоб поставити фокус ОДИН раз на відкриття. Сама чернетка для
+   * цього не годиться: `patch` пересобирає її на кожне натискання клавіші, тож
+   * порівняння по об'єкту повертало б курсор у першу комірку під час набору, а
+   * порівняння по `editingId` не розрізняло б два «Додати» поспіль.
+   */
+  draftSeq = 0;
+  /** Поточний рядок переліку — на нього дивляться дії панелі. */
+  currentIndex = -1;
   /** Повідомлення відмови сервера — показується в панелі, а не ковтається. */
   error = "";
 
   #hosts = new Set<ReactiveControllerHost>();
   /** Власник, під якого вже завантажено перелік. */
   #loadedFor: string | null = null;
+  /** Рядок, який треба виділити після завантаження (перехід до дати). */
+  #pendingSelect: number | null = null;
 
   constructor(host: ReactiveControllerHost, config: SubordinateConfig<Row>) {
     this.config = config;
@@ -199,6 +312,29 @@ export class SubordinateRegister<Row extends object> {
     return this.locked(row) ? t("core.subordinate.lockedByDocument") : "";
   }
 
+  /** Поточний рядок; `null` — не вибрано або перелік порожній. */
+  get current(): Row | null {
+    return this.rows[this.currentIndex] ?? null;
+  }
+
+  /** Чи цей рядок зараз правлять (чернетка накрила його в сітці). */
+  editing(row: Row): boolean {
+    if (!this.draft || this.editingId === null) return false;
+    return String((row as Record<string, unknown>).id ?? "") === this.editingId;
+  }
+
+  /** Вибір рядка мишею або клавіатурою. */
+  select(index: number) {
+    if (this.currentIndex === index) return;
+    this.currentIndex = index;
+    this.#notify();
+  }
+
+  /** Колонки, які приймають ввід: правка йде по них, і по них же — перевірка. */
+  editableColumns(): Array<SubordinateColumn<Row>> {
+    return this.config.columns.filter((column) => !column.readonly);
+  }
+
   // ── Завантаження ───────────────────────────────────────────────────────────
 
   /**
@@ -212,12 +348,108 @@ export class SubordinateRegister<Row extends object> {
     this.#loadedFor = owner;
     this.draft = null;
     this.editingId = null;
+    // Інший власник — інший перелік: ані сторінка попереднього, ані його дата
+    // до нього стосунку не мають.
+    this.page = 1;
+    this.anchorDate = "";
+    this.total = 0;
     if (!owner) {
       this.rows = [];
       this.#notify();
       return;
     }
     void this.load();
+  }
+
+  /** Рядків на сторінці. */
+  get pageSize(): number {
+    return this.config.pageSize ?? DEFAULT_PAGE_SIZE;
+  }
+
+  /** Скільки сторінок — щонайменше одна, навіть коли рядків немає. */
+  get pageCount(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
+  /** Перейти на сторінку; номер поза межами притискається до найближчої. */
+  async goToPage(page: number): Promise<void> {
+    const target = Math.min(Math.max(1, Math.trunc(page)), this.pageCount);
+    if (target === this.page) return;
+    this.page = target;
+    await this.load();
+  }
+
+  /** Напрям перегляду: за спаданням (умовчання) — від найсвіжішого запису. */
+  get descending(): boolean {
+    return (this.config.sortDir ?? "desc") === "desc";
+  }
+
+  /**
+   * Ключ відбору, яким рахується позиція дати: `periodTo` при спаданні,
+   * `periodFrom` при зростанні. Обидва дає `x-filter: { op: "range" }` того ж
+   * поля.
+   */
+  get anchorFilterKey(): string {
+    return `${this.config.dateField ?? ""}${this.descending ? "To" : "From"}`;
+  }
+
+  /**
+   * Перейти до дати.
+   *
+   * ЩО ЦЕ ОЗНАЧАЄ. Не «показати рядки з цієї дати» і не пошук рядка з такою
+   * датою: у регістрі значення діє З дати, тож запису рівно на названий день
+   * може не бути взагалі. Перехід стає на найближчий ЗАПОВНЕНИЙ запис — той,
+   * що діяв на цю дату (при перегляді за спаданням це найближчий не пізніший;
+   * якщо таких немає взагалі, тобто дата старша за весь регістр — найстаріший
+   * запис, тобто остання сторінка).
+   *
+   * ЧОМУ СТОРІНКА, А НЕ ВІДБІР. Відбір за датою сховав би все, що новіше, і з
+   * дати не було б виходу гортанням — а людина переходить до дати саме щоб
+   * подивитися, що навколо неї. Тому дата шукає СТОРІНКУ, а сама вибірка
+   * лишається повною.
+   *
+   * Рахується це двома лічильними викликами (`pageSize: 1`, потрібне тільки
+   * `totals.count`): скільки рядків усього й скільки їх по той бік дати.
+   * Різниця — номер рядка, з нього виходить сторінка. Окремої SQL-команди для
+   * цього немає навмисно: згенерований `_list` уже вміє і відбір, і рахунок.
+   */
+  async goToDate(date: string): Promise<void> {
+    if (!this.config.dateField || !this.ready) return;
+    this.anchorDate = date;
+
+    if (!date) {
+      this.page = 1;
+      await this.load();
+      return;
+    }
+
+    const total = await this.#count();
+    const beyond = await this.#count(date);
+    // Відмову вже названо в `error` — мовчазний стрибок на першу сторінку
+    // виглядав би так, ніби перехід відпрацював.
+    if (total === null || beyond === null) return;
+
+    this.total = total;
+    const landing = dateLanding(total, beyond, this.pageSize);
+    this.page = landing.page;
+    // Рядок, заради якого переходили, ще й виділяється: інакше людина отримує
+    // сторінку й мусить шукати на ній дату очима.
+    this.#pendingSelect = landing.row;
+    await this.load();
+  }
+
+  /**
+   * Скільки рядків у власника (за потреби — по той бік дати).
+   *
+   * `null` — запит не вдався; відмова вже лежить в `error`.
+   */
+  async #count(anchor?: string): Promise<number | null> {
+    const filters: Record<string, unknown> = { [this.filterKey]: { id: this.ownerId } };
+    if (anchor) filters[this.anchorFilterKey] = anchor;
+
+    const env = await this.#call("list", { page: 1, pageSize: 1, filters });
+    if (!env?.ok) return null;
+    return Number(env.data?.totals?.count ?? 0);
   }
 
   async load(): Promise<void> {
@@ -227,32 +459,60 @@ export class SubordinateRegister<Row extends object> {
     this.#notify();
 
     const env = await this.#call("list", {
-      page: 1,
-      pageSize: this.config.pageSize ?? DEFAULT_PAGE_SIZE,
+      page: this.page,
+      pageSize: this.pageSize,
       sortBy: this.config.sortBy,
       sortDir: this.config.sortDir ?? "desc",
       filters: { [this.filterKey]: { id: this.ownerId } },
     });
 
     this.rows = (env?.data?.rows ?? []) as Row[];
+    // Скільки їх усього — з того самого конверта (`totals.count`
+    // згенерованого `_list`). Без цього не порахувати ані сторінок, ані
+    // позиції дати, і обрізаний перелік не відрізнити від повного.
+    this.total = Number(env?.data?.totals?.count ?? this.rows.length);
     this.loading = false;
+
+    // Сторінка могла зникнути під ногами: останній рядок видалили тут або в
+    // сусідній вкладці. Порожня сторінка посеред непорожнього переліку
+    // виглядає як «записів немає» — тому відступаємо на наявну.
+    if (this.page > this.pageCount) {
+      this.page = this.pageCount;
+      await this.load();
+      return;
+    }
+
+    // Рядок, до якого переходили за датою; інакше — старий номер, якого на
+    // новій сторінці може не бути.
+    this.currentIndex = this.#pendingSelect !== null
+      ? Math.min(this.#pendingSelect, this.rows.length - 1)
+      : Math.min(this.currentIndex, this.rows.length - 1);
+    this.#pendingSelect = null;
     this.#notify();
   }
 
-  // ── Редактор ───────────────────────────────────────────────────────────────
+  // ── Правка рядка ───────────────────────────────────────────────────────────
 
   startAdd() {
     if (!this.ready || this.readonly) return;
     this.editingId = null;
     this.draft = this.#createRow();
+    this.draftSeq++;
+    // Новий рядок стає єдиним виділеним: підсвічений «поточний» рядок нижче
+    // означав би два місця, куди дивиться Enter.
+    this.currentIndex = -1;
     this.error = "";
     this.#notify();
   }
 
-  startEdit(row: Row) {
-    if (this.readonly || this.locked(row)) return;
+  /** Правити рядок; без аргументу — поточний (дія панелі). */
+  startEdit(row: Row | null = this.current) {
+    if (!row || this.readonly || this.locked(row)) return;
     this.editingId = String((row as Record<string, unknown>).id ?? "");
     this.draft = { ...row };
+    this.draftSeq++;
+    const index = this.rows.indexOf(row);
+    if (index >= 0) this.currentIndex = index;
     this.error = "";
     this.#notify();
   }
@@ -271,17 +531,17 @@ export class SubordinateRegister<Row extends object> {
     this.#notify();
   }
 
-  /** Незаповнені обов'язкові поля чернетки — ключі. */
+  /** Незаповнені обов'язкові комірки чернетки — ключі колонок. */
   missingFields(): string[] {
     const draft = this.draft as Record<string, unknown> | null;
     if (!draft) return [];
-    return this.config.fields
-      .filter((field) => field.required)
-      .filter((field) => {
-        const value = draft[field.key];
+    return this.editableColumns()
+      .filter((column) => column.required)
+      .filter((column) => {
+        const value = draft[column.key];
         return value === null || value === undefined || value === "";
       })
-      .map((field) => field.key);
+      .map((column) => column.key);
   }
 
   /**
@@ -308,8 +568,9 @@ export class SubordinateRegister<Row extends object> {
     return true;
   }
 
-  async remove(row: Row): Promise<boolean> {
-    if (this.readonly || this.locked(row)) return false;
+  /** Видалити рядок; без аргументу — поточний (дія панелі). */
+  async remove(row: Row | null = this.current): Promise<boolean> {
+    if (!row || this.readonly || this.locked(row)) return false;
     if (!await bus.confirm(t("common.confirmDelete"), "common.delete", "warning")) return false;
 
     const env = await this.#call("delete", { id: String((row as Record<string, unknown>).id ?? "") }, "save");

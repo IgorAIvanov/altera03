@@ -222,20 +222,48 @@ private rates = new SubordinateRegister<CurrencyRateRow>(this, {
   sortBy: "period",
   readonly: () => this.readonlyMode,
   columns: [
-    { key: "period", title: "currencyRate.period", width: "8rem", format: dateFormat.date },
-    { key: "rate",   title: "currencyRate.rate",   width: "8rem", align: "right" },
-  ],
-  fields: [
-    { kind: "date",    key: "period", title: "currencyRate.period", required: true },
-    { kind: "decimal", key: "rate",   title: "currencyRate.rate", precision: 6, required: true },
+    { kind: "date",    key: "period", title: "currencyRate.period", width: "8rem",
+      format: dateFormat.date, required: true },
+    { kind: "decimal", key: "rate",   title: "currencyRate.rate",   width: "8rem",
+      precision: 6, required: true },
   ],
   createRow: () => ({ id: "", period: "", rate: 0, multiplicity: 1 }),
 });
 // render(): <ui-subordinate-register .register=${this.rates}></ui-subordinate-register>
 ```
 
-Field kinds: `text`, `decimal`, `date`, `checkbox`, `picker`, `select`, and `custom`.
-Columns take `format` (a date template), `align`, `width` and `render`.
+The panel looks and behaves like a document's tabular section: a toolbar on top and
+editing **inside the row**, same cell contract, `Insert` / `Enter` / `Esc` on the
+keyboard, double-click to open a row.
+
+**One column declares both the display and the editor.** `kind` says what the cell
+edits with — `text`, `decimal`, `date`, `checkbox`, `picker`, `select`, `custom` —
+and a column that only shows something (a registrar, a computed amount) says
+`readonly: true`. Other column keys: `format` (date template), `align`, `width`,
+`precision`, `url` / `refKey` (picker), `options` (select), `required`, `render`
+(display markup) and `editor` (markup for a `custom` cell).
+
+The list is **paged**, `pageSize` rows at a time (default 10), with the same pager the
+model list uses; it appears only when there is more than one page. Raise `pageSize` only
+when the card genuinely holds few rows.
+
+To reach a distant date without paging there, declare `dateField: "period"` — a date box
+appears in the action strip, and the jump lands on the **nearest filled record**: the one
+in force on that date (a date older than the whole register lands on the oldest row).
+There are no empty dates in a register by construction — a value is in force *from* its
+date until the next record — so the row named by the date may not exist while the nearest
+filled one always does.
+
+It moves the **page**, it does not filter: the selection stays whole, so you can page both
+ways from the date, which is the point of going there. This needs
+`"x-filter": { "op": "range" }` on that field in the subordinate model's schema (then
+`sql:gen`); without `dateField` no box is drawn at all.
+
+What the panel does **not** do is write the row when the cursor leaves it. A row
+being edited is a draft, and it goes to the server on ✓ or `Enter`. The register is
+a separate model whose `save` can refuse (a duplicate period, a closed period), and
+a silent write-on-leave would lose a half-typed row the moment the user switched
+tabs.
 
 Four things the panel decides for you, and all four fail **silently** when hand-written:
 
@@ -255,7 +283,8 @@ Four things the panel decides for you, and all four fail **silently** when hand-
 One thing you must do on the model side: the owner field in the subordinate model's
 schema needs `"x-filter": true`, or the generated `_list` will answer "unknown filter".
 
-Reference: `app/catalog/currency/currencyEdit.ts`. Requires `@altera/client` 0.12.6.
+Reference: `app/catalog/currency/currencyEdit.ts`. Requires `@altera/client` 0.13.0
+(0.12.6 had a separate editor strip and a second `fields` list — see the changelog).
 
 ## Checklist
 
