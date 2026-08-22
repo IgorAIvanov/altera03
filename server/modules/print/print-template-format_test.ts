@@ -549,3 +549,89 @@ Deno.test("розрив сторінки: ознака доходить із ш�
   const plan = buildPrintTemplateRenderPlan(schema!, {});
   assertEquals(plan.find((block) => block.key === "back")?.pageBreakBefore, true);
 });
+
+
+/**
+ * Дворівнева шапка з переліку граф.
+ *
+ * Помилка тут тиха тим самим способом, що й у ширинах: неправильний `colSpan`
+ * зсуває сітку на графу, шаблон лишається валідним, а розбіжність видно лише
+ * тому, хто звірятиме папір із затвердженим бланком. Тому перевіряються не
+ * «якісь об'єднання», а рівно те, що виводиться з переліку.
+ */
+function headerOf(columns: unknown[], sections?: unknown) {
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [{
+      key: "grid",
+      type: "table",
+      source: "rows",
+      columns,
+      sections: sections ?? { header: [], row: [{ key: "r", cells: [{ key: "rc", path: "a" }] }], footer: [] },
+    }],
+  });
+  const block = schema?.blocks[0];
+  assertEquals(block?.type, "table");
+  return block?.type === "table" ? block.sections.header : [];
+}
+
+Deno.test("шапка з граф: сусідні графи з однаковою верхньою шапкою склеюються", () => {
+  // Уривок ОЗ-6: «Номери» над трьома графами, «Рік випуску» на обидва рівні.
+  const header = headerOf([
+    { key: "c_inv", width: "4%", header: "Номери", headerSub: "інвентарний" },
+    { key: "c_serial", width: "5%", header: "Номери", headerSub: "заводський" },
+    { key: "c_passport", width: "5%", header: "Номери", headerSub: "паспорта" },
+    { key: "c_year", width: "3%", header: "Рік випуску (побудови)" },
+  ]);
+
+  assertEquals(header.length, 2);
+  assertEquals(header[0]!.cells.map((cell) => [cell.text, cell.colSpan, cell.rowSpan]), [
+    ["Номери", 3, 1],
+    ["Рік випуску (побудови)", 1, 2],
+  ]);
+  assertEquals(header[1]!.cells.map((cell) => cell.text), ["інвентарний", "заводський", "паспорта"]);
+});
+
+Deno.test("шапка з граф: однакові написи НЕ сусідів лишаються двома об'єднаннями", () => {
+  // Порядок колонок — це порядок граф у формі, тож склеюються саме сусідні.
+  const header = headerOf([
+    { key: "a1", width: "10%", header: "Номери", headerSub: "інвентарний" },
+    { key: "b", width: "10%", header: "Дата" },
+    { key: "a2", width: "10%", header: "Номери", headerSub: "заводський" },
+  ]);
+
+  assertEquals(header[0]!.cells.map((cell) => [cell.text, cell.colSpan, cell.rowSpan]), [
+    ["Номери", 1, 1],
+    ["Дата", 1, 2],
+    ["Номери", 1, 1],
+  ]);
+  assertEquals(header[1]!.cells.map((cell) => cell.text), ["інвентарний", "заводський"]);
+});
+
+Deno.test("шапка з граф: без жодної нижньої шапки рівень один", () => {
+  // Порожній другий рядок був би смугою на бланку, якої в формі немає.
+  const header = headerOf([
+    { key: "a", width: "50%", header: "Назва" },
+    { key: "b", width: "50%", header: "Сума" },
+  ]);
+
+  assertEquals(header.length, 1);
+  assertEquals(header[0]!.cells.map((cell) => [cell.text, cell.rowSpan]), [["Назва", 1], ["Сума", 1]]);
+});
+
+Deno.test("шапка, написана руками, сильніша за виведену", () => {
+  // Інакше правка секції мовчки нічого не міняла б, поки в колонках лишається
+  // `header` — а побачити це можна було б лише на папері.
+  const header = headerOf(
+    [{ key: "a", width: "100%", header: "З граф" }],
+    { header: [{ key: "h", cells: [{ key: "hc", text: "Написано руками" }] }], row: [], footer: [] },
+  );
+
+  assertEquals(header.length, 1);
+  assertEquals(header[0]!.cells[0]!.text, "Написано руками");
+});
+
+Deno.test("шапка з граф: колонки без короткої форми нічого не міняють", () => {
+  // Наявні бланки не поїхали: секція шапки як була порожньою, так і лишається.
+  assertEquals(headerOf([{ key: "a", width: "100%" }]).length, 0);
+});

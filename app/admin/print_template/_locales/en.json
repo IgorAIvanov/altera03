@@ -124,5 +124,7 @@
   "printTemplate.formatNone": "No format",
   "printTemplate.formatAmountInWords": "Amount in words",
   "printTemplate.columnWidth": "Width: auto, fit or a percentage",
-  "printTemplate.columnMinPt": "Minimum, pt"
+  "printTemplate.columnMinPt": "Minimum, pt",
+  "printTemplate.columnHeader": "Column header (top level)",
+  "printTemplate.columnHeaderSub": "Sub-header (bottom level)"
 }

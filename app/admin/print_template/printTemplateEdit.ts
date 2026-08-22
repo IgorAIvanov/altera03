@@ -1604,6 +1604,17 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               <input class="input input-xs w-12" title=${t("printTemplate.columnMinPt")}
                 placeholder="pt" .value=${column.minPt}
                 @input=${(e: Event) => this.updateGridColumnMinPt(block, column.key, (e.target as HTMLInputElement).value)} />
+              <!-- Коротка форма шапки: діє, лише поки секція шапки ПОРОЖНЯ, і
+                   показується так само. Поля, які нічого не міняють, гірші за
+                   відсутні: написана руками шапка сильніша за виведену. -->
+              ${block.sections.header.length ? nothing : html`
+                <input class="input input-xs w-28" title=${t("printTemplate.columnHeader")}
+                  .value=${column.header ?? ""}
+                  @input=${(e: Event) => this.updateGridColumnHeader(block, column.key, { header: (e.target as HTMLInputElement).value })} />
+                <input class="input input-xs w-24" title=${t("printTemplate.columnHeaderSub")}
+                  .value=${column.headerSub ?? ""}
+                  @input=${(e: Event) => this.updateGridColumnHeader(block, column.key, { headerSub: (e.target as HTMLInputElement).value })} />
+              `}
               <span class="flex-1">
                 ${this.pathSelect(column.visibleWhen, rootPaths, (v) => this.updateGridColumnCondition(block, column.key, v))}
               </span>
@@ -1756,6 +1767,24 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     this.updateBlock(block.key, (entry) => (
       entry.type === "table"
         ? { ...entry, columns: entry.columns.map((column) => (column.key === columnKey ? { ...column, minPt } : column)) }
+        : entry
+    ));
+  }
+
+  /**
+   * Графа колонки — верхній і нижній рівні шапки.
+   *
+   * Об'єднання не задається: сусідні графи з однаковою верхньою шапкою ядро
+   * склеїть саме, а графа без нижньої займе обидва рівні.
+   */
+  private updateGridColumnHeader(
+    block: Extract<PrintTemplateBlock, { type: "table" }>,
+    columnKey: string,
+    patch: { header?: string; headerSub?: string },
+  ) {
+    this.updateBlock(block.key, (entry) => (
+      entry.type === "table"
+        ? { ...entry, columns: entry.columns.map((column) => (column.key === columnKey ? { ...column, ...patch } : column)) }
         : entry
     ));
   }

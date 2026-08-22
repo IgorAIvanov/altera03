@@ -222,6 +222,33 @@ export interface PrintTemplateTableColumn {
    * інакше таблиця з'їхала б убік і лишила порожню смугу.
    */
   visibleWhen: PrintTemplateVisibleWhen;
+  /**
+   * ГРАФА — коротка форма запису шапки замість `sections.header`.
+   *
+   * Затверджена форма майже завжди має дворівневу шапку: «Номери» над трьома
+   * графами, «Дорогоцінні метали» над трьома, а решта граф займає обидва рівні.
+   * У секціях це виражається `colSpan`/`rowSpan` — на двадцяти чотирьох графах
+   * (ОЗ-6) двадцять чотири числа, кожне з яких помиляється ТИХО: сітка з'їде на
+   * графу, шаблон лишиться валідним, а розбіжність побачить той, хто звірятиме
+   * папір із бланком.
+   *
+   * Тут об'єднання не задають — воно ВИВОДИТЬСЯ: сусідні графи з однаковою
+   * `header` склеюються в одну комірку верхнього рівня, графа без `headerSub`
+   * займає обидва рівні. Той самий крок, що ядро вже зробило з ширинами:
+   * шаблон називає намір, геометрію рахує ядро.
+   *
+   * `sections.header` лишається як є й нікуди не дінеться — коротка форма діє
+   * лише тоді, коли секція шапки ПОРОЖНЯ. Три рівні, шапка з прив'язкою до
+   * даних, порожні комірки-роздільники — усе це й далі пишеться секціями.
+   *
+   * Необов'язкові В ТИПІ навмисно, на відміну від решти полів нормалізованої
+   * колонки: `PrintTemplateBlock` збирають руками — екран редактора шаблонів
+   * живе в ЗАСТОСУНКУ, — і обов'язкове поле означало б правку в кожному
+   * встановленому застосунку заради короткої форми, якою він може й не
+   * користуватися. Нормалізатор їх усе одно виставляє завжди.
+   */
+  header?: string;
+  headerSub?: string;
 }
 
 /**
@@ -285,6 +312,8 @@ interface LegacyPrintTemplateTableColumn {
   // лише для підйому давніх шаблонів, але шлях нормалізації в них один.
   visibleWhen: string;
   title: string;
+  header: string;
+  headerSub: string;
   path: string;
   width: string;
   minPt: string;
@@ -667,6 +696,8 @@ function normalizeLegacyTableColumn(value: unknown): LegacyPrintTemplateTableCol
     key: normalizeString(value.key),
     visibleWhen: normalizeString(value.visibleWhen),
     title: normalizeString(value.title),
+    header: normalizeString(value.header),
+    headerSub: normalizeString(value.headerSub),
     path: normalizeString(value.path),
     width: normalizeString(value.width),
     minPt: normalizeString(value.minPt),
@@ -753,8 +784,13 @@ function createTableCell(patch: Partial<PrintTemplateTableCell>): PrintTemplateT
  * Так шаблони, збережені до появи секцій, і далі друкуються без міграції даних.
  */
 function sectionsFromLegacyColumns(columns: LegacyPrintTemplateTableColumn[]): PrintTemplateTableSections {
+  // Графи, названі короткою формою, сильніші за `title`: інакше бланк, у якому
+  // секцій не описували взагалі, діставав би шапку з порожніх комірок — і це
+  // був би тихий промах, видний лише на папері.
+  const fromColumns = sectionsFromColumnHeaders(columns);
+
   return {
-    header: [{
+    header: fromColumns.length ? fromColumns : [{
       key: crypto.randomUUID(),
       visibleWhen: "",
       cells: columns.map((column) => createTableCell({
@@ -780,12 +816,79 @@ function sectionsFromLegacyColumns(columns: LegacyPrintTemplateTableColumn[]): P
   };
 }
 
+/**
+ * Шапка, виведена з переліку граф (`header` / `headerSub` у колонках).
+ *
+ * Правило одне й читається з самого переліку: сусідні графи з ОДНАКОВОЮ
+ * верхньою шапкою склеюються в одну комірку першого рівня, графа без нижньої
+ * шапки займає обидва рівні. Порядок колонок — це порядок граф у формі, тож
+ * склеюються саме СУСІДНІ: два різні об'єднання з однаковим текстом («Номери»
+ * на початку й «Номери» в кінці бланка) лишаються двома.
+ *
+ * Другий рівень з'являється, лише якщо його хтось попросив: перелік, у якому
+ * жодна графа не має `headerSub`, дає однорядкову шапку, а не порожній другий
+ * рядок.
+ *
+ * Вигляд комірок — по центру й напівжирним, і це не успадкування, а вибір
+ * короткої форми: об'єднана комірка над трьома графами, притиснута ліворуч,
+ * не схожа на жоден затверджений бланк. Колонка, якій потрібно інакше, каже
+ * `headerAlign` / `headerFontWeight` — вони діють і тут.
+ */
+function sectionsFromColumnHeaders(columns: LegacyPrintTemplateTableColumn[]): PrintTemplateTableRow[] {
+  if (!columns.some((column) => column.header !== "")) return [];
+
+  const twoLevel = columns.some((column) => column.headerSub !== "");
+  const top: PrintTemplateTableCell[] = [];
+  const bottom: PrintTemplateTableCell[] = [];
+
+  const cellOf = (column: LegacyPrintTemplateTableColumn, text: string, patch: Partial<PrintTemplateTableCell>) =>
+    createTableCell({
+      text,
+      align: column.headerAlign === "left" ? "center" : column.headerAlign,
+      fontWeight: column.headerFontWeight === "normal" ? "bold" : column.headerFontWeight,
+      fontSize: column.headerFontSize,
+      color: column.headerColor,
+      ...patch,
+    });
+
+  for (let index = 0; index < columns.length;) {
+    const column = columns[index]!;
+
+    if (column.headerSub === "") {
+      top.push(cellOf(column, column.header, { rowSpan: twoLevel ? 2 : 1 }));
+      index += 1;
+      continue;
+    }
+
+    let span = 1;
+    while (
+      index + span < columns.length &&
+      columns[index + span]!.header === column.header &&
+      columns[index + span]!.headerSub !== ""
+    ) span += 1;
+
+    top.push(cellOf(column, column.header, { colSpan: span }));
+    for (let member = index; member < index + span; member += 1) {
+      const sub = columns[member]!;
+      bottom.push(cellOf(sub, sub.headerSub, {}));
+    }
+    index += span;
+  }
+
+  const rows: PrintTemplateTableRow[] = [{ key: crypto.randomUUID(), visibleWhen: "", cells: top }];
+  if (twoLevel) rows.push({ key: crypto.randomUUID(), visibleWhen: "", cells: bottom });
+  return rows;
+}
+
 function normalizeTableSections(value: unknown, legacyColumns: LegacyPrintTemplateTableColumn[]): PrintTemplateTableSections {
   if (!isRecord(value)) {
     return sectionsFromLegacyColumns(legacyColumns);
   }
 
   const sections: PrintTemplateTableSections = {
+    // Коротка форма діє, лише коли секція шапки ПОРОЖНЯ: написана руками шапка
+    // сильніша за виведену завжди — інакше правка секції в редакторі мовчки
+    // нічого не міняла б, якби в колонках лишилися `header`.
     header: normalizeTableRows(isRecord(value.header) ? value.header.rows : value.header),
     row: normalizeTableRows(isRecord(value.row) ? value.row.rows : value.row),
     footer: normalizeTableRows(isRecord(value.footer) ? value.footer.rows : value.footer),
@@ -793,7 +896,12 @@ function normalizeTableSections(value: unknown, legacyColumns: LegacyPrintTempla
 
   // Секції є, але всі порожні — вважаємо, що їх не описали, і беремо колонки.
   const hasAnyRow = PRINT_TEMPLATE_TABLE_SECTIONS.some((name) => sections[name].length > 0);
-  return hasAnyRow ? sections : sectionsFromLegacyColumns(legacyColumns);
+  if (!hasAnyRow) return sectionsFromLegacyColumns(legacyColumns);
+
+  // Рядки описані, а шапки немає — найчастіший випадок короткої форми: сітку
+  // затвердженого бланка пишуть комірками, а шапку виводять із граф.
+  if (sections.header.length === 0) sections.header = sectionsFromColumnHeaders(legacyColumns);
+  return sections;
 }
 
 function normalizeBlock(value: unknown): PrintTemplateBlock | null {
@@ -855,6 +963,8 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
         minPt: column.minPt,
         widthPercent: column.widthPercent,
         visibleWhen: column.visibleWhen,
+        header: column.header,
+        headerSub: column.headerSub,
       })),
       sections: normalizeTableSections(value.sections, legacyColumns),
       visibleWhen: normalizeString(value.visibleWhen),

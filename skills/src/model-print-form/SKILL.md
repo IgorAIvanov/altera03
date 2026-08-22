@@ -205,6 +205,24 @@ So a block can stand **under the previous one instead**:
   side starts on a new sheet ALWAYS, even when the front took half a page. Read in `flow`
   only, like `keepTogether`, and ignored on the blank's first block: an empty first sheet
   reads as broken printing, not as a break. Requires `@altera/server` 0.25.0;
+- **a two-level header can be written as a list of columns** instead of `colSpan`/`rowSpan`:
+
+  ```json
+  "columns": [
+    { "key": "c_inv",    "width": "4%",   "header": "Номери", "headerSub": "інвентарний" },
+    { "key": "c_serial", "width": "5.5%", "header": "Номери", "headerSub": "заводський" },
+    { "key": "c_year",   "width": "3%",   "header": "Рік випуску (побудови)" }
+  ]
+  ```
+
+  The merge is not declared, it is derived: ADJACENT columns with the same `header` become
+  one top-level cell, a column without `headerSub` spans both levels, and a list with no
+  `headerSub` at all yields a single header row. Order is the order of the columns in the
+  form, so the same caption twice in a blank stays two merges. A hand-written
+  `sections.header` always wins — the short form applies only while that section is empty,
+  which is where three levels, data-bound headers and spacer cells still live. Cells come
+  out centred and bold; a column that needs otherwise says `headerAlign` /
+  `headerFontWeight`. Requires `@altera/server` 0.25.1;
 - **one flow block switches the footer heuristic off for the whole blank.** Without flow the
   renderer treats everything below the *first* table as footer and glues it under the *last*
   one — which is why a caption between two tables used to drag the whole footer onto sheet

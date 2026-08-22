@@ -124,5 +124,7 @@
   "printTemplate.formatNone": "Без формату",
   "printTemplate.formatAmountInWords": "Сума прописом",
   "printTemplate.columnWidth": "Ширина: auto, fit або відсоток",
-  "printTemplate.columnMinPt": "Мінімум, pt"
+  "printTemplate.columnMinPt": "Мінімум, pt",
+  "printTemplate.columnHeader": "Графа (верхній рівень шапки)",
+  "printTemplate.columnHeaderSub": "Підграфа (нижній рівень)"
 }
