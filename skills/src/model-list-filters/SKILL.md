@@ -90,6 +90,52 @@ counterpartyId: Type.String({
 document list can already filter by period and posted state** — nothing to declare, and
 nothing happens until a screen draws the panel.
 
+## A question asked in whole units
+
+Not every period is a range. A month-end closing statement, a quarterly return, a yearly
+balance — the answer does not change with the day, because the question was asked in
+months. Such a screen filters by **one value**, the first day of the unit, and the
+annotation is the plain scalar form, not `range`:
+
+```ts
+// closing.schema.ts — the filter is one date, so it is one key
+period: Type.String({ "x-db-type": "date", "x-filter": true }),   // col = value
+```
+
+Reaching for `{ op: "range" }` here is the mistake to expect, because the control is
+called a period. A range would let the user ask for a month and a half, which is a
+question the report cannot answer.
+
+Draw it with `<ui-period units="…">`, which picks the unit itself — a strip of units, a
+`‹ 2026 ›` navigator and a grid of 12 months, 4 quarters or 12 years:
+
+```ts
+import "@client/ui-kit/components/ui-period.ts";
+
+<ui-period
+  units="month"
+  .label=${t("closing.period")}
+  .value=${this.filterValue<string>("period") ?? ""}
+  @period-changed=${(e: PeriodEvent) => this.setFilter("period", e.detail.dateFrom)}
+></ui-period>
+```
+
+- **`units` lists the units, in the order you want the tabs**: `month`, `quarter`, `year`
+  and `custom` (an arbitrary range as one more tab). One unit draws no tab strip at all —
+  a choice of one is not a choice. No `units` at all leaves the eight presets, unchanged.
+- **`value` is the start of the unit**, and it is normalised to it: 17 August put into a
+  month field means August and reads back as `2026-08-01`. `dateFrom`/`dateTo` stay
+  available, so a screen that wants the pair binds those instead and `setFilters` both
+  bounds together.
+- **the event carries `unit`** — the unit the period equals exactly, or `null` for an
+  arbitrary span. One handler then serves both shapes.
+- day and week are **not** offered: their grid is a calendar, and that is `<ui-date>`.
+
+What this replaces is a `<ui-date>` with the value rounded down in the handler. It works,
+and it lies to the user: the box shows `01.08.2026` as if the day mattered, and the
+calendar offers to pick the 17th and silently turns it into August. Requires
+`@altera/client` 0.13.4.
+
 ## A reference filter is ONE key holding an object
 
 This is the rule most likely to be got wrong, so it is stated plainly:
@@ -286,14 +332,8 @@ on a table screen.
 - **`setFilters` for anything that produces several values at once.** `<ui-period>` emits
   both bounds together; two `setFilter` calls would fire two requests where the second
   cancels the first.
-- **A question asked in MONTHS is filtered by a month.** A month-end closing report, a
-  quarterly return, a yearly balance — the answer does not change with the day, so do not
-  make the user type a date and silently round it. `<ui-period units="month">` picks the
-  unit itself (a strip of units, a `‹ 2026 ›` navigator and a grid of 12 months, 4 quarters
-  or 12 years); `units="month,quarter,year,custom"` offers several, in the order you list
-  them. `value` is then the start of the unit — one date for a filter that wants one, while
-  `dateFrom`/`dateTo` stay available for a filter that wants the pair. Requires
-  `@altera/client` 0.13.4.
+- **A period is not always a range** — see "A question asked in whole units" above before
+  reaching for `{ op: "range" }`.
 - **`debounce` is for typed text only.** A select, a date, a checkbox or a picker produce
   one value per user action — delaying them just makes the screen feel broken.
 - **Changing a filter reloads from page 1** and clears checked rows: a different result set

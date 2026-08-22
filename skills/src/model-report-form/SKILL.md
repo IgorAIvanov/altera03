@@ -74,6 +74,13 @@ Report filters are not a separate invention: `$root.$filters`, written through
 **[model-list-filters](../model-list-filters/SKILL.md)**; read it before adding a filter
 to a report.
 
+**A report whose question is a whole month filters by one date, not a range.** Closing
+statements, returns and yearly balances are asked in units, and a range would offer to ask
+for a month and a half — a question the report cannot answer. The annotation is the plain
+`"x-filter": true`, and the control is `<ui-period units="month">`, which picks the unit
+itself instead of taking a date and rounding it behind the user's back. See
+[A question asked in whole units](../model-list-filters/SKILL.md).
+
 Two things are specific to reports, and both follow from what a report costs:
 
 - **a filter change does not rebuild the report.** `onFiltersChanged()` stays empty (a
