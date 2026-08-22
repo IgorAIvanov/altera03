@@ -479,6 +479,16 @@ the start; the distribution was not.
 only when at least one column states a `width`, so a form built on percentages lays out exactly
 as before, to the point. Requires `@altera/server` 0.24.0.
 
+**Do not hunt for `minPt` by re-rendering the PDF.** The render reports what it decided:
+a table entry in `renderPrintPdfWithLayout`'s layout carries `columns`, one row per column
+with `widthPt` (what it got), `minPt` (the floor — its longest word, or your declared
+minimum), `naturalPt` (what it needs to never wrap) and `atMin` (it got exactly the floor,
+so it wraps as much as it can). The pair `minPt`/`naturalPt` answers the question directly:
+below the floor the column will not shrink, above the natural width there is nothing left to
+buy. Guessing by table height instead does not converge — the curve is not monotonic, and
+height never says *which* column ran out of room. Percentage tables carry no `columns`:
+nothing computes a floor there, and zeros would be a lie. Requires `@altera/server` 0.25.2.
+
 Two wrapping rules come with it, and both are about long captions in approved forms: an explicit
 `\n` in a cell breaks the line where you say, and a word wider than its cell is now broken
 instead of spilling onto the neighbour. If you inserted hyphens by hand to work around that

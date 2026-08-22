@@ -13,7 +13,15 @@
 
 import { degrees, PDFDocument, type PDFImage, rgb } from "pdf-lib";
 import { embedPrintFonts, wrapPrintText } from "./print-text-metrics.ts";
-import { resolvePrintColumnWidths } from "./print-column-widths.ts";
+import {
+  type PrintResolvedColumn,
+  resolvePrintColumnWidthsDetailed,
+} from "./print-column-widths.ts";
+
+// Тип названий у полі `columns` звіту, тож він мусить бути видимий з ТОГО
+// САМОГО входу, що й звіт: `@altera/server/print/render`. Поіменно, а не
+// `export *` — інакше пакет іде «повільними типами».
+export type { PrintResolvedColumn } from "./print-column-widths.ts";
 import type { PrintSizedCell } from "./print-column-widths.ts";
 import { layoutPrintTemplateGrid } from "./print-template.ts";
 import type { PrintTemplateColumnAlign, PrintTemplateSchema } from "./print-template.ts";
@@ -179,6 +187,15 @@ export interface PrintPdfLayoutEntry {
   bottomPt: number;
   /** Блок виліз за нижнє поле сторінки — на папері це обрізаний бланк. */
   overflow: boolean;
+  /**
+   * Колонки таблиці — скільки пунктів кому дісталося.
+   *
+   * Лише в блоків типу `table`, і лише там, де колонки оголосили НАМІР
+   * (`fit`/`auto`): у таблиці на відсотках підлоги й природної ширини не рахує
+   * ніхто, і видати замість них нулі означало б сказати неправду про числа, по
+   * яких добирають `minPt`.
+   */
+  columns?: PrintResolvedColumn[];
 }
 
 /**
@@ -835,6 +852,9 @@ export async function renderPrintPdfWithLayout(
    * не розривається між сторінками; підвал друкується один раз наприкінці.
    * Повертає y, на якому таблиця закінчилась (уже на останній сторінці).
    */
+  /** Вирішені ширини колонок за ключем блока — заповнює `drawTable`. */
+  const resolvedColumns = new Map<string, PrintResolvedColumn[]>();
+
   const drawTable = (block: PrintTemplateRenderTableBlock, startY: number) => {
     const blockX = MARGIN + contentWidth * (block.placement.xPercent / 100);
     const blockWidth = contentWidth * (block.placement.widthPercent / 100);
@@ -863,16 +883,23 @@ export async function renderPrintPdfWithLayout(
     // вмикати його всім означало б переверстати всі наявні бланки мовчки.
     const sized = block.columns.some((column) => column.sizing.kind !== "percent");
     const widths = sized
-      ? resolvePrintColumnWidths(
-        block.columns.map((column) => ({ sizing: column.sizing, minPt: column.minPtValue })),
-        collectSizingCells(block, block.textOptions.fontSize, headerFontSize),
-        blockWidth,
-        {
-          measure,
-          cellPadding: CELL_PADDING,
-          lineStep: (fontSize) => fontSize + 2,
-        },
-      )
+      ? (() => {
+        const resolution = resolvePrintColumnWidthsDetailed(
+          block.columns.map((column) => ({ sizing: column.sizing, minPt: column.minPtValue })),
+          collectSizingCells(block, block.textOptions.fontSize, headerFontSize),
+          blockWidth,
+          {
+            measure,
+            cellPadding: CELL_PADDING,
+            lineStep: (fontSize) => fontSize + 2,
+          },
+        );
+        // Звіт відкладається тут, а не збирається наприкінці: числа знає рівно
+        // цей виклик, і другого способу дізнатися їх, крім повторити весь
+        // рахунок, немає.
+        resolvedColumns.set(block.key, resolution.columns);
+        return resolution.widths;
+      })()
       : (() => {
         // Ваги колонок нормалізуємо до ширини блока: сума може не дорівнювати
         // 100, але таблиця однаково має заповнити відведене місце.
@@ -951,6 +978,7 @@ export async function renderPrintPdfWithLayout(
         topPt: topY,
         bottomPt: bottomY,
         overflow: false,
+        columns: resolvedColumns.get(block.key),
       });
       return bottomY;
     }

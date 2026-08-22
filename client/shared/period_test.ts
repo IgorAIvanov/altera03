@@ -11,7 +11,7 @@
  * рахуватися з нуля.
  */
 import { assertEquals } from "@std/assert";
-import { periodLabel, periodOf, periodUnit, shiftPeriod } from "./period.ts";
+import { parsePeriodUnits, periodLabel, periodOf, periodUnit, shiftPeriod } from "./period.ts";
 
 Deno.test("periodOf: календарні межі", () => {
   assertEquals(periodOf("day", "2026-07-20"), { dateFrom: "2026-07-20", dateTo: "2026-07-20" });
@@ -86,4 +86,29 @@ Deno.test("periodLabel: без локалі — день, рік, відрізо
     "01.07.26 — 15.07.26",
   );
   assertEquals(periodLabel({ dateFrom: "", dateTo: "" }), "");
+});
+
+/**
+ * Перелік одиниць вибору. Ціна помилки тут — не падіння: невідоме слово, узяте
+ * мовчки, дало б смугу вкладок, у якій немає того, що написали в атрибуті.
+ */
+Deno.test("parsePeriodUnits: порядок зберігається, невідоме пропускається", () => {
+  assertEquals(parsePeriodUnits("month"), { units: ["month"], custom: false });
+  assertEquals(parsePeriodUnits("year,quarter"), { units: ["year", "quarter"], custom: false });
+  assertEquals(
+    parsePeriodUnits("month, quarter , year , custom"),
+    { units: ["month", "quarter", "year"], custom: true },
+  );
+
+  // Порожньо — режиму одиниці немає взагалі, поповер лишається з пресетами.
+  assertEquals(parsePeriodUnits(""), { units: [], custom: false });
+
+  // День і тиждень сюди не входять: сітка для них — це календар, і він уже є.
+  assertEquals(parsePeriodUnits("day,week,month"), { units: ["month"], custom: false });
+
+  // Повтор не подвоює вкладку.
+  assertEquals(parsePeriodUnits("month,month"), { units: ["month"], custom: false });
+
+  // Сам `custom` одиницею не є — вибір з одного пункту не вибір.
+  assertEquals(parsePeriodUnits("custom"), { units: [], custom: true });
 });

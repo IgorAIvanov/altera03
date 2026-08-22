@@ -236,6 +236,40 @@ function shareProportionally(indexes: number[], weights: number[], total: number
 }
 
 /**
+ * Що дісталося одній колонці — рядок звіту про ширини.
+ *
+ * Потрібен тому, що `minPt` — єдине число, яке лишається за прикладником, і
+ * вибирати його доводилося перебором ПОВНИХ прогонів PDF, міряючи висоту
+ * таблиці як непрямий показник «комусь стало тісно». Причому крива не
+ * монотонна, тож «підняти й подивитися» не працює — треба сітка значень, а
+ * висота однаково не каже, КОМУ саме забракло.
+ *
+ * Тут це сказано прямо, і числа беруться з того самого прогону, який малює:
+ * `naturalPt` — скільки треба, щоб колонка не переносилася взагалі (тобто
+ * стеля, вище за яку піднімати `minPt` немає сенсу), `minPt` — підлога, нижче
+ * якої вона не стиснеться (найдовше СЛОВО або оголошений мінімум), `atMin` —
+ * що вона дістала рівно підлогу, тобто переноситься по максимуму.
+ */
+export interface PrintResolvedColumn {
+  index: number;
+  /** Намір, оголошений колонкою. */
+  sizing: PrintColumnSizing["kind"];
+  /** Вирішена ширина в пунктах — те, чим колонка малюється. */
+  widthPt: number;
+  /** Підлога: найдовше слово, `minPt` колонки й абсолютний мінімум — найбільше з трьох. */
+  minPt: number;
+  /** Скільки треба, щоб текст не переносився взагалі. */
+  naturalPt: number;
+  /** Колонка дістала рівно підлогу, хоча хотіла більше. */
+  atMin: boolean;
+}
+
+export interface PrintColumnWidthResolution {
+  widths: number[];
+  columns: PrintResolvedColumn[];
+}
+
+/**
  * Порахувати ширини колонок під задану загальну ширину.
  *
  * Повертає рівно `columns.length` чисел, сума яких дорівнює `totalWidth`:
@@ -248,8 +282,24 @@ export function resolvePrintColumnWidths(
   totalWidth: number,
   options: PrintColumnWidthOptions,
 ): number[] {
+  return resolvePrintColumnWidthsDetailed(columns, cells, totalWidth, options).widths;
+}
+
+/**
+ * Те саме, але зі звітом про кожну колонку.
+ *
+ * Окремою назвою, а не зміною тієї: ширини потрібні на кожному малюванні
+ * таблиці, а звіт — тому, хто добирає `minPt`, тобто зрідка. Рахунок при цьому
+ * той самий і одноразовий — звіт складається з чисел, які алгоритм і так має.
+ */
+export function resolvePrintColumnWidthsDetailed(
+  columns: PrintColumnSizingInput[],
+  cells: PrintSizedCell[],
+  totalWidth: number,
+  options: PrintColumnWidthOptions,
+): PrintColumnWidthResolution {
   const count = columns.length;
-  if (!count) return [];
+  if (!count) return { widths: [], columns: [] };
 
   const models = cells
     .filter((cell) => cell.columnIndex >= 0 && cell.columnIndex < count)
@@ -264,6 +314,35 @@ export function resolvePrintColumnWidths(
   const naturals = columns.map((column, index) =>
     Math.max(floors[index]!, naturalByColumn[index] ?? 0)
   );
+
+  /**
+   * Спільний вихід усіх гілок: нормалізація до загальної ширини плюс звіт.
+   *
+   * Один на всі `return` навмисно — гілок нижче чотири, і звіт, зібраний у
+   * кожній окремо, розійшовся б рівно в тій, куди рідше заходять.
+   */
+  const finish = (raw: number[]): PrintColumnWidthResolution => {
+    const widths = normalizeToTotal(raw, totalWidth);
+    return {
+      widths,
+      columns: columns.map((column, index) => {
+        const widthPt = widths[index] ?? 0;
+        const minPt = floors[index] ?? 0;
+        const naturalPt = naturals[index] ?? 0;
+        return {
+          index,
+          sizing: column.sizing.kind,
+          widthPt,
+          minPt,
+          naturalPt,
+          // Допуск у півпункта: нормалізація до загальної ширини зсуває всі
+          // числа на частки, і точне порівняння називало б «уперлася» то так,
+          // то інакше від складу сусідів.
+          atMin: naturalPt > minPt + 0.5 && widthPt <= minPt + 0.5,
+        };
+      }),
+    };
+  };
 
   const widths = new Array<number>(count).fill(0);
   const flexible: number[] = [];
@@ -289,7 +368,7 @@ export function resolvePrintColumnWidths(
     fixedTotal = totalWidth;
   }
 
-  if (!flexible.length) return normalizeToTotal(widths, totalWidth);
+  if (!flexible.length) return finish(widths);
 
   const budget = Math.max(totalWidth - fixedTotal, 0);
   const floorTotal = flexible.reduce((sum, index) => sum + floors[index]!, 0);
@@ -304,7 +383,7 @@ export function resolvePrintColumnWidths(
     const takers = autos.length ? autos : flexible;
     const extra = shareProportionally(takers, naturals, budget - naturalTotal);
     for (const [index, value] of extra) widths[index] = widths[index]! + value;
-    return normalizeToTotal(widths, totalWidth);
+    return finish(widths);
   }
 
   if (floorTotal >= budget) {
@@ -313,12 +392,12 @@ export function resolvePrintColumnWidths(
     // комірки, а вихід за межі не має жодного правильного прочитання.
     const scale = floorTotal > 0 ? budget / floorTotal : 0;
     for (const index of flexible) widths[index] = floors[index]! * scale;
-    return normalizeToTotal(widths, totalWidth);
+    return finish(widths);
   }
 
   for (const index of flexible) widths[index] = floors[index]!;
   distributeByHeight(widths, flexible, naturals, models, budget - floorTotal, options.cellPadding);
-  return normalizeToTotal(widths, totalWidth);
+  return finish(widths);
 }
 
 /**

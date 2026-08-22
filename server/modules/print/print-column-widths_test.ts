@@ -14,6 +14,7 @@ import {
   type PrintColumnSizingInput,
   type PrintSizedCell,
   resolvePrintColumnWidths,
+  resolvePrintColumnWidthsDetailed,
 } from "./print-column-widths.ts";
 import { normalizePrintTemplateSchema } from "./print-template.ts";
 import { renderPrintPdfWithLayout } from "./print-pdf.renderer.ts";
@@ -380,4 +381,115 @@ Deno.test("рендер: шаблон на відсотках лишається
   const after = await tableHeightPt(headers, (index) => ({ widthPercent: percents[index]!, width: "" }));
 
   assertAlmostEquals(after, before, 0.001);
+});
+
+// ── Звіт про ширини ─────────────────────────────────────────────────────────
+
+/**
+ * Заради чого він існує: `minPt` — єдине число, що лишається за прикладником, і
+ * добирали його перебором ПОВНИХ прогонів PDF, міряючи висоту таблиці як
+ * непрямий показник «комусь стало тісно». Звіт відповідає прямо, тому й
+ * перевіряється не арифметика, а те, що відповідь на місці й не бреше.
+ */
+Deno.test("звіт про ширини: кому скільки дісталося", async () => {
+  const o = await options();
+  const cells = [cell(0, "1 234 567.89"), cell(1, "Найменування товару у двох словах")];
+  const { widths, columns } = resolvePrintColumnWidthsDetailed([fit, auto], cells, 500, o);
+
+  assertEquals(columns.length, 2);
+  assertEquals(columns.map((column) => column.index), [0, 1]);
+  assertEquals(columns.map((column) => column.sizing), ["fit", "auto"]);
+
+  // Звіт описує ТІ САМІ числа, якими малюють, а не паралельний рахунок.
+  assertEquals(columns.map((column) => column.widthPt), widths);
+  assertEquals(widths, resolvePrintColumnWidths([fit, auto], cells, 500, o));
+
+  for (const column of columns) {
+    assert(column.minPt > 0, "підлога названа завжди — це найдовше слово");
+    assert(
+      column.naturalPt >= column.minPt - 0.001,
+      "не переноситися не може коштувати менше за найдовше слово",
+    );
+  }
+
+  // Місця вистачає з надлишком — на підлогу не впав ніхто.
+  assertEquals(columns.filter((column) => column.atMin).length, 0);
+});
+
+Deno.test("звіт про ширини: тісна таблиця називає, хто впав на підлогу", async () => {
+  const o = await options();
+  const cells = [
+    cell(0, "1 234 567.89"),
+    cell(1, "Найменування товару, довге настільки, що не влізе ніколи"),
+    cell(2, "Кількість"),
+  ];
+  // Ширини вистачає ледве на найдовші слова: лишок дістанеться не всім, і саме
+  // це має бути видно зі звіту, а не з висоти надрукованого.
+  const { columns } = resolvePrintColumnWidthsDetailed([fit, auto, fit], cells, 150, o);
+
+  const squeezed = columns.filter((column) => column.atMin);
+  assert(squeezed.length > 0, "хтось мусив лишитися на підлозі — місця нема");
+
+  for (const column of squeezed) {
+    assert(
+      column.naturalPt > column.widthPt,
+      "на підлозі опиняється лише той, хто хотів більше",
+    );
+  }
+});
+
+/** Той самий бланк, що вище, але звіт беремо цілим — разом із колонками. */
+async function tableEntry(widthOf: (index: number) => Record<string, string>) {
+  const headers = ["Найменування показника", "Сума", "Кількість"];
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [{
+      key: "grid",
+      type: "table",
+      source: "lines",
+      columns: headers.map((_, index) => ({ key: `c${index}`, ...widthOf(index) })),
+      sections: {
+        header: [{
+          key: "h",
+          cells: headers.map((title, index) => ({ key: `hc${index}`, columnKey: `c${index}`, text: title })),
+        }],
+        row: [{
+          key: "r",
+          cells: headers.map((_, index) => ({ key: `rc${index}`, columnKey: `c${index}`, path: "value" })),
+        }],
+        footer: [],
+      },
+      placement: { mode: "absolute", xPercent: "0", yPercent: "5", widthPercent: "100", heightPercent: "0" },
+      text: { fontSize: "9", align: "left", fontWeight: "normal", color: "#000000" },
+    }],
+  });
+  assert(schema, "шаблон не пройшов нормалізацію");
+
+  const { layout } = await renderPrintPdfWithLayout({
+    code: "probe",
+    name: "проба",
+    targetModel: "probe",
+    dataCommand: "print",
+    orientation: "portrait",
+    schema,
+  }, { lines: [{ value: "1 234.56" }] });
+
+  const grid = layout.find((item) => item.key === "grid");
+  assert(grid, "у звіті немає таблиці");
+  return grid;
+}
+
+Deno.test("звіт про розкладку несе колонки таблиці, порахованої наміром", async () => {
+  const grid = await tableEntry((index) => ({ width: index === 0 ? "auto" : "fit" }));
+
+  assertEquals(grid.columns?.length, 3);
+  assertEquals(grid.columns?.map((column) => column.sizing), ["auto", "fit", "fit"]);
+  // Ширини — те, чим таблицю намалювали: сума дорівнює ширині блока.
+  assertAlmostEquals(sum(grid.columns!.map((column) => column.widthPt)), printContentWidth("portrait"), 0.5);
+});
+
+Deno.test("таблиця на відсотках колонок у звіті не несе", async () => {
+  const grid = await tableEntry(() => ({ width: "33.3%" }));
+  // Підлоги й природної ширини тут не рахує ніхто — нулі означали б неправду.
+  assertEquals(grid.columns, undefined);
 });

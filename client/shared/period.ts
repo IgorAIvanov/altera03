@@ -24,6 +24,73 @@ export interface Period {
 
 export type PeriodUnit = "day" | "week" | "month" | "quarter" | "year";
 
+/**
+ * Одиниця, якою період можна ВИБРАТИ, а не лише назвати.
+ *
+ * Вужче за `PeriodUnit` навмисно: день і тиждень сюди не входять, бо сітка для
+ * них — це календар, і він уже є (`<ui-date>`). Питання «за який день» ставлять
+ * датою, «за який місяць» — місяцем, і саме другого не було чим намалювати.
+ */
+export type PeriodPickUnit = "month" | "quarter" | "year";
+
+const PICK_UNITS: readonly PeriodPickUnit[] = ["month", "quarter", "year"];
+
+export interface PeriodUnitChoice {
+  /** Одиниці в оголошеному порядку; порожньо — режиму одиниці немає. */
+  units: PeriodPickUnit[];
+  /** Чи лишається довільний відрізок як окремий вибір. */
+  custom: boolean;
+}
+
+/**
+ * Розбір переліку одиниць (`units="month,quarter,year"` або `"month"`).
+ *
+ * Порядок зберігається — він задає і порядок вкладок, і те, яка одиниця діє за
+ * умовчанням. Невідоме слово ПРОПУСКАЄТЬСЯ з попередженням, а не мовчки:
+ * мовчазне ковтання чужої властивості вже одного разу коштувало пошуків
+ * (порожній `<ui-picker>`), і тут воно виглядало б так само — перелік просто не
+ * той, який написали.
+ *
+ * Перелік із самого `custom` одиницею не є: це та сама пара дат, що й без
+ * `units`, і вкладка з одного пункту — не вибір.
+ */
+export function parsePeriodUnits(spec: string): PeriodUnitChoice {
+  const units: PeriodPickUnit[] = [];
+  let custom = false;
+
+  for (const raw of spec.split(",")) {
+    const token = raw.trim();
+    if (!token) continue;
+    if (token === "custom") {
+      custom = true;
+    } else if ((PICK_UNITS as readonly string[]).includes(token)) {
+      if (!units.includes(token as PeriodPickUnit)) units.push(token as PeriodPickUnit);
+    } else {
+      console.warn(
+        `[period] невідома одиниця «${token}» — очікується month | quarter | year | custom`,
+      );
+    }
+  }
+
+  return { units, custom };
+}
+
+/**
+ * Назви місяців мовою інтерфейсу, з великої літери, від січня.
+ *
+ * Тут, а не в компоненті: підпис періоду вже будується цим модулем тим самим
+ * `Intl`, і дві точки, де вибирається мова назви місяця, розійшлися б у
+ * відмінку («Липень» проти «липня») — а це видно лише на екрані.
+ */
+export function monthNames(style: "long" | "short" = "short"): string[] {
+  const locale = getLocale();
+  const fmt = new Intl.DateTimeFormat(locale, { month: style });
+  return Array.from({ length: 12 }, (_, i) => {
+    const name = fmt.format(new Date(Date.UTC(2026, i, 1)));
+    return name.charAt(0).toLocaleUpperCase(locale) + name.slice(1);
+  });
+}
+
 const DAY_MS = 86_400_000;
 
 const isoOf = (d: Date): string => d.toISOString().slice(0, 10);
@@ -131,8 +198,13 @@ export function shiftPeriod(p: Period, dir: 1 | -1): Period {
   return { dateFrom: addDays(p.dateFrom, days), dateTo: addDays(p.dateTo, days) };
 }
 
-/** «III» у «III квартал 2026». */
-const QUARTER_ROMAN = ["I", "II", "III", "IV"];
+/**
+ * «III» у «III квартал 2026» — і воно ж у комірці сітки кварталів.
+ *
+ * Експортоване саме тому, що місць два: римська нумерація, розписана двічі,
+ * розійшлася б рівно там, де її ніхто не звіряє.
+ */
+export const QUARTER_ROMAN: readonly string[] = ["I", "II", "III", "IV"];
 
 /**
  * Людська підпис періоду мовою інтерфейсу: календарний період називається

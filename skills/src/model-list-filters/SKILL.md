@@ -286,6 +286,14 @@ on a table screen.
 - **`setFilters` for anything that produces several values at once.** `<ui-period>` emits
   both bounds together; two `setFilter` calls would fire two requests where the second
   cancels the first.
+- **A question asked in MONTHS is filtered by a month.** A month-end closing report, a
+  quarterly return, a yearly balance — the answer does not change with the day, so do not
+  make the user type a date and silently round it. `<ui-period units="month">` picks the
+  unit itself (a strip of units, a `‹ 2026 ›` navigator and a grid of 12 months, 4 quarters
+  or 12 years); `units="month,quarter,year,custom"` offers several, in the order you list
+  them. `value` is then the start of the unit — one date for a filter that wants one, while
+  `dateFrom`/`dateTo` stay available for a filter that wants the pair. Requires
+  `@altera/client` 0.13.4.
 - **`debounce` is for typed text only.** A select, a date, a checkbox or a picker produce
   one value per user action — delaying them just makes the screen feel broken.
 - **Changing a filter reloads from page 1** and clears checked rows: a different result set
