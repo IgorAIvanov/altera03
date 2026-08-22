@@ -477,8 +477,13 @@ export class UiSubordinateRegister extends Base {
         // Відступ на ВНУТРІШНЬОМУ блоці, а не на комірці: `.table-tabular td`
         // у темі безшарова й обнуляє падінг, тож `py-*` на самій комірці
         // нічого не робить (клас у розмітці — намір, а не результат).
+        //
+        // Текст — застосунку, якщо він його назвав: у періодичному регістрі
+        // порожньо означає «діє умовчання», і яке саме — знає лише він.
         ? html`<tr><td colspan=${columns.length + 1} class="cell-text">
-            <div class="py-3 text-center text-muted">${t("common.noData")}</div>
+            <div class="py-3 text-center text-muted">
+              ${t(register.config.emptyKey ?? "common.noData")}
+            </div>
           </td></tr>`
         : nothing}
             </tbody>

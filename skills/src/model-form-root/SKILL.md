@@ -259,6 +259,16 @@ ways from the date, which is the point of going there. This needs
 `"x-filter": { "op": "range" }` on that field in the subordinate model's schema (then
 `sql:gen`); without `dateField` no box is drawn at all.
 
+**If that filter was renamed, name it here too.** The panel sends `<base>From` /
+`<base>To`, and the base is the field name — unless `x-filter` renamed it:
+`{ "op": "range", "key": "date" }` on a `period` field gives the generated `_list`
+`dateFrom` / `dateTo`, and that form is not exotic (it is what `DocumentHeaderSchema`
+carries, because those are the names `<ui-period>` emits). Pass the same base in
+`dateFilterKey: "date"` — the base, not a ready key, since a date filter is a pair. Get
+it wrong and nothing breaks: the generated `_list` **skips** an unknown filter, the count
+comes back as every row, and the jump lands on page 1 exactly as if it had worked.
+Requires `@altera/client` 0.13.4.
+
 What the panel does **not** do is write the row when the cursor leaves it. A row
 being edited is a draft, and it goes to the server on ✓ or `Enter`. The register is
 a separate model whose `save` can refuse (a duplicate period, a closed period), and
@@ -303,6 +313,14 @@ very thing the scope prevents. Requires `@altera/client` 0.13.3.
 Two things you must do on the model side: the owner field in the subordinate model's
 schema needs `"x-filter": true`, or the generated `_list` will answer "unknown filter" —
 and so does **every scope field**.
+
+**Say what an empty panel means — `emptyKey`.** A periodic register with no rows does not
+mean "nothing here", it means "the default is in force", and the default is yours: without
+rates the documents take 1:1, without an accounting policy it is the general system and
+20 % VAT, without prices nothing is substituted into the document. That is the question a
+person asks on seeing an empty table, and only the application knows the answer — it is in
+its own `_at` functions. `emptyKey` is a locale key shown instead of `common.noData`
+(requires `@altera/client` 0.13.4).
 
 **Your own action in the row goes in `rowActions`** — the panel draws the actions cell,
 so there is nowhere else to put it, and a separate column costs 3rem for one icon. It

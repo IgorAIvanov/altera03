@@ -252,6 +252,28 @@ Deno.test("якір дати бере той край діапазону, що �
   assertEquals(asc.anchorFilterKey, "periodFrom");
 });
 
+/**
+ * Ім'я відбору можна перейменувати в схемі (`x-filter: { op: "range", key:
+ * "date" }`), і саме так робить `DocumentHeaderSchema` фреймворку. Панель
+ * мусить брати оголошену основу, а не ім'я поля: промах тут не падає, а
+ * повертає ВСІ рядки, тобто перехід стає на першу сторінку так, ніби він
+ * відпрацював.
+ */
+Deno.test("перейменований відбір за датою називається явно", () => {
+  const desc = register(() => "7", { dateField: "period", dateFilterKey: "date" });
+  assertEquals(desc.anchorFilterKey, "dateTo");
+
+  const asc = register(() => "7", {
+    dateField: "period",
+    dateFilterKey: "date",
+    sortDir: "asc",
+  });
+  assertEquals(asc.anchorFilterKey, "dateFrom");
+
+  // Без перейменування основою лишається саме поле — стара форма не змінилася.
+  assertEquals(register(() => "7", { dateField: "period" }).anchorFilterKey, "periodTo");
+});
+
 /** Без оголошеного поля дати переходу немає взагалі — fail-closed. */
 Deno.test("без dateField перехід до дати не працює", async () => {
   const reg = register(() => "7");
