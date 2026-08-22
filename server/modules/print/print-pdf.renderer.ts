@@ -1031,18 +1031,32 @@ export async function renderPrintPdfWithLayout(
       const heights: number[] = [];
       for (const member of group) heights.push(await measureBlockHeight(member));
 
-      // Перший блок стосу на порожній сторінці притискається до верху області
-      // друку: проміжок над ним ні від чого відміряти.
-      let top: number = cursorY === null ? contentTop() : cursorY - block.placement.gapPt;
-
       // Група з таблицею не міряється (NaN), і переносити її наперед нічим —
       // таблиця перенесе себе сама.
       const groupHeight = heights.reduce((sum, value) => sum + value, 0) +
         group.slice(1).reduce((sum, member) => sum + member.placement.gapPt, 0);
 
-      if (Number.isFinite(groupHeight) && top - groupHeight < MARGIN) {
+      // Оголошений розрив — НАМІР, і він сильніший за арифметику: аркуш
+      // починається новий, хоч би на попередньому лишилося півсторінки. Саме
+      // цього вимагає затверджена двобічна форма, і саме цього не вміє ніщо
+      // інше — потік переносить те, що не влізло, `keepTogether` тримає групу
+      // вкупі, евристика підвалу дивиться на залишок місця.
+      //
+      // На першому блоці бланка не діє (`cursorY === null`): порожній перший
+      // аркуш виглядав би не як розрив, а як зламаний друк.
+      let top: number;
+      if (block.pageBreakBefore && cursorY !== null) {
         page = pdf.addPage(pageSize);
         top = contentTop();
+      } else {
+        // Перший блок стосу на порожній сторінці притискається до верху області
+        // друку: проміжок над ним ні від чого відміряти.
+        top = cursorY === null ? contentTop() : cursorY - block.placement.gapPt;
+
+        if (Number.isFinite(groupHeight) && top - groupHeight < MARGIN) {
+          page = pdf.addPage(pageSize);
+          top = contentTop();
+        }
       }
 
       // Проміжок першого вже враховано у `top`; кожен наступний відсувається

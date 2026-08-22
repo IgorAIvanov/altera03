@@ -146,6 +146,22 @@ interface PrintTemplateBlockBase {
    * «цілком на одній сторінці» для неї означала б бланк, який не друкується.
    */
   keepTogether: boolean;
+  /**
+   * «Звідси — новий аркуш». Читається так само лише в режимі `flow`.
+   *
+   * Це НАМІР, а не наслідок заповненості, і саме тому його не замінює ніщо з
+   * наявного. Потік переносить блок, коли той не вліз; `keepTogether` тримає
+   * групу вкупі; евристика підвалу спрацьовує від того, скільки лишилося
+   * місця. Затверджена двобічна форма (НА-1, НА-3, М-2, інвентаризаційний опис
+   * із розпискою) вимагає протилежного: зворотний бік починається з нового
+   * аркуша ЗАВЖДИ, хоч би лицьовий зайняв півсторінки. Без цього його або
+   * друкують під лицьовим, або підпирають невидимим блоком, висоту якого
+   * доводиться підбирати наново після кожної правки бланка.
+   *
+   * На ПЕРШОМУ блоці бланка не діє: порожній перший аркуш — це не розрив, а
+   * помилка, і виглядала б вона як зламаний друк.
+   */
+  pageBreakBefore: boolean;
 }
 
 /**
@@ -800,6 +816,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       textOrientation: normalizeTextOrientation(value.textOrientation),
       visibleWhen: normalizeString(value.visibleWhen),
       keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type, textStyle)),
     };
@@ -814,6 +831,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
         : [],
       visibleWhen: normalizeString(value.visibleWhen),
       keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -841,6 +859,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       sections: normalizeTableSections(value.sections, legacyColumns),
       visibleWhen: normalizeString(value.visibleWhen),
       keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -855,6 +874,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       alt: normalizeString(value.alt),
       visibleWhen: normalizeString(value.visibleWhen),
       keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -872,6 +892,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       showText: value.showText !== false,
       visibleWhen: normalizeString(value.visibleWhen),
       keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -890,6 +911,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       lineWidth: normalizeLineWidth(value.lineWidth, "1"),
       visibleWhen: normalizeString(value.visibleWhen),
       keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
     };
@@ -901,6 +923,7 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
       type,
       visibleWhen: normalizeString(value.visibleWhen),
       keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
       placement: normalizeBlockPlacement(value.placement),
       text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
       color: normalizeColor(value.color, "#595959"),

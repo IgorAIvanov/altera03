@@ -191,6 +191,20 @@ So a block can stand **under the previous one instead**:
 - a block that does not fit moves to the next page whole; `keepTogether` holds this block
   and the next one on one page (that is how «do not tear the signature off the statement»
   is said). A table ignores it — it splits itself, by record;
+- **a page break is declared, not guessed** — `"pageBreakBefore": true` on the block:
+
+  ```json
+  { "key": "back_title", "type": "text", "value": "Зворотний бік акта",
+    "pageBreakBefore": true,
+    "placement": { "mode": "flow", "gapPt": "0", "xPercent": "0", "widthPercent": "100" } }
+  ```
+
+  Nothing above replaces it: flow moves what does not fit, `keepTogether` holds a group
+  together, the footer heuristic looks at the space left. An approved two-sided form (НА-1,
+  НА-3, М-2, an inventory list with a receipt on the back) needs the opposite — the back
+  side starts on a new sheet ALWAYS, even when the front took half a page. Read in `flow`
+  only, like `keepTogether`, and ignored on the blank's first block: an empty first sheet
+  reads as broken printing, not as a break. Requires `@altera/server` 0.25.0;
 - **one flow block switches the footer heuristic off for the whole blank.** Without flow the
   renderer treats everything below the *first* table as footer and glues it under the *last*
   one — which is why a caption between two tables used to drag the whole footer onto sheet

@@ -121,6 +121,7 @@
   "printTemplate.placementYFlow": "Y, % (canvas only)",
   "printTemplate.placementGap": "Gap, pt",
   "printTemplate.keepTogether": "Keep with next",
+  "printTemplate.pageBreakBefore": "Start a new page",
   "printTemplate.placementFlowHint": "The block stands under the previous one in the list, wherever it ended — Y does not affect print, it only places the frame on the canvas. «Keep with next» holds this block and the following one on one page.",
   "printTemplate.placementX": "X, %",
   "printTemplate.placementY": "Y, %",

@@ -42,6 +42,8 @@ export interface PrintTemplateRenderTextBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -58,6 +60,8 @@ export interface PrintTemplateRenderFieldListBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -99,6 +103,8 @@ export interface PrintTemplateRenderTableBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -110,6 +116,8 @@ export interface PrintTemplateRenderImageBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
 }
 
 /**
@@ -129,6 +137,8 @@ export interface PrintTemplateRenderBarcodeBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
 }
 
@@ -147,6 +157,8 @@ export interface PrintTemplateRenderCharCellsBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
   textOptions: ResolvedPrintTemplateBlockTextOptions;
   cellOptions: ResolvedPrintTemplateCharCellsOptions;
 }
@@ -157,6 +169,8 @@ export interface PrintTemplateRenderHorizontalLineBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
   lineOptions: ResolvedPrintTemplateLineOptions;
 }
 
@@ -166,6 +180,8 @@ export interface PrintTemplateRenderVerticalLineBlock {
   placement: ResolvedPrintTemplateBlockPlacement;
   /** «Не відривати від наступного» — читає розкладка потоком. */
   keepTogether: boolean;
+  /** «Звідси — новий аркуш» — її ж. */
+  pageBreakBefore: boolean;
   lineOptions: ResolvedPrintTemplateLineOptions;
 }
 
@@ -262,6 +278,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         textOrientation: block.textOrientation,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -283,6 +300,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
           })),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -317,6 +335,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         footer: buildSectionRows(block.sections.footer, source, context, columnCount, isColumnVisible),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -335,6 +354,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         alt: block.alt,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
       }];
     }
 
@@ -355,6 +375,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         showText: block.showText,
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
         textOptions: resolvePrintTemplateBlockTextOptions(block.text),
       }];
     }
@@ -377,6 +398,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         ),
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
         textOptions,
         cellOptions,
       }];
@@ -388,6 +410,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         type: "horizontal-line",
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
         lineOptions: resolvePrintTemplateLineOptions(block),
       }];
     }
@@ -398,6 +421,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         type: "vertical-line",
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
+        pageBreakBefore: block.pageBreakBefore,
         lineOptions: resolvePrintTemplateLineOptions(block),
       }];
     }

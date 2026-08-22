@@ -516,3 +516,36 @@ Deno.test("клітинки: рамка й товщина мають умовч�
   // Порожня прив'язка — порожні клітинки, а не прочерки в кожній.
   assertEquals(block.cells, ["", "", ""]);
 });
+
+
+/**
+ * Ознака розриву переживає нормалізацію.
+ *
+ * Це та половина випадку, у якій помилка тиха: доти передані `pageBreakBefore`
+ * і `breakBefore` зникали в нормалізаторі мовчки, і бланк друкувався так, ніби
+ * розриву й не просили. Шаблон при цьому лишався валідним, а помилку було
+ * видно лише на папері.
+ */
+Deno.test("розрив сторінки: ознака доходить із шаблону до плану рендеру", () => {
+  const schema = normalizePrintTemplateSchema({
+    schemaVersion: 2,
+    blocks: [
+      { key: "front", type: "text", value: "Лицьовий бік" },
+      {
+        key: "back",
+        type: "text",
+        value: "Зворотний бік акта",
+        pageBreakBefore: true,
+        placement: { mode: "flow", gapPt: "6" },
+      },
+    ],
+  });
+
+  assertEquals(schema?.blocks[0]?.pageBreakBefore, false);
+  assertEquals(schema?.blocks[1]?.pageBreakBefore, true);
+
+  // І далі — до плану, який читає рендерер: розрив, що загубився на цьому
+  // кроці, теж видно лише на папері.
+  const plan = buildPrintTemplateRenderPlan(schema!, {});
+  assertEquals(plan.find((block) => block.key === "back")?.pageBreakBefore, true);
+});

@@ -121,6 +121,7 @@
   "printTemplate.placementYFlow": "Y, % (на полотні)",
   "printTemplate.placementGap": "Проміжок, pt",
   "printTemplate.keepTogether": "Не відривати від наступного",
+  "printTemplate.pageBreakBefore": "З нового аркуша",
   "printTemplate.placementFlowHint": "Блок стає під попереднім у списку, хай де той скінчився — координата Y на друк не впливає, вона лишається місцем рамки на полотні. «Не відривати» тримає блок і наступний на одній сторінці.",
   "printTemplate.placementX": "X, %",
   "printTemplate.placementY": "Y, %",

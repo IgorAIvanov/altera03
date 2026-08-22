@@ -180,3 +180,59 @@ Deno.test("звіт: наявні бланки без потоку теж отр
   assertEquals(entry(layout, "head").overflow, false);
   assert(entry(layout, "lines").bottomPt < entry(layout, "lines").topPt);
 });
+
+
+/**
+ * Розрив сторінки — намір, а не наслідок заповненості.
+ *
+ * Затверджена двобічна форма (НА-1, НА-3, М-2, інвентаризаційний опис із
+ * розпискою) вимагає, щоб зворотний бік починався з нового аркуша ЗАВЖДИ. Акт
+ * на один об'єкт лицьовим боком займає півсторінки, тож будь-яка розкладка «за
+ * залишком місця» кладе зворотний бік під лицьовий — і бланк із написом
+ * «Зворотний бік акта» виявляється на тому самому аркуші.
+ */
+Deno.test("потік: оголошений розрив починає новий аркуш, хоч би місце й лишалося", async () => {
+  const blocks = (pageBreakBefore: boolean) => [
+    text("front", { mode: "flow" }),
+    text("back", { mode: "flow", gapPt: "6" }, { pageBreakBefore }),
+  ];
+
+  // Без ознаки обидва блоки на першому аркуші — місця вдосталь.
+  const together = await layoutOf(blocks(false), 0);
+  assertEquals(entry(together, "front").page, 1);
+  assertEquals(entry(together, "back").page, 1);
+
+  const split = await layoutOf(blocks(true), 0);
+  assertEquals(entry(split, "front").page, 1);
+  assertEquals(entry(split, "back").page, 2);
+  // Зворотний бік починається з ВЕРХУ області друку, а не з координати
+  // попереднього аркуша.
+  assertAlmostEquals(entry(split, "back").topPt, CONTENT_TOP, 0.01);
+});
+
+Deno.test("потік: розрив на першому блоці не дає порожнього аркуша", async () => {
+  // Порожній перший аркуш виглядав би не як розрив, а як зламаний друк.
+  const layout = await layoutOf([
+    text("first", { mode: "flow" }, { pageBreakBefore: true }),
+    text("second", { mode: "flow", gapPt: "6" }),
+  ], 0);
+
+  assertEquals(entry(layout, "first").page, 1);
+  assertEquals(entry(layout, "second").page, 1);
+});
+
+Deno.test("потік: розрив діє й після таблиці, хай де та скінчилася", async () => {
+  // Найчастіший бланк: лицьовий бік із таблицею, далі зворотний. Висота
+  // таблиці до рендера невідома, тож «підперти» зворотний бік нічим — це і є
+  // випадок, у якому обхід не пишеться взагалі.
+  for (const rows of [2, 40]) {
+    const layout = await layoutOf([
+      table("lines", { mode: "flow" }, rows),
+      text("back", { mode: "flow", gapPt: "6" }, { pageBreakBefore: true }),
+    ], rows);
+
+    const back = entry(layout, "back");
+    assertEquals(back.page, entry(layout, "lines").endPage + 1);
+    assertAlmostEquals(back.topPt, CONTENT_TOP, 0.01);
+  }
+});

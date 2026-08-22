@@ -81,6 +81,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       textOrientation: "0",
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ heightPercent: "6" }),
       text: createTextOptions(),
     };
@@ -93,6 +94,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       items: [createFieldItem(1)],
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ heightPercent: "12" }),
       text: createTextOptions(),
     };
@@ -114,6 +116,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       },
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ heightPercent: "20" }),
       text: createTextOptions(),
     };
@@ -128,6 +131,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       alt: "",
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ widthPercent: "24", heightPercent: "12" }),
       text: createTextOptions(),
     };
@@ -145,6 +149,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       // зазвичай зменшують — він квадратний і бере меншу зі сторін.
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ widthPercent: "30", heightPercent: "7" }),
       text: createTextOptions({ fontSize: "8", align: "center" }),
     };
@@ -162,6 +167,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       lineWidth: "1",
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ widthPercent: "40", heightPercent: "3" }),
       text: createTextOptions({ fontSize: "11" }),
     };
@@ -173,6 +179,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
       type: "horizontal-line",
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ widthPercent: "100", heightPercent: "1" }),
       text: createTextOptions(),
       color: "#595959",
@@ -186,6 +193,7 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
     type: "vertical-line",
     visibleWhen: "",
     keepTogether: false,
+    pageBreakBefore: false,
     placement: createPlacement({ widthPercent: "1", heightPercent: "18" }),
     text: createTextOptions(),
     color: "#595959",
@@ -231,6 +239,7 @@ export function createDefaultBlocks(): PrintTemplateBlock[] {
       textOrientation: "0",
       visibleWhen: "",
       keepTogether: false,
+      pageBreakBefore: false,
       placement: createPlacement({ heightPercent: "8" }),
       text: createTextOptions({ fontSize: "16", align: "center", fontWeight: "bold" }),
     },

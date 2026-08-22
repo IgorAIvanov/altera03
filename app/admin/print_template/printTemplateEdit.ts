@@ -1172,6 +1172,13 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               <input type="checkbox" class="checkbox checkbox-sm" .checked=${block.keepTogether}
                 @change=${(e: Event) => this.updateBlock(block.key, (b) => ({ ...b, keepTogether: (e.target as HTMLInputElement).checked }))} />
             `)}
+            <!-- «Звідси — новий аркуш»: намір, а не наслідок заповненості.
+                 Показуємо й таблиці — розрив стосується того, ДЕ вона
+                 починається, а не того, як вона переноситься. -->
+            ${this.field(t("printTemplate.pageBreakBefore"), html`
+              <input type="checkbox" class="checkbox checkbox-sm" .checked=${block.pageBreakBefore}
+                @change=${(e: Event) => this.updateBlock(block.key, (b) => ({ ...b, pageBreakBefore: (e.target as HTMLInputElement).checked }))} />
+            `)}
           </div>
           <div class="text-xs text-muted">${t("printTemplate.placementFlowHint")}</div>
         ` : nothing}
