@@ -1,13 +1,15 @@
 import { LitElement, html, css, svg, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { bus } from "@client/bus/bus.ts";
+import { placeSidePopover } from "@client/ui-kit/popover.ts";
 import { resolveText, t } from "@client/locale.ts";
 import { menuIcon } from "./icons.ts";
 import type { MenuItem, MenuRow } from "./menu.types.ts";
 
 interface Flyout {
   item: MenuItem;
-  y: number;
+  /** Пункт, від якого розкрито підменю: за ним його й розміщують. */
+  anchor: HTMLElement;
 }
 
 /**
@@ -388,6 +390,24 @@ export class AppMenu extends LitElement {
     else el.removeAttribute("title");
   }
 
+  /**
+   * Підменю розміщується ПІСЛЯ рендера — тим самим розрахунком, що й решта
+   * випадних вікон у системі (`placeSidePopover` ядра).
+   *
+   * Доти `top` брався з пункта як є, і в довгому меню нижні рядки підменю
+   * йшли за нижній край екрана. Дістати їх було нічим: вікно `fixed`, і
+   * прокрутка сторінки під ним не рухає нічого.
+   *
+   * Своєї арифметики тут немає навмисно — саме через неї це й зламалося:
+   * друга копія розміщення в застосунку повторює ту саму помилку, лише без
+   * притискання до краю.
+   */
+  protected override updated() {
+    if (!this.flyout) return;
+    const el = this.renderRoot.querySelector<HTMLElement>(".flyout");
+    if (el) placeSidePopover(el, this.flyout.anchor);
+  }
+
   private showTooltip(e: MouseEvent, label: string) {
     if (!this.collapsed) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -409,10 +429,11 @@ export class AppMenu extends LitElement {
     if (this.collapsed) {
       if (hasChildren) {
         // в свёрнутом режиме — открыть flyout
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        this.flyout = this.flyout?.item.id === item.id
-          ? null
-          : { item, y: rect.top };
+        // Тримаємо САМ пункт, а не його координату: висоту підменю видно
+        // лише після того, як воно потрапить у DOM, а без висоти неможливо
+        // сказати, чи треба його підіймати від нижнього краю екрана.
+        const anchor = e.currentTarget as HTMLElement;
+        this.flyout = this.flyout?.item.id === item.id ? null : { item, anchor };
         this.tooltip = null;
       } else {
         this.openRoute(item);
@@ -491,7 +512,7 @@ export class AppMenu extends LitElement {
 
       ${this.flyout ? html`
         <div class="flyout-overlay" @click=${() => this.flyout = null}></div>
-        <div class="flyout" style="top: ${this.flyout.y}px">
+        <div class="flyout">
           <div class="flyout-title">${this.flyout.item.label}</div>
           ${this.flyout.item.children!.map(child => html`
             <div class="flyout-item" @click=${() => this.openFlyoutRoute(child)}>

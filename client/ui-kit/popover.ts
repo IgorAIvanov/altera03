@@ -91,6 +91,67 @@ export function computePlacement(input: PlacementInput): Placement {
   return { top, left, maxHeight };
 }
 
+/**
+ * Вікно, що розкривається ЗБОКУ від якоря, а не під ним.
+ *
+ * Другий випадок, і геометрія в нього інша: підменю згорнутої рейки, контекстне
+ * меню рядка, розшифровка комірки звіту стоять праворуч від того, що їх
+ * відкрило, і вирівнюються по його ВЕРХУ, а не по низу. Тому окрема функція, а
+ * не прапорець у `computePlacement`: там кожна гілка міркує «вниз чи вгору», і
+ * бік довелося б протягнути через усі.
+ *
+ * Спільне в них головне — межа вікна. Саме її не було в підменю рейки: `top`
+ * брався з якоря як є, і в застосунку з довгим меню нижні пункти списку просто
+ * йшли за нижній край екрана, звідки їх ніяк не дістати (вікно `fixed`, і
+ * прокрутка сторінки під ним не рухає нічого).
+ */
+export interface SidePlacementInput {
+  /** Пункт, від якого розкривається вікно. */
+  anchor: Rect;
+  popover: { width: number; height: number };
+  viewport: { width: number; height: number };
+  /** Проміжок між якорем і вікном по горизонталі. */
+  gap: number;
+  /** Мінімальний відступ від краю вікна. */
+  margin: number;
+}
+
+/**
+ * Збоку від якоря, вирівняно по його верху, у межах екрана.
+ *
+ * По вертикалі: верх — як у якоря, але вікно цілком мусить лишитися на екрані,
+ * тож надто низьке ПІДІЙМАЄТЬСЯ (а не обрізається — підменю з трьох пунктів
+ * краще показати цілим трохи вище, ніж прокруткою на два з половиною). Вище за
+ * верхній відступ не підіймаємо: там немає нічого кращого.
+ *
+ * Вікно, вище за екран, — інша річ: підняти його нікуди, тож воно стає під
+ * верхній відступ і дістає `maxHeight`, тобто прокручується саме. Це той
+ * випадок, коли меню довше за екран, і сказати «не влізло» ні до чого.
+ *
+ * По горизонталі: праворуч від якоря; не влазить — ліворуч (дзеркально), і вже
+ * потім притискання до краю. Дзеркалення тут не косметика: рейка може стояти
+ * праворуч, і тоді підменю праворуч від неї не видно взагалі.
+ */
+export function computeSidePlacement(input: SidePlacementInput): Placement {
+  const { anchor, popover, viewport, gap, margin } = input;
+
+  const room = viewport.height - margin * 2;
+  const tooTall = popover.height > room;
+  const maxHeight = tooTall ? room : undefined;
+  const height = maxHeight ?? popover.height;
+
+  const lowest = viewport.height - margin - height;
+  const top = Math.max(margin, Math.min(anchor.top, lowest));
+
+  const right = anchor.left + anchor.width + gap;
+  const flipped = right + popover.width > viewport.width - margin;
+  const wanted = flipped ? anchor.left - gap - popover.width : right;
+  const maxLeft = viewport.width - popover.width - margin;
+  const left = Math.max(margin, Math.min(wanted, maxLeft));
+
+  return { top, left, maxHeight };
+}
+
 export interface PlacePopoverOptions {
   /** Відступ від поля по вертикалі. */
   gap?: number;
@@ -132,6 +193,51 @@ export function placePopover(
 
   if (placement.maxHeight !== undefined) {
     popover.style.maxHeight = `${placement.maxHeight}px`;
+  }
+  popover.style.top = `${placement.top}px`;
+  popover.style.left = `${placement.left}px`;
+}
+
+export interface PlaceSidePopoverOptions {
+  /** Проміжок між якорем і вікном по горизонталі. */
+  gap?: number;
+  /** Мінімальний відступ від краю вікна. */
+  margin?: number;
+}
+
+/**
+ * Те саме «виміряти, порахувати, застосувати», але збоку.
+ *
+ * Викликати ПІСЛЯ того, як вікно потрапило в DOM (`updated()` у Lit): у
+ * невиміряного елемента немає висоти, а саме вона вирішує, чи треба підіймати.
+ *
+ * Ставить `top`/`left` стилем, тож розмітка НЕ мусить прив'язувати їх сама —
+ * інакше наступний рендер поверне вікно туди, звідки його щойно відсунули.
+ */
+export function placeSidePopover(
+  popover: HTMLElement,
+  anchor: HTMLElement,
+  options: PlaceSidePopoverOptions = {},
+): void {
+  const box = popover.getBoundingClientRect();
+  const a = anchor.getBoundingClientRect();
+
+  const placement = computeSidePlacement({
+    anchor: { top: a.top, left: a.left, bottom: a.bottom, width: a.width },
+    popover: { width: box.width, height: box.height },
+    viewport: { width: globalThis.innerWidth, height: globalThis.innerHeight },
+    gap: options.gap ?? 0,
+    margin: options.margin ?? 4,
+  });
+
+  if (placement.maxHeight !== undefined) {
+    popover.style.maxHeight = `${placement.maxHeight}px`;
+    popover.style.overflowY = "auto";
+  } else {
+    // Скидаємо явно: розміщення кличуть на кожне оновлення, і обмеження,
+    // поставлене раз, лишалося б на вікні, якому вже вистачає місця.
+    popover.style.maxHeight = "";
+    popover.style.overflowY = "";
   }
   popover.style.top = `${placement.top}px`;
   popover.style.left = `${placement.left}px`;
