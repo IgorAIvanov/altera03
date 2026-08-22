@@ -14,6 +14,7 @@ import {
   ownerFilterKeyOf,
   refNameOf,
   rowLockedByDocument,
+  subordinateFilters,
   SubordinateRegister,
 } from "./subordinate-register.ts";
 
@@ -273,4 +274,51 @@ Deno.test("обов'язкові комірки чернетки називаю�
 
   reg.patch("period", "2026-06-01");
   assertEquals(reg.missingFields(), []);
+});
+
+
+/**
+ * Розріз панелі — другий вимір ключа.
+ *
+ * Ключ регістру відомостей рідко буває одновимірним: «організація × основний
+ * засіб × дата». Панель, яка знає лише власника, показує рядки ВСІХ
+ * організацій — і не падає при цьому, а мовчки видає чужі дані за свої.
+ */
+Deno.test("розріз їде у відбір поруч із власником", () => {
+  const filters = subordinateFilters("fixedAsset", "17", { organizationId: "3" });
+
+  assertEquals(filters, {
+    fixedAsset: { id: "17" },
+    // Ключ — ІМ'Я ССЫЛКИ, значення — `{ id }`: те саме, що читає згенерований
+    // `_list` (`v_filters->'organization'->>'id'`).
+    organization: { id: "3" },
+  });
+});
+
+Deno.test("скаляр у розрізі лишається скаляром", () => {
+  // Поле без суфікса `Id` — не ссылка: обгортати його в `{ id }` означало б
+  // відбір, якого модель не знає.
+  assertEquals(
+    subordinateFilters("owner", "1", { isActive: true }),
+    { owner: { id: "1" }, isActive: true },
+  );
+});
+
+Deno.test("порожнє значення розрізу робить панель не готовою", () => {
+  const reg = register(() => "17", { scope: () => ({ organizationId: "" }) });
+  assertEquals(reg.scopeReady, false);
+  // Не «без цього відбору», а саме не готова: інакше в цей момент показалися б
+  // рядки всіх організацій — рівно те, від чого розріз рятує.
+  assertEquals(reg.ready, false);
+
+  const ready = register(() => "17", { scope: () => ({ organizationId: "3" }) });
+  assertEquals(ready.ready, true);
+});
+
+Deno.test("новий рядок дістає розріз, а не лише власника", () => {
+  const reg = register(() => "17", { scope: () => ({ organizationId: "3" }) });
+  reg.startAdd();
+  // Без цього рядок не записується взагалі: другий вимір ключа порожній, а
+  // заповнити його панель не пропонує ніде.
+  assertEquals((reg.draft as Record<string, unknown>).organizationId, "3");
 });

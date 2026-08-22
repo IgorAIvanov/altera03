@@ -444,8 +444,14 @@ export class UiSubordinateRegister extends Base {
         : nothing}
         ${this.#renderToolbar()}
 
+        <!-- Причин «не готова» дві, і підказка мусить називати ту, що діє:
+             картку ще не зберегли — або розріз панелі (організація в шапці)
+             ще не відомий. Спільний текст на обидві відсилав би зберігати те,
+             що вже збережене. -->
         ${register.ready ? nothing : html`
-          <span class="text-xs text-muted">${t("core.subordinate.saveOwnerFirst")}</span>`}
+          <span class="text-xs text-muted">${t(
+          register.scopeReady ? "core.subordinate.saveOwnerFirst" : "core.subordinate.scopeNotSet",
+        )}</span>`}
 
         ${register.error ? html`<span class="text-xs text-error">${register.error}</span>` : nothing}
 

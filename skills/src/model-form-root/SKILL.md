@@ -280,8 +280,29 @@ Four things the panel decides for you, and all four fail **silently** when hand-
   its rows from scratch on re-posting, so the edit would vanish without a word. The
   default mark is a non-empty `documentId`; another rule goes in `lockedWhen`.
 
-One thing you must do on the model side: the owner field in the subordinate model's
-schema needs `"x-filter": true`, or the generated `_list` will answer "unknown filter".
+**A key with a second dimension goes in `scope`.** An information register's key is
+rarely one-dimensional: a fixed asset's registers are keyed by *organization × asset ×
+date*, an item's accounting settings by *organization × item* — the catalogue is one per
+database, while what is recorded about its object is kept per organization. A panel that
+knows only the owner lists the rows of EVERY organization, and a new row gets nothing but
+the owner field from it, so it cannot be saved at all:
+
+```ts
+scope: () => ({ organizationId: currentOrganization.id }),
+```
+
+The keys are **row fields**, not filter keys, because each value does two jobs: it goes
+into the `list` filter and into the row — the new one, and the existing one on save, just
+like the owner. The filter key is derived by the same convention (`organizationId` →
+`organization`, value `{ id }`); a field without the `Id` suffix goes into the filter as
+it is. Do not also declare that field as a column: the panel overwrites it with its own
+value anyway. While any scope value is empty the panel is **not ready** and lists nothing
+— showing everything at that moment would show other organizations' rows, which is the
+very thing the scope prevents. Requires `@altera/client` 0.13.3.
+
+Two things you must do on the model side: the owner field in the subordinate model's
+schema needs `"x-filter": true`, or the generated `_list` will answer "unknown filter" —
+and so does **every scope field**.
 
 **Your own action in the row goes in `rowActions`** — the panel draws the actions cell,
 so there is nowhere else to put it, and a separate column costs 3rem for one icon. It

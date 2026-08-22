@@ -160,5 +160,6 @@
   "core.remark.shotFile": "Додати файл",
   "core.subordinate.saveOwnerFirst": "Збережіть запис, щоб вести цей перелік",
   "core.subordinate.lockedByDocument": "Рядок поставлено документом — змінюйте його в документі",
+  "core.subordinate.scopeNotSet": "Розріз переліку ще не визначено",
   "core.subordinate.goToDate": "Перейти до дати"
 }

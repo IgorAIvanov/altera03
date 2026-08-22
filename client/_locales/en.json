@@ -160,5 +160,6 @@
   "core.remark.shotFile": "Add a file",
   "core.subordinate.saveOwnerFirst": "Save the record to keep this list",
   "core.subordinate.lockedByDocument": "This row was written by a document — change it there",
+  "core.subordinate.scopeNotSet": "The list's scope is not set yet",
   "core.subordinate.goToDate": "Go to date"
 }

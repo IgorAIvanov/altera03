@@ -114,6 +114,35 @@ export interface SubordinateConfig<Row extends object> {
   ownerFilterKey?: string;
   /** Id власника; порожньо — картка ще не збережена. */
   ownerId: () => string | null | undefined;
+  /**
+   * РОЗРІЗ панелі — значення, спільні для всіх її рядків, окрім власника.
+   *
+   * Ключ регістру відомостей рідко буває одновимірним: у картці основного
+   * засобу це «організація × основний засіб × дата», у рахунків обліку
+   * номенклатури — «організація × позиція». Довідник один на базу, а
+   * відомості про його об'єкт ведуться в розрізі організації. Панель, яка
+   * знає лише власника, у такому регістрі показує рядки ВСІХ організацій, і
+   * новий рядок дістає від неї лише поле власника — тобто не записується
+   * взагалі, доки застосунок не долізе туди своїм `createRow`.
+   *
+   * ```ts
+   * scope: () => ({ organizationId: currentOrganization.id }),
+   * ```
+   *
+   * Ключі — ПОЛЯ РЯДКА, а не ключі відбору, бо значення робить дві роботи
+   * одразу: їде у відбір `list` і лягає в новий рядок (та й у наявний при
+   * записі — рівно як власник). Ключ відбору виводиться з поля тією ж
+   * конвенцією, що й у власника: `organizationId` → `organization`, значення
+   * — `{ id }`; поле без суфікса `Id` іде у відбір як є.
+   *
+   * Дві вимоги, обидві видно лише на першому рядку. Кожне поле розрізу мусить
+   * нести в схемі підпорядкованої моделі `"x-filter": true` — інакше
+   * згенерований `_list` відповість «невідомий фільтр». І доки хоч одне
+   * значення порожнє, панель НЕ готова: показати в цей момент увесь перелік
+   * означало б показати чужі рядки — тобто рівно те, від чого розріз і
+   * рятує.
+   */
+  scope?: () => Record<string, string | number | boolean | null | undefined>;
   columns: Array<SubordinateColumn<Row>>;
   /** Порожній рядок: схема (Value.Create) або фабрика. */
   schema?: TObject;
@@ -200,6 +229,27 @@ const DEFAULT_PAGE_SIZE = 10;
 export function refNameOf(field: string, explicit?: string): string {
   if (explicit) return explicit;
   return field.endsWith("Id") ? field.slice(0, -2) : field;
+}
+
+/**
+ * Відбір списку панелі: власник плюс розріз.
+ *
+ * Окремою чистою функцією з тієї ж причини, що `dateLanding`: помилка тут не
+ * падає, а тихо розширює перелік — рядки чужої організації в картці виглядають
+ * як дані цієї, і побачить це лише той, хто знає, що їх там бути не може.
+ */
+export function subordinateFilters(
+  ownerFilterKey: string,
+  ownerId: string,
+  scope: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const filters: Record<string, unknown> = { [ownerFilterKey]: { id: ownerId } };
+  for (const [field, value] of Object.entries(scope)) {
+    // Ссылка йде у відбір об'єктом `{ id }` — того самого вигляду, що власник
+    // і що эхо ссылочного фільтра; скаляр (прапорець, код) — як є.
+    filters[refNameOf(field)] = field.endsWith("Id") ? { id: String(value) } : value;
+  }
+  return filters;
 }
 
 /** Ключ відбору по власнику. Та сама конвенція, що в `x-ref.as`. */
@@ -310,8 +360,27 @@ export class SubordinateRegister<Row extends object> {
   }
 
   /** Картку вже збережено — з рядками можна працювати. */
+  /** Значення розрізу на цей момент (функція — вона читає сигнали). */
+  get scope(): Record<string, unknown> {
+    return this.config.scope?.() ?? {};
+  }
+
+  /**
+   * Чи відомі всі значення розрізу.
+   *
+   * Порожнє значення робить панель НЕ готовою, а не «без цього відбору»:
+   * друге означало б показати рядки всіх організацій — рівно те, від чого
+   * розріз і рятує, і саме в той момент, коли людина цього не чекає (шапка ще
+   * не догрузилася).
+   */
+  get scopeReady(): boolean {
+    return Object.values(this.scope).every((value) =>
+      value !== null && value !== undefined && value !== ""
+    );
+  }
+
   get ready(): boolean {
-    return this.ownerId !== "";
+    return this.ownerId !== "" && this.scopeReady;
   }
 
   get readonly(): boolean {
@@ -465,7 +534,7 @@ export class SubordinateRegister<Row extends object> {
    * `null` — запит не вдався; відмова вже лежить в `error`.
    */
   async #count(anchor?: string): Promise<number | null> {
-    const filters: Record<string, unknown> = { [this.filterKey]: { id: this.ownerId } };
+    const filters = subordinateFilters(this.filterKey, this.ownerId, this.scope);
     if (anchor) filters[this.anchorFilterKey] = anchor;
 
     const env = await this.#call("list", { page: 1, pageSize: 1, filters });
@@ -484,7 +553,7 @@ export class SubordinateRegister<Row extends object> {
       pageSize: this.pageSize,
       sortBy: this.config.sortBy,
       sortDir: this.config.sortDir ?? "desc",
-      filters: { [this.filterKey]: { id: this.ownerId } },
+      filters: subordinateFilters(this.filterKey, this.ownerId, this.scope),
     });
 
     this.rows = (env?.data?.rows ?? []) as Row[];
@@ -579,7 +648,10 @@ export class SubordinateRegister<Row extends object> {
       return false;
     }
 
-    const item = { ...this.draft, [this.config.ownerField]: this.ownerId };
+    // Розріз підставляється так само, як власник, і з тієї ж причини: це не
+    // реквізити рядка, а те, ЧИЙ це рядок. Правка, яка вивела б його з розрізу,
+    // означала б рядок, що зник із панелі, де його щойно правили.
+    const item = { ...this.draft, ...this.scope, [this.config.ownerField]: this.ownerId };
     const env = await this.#call("save", { item }, "save");
     if (!env?.ok) return false;
 
@@ -603,10 +675,20 @@ export class SubordinateRegister<Row extends object> {
 
   // ── Внутрішнє ──────────────────────────────────────────────────────────────
 
+  /**
+   * Порожній рядок — плюс розріз поверх нього.
+   *
+   * Поверх, а не під сподом: `createRow` застосунку описує ПОРОЖНІЙ рядок, і
+   * значення розрізу в ньому було б тим самим, написаним удруге, з правом
+   * розійтися.
+   */
   #createRow(): Row {
-    if (this.config.createRow) return this.config.createRow();
-    if (this.config.schema) return Value.Create(this.config.schema) as Row;
-    return {} as Row;
+    const base = this.config.createRow
+      ? this.config.createRow()
+      : this.config.schema
+      ? Value.Create(this.config.schema) as Row
+      : {} as Row;
+    return { ...base, ...this.scope } as Row;
   }
 
   /**
