@@ -14,13 +14,6 @@ import { agentToolSchemas } from "./_generated/agent-tools.generated.ts";
 import { viewManifest } from "./_generated/view-manifest.generated.ts";
 import { devAuthMethods } from "./login/dev-redirect-auth.method.ts";
 
-// Корінь репо — батьківський каталог app/.
-const projectRoot = fromFileUrl(new URL("../", import.meta.url)).replace(/\/$/, "");
-
-// Тут само збирає Vite (root: "app", outDir: "../dist").
-const frontendDistDir = `${projectRoot}/dist/`;
-const frontendIndexFile = `${frontendDistDir}index.html`;
-
 async function pathExists(path: string) {
   try {
     await Deno.stat(path);
@@ -29,6 +22,28 @@ async function pathExists(path: string) {
     return false;
   }
 }
+
+// Корінь репо — батьківський каталог app/. У бінарнику з `deno compile --bundle`
+// це не так: код склеєний в один модуль У КОРЕНІ вбудованої ФС, і "../" звідти
+// вискакує за межі бінарника, у реальний каталог поруч із ним. Тому корінь не
+// обчислюється, а розпізнається — по dist/, який у вихідниках лежить поруч з
+// app/, а у VFS бінарника — поруч із точкою входу. Без dist/ (чистий dev)
+// береться розкладка вихідників, як і було.
+async function resolveProjectRoot(): Promise<string> {
+  const candidates = [
+    new URL("../", import.meta.url), // вихідники: app/server.ts → корінь репо
+    new URL("./", import.meta.url), // --bundle: корінь VFS бінарника
+  ].map((u) => fromFileUrl(u).replace(/[\\/]$/, ""));
+  for (const root of candidates) {
+    if (await pathExists(`${root}/dist/.vite/manifest.json`)) return root;
+  }
+  return candidates[0];
+}
+const projectRoot = await resolveProjectRoot();
+
+// Тут само збирає Vite (root: "app", outDir: "../dist").
+const frontendDistDir = `${projectRoot}/dist/`;
+const frontendIndexFile = `${frontendDistDir}index.html`;
 
 /** Обробник запиту — те саме, що бачить `Deno.serve`. */
 export type AppHandler = (request: Request) => Promise<Response>;
@@ -59,7 +74,7 @@ async function solutionVersion(): Promise<VersionInfo> {
   };
 
   try {
-    const raw = await Deno.readTextFile(new URL("./.solution.json", import.meta.url));
+    const raw = await Deno.readTextFile(`${projectRoot}/app/.solution.json`);
     const m = JSON.parse(raw) as {
       name?: string;
       version?: string;
@@ -76,7 +91,7 @@ async function solutionVersion(): Promise<VersionInfo> {
   }
 
   try {
-    const raw = await Deno.readTextFile(new URL("../deno.json", import.meta.url));
+    const raw = await Deno.readTextFile(`${projectRoot}/deno.json`);
     const cfg = JSON.parse(raw) as { name?: string; version?: string; imports?: Record<string, string> };
     return {
       solution: cfg.name && cfg.version ? `${cfg.name} ${cfg.version}` : cfg.name,
