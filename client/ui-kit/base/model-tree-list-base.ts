@@ -183,8 +183,14 @@ export abstract class ModelTreeListBase<Row extends { id: string }> extends Mode
 
   // ── Клавіатура ────────────────────────────────────────────────────────────
 
-  protected override onRowKeyDown(e: KeyboardEvent, row: Row, index: number) {
-    if (this.readonly || !this.treeMode) return super.onRowKeyDown(e, row, index);
+  // Тип повернення явний, хоч основа й лишає його виведеним: файл стоїть в
+  // `exports` пакета, а JSR вимагає анотацію від КОЖНОЇ функції публічного API —
+  // інакше пакет іде «повільними типами». Ловить це лише `deno publish --dry-run`.
+  protected override onRowKeyDown(e: KeyboardEvent, row: Row, index: number): void {
+    if (this.readonly || !this.treeMode) {
+      super.onRowKeyDown(e, row, index);
+      return;
+    }
     // Що контролер не забрав (Enter, пробіл, Ctrl+A) — вирішує основа.
     if (!this.#tree.handleRowKey(e, row, index)) super.onRowKeyDown(e, row, index);
   }

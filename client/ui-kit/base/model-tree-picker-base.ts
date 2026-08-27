@@ -133,8 +133,12 @@ export abstract class ModelTreePickerBase<Row extends { id: string }> extends Mo
 
   // ── Клавіатура ────────────────────────────────────────────────────────────
 
-  protected override onRowKeyDown(e: KeyboardEvent, row: Row, index: number) {
-    if (this.readonly || !this.treeMode) return super.onRowKeyDown(e, row, index);
+  // Явний тип повернення — вимога JSR до публічного API (див. ModelTreeListBase).
+  protected override onRowKeyDown(e: KeyboardEvent, row: Row, index: number): void {
+    if (this.readonly || !this.treeMode) {
+      super.onRowKeyDown(e, row, index);
+      return;
+    }
     if (!this.#tree.handleRowKey(e, row, index)) super.onRowKeyDown(e, row, index);
   }
 
