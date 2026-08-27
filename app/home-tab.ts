@@ -29,6 +29,15 @@ export class HomeTab extends LitElement {
   @state() private anyUnit: { dateFrom: string; dateTo: string } = { dateFrom: "", dateTo: "" };
   @state() private plain: { dateFrom: string; dateTo: string } = { dateFrom: "", dateTo: "" };
 
+  override connectedCallback() {
+    super.connectedCallback();
+    // Демо дерева елементів вантажиться ліниво: за ModelTreeListBase їде вся
+    // механіка списків (model-list-base разом із деревом груп і xlsx), і
+    // статичний імпорт поклав би її в головний бандл кожного входу. Елемент
+    // у розмітці нижче «оживає», щойно модуль зареєструє його.
+    void import("./home-tree-demo.ts");
+  }
+
   private open(route: string, id?: string) {
     bus.emit({ type: "tab.open", route, id: id ?? null });
   }
@@ -50,6 +59,20 @@ export class HomeTab extends LitElement {
           <button class="btn" @click=${() => this.open("catalog/bank/list")}>Банки (список)</button>
           <button class="btn" @click=${() => this.open("catalog/bank/edit")}>Банк (новий)</button>
           <button class="btn" @click=${() => this.open("catalog/bank/edit", "1")}>Банк edit id=1</button>
+        </div>
+
+        <div class="card bg-base-200 border border-base-300 p-4 w-full max-w-2xl">
+          <h4 class="text-sm font-semibold mb-3 text-muted">
+            Тест дерева елементів — ModelTreeListBase (демо-дані, без сервера)
+          </h4>
+          <div class="h-96 border border-base-300 bg-base-100 overflow-hidden">
+            <home-tree-demo></home-tree-demo>
+          </div>
+          <div class="mt-2 text-xs text-muted">
+            Трикутник або ←/→ згортає й розгортає вузол; пошук перемикає в
+            плоский список із пагінацією, очищення повертає дерево; сортування
+            впорядковує братів і сестер усередині вузла.
+          </div>
         </div>
 
         <div class="card bg-base-200 border border-base-300 p-4 w-80">
