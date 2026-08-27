@@ -36,7 +36,10 @@
     // Вбудовує шрифти друку (Roboto з кирилицею) у fonts.generated.ts.
     // Запускати після зміни версії @fontsource/roboto; у встановленому пакеті
     // node_modules поряд немає, тож читати woff з диска рендерер не може.
-    "print:fonts": "deno run -A ./tools/generate-print-fonts.ts ./node_modules/@fontsource ./server/modules/print/fonts.generated.ts --verbose",
+    // Третій аргумент — нотиси: байти під OFL-1.1, і її текст мусить їхати в
+    // пакеті разом із ними. Одним прогоном з байтами навмисно, бо розсинхрон
+    // тут нічого б не зламав — просто мовчки лишив би зобов'язання невиконаним.
+    "print:fonts": "deno run -A ./tools/generate-print-fonts.ts ./node_modules/@fontsource ./server/modules/print/fonts.generated.ts ./server/THIRD-PARTY-NOTICES.md --verbose",
     // Вбудовує дерево create/template/** у create/template.generated.ts.
     "scaffold:template": "deno run -A ./tools/generate-scaffold-template.ts ./create/template ./create/template.generated.ts --verbose",
     // Вбудовує прикладні скіли (metadata.audience: app) у skills.generated.ts.

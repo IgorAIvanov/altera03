@@ -10,7 +10,8 @@
     "./print/render": "./modules/print/print-pdf.renderer.ts",
     "./password": "./modules/auth/password-hash.ts"
   },
-  "license": "MIT",
+  "//license": "Складений вираз SPDX, а не просто MIT, і це не педантизм: modules/print/fonts.generated.ts везе в собі субсети Roboto та PT Sans під SIL Open Font License 1.1. OFL вбудовування дозволяє, але забороняє віддавати шрифтові дані під іншою ліцензією, тож `license: MIT` на пакеті, що їх містить, — просто неправда. MIT лишається на наш код, OFL стосується рівно тих байтів; перелік і повний текст — THIRD-PARTY-NOTICES.md, який генерує `deno task print:fonts`. Решта залежностей сюди не входить навмисно — вони резолвляться споживачем із реєстру й у пакет не потрапляють.",
+  "license": "MIT AND OFL-1.1",
   "//publish": "Проби лишаються в репозиторії: у пакеті вони не потрібні, а @std/assert інакше стає залежністю споживача.",
   "publish": {
     "exclude": ["**/*_test.ts"]
