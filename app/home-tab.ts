@@ -22,6 +22,12 @@ export class HomeTab extends LitElement {
 
   @state() private pickerResult = "";
   @state() private selectResult = "";
+  /** Відповідь демо-пікера дерева (события picker.select / picker.cancel). */
+  @state() private treePickResult = "";
+  /** Множинний вибір у демо-пікері дерева. */
+  @state() private treePickMultiple = false;
+
+  #unsubTreePick: (() => void)[] = [];
   /** Що віддало поле періоду — по одному рядку на кожен із трьох варіантів. */
   @state() private periodResult: Record<string, string> = {};
   /** Значення полів: без них вибір не видно — кнопка лишалася б із підписом «Період». */
@@ -31,11 +37,32 @@ export class HomeTab extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
-    // Демо дерева елементів вантажиться ліниво: за ModelTreeListBase їде вся
+    // Демо дерева елементів вантажаться ліниво: за ModelTreeListBase їде вся
     // механіка списків (model-list-base разом із деревом груп і xlsx), і
-    // статичний імпорт поклав би її в головний бандл кожного входу. Елемент
-    // у розмітці нижче «оживає», щойно модуль зареєструє його.
+    // статичний імпорт поклав би її в головний бандл кожного входу. Елементи
+    // в розмітці нижче «оживають», щойно модулі зареєструють їх.
     void import("./home-tree-demo.ts");
+    void import("./home-tree-picker-demo.ts");
+
+    // Інлайн-демо пікера шле ті самі события, що модалка, — слухаємо їх тут,
+    // щоб показати відповідь діалогу.
+    this.#unsubTreePick = [
+      bus.on("picker.select", (msg) => {
+        if (msg.callbackId !== "home-tree-picker-demo") return;
+        const values = msg.values ?? (msg.value ? [msg.value] : []);
+        this.treePickResult = values.map((v) => `${v?.label} (id=${v?.id})`).join(", ");
+      }),
+      bus.on("picker.cancel", (msg) => {
+        if (msg.callbackId !== "home-tree-picker-demo") return;
+        this.treePickResult = "скасовано";
+      }),
+    ];
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    for (const unsub of this.#unsubTreePick) unsub();
+    this.#unsubTreePick = [];
   }
 
   private open(route: string, id?: string) {
@@ -72,6 +99,36 @@ export class HomeTab extends LitElement {
             Трикутник або ←/→ згортає й розгортає вузол; пошук перемикає в
             плоский список із пагінацією, очищення повертає дерево; сортування
             впорядковує братів і сестер усередині вузла.
+          </div>
+        </div>
+
+        <div class="card bg-base-200 border border-base-300 p-4 w-full max-w-2xl">
+          <h4 class="text-sm font-semibold mb-3 text-muted">
+            Тест дерева в діалозі підбору — ModelTreePickerBase (демо-дані, без модалки)
+          </h4>
+          <div class="h-96 border border-base-300 bg-base-100 overflow-hidden">
+            <home-tree-picker-demo
+              .callbackId=${"home-tree-picker-demo"}
+              .multiple=${this.treePickMultiple}>
+            </home-tree-picker-demo>
+          </div>
+          <div class="mt-2 flex items-center gap-4">
+            <label class="flex items-center gap-2 text-xs">
+              <input type="checkbox" class="checkbox checkbox-xs"
+                .checked=${this.treePickMultiple}
+                @change=${(e: Event) => {
+                  this.treePickMultiple = (e.target as HTMLInputElement).checked;
+                }} />
+              <span>множинний вибір (pickMany)</span>
+            </label>
+            ${this.treePickResult ? html`
+              <div class="text-xs text-success">${this.treePickResult}</div>
+            ` : ""}
+          </div>
+          <div class="mt-1 text-xs text-muted">
+            Подвійний клік або Enter вибирає вузол (у множинному — позначає);
+            «До поточного» показує, як пікер розгортає шлях до вже вибраного
+            значення поля.
           </div>
         </div>
 

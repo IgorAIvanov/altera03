@@ -169,6 +169,12 @@ Two behaviours worth knowing:
 Nothing in the picker subclass changes: `multiple` arrives as a property from
 `picker-host`.
 
+## Tree of items in the dialog (`ModelTreePickerBase`)
+
+For a catalog whose parent is a regular record (цех → дільниця, cost/income items — the same models that use `ModelTreeListBase` for the list), extend `ModelTreePickerBase` from `@client/ui-kit/base/model-tree-picker-base.ts` instead of `ModelPickerBase`. Same dialog contract (search, confirm/cancel, `picker-host`, `multiple`), but rows render as a tree: indent + expand/collapse toggles in the first column, ←/→ on the keyboard, sibling-level sort. Any node is selectable, including one with children — a workshop is as valid a value as its section (that is the whole point of item hierarchy; a catalog where "groups" must not be selectable is the *group* mechanism and a plain `ModelPickerBase`).
+
+Requirements beyond the plain picker: the `lookup` SQL must return `parentId` in its rows (the standard `LookupRowSchema` carries only `id` + `name` — add the field to the model's schema and lookup query; rename via `treeParentKey`). In tree mode the dialog loads the whole set (`page: 1, pageSize: treeRowLimit`, default 5000; truncation shows a banner); an active search switches to the ordinary flat paginated view. Programmatic node control is the same verb set as the list (`expandNode`/`collapseNode`, `expandAll`/`collapseAll`, `revealNode(id)`); `revealNode` is the one pickers actually need — call it after load to unfold the path to the field's current value.
+
 ## Rules
 
 - One subclass per model, named `<Model>Picker.ts`, exporting `tagName`.

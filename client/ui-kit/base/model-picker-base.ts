@@ -152,6 +152,10 @@ export abstract class ModelPickerBase<Row extends { id: string }> extends QueryT
       <div class="flex flex-col h-full" @keydown=${this.#onKeydown}>
         ${this.renderToolbar()}
 
+        <!-- Той самий банер, що в списку: без нього відмова сервера в lookup
+             (і попередження на кшталт обрізаного дерева) не видна взагалі. -->
+        <div class="px-3 pt-2 empty:hidden">${this.renderNotice()}</div>
+
         <div class="flex-1 overflow-y-auto px-3">
           ${this.renderTable()}
         </div>
