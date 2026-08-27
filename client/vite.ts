@@ -17,6 +17,8 @@ import { defineConfig, type Plugin, type UserConfig } from "npm:vite@^8.2.0";
 import { viteStaticCopy } from "npm:vite-plugin-static-copy@^4.1.1";
 import tailwindcss from "npm:@tailwindcss/vite@^4.3.0";
 import deno from "npm:@deno/vite-plugin@^2";
+import { collectCssFiles } from "./vite-fs.ts";
+import { noticesPlugin } from "./vite-notices.ts";
 
 /**
  * Каталог самого фреймворку (`client/`).
@@ -153,21 +155,10 @@ async function scanManifests(appRoot: string): Promise<Record<string, string>> {
 // завжди.
 
 const SOURCE_DIRECTIVE = /@source\s+(?:not\s+)?["']([^"']+)["']/g;
-const SKIP_DIRS = new Set(["node_modules", "vendor", "dist"]);
 
 /** Прибирає коментарі, зберігаючи номери рядків (згадка `@source` у тексті — не вжиток). */
 function stripCssComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
-}
-
-async function collectCssFiles(dir: string, out: string[] = []): Promise<string[]> {
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) await collectCssFiles(full, out);
-    else if (entry.name.endsWith(".css")) out.push(full);
-  }
-  return out;
 }
 
 function sourceCheckPlugin(appRoot: string): Plugin {
@@ -389,6 +380,12 @@ export function defineAlteraConfig(options: AlteraConfigOptions): UserConfig {
       tailwindcss(),
       sourceCheckPlugin(appRoot),
       appModulesPlugin(appRoot),
+      // Ліцензії того, що поїхало в `dist/`. У пресеті, а не в застосунку,
+      // навмисно: перелік залежить від фреймворку не менше, ніж від застосунку
+      // (lit, сигнали, гарнітури приходять саме звідси), тож знати про них має
+      // той, хто їх приводить. Заразом це означає, що кожен застосунок отримує
+      // нотиси, не роблячи нічого, — а отже, не забуде.
+      noticesPlugin(appRoot),
       // `rename: { stripBase: true }` в обох таргетах — ПЛОСКА копія.
       //
       // З версії 4 плагін завжди зберігає структуру каталогів, а до того

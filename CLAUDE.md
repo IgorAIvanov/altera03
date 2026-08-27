@@ -91,6 +91,8 @@ client/                     # ui-kit та клієнтський runtime — Б�
   shared/styles.ts          # `tw`: порожній CSSStyleSheet, який заповнює застосунок
   shared/schema.ts          # спільні TypeBox-контракти: SortDir, Query, Totals, DocumentHeader
   vite.ts                   # пресет defineAlteraConfig() — уся машинерія Vite (експорт "@altera/client/vite")
+  vite-notices.ts           # плагін: dist/THIRD-PARTY-NOTICES.md з ліцензіями того,
+                            #   що бандлер справді поклав у вихід (див. нижче)
   # index.html і main.ts тут немає навмисно: вони належать застосунку (app/).
   # Вхід збірки Tailwind (app/styles/tailwind.css) — теж: він сканує каталоги
   # застосунку. Але сама машинерія Vite — пресет тут: вона однакова для всіх застосунків.
@@ -661,6 +663,26 @@ override окремих функцій, дві таблиці документа
 режим. Оновлює окрема команда `solution:update`, не кнопка в застосунку. Деталі —
 [`docs/update-guide.md`](docs/update-guide.md) і
 [`docs/solution-transfer-plan.md`](docs/solution-transfer-plan.md).
+
+## Ліцензії сторонніх компонентів
+
+**Списків тут немає — обидва переліки виводяться з того, що справді роздається.**
+Причина в тому, що список старіє мовчки: MIT/BSD-3/Apache-2.0/OFL дозволяють усе,
+що ми робимо, і просять рівно одного — щоб текст ліцензії їхав разом із байтами,
+а невиконана вимога нічого не ламає.
+
+Місць два, бо роздач дві. **`dist/`** — плагін пресету Vite
+(`client/vite-notices.ts`) кладе поруч із бандлом `THIRD-PARTY-NOTICES.md`,
+зібраний із графа чанків плюс `@import`/`@plugin` у CSS застосунку (шрифти
+приходять саме звідти й у графі JS їх немає взагалі). Кожен застосунок дістає
+це, не роблячи нічого. **`@altera/server`** — `deno task print:fonts` генерує
+`server/THIRD-PARTY-NOTICES.md` тим самим прогоном, що й `fonts.generated.ts`,
+бо пакет везе субсети Roboto та PT Sans під OFL-1.1 усередині себе; тому й поле
+`license` там — `MIT AND OFL-1.1`, а не просто MIT.
+
+Решта залежностей (`@danet/core`, `postgres`, `pdf-lib`, `vite`, `tailwindcss`)
+у наші пакети не потрапляє — вона резолвиться споживачем із реєстру, і атрибуції
+з нас не вимагає. Копілефту в дереві немає жодного.
 
 ## Розгортання
 
