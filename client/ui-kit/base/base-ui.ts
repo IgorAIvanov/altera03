@@ -1,4 +1,4 @@
-import { html, nothing, type PropertyValues, type TemplateResult } from "lit";
+import { css, html, nothing, type CSSResultGroup, type PropertyValues, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { deep } from "signal-utils/deep";
@@ -132,6 +132,25 @@ const SignalWatchingElement: typeof GlobalStyledLitElement = SignalWatcher(Globa
 
 export abstract class BaseUI<T extends Record<string, unknown>>
   extends SignalWatchingElement {
+
+  /**
+   * Форма займає панель вкладки цілком.
+   *
+   * Без цього рядка висота хоста лишалася `auto`, `h-full` у `renderForm()` не
+   * розв'язувався (відсоток від невизначеної висоти — це `auto`), і
+   * прокручувалася ВСЯ панель разом із командною панеллю — тобто «Зберегти»
+   * їхало за екран рівно там, де форма найдовша. Каркас обіцяв протилежне
+   * («прокручується саме область полів») і чесно його не виконував; побачити
+   * розбіжність можна було лише лінійкою в DOM.
+   *
+   * Прямий наслідок для того, хто ставить сюди щось своє: висота панелі —
+   * межа, і вміст, який у неї не влазить, мусить мати власну прокрутку. Саме на
+   * цьому стоїть `<ui-file-dock>`: ділити можна лише те, що має висоту.
+   */
+  static override styles: CSSResultGroup = [
+    ...(GlobalStyledLitElement.styles as CSSResultGroup[]),
+    css`:host { height: 100%; }`,
+  ];
 
   /** Локалізатор — доступний у render підкласу: `this.t("common.save")`. */
   protected t = t;
