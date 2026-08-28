@@ -1893,7 +1893,7 @@
       },
       "create": {
         "dependencies": [
-          "jsr:@altera/skills@~0.1.53",
+          "jsr:@altera/skills@~0.1.54",
           "jsr:@std/path@^1.1.2"
         ]
       },
@@ -1928,7 +1928,7 @@
       },
       "tools": {
         "dependencies": [
-          "jsr:@altera/server@~0.25.3",
+          "jsr:@altera/server@~0.25.4",
           "jsr:@std/jsonc@^1.0.2",
           "jsr:@std/path@^1.1.2",
           "jsr:@std/tar@~0.1.10",

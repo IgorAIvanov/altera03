@@ -13,6 +13,7 @@
 //   - `bus.request()` типізований узагальнено, тож `envelope.data` без явного
 //     звуження не компілюється.
 // Обидва видно лише на згенерованому застосунку. Звідси й ця перевірка.
+import { parse as parseJsonc } from "@std/jsonc";
 import { join, relative, resolve, SEPARATOR, toFileUrl } from "@std/path";
 import { normalizeEol } from "./normalize-eol.ts";
 
@@ -199,11 +200,24 @@ async function checkPublishedContent(): Promise<{ skipped: string | null; proble
 
   // create — теж пакет реєстру, хоч і не лінкується (він сам і є scaffold).
   for (const pkg of [...LOCAL_PACKAGES, "create"]) {
+    // JSONC, а не JSON: у `server/deno.json` є //-коментарі, і `JSON.parse`
+    // на ньому кидає. Доти виняток ловився нижче й тихо ПРОПУСКАВ пакет — тобто
+    // єдиний пакет із коментарями був єдиним, якого перевірка не бачила взагалі,
+    // і мовчала вона тим голосніше, чим більше сходилося все інше. Так
+    // `server@0.25.3` пережив правку `fonts.generated.ts` під тим самим номером.
     let local: { version: string };
     try {
-      local = JSON.parse(await Deno.readTextFile(resolve(pkg, "deno.json")));
-    } catch {
-      continue;
+      local = parseJsonc(await Deno.readTextFile(resolve(pkg, "deno.json"))) as { version: string };
+    } catch (error) {
+      // Нечитний deno.json — це поламка, а не «пакета немає»: мовчазний пропуск
+      // тут і був причиною попередньої дірки.
+      return {
+        skipped: `${pkg}/deno.json не читається: ${error instanceof Error ? error.message : error}`,
+        problems: [],
+      };
+    }
+    if (typeof local?.version !== "string") {
+      return { skipped: `${pkg}/deno.json без поля version`, problems: [] };
     }
 
     let latest: string;
