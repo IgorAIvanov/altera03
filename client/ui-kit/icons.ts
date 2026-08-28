@@ -193,4 +193,36 @@ export const icons: Record<string, TemplateResult> = {
   collapse: glyph(
     svg`<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>`,
   ),
+  /** Скріпка — прикріплений до запису файл. */
+  attachment: glyph(
+    svg`<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>`,
+  ),
+  /** Стрілка в тацю — забрати файл на диск. НЕ `export`: там вивантаження даних. */
+  download: glyph(
+    svg`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`,
+  ),
+  /** Збільшити масштаб перегляду. */
+  zoomIn: glyph(
+    svg`<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>`,
+  ),
+  /** Зменшити масштаб перегляду. */
+  zoomOut: glyph(
+    svg`<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/>`,
+  ),
+  /** Поміняти половини місцями — переворот розділеного вікна. */
+  swap: glyph(
+    svg`<polyline points="7 4 7 20"/><polyline points="4 7 7 4 10 7"/><polyline points="17 20 17 4"/><polyline points="14 17 17 20 20 17"/>`,
+  ),
+  /** Відчепити в окреме вікно — з розділеної половини в плавуче. */
+  undock: glyph(
+    svg`<rect x="3" y="4" width="12" height="10" rx="1"/><path d="M11 8h10v12H9v-6"/>`,
+  ),
+  /** Повернути в розкладку — з плавучого вікна назад у половину. */
+  dock: glyph(
+    svg`<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/>`,
+  ),
+  /** Вписати вміст у вікно — вихідний масштаб перегляду. */
+  fit: glyph(
+    svg`<rect x="3" y="4" width="18" height="16" rx="2"/><polyline points="8 10 8 8 10 8"/><polyline points="16 14 16 16 14 16"/>`,
+  ),
 };

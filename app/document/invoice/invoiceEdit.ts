@@ -14,6 +14,8 @@ import "@client/ui-kit/components/ui-picker.ts";
 import type { PickerChangeEvent } from "@client/ui-kit/components/ui-picker.ts";
 import "@client/ui-kit/components/ui-date.ts";
 import "@client/ui-kit/components/ui-attachments.ts";
+import "@client/ui-kit/components/ui-attachment-button.ts";
+import "@client/ui-kit/components/ui-file-dock.ts";
 import "@client/ui-kit/tabular/ui-tabular-table.ts";
 import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
 import { icons } from "@client/ui-kit/icons.ts";
@@ -239,6 +241,13 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
         ${t("common.print")}
       </button>
       ${movementsButton(item.id, item.isPosted, "btn-outline")}
+      <!-- Перегляд вкладення поруч із друком: обидві кнопки нічого не міняють
+           у записі, а показують те, що з ним пов'язане. Кнопка сама гасне,
+           поки прикріпленого файлу немає. -->
+      <ui-attachment-button
+        owner-model="invoice"
+        .ownerId=${item.id ?? ""}
+      ></ui-attachment-button>
     `;
   }
 
@@ -249,7 +258,12 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
 
     const item = this.$root.item;
 
-    return this.renderForm(html`
+    // Каркас форми загорнутий у док: щойно людина відкриє вкладення, екран
+    // ділиться навпіл — скан угорі, форма внизу, обидві половини гортаються
+    // окремо. Доки файл не відкрито, док не малює нічого й місця не займає.
+    return html`
+      <ui-file-dock owner-model="invoice" .ownerId=${item.id ?? ""}>
+      ${this.renderForm(html`
           <!-- Шапка -->
           <div class="mb-4">
             <!-- номер + дата — в одній рамці -->
@@ -315,6 +329,8 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
               .label=${t("invoice.attachments")}
             ></ui-attachments>
           </div>
-    `);
+    `)}
+      </ui-file-dock>
+    `;
   }
 }
