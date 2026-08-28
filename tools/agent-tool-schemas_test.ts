@@ -47,3 +47,31 @@ Deno.test("схема є, але не завантажилася — це від
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+/**
+ * Нестандартна команда без своєї схеми не зникає з переліку.
+ *
+ * Друге мовчання того самого випадку: модель відкрила агенту `at`, генератор
+ * не знайшов `ItemAccountAtPayloadSchema` — і команда пропадала, тобто
+ * оголошення в манифесті знову не давало нічого. Опис навмання не пишемо, але
+ * інструмент має бути: викликати команду можна й без схеми, а от здогадатися
+ * про її існування — ні.
+ */
+Deno.test("команда без оголошеної схеми лишається інструментом", async () => {
+  const dir = await Deno.makeTempDir();
+  const schemaPath = join(dir, "item_account.schema.ts");
+  try {
+    await Deno.writeTextFile(schemaPath, "export const ItemAccountItemSchema = { type: 'object' };\n");
+
+    const tools = await buildAgentToolsForModel("item_account", schemaPath, ["at"]);
+
+    assertEquals(tools.length, 1);
+    assertEquals(tools[0]?.command, "at");
+    // В описі названо, ЧОГО бракує: інакше порожня схема читається як
+    // «команда нічого не приймає».
+    const description = String((tools[0]?.input as { description?: unknown }).description);
+    assertEquals(description.includes("ItemAccountAtPayloadSchema"), true);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

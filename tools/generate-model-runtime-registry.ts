@@ -95,6 +95,17 @@ const COMMAND_BLOCK_KEYS = ["sql", "ts", "access"];
 const ACCESS_ACTIONS = ["view", "create", "edit", "delete", "post", "unpost", "authenticated"];
 
 /**
+ * Команди, чиє право рантайм виводить З ІМЕНІ.
+ *
+ * Копія `STANDARD_COMMAND_ACTIONS` рантайму (`model-runtime.service.ts`) — і,
+ * як і словник дій вище, копія свідома: тут перелік потрібен, щоб не вимагати
+ * оголошення права там, де рантайм його не питає. Розбіжність голосна в
+ * обидва боки: зайве ім'я тут дасть інструмент, який відмовить (видно першим
+ * же викликом), а нестача — вимогу оголосити право, яке й так виводиться.
+ */
+const STANDARD_COMMANDS = ["list", "get", "save", "delete", "undelete", "lookup", "post", "unpost"];
+
+/**
  * Блок `commands` прочитано так, як його написали.
  *
  * Дві перевірки, і обидві про одне: рантайм fail-closed, а мовчазна відмова
@@ -135,13 +146,6 @@ export function assertCommandsBlock(manifestPath: string, manifest: ManifestReco
   );
 }
 
-/**
- * Команди, які модель віддає агенту.
- *
- * Умовчання — стандартна п'ятірка плюс проведення для документів; це рівно те,
- * що пропускає `AgentService`. `manifest.agent` звужує: `allow: false` знімає
- * модель цілком, `allowCommands` лишає перелічене.
- */
 /** `DocumentHeaderSchema` фреймворку — спільна шапка всіх документів. */
 async function loadDocumentHeaderSchema(appDir: string): Promise<Record<string, unknown> | null> {
   try {
@@ -176,23 +180,142 @@ function agentBaseCommands(type: string): string[] {
   return [];
 }
 
-function agentCommandsFor(manifest: ManifestRecord): string[] {
+/**
+ * Команди, які фреймворк виводить не з `commands`, а з інших блоків манифеста.
+ *
+ * Друк виводиться з непорожнього `prints` — там само, звідки береться і сам
+ * хендлер, і право на нього. Агенту він потрібен рівно тому ж, чому й людині:
+ * «дай накладну» означає паперовий бланк, а не JSON документа. Байти при цьому
+ * в контекст агента не потрапляють — обгортка кладе PDF на диск і віддає шлях
+ * (див. mcp/main.ts, altera_print).
+ *
+ * Періодична трійка (`at`/`history`/`set`) — з блока `periodic`, з якого
+ * `sql:gen` створює самі функції. Обидва переліки повторюються в `accessFor`:
+ * там ті самі блоки називають ПРАВО цих команд, і розійтися вони не можуть —
+ * розходження означало б команду, яку модель відкрила, а рантайм не виконує.
+ */
+function derivedCommands(manifest: ManifestRecord): string[] {
+  const commands: string[] = [];
+  if (Object.keys(manifest.prints ?? {}).length > 0) commands.push("printPdf");
+  if (manifest.periodic) commands.push("at", "history", "set");
+  return commands;
+}
+
+/**
+ * Усе, що модель МОЖЕ відкрити агенту рядком в `allowCommands`.
+ *
+ * Ширше за базовий набір типу, і саме в цьому суть: базовий набір — це
+ * УМОВЧАННЯ («що показати тому, хто нічого не сказав»), а `allowCommands` —
+ * заява застосунку про свій намір. Заява має право називати те, чого в
+ * умовчанні немає:
+ *
+ * - **оголошені команди** (`commands.sql`, `commands.ts`) — рівно те, чого
+ *   бракувало: `item_account.at`, `nomenclature.groupTree`, команди даних
+ *   друку, копіювання та імпорту. Право для них уже оголошене в
+ *   `commands.access`, тож fail-closed не втрачається — його стереже
+ *   `assertAgentCommands`;
+ * - **виведені** (`printPdf`, періодична трійка) — з блоків манифеста;
+ * - **стандартні імена**, навіть коли типу моделі вони в умовчання не входять.
+ *   Умовчання не дає admin-екрану нічого, бо описати йому CRUD навмання
+ *   означало б показати інструменти, які повернуть 501. Але коли автор пише
+ *   `"allowCommands": ["list", "get", "answer"]`, він СТВЕРДЖУЄ, що
+ *   `app.remark_list` існує (і в шаблоні scaffold воно справді існує) — це вже
+ *   не здогад генератора.
+ *
+ * Чого тут немає — того немає ніде, і `assertAgentCommands` валить генерацію,
+ * а не мовчить: доти `allowCommands` умів тільки ВІДНІМАТИ від базового
+ * набору, тож зайве ім'я нікуди не потрапляло й нічого про це не казало.
+ */
+function agentAllowableCommands(manifest: ManifestRecord): Set<string> {
+  return new Set([
+    ...agentBaseCommands(manifest.type ?? "catalog"),
+    ...STANDARD_COMMANDS,
+    ...derivedCommands(manifest),
+    ...Object.keys(manifest.commands?.sql ?? {}),
+    ...Object.keys(manifest.commands?.ts ?? {}),
+  ]);
+}
+
+/**
+ * Команди, які модель віддає агенту.
+ *
+ * Умовчання — набір за типом моделі плюс друк; це рівно те, що пропускає
+ * `AgentService` (перелік інструментів і є білим списком диспетчера).
+ * `manifest.agent` цим керує: `allow: false` знімає модель цілком,
+ * `allowCommands` називає перелік ЯВНО — і додає до умовчання, а не тільки
+ * відрізає від нього (див. `agentAllowableCommands`).
+ *
+ * Умовчання лишилося вузьким навмисно: оголошена команда доїжджає до агента
+ * тільки тоді, коли застосунок сказав про це вголос. `commands.access` — це
+ * заява «команду можна виконати з таким правом», а не «її треба показати
+ * агенту»; виводити друге з першого означало б відкривати агенту кожну нову
+ * команду мовчки, самим фактом її появи.
+ */
+export function agentCommandsFor(manifest: ManifestRecord): string[] {
   const agent = manifest.agent ?? {};
   if (agent.allow === false) return [];
 
   const base = agentBaseCommands(manifest.type ?? "catalog");
-
-  // Друк виводиться з непорожнього `prints` — там само, звідки береться і сам
-  // хендлер, і право на нього. Агенту він потрібен рівно тому ж, чому й людині:
-  // «дай накладну» означає паперовий бланк, а не JSON документа. Байти при
-  // цьому в контекст агента не потрапляють — обгортка кладе PDF на диск і
-  // віддає шлях (див. mcp/main.ts, altera_print).
   if (Object.keys(manifest.prints ?? {}).length > 0) base.push("printPdf");
 
-  if (Array.isArray(agent.allowCommands)) {
-    return base.filter((command) => agent.allowCommands!.includes(command));
+  if (!Array.isArray(agent.allowCommands)) return base;
+
+  // Порядок: спершу базові в порядку типу (як було — щоб перелік не
+  // перетасувався в кожному застосунку), далі дописані в порядку манифеста.
+  const wanted = new Set(agent.allowCommands);
+  const allowable = agentAllowableCommands(manifest);
+  return [...new Set([
+    ...base.filter((command) => wanted.has(command)),
+    ...agent.allowCommands.filter((command) => !base.includes(command) && allowable.has(command)),
+  ])];
+}
+
+/**
+ * `allowCommands` каже те, що хотів сказати.
+ *
+ * Ім'я, якого модель ніде не оголосила, доти зникало мовчки: масив законний,
+ * генерація зелена, а команди в переліку агента просто немає. Побачити це можна
+ * було рівно тоді, коли агент уперше спробує покликати — тобто на робочій
+ * задачі, через тижні після того, як манифест написали. Той самий клас помилки
+ * ядро вже прийняло записом «незнайомий ключ у `commands` валить генерацію»:
+ * команда, якої не буде в рантаймі, — це непрацездатний екран, а не стиль
+ * запису. `allowCommands` лишався останнім місцем у манифесті, де ім'я можна
+ * було написати й не отримати нічого.
+ *
+ * Друга перевірка про те саме з боку прав: нестандартна команда без
+ * `commands.access` не виконується взагалі (fail-closed рантайму), тож
+ * відкрити її агенту означає показати інструмент, який ЗАВЖДИ відмовить.
+ * Стандартні імена сюди не входять — їхнє право рантайм виводить сам.
+ */
+export function assertAgentCommands(manifestPath: string, manifest: ManifestRecord): void {
+  const allowCommands = manifest.agent?.allowCommands;
+  if (!Array.isArray(allowCommands)) return;
+
+  const allowable = agentAllowableCommands(manifest);
+  const access = accessFor(manifest);
+  const problems: string[] = [];
+
+  for (const command of allowCommands) {
+    if (!allowable.has(command)) {
+      problems.push(
+        `  "${command}" — модель такої команди не має. Стандартні йдуть за іменем, ` +
+          `решту оголошують у "commands.sql" або "commands.ts" (і право — у "commands.access").`,
+      );
+      continue;
+    }
+    if (STANDARD_COMMANDS.includes(command) || access[command]) continue;
+    problems.push(
+      `  "${command}" — право не оголошене в "commands.access", тож рантайм відмовить ` +
+        `(fail-closed). Агент побачив би інструмент, який завжди повертає 501.`,
+    );
   }
-  return base;
+
+  if (problems.length === 0) return;
+
+  throw new Error(
+    `${toPosixPath(relative(Deno.cwd(), manifestPath))}: "agent.allowCommands" називає те, ` +
+      `чого агент не отримає:\n${problems.join("\n")}`,
+  );
 }
 
 function toPosixPath(value: string) {
@@ -232,6 +355,37 @@ function renderSqlCommandConfig(commandName: string, definition: ManifestSqlComm
   return `{ ${parts.join(", ")} }`;
 }
 
+/**
+ * Права команд моделі — оголошені плюс виведені з блоків манифеста.
+ *
+ * `printPdf` виводиться з непорожнього `prints` так само, як і сам хендлер,
+ * тож і право їй виводиться тут: друк — це перегляд. Періодичну трійку
+ * генерує `sql:gen` з блока `periodic`, тож і право їй звідти: `at`/`history` —
+ * читання, `set` — запис; вимагати повторного оголошення в `commands.access`
+ * означало б лишити рантайму 501 на команді, яку сам же фреймворк і створив.
+ * Явне оголошення в манифесті перекриває обидва виводи.
+ *
+ * Окремою функцією, бо цей самий словник читає `assertAgentCommands`: він
+ * вимагає оголошеного права від команди, яку модель відкриває агенту, і
+ * рахувати «оголошене» інакше, ніж рахує реєстр, означало б вимагати того, що
+ * рантайм уже має.
+ */
+function accessFor(manifest: ManifestRecord): Record<string, string> {
+  const access: Record<string, string> = { ...manifest.commands?.access };
+
+  if (Object.keys(manifest.prints ?? {}).length > 0 && !access.printPdf) {
+    access.printPdf = "view";
+  }
+
+  if (manifest.periodic) {
+    if (!access.at) access.at = "view";
+    if (!access.history) access.history = "view";
+    if (!access.set) access.set = "edit";
+  }
+
+  return access;
+}
+
 function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
   const entries = manifests.flatMap(({ manifest }) => {
     // Періодичні команди рантайм сам не виводить: авто-маршрут є лише в
@@ -247,26 +401,7 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([commandName, definition]) => `    ${JSON.stringify(commandName)}: ${renderSqlCommandConfig(commandName, definition)}`);
 
-    // `printPdf` виводиться з непорожнього `prints` так само, як і сам хендлер,
-    // тож і право їй виводиться тут: друк — це перегляд. Явне оголошення в
-    // манифесті це перекриває.
-    const access: Record<string, string> = { ...manifest.commands?.access };
-    if (Object.keys(manifest.prints ?? {}).length > 0 && !access.printPdf) {
-      access.printPdf = "view";
-    }
-
-    // Періодичні команди генерує `sql:gen` з того самого блока `periodic`, тож
-    // і право їм виводиться звідти: `_at`/`_history` — читання, `_set` — запис.
-    // Вимагати повторного оголошення в `commands.access` означало б лишити
-    // рантайму 501 на команді, яку сам же фреймворк і створив. Явне оголошення
-    // в манифесті це перекриває.
-    if (manifest.periodic) {
-      if (!access.at) access.at = "view";
-      if (!access.history) access.history = "view";
-      if (!access.set) access.set = "edit";
-    }
-
-    const accessEntries = Object.entries(access)
+    const accessEntries = Object.entries(accessFor(manifest))
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([commandName, action]) => `    ${JSON.stringify(commandName)}: ${JSON.stringify(action)}`);
 
@@ -579,6 +714,7 @@ async function collectManifests(appDir: string) {
         throw new Error(`Manifest schema must be a lowercase SQL identifier: ${toPosixPath(relative(Deno.cwd(), manifestPath))}`);
       }
       assertCommandsBlock(manifestPath, manifest);
+      assertAgentCommands(manifestPath, manifest);
       // Політика журналу переїхала в базу (`app.audit_setting`, екран
       // `admin/audit_setting`). Мовчки проковтнути залишений блок не можна:
       // модель виглядала б журнальованою, а журнал би не писався — і побачив

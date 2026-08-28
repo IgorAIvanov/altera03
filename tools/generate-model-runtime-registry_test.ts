@@ -7,6 +7,8 @@
 // зовсім, і застосунок працював би не з тією моделлю.
 import { assertEquals, assertThrows } from "@std/assert";
 import {
+  agentCommandsFor,
+  assertAgentCommands,
   assertCommandsBlock,
   assertUniqueModels,
   formatAgentSchemaFailures,
@@ -160,4 +162,143 @@ Deno.test("зламана схема однієї моделі не радить
   assertEquals(message.includes("deno install"), false);
   assertEquals(message.includes("Unexpected token"), true);
   assertEquals(message.includes("(1 з 40)"), true);
+});
+
+/**
+ * `allowCommands` ДОДАЄ, а не лише віднімає.
+ *
+ * Доти список фільтрував фіксований базовий набір, тож ім'я нестандартної
+ * команди не могло потрапити в перелік агента взагалі: `"allowCommands":
+ * ["list", "get", "at"]` відрізав `save` і `delete`, а `at` тихо не давав
+ * нічого. Наслідок бачив рівно той, хто спробував покликати: агент, що вводив
+ * первинний документ, отримав «Команда 'at' не оголошена для агента», хоч
+ * форма кличе цю саму команду й підставляє рахунок обліку сама.
+ */
+Deno.test("оголошена команда моделі доходить до агента", () => {
+  const commands = agentCommandsFor({
+    model: "item_account",
+    type: "register",
+    commands: {
+      sql: { at: "item_account_at" },
+      access: { at: "view" },
+    },
+    agent: { allow: true, allowCommands: ["list", "get", "at"] },
+  });
+
+  assertEquals(commands, ["list", "get", "at"]);
+});
+
+Deno.test("без allowCommands оголошена команда лишається закритою", () => {
+  // Умовчання не міняється: `commands.access` каже, з яким правом команду
+  // МОЖНА виконати, а не «покажіть її агенту».
+  const commands = agentCommandsFor({
+    model: "item_account",
+    type: "register",
+    commands: { sql: { at: "item_account_at" }, access: { at: "view" } },
+  });
+
+  assertEquals(commands, ["list", "get", "save", "delete"]);
+});
+
+Deno.test("allowCommands звужує базовий набір, як і раніше", () => {
+  const commands = agentCommandsFor({
+    model: "nomenclature",
+    type: "catalog",
+    agent: { allow: true, allowCommands: ["get", "save", "list", "lookup"] },
+  });
+
+  // Порядок базових лишається порядком типу, а не манифеста: інакше перелік
+  // перетасувався б у кожному застосунку на першій же генерації.
+  assertEquals(commands, ["list", "get", "save", "lookup"]);
+});
+
+/**
+ * Стандартне ім'я на моделі, чий тип не дає в умовчанні нічого.
+ *
+ * Саме на цьому мовчки стояв шаблон scaffold'а: `admin/remark` оголошує
+ * `["list", "get", "answer"]`, `agentBaseCommands("admin")` віддає порожньо —
+ * і агент не бачив там НІЧОГО, включно з `list`, хоч `app.remark_list` існує.
+ */
+Deno.test("стандартне ім'я на admin-моделі приймається як заява застосунку", () => {
+  const commands = agentCommandsFor({
+    model: "remark",
+    type: "admin",
+    commands: {
+      sql: { answer: "remark_answer", verify: "remark_verify" },
+      access: { answer: "edit", verify: "edit" },
+    },
+    agent: { allow: true, allowCommands: ["list", "get", "answer"] },
+  });
+
+  assertEquals(commands, ["list", "get", "answer"]);
+});
+
+Deno.test("друк і періодична трійка доступні на ім'я", () => {
+  const commands = agentCommandsFor({
+    model: "price_setting",
+    type: "register",
+    periodic: { by: "nomenclature_id" },
+    prints: { card: {} },
+    agent: { allow: true, allowCommands: ["list", "at", "printPdf"] },
+  });
+
+  assertEquals(commands, ["list", "printPdf", "at"]);
+});
+
+/**
+ * Ім'я, якого модель ніде не оголосила, валить генерацію.
+ *
+ * Той самий принцип, що вже прийнятий для незнайомого ключа в `commands`:
+ * команда, якої не буде в переліку, — це непрацездатний виклик, а не стиль
+ * запису. `allowCommands` лишався останнім місцем у манифесті, де ім'я можна
+ * було написати й не отримати нічого.
+ */
+Deno.test("невідоме ім'я в allowCommands валить генерацію", () => {
+  const error = assertThrows(() =>
+    assertAgentCommands("app/catalog/nomenclature/manifest.json", {
+      model: "nomenclature",
+      type: "catalog",
+      agent: { allowCommands: ["list", "groupTree"] },
+    })
+  );
+
+  const message = error instanceof Error ? error.message : String(error);
+  assertEquals(message.includes("nomenclature/manifest.json"), true);
+  assertEquals(message.includes('"groupTree"'), true);
+  // Текст мусить називати правильну форму — читає його той, хто це й написав.
+  assertEquals(message.includes("commands.sql"), true);
+});
+
+Deno.test("оголошена команда без права теж валить генерацію", () => {
+  const error = assertThrows(() =>
+    assertAgentCommands("app/catalog/nomenclature/manifest.json", {
+      model: "nomenclature",
+      type: "catalog",
+      commands: { sql: { groupTree: "nomenclature_group_tree" } },
+      agent: { allowCommands: ["list", "groupTree"] },
+    })
+  );
+
+  const message = error instanceof Error ? error.message : String(error);
+  assertEquals(message.includes("commands.access"), true);
+  assertEquals(message.includes("501"), true);
+});
+
+Deno.test("правильний allowCommands проходить мовчки", () => {
+  assertAgentCommands("app/data/item_account/manifest.json", {
+    model: "item_account",
+    type: "register",
+    commands: { sql: { at: "item_account_at" }, access: { at: "view" } },
+    agent: { allowCommands: ["list", "get", "at"] },
+  });
+  // Періодична трійка права не оголошує — воно виводиться з блока `periodic`,
+  // так само як і самі функції.
+  assertAgentCommands("app/data/price_setting/manifest.json", {
+    model: "price_setting",
+    type: "register",
+    periodic: { by: "nomenclature_id" },
+    agent: { allowCommands: ["at", "history"] },
+  });
+  // Моделі без `allowCommands` перевіряти нема чого.
+  assertAgentCommands("app/catalog/bank/manifest.json", { model: "bank" });
 });

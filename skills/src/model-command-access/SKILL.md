@@ -119,6 +119,33 @@ Declaration always beats derivation, including for standard commands: `"access":
 "list": "edit" }` really does make `list` require `edit`. Rarely useful — but if a model
 is sensitive enough that listing it is privileged, this is the lever.
 
+## Reaching the agent
+
+Declaring the permission makes a command **callable**. It does not make it **visible**:
+the external agent — and the MCP wrapper over it — offers only what the model lists in
+`agent.allowCommands`, on top of the default set derived from `type`.
+
+```json
+"agent": { "allow": true, "allowCommands": ["list", "get", "save", "delete", "at"] }
+```
+
+The list both adds and subtracts. A name from `commands.sql` or `commands.ts` joins the
+default set; a standard name left out of the list is withheld. Omit `allowCommands`
+altogether and the model keeps the default — standard commands only, never a custom one.
+That is deliberate: `commands.access` says *this command may run with this permission*,
+not *show it to the agent*.
+
+A name the generator cannot deliver now fails `sql:registry` — either the model declares
+no such command, or the command has no `commands.access` entry and would answer 501 to
+every call. Until that check existed the name was dropped in silence, so a manifest could
+look as though it had opened the command while the agent answered
+`Команда 'at' не оголошена для агента`. Nothing else said a word: the manifest was valid,
+`altera_describe` returned `[]`, and the screen calling that same command worked.
+
+If the command has its own payload, export `<Model><Command>PayloadSchema` from
+`<model>.schema.ts` — that is what the agent reads to learn the fields. Without it the
+command is still offered, but as an object of unstated shape, and the agent has to guess.
+
 ## Verify
 
 ```bash
@@ -145,9 +172,10 @@ client.
 1. Implement the command (SQL function `{schema}.{model}_{command}(bigint, jsonb)` or TS module).
 2. Declare it in `commands.sql` or `commands.ts`.
 3. **Declare its permission in `commands.access`.**
-4. `deno task sql:registry`.
-5. Confirm the target groups actually hold that action (`model = '*'` covers every model).
-6. Call it as an unprivileged user and confirm the denial envelope.
+4. Name it in `agent.allowCommands` if the agent should reach it too.
+5. `deno task sql:registry`.
+6. Confirm the target groups actually hold that action (`model = '*'` covers every model).
+7. Call it as an unprivileged user and confirm the denial envelope.
 
 ## Related
 
