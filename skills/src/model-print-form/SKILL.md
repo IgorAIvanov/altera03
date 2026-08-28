@@ -582,6 +582,11 @@ deno task sql:registry && deno task sql:assemble && deno task sql:publish
 `sql:registry` regenerates the model registry (this is where `printPdf` appears);
 `sql:assemble` turns `prints/*.template.json` into `insert … on conflict (code) do nothing`.
 
+The same step also puts `printPdf` into the **agent** tool list, so an external agent can ask
+for the blank itself — "give me invoice 42" then means the PDF, not the document JSON. It
+needs no permission of its own: printing reads, so `view` covers it, and a read-only token
+prints too.
+
 **The runtime reads templates only from `app.print_template` — never from disk.** The file
 in `prints/` is the *source* of the system template. `do nothing` means a republish will not
 overwrite a template the user has edited. `"republishOnPublish": true` in the template file

@@ -104,7 +104,10 @@ export abstract class FilteredBase<Root extends Record<string, unknown>> extends
         filters[key] = value;
       }
     }
-    clearTimeout(this.#timer);
+    // Перевірка на `undefined` — з тієї ж причини, що й тип поля вище: під
+    // @types/node `clearTimeout` не приймає ані `undefined`, ані `number`, і
+    // пакет не проходить перевірку типів при публікації.
+    if (this.#timer !== undefined) clearTimeout(this.#timer);
     if (opts.debounce) {
       this.#timer = setTimeout(() => this.onFiltersChanged(), this.filterDebounceMs);
     } else {

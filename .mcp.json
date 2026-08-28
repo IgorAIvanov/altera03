@@ -3,17 +3,20 @@
   "mcpServers": {
     "altera-dev": {
       "//": "Локальна база розробки. Потребує піднятого бекенду: `deno task dev:server`. Обгортка береться з реєстру — шлях до файлів репозиторію більше не потрібен, тож запис переносимий на будь-яку машину з Deno.",
+      "//files": "ALTERA_DOWNLOAD_DIR — куди лягають файли, забрані з бази (altera_fetch, altera_print). Умовчання немає навмисно: каталог називає власник машини, а не конфіг у git. Не заданий — обидва інструменти відмовляють і кажуть, що дописати; решта працює як раніше. `--allow-write` тут без каталогу саме тому, що каталог приходить змінною.",
       "command": "deno",
       "args": [
         "run",
         "--allow-net",
         "--allow-env",
         "--allow-read",
-        "jsr:@altera/mcp@^0.2.0"
+        "--allow-write",
+        "jsr:@altera/mcp@^0.3.0"
       ],
       "env": {
         "ALTERA_URL": "${ALTERA_URL:-http://localhost:3000}",
-        "ALTERA_TOKEN": "${ALTERA_TOKEN}"
+        "ALTERA_TOKEN": "${ALTERA_TOKEN}",
+        "ALTERA_DOWNLOAD_DIR": "${ALTERA_DOWNLOAD_DIR}"
       }
     }
   }

@@ -14,6 +14,7 @@
 import type { ModelBackendConfig } from "../modules/model-runtime/model-runtime.types.ts";
 import type { GeneratedTsCommandBinding } from "../modules/model-runtime/model-registry.ts";
 import type { AgentModelRoute } from "../modules/agent/agent-routes.ts";
+import { coreAgentRoutes, coreAgentToolSchemas } from "../modules/agent/core-agent-tools.ts";
 import type { ViewManifestEntry } from "../modules/model-view/model-view.registry.ts";
 import type { AuthMethod } from "../modules/auth/auth.types.ts";
 
@@ -216,8 +217,12 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
       ...options.views,
       projectRoot: options.views.projectRoot.replaceAll("\\", "/").replace(/\/$/, ""),
     },
-    agentRoutes: options.agentRoutes ?? {},
-    agentTools: options.agentTools ?? {},
+    // Інструменти ядра йдуть ПЕРШИМИ, застосунок їх перекриває: перелік
+    // збирається з манифестів, а моделі ядра манифеста не мають (див.
+    // core-agent-tools.ts). Порядок значущий — застосунок, який завів свою
+    // модель з тим самим іменем, має лишитися головним.
+    agentRoutes: { ...coreAgentRoutes, ...(options.agentRoutes ?? {}) },
+    agentTools: { ...coreAgentToolSchemas, ...(options.agentTools ?? {}) },
     auth: { ...DEFAULT_AUTH, ...options.auth },
     blob: { ...DEFAULT_BLOB, ...options.blob },
     version: options.version ?? {},

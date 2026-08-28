@@ -24,6 +24,18 @@ export interface AlteraConfig {
   /** Персональний токен доступу (`/api/auth/tokens` у браузері). */
   token: string;
   timeoutMs: number;
+  /**
+   * Куди класти вивантажені файли. `null` — нікуди, і тоді обгортка їх не
+   * забирає взагалі.
+   *
+   * Каталог називає ЛЮДИНА в конфізі хоста, а не агент у виклику. Різниця не
+   * церемоніальна: аргументом він означав би, що агент вибирає, у яке місце
+   * диска писати, — а дозвіл `--allow-write` виданий один на процес і жодного
+   * вибору вже не звужує. Не задано — інструменти чесно відмовляють і кажуть,
+   * що дописати в конфіг; мовчазне «покладу в тимчасовий» лишало б файли там,
+   * де їх ніхто не шукає.
+   */
+  downloadDir: string | null;
 }
 
 /** Рядок каталогу — модель без схем. */
@@ -40,6 +52,30 @@ export interface AlteraTool {
   model: string;
   command: string;
   input: unknown;
+}
+
+/**
+ * Метадані вкладення — те, що віддають `attachment/list` і `attachment/get`.
+ *
+ * `token` — уже ПІДПИСАНИЙ токен доступу: сирий `access_key` рантайм міняє на
+ * нього дорогою назовні. Живе він годинами (`BLOB_TOKEN_TTL_HOURS`), тож
+ * зберігати його нема сенсу — беремо перед кожним завантаженням.
+ */
+export interface AlteraAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  createdAt?: string;
+  token: string;
+}
+
+/** Готова друкована форма: байти й ім'я файлу, яке дала база. */
+export interface AlteraPrintout {
+  bytes: Uint8Array;
+  fileName: string;
+  templateCode?: string;
+  templateName?: string;
 }
 
 interface ListEnvelope {
@@ -84,12 +120,21 @@ function requiredEnv(name: string): string {
  */
 export function configFromEnv(): AlteraConfig {
   const timeout = Number.parseInt(Deno.env.get("ALTERA_TIMEOUT_MS") ?? "", 10);
+  const downloadDir = Deno.env.get("ALTERA_DOWNLOAD_DIR")?.trim();
   return {
     url: requiredEnv("ALTERA_URL").replace(/\/+$/, ""),
     token: requiredEnv("ALTERA_TOKEN"),
     // Звіт по великому регістру рахується довго, тож умовчання щедре: обірваний
     // на півдорозі звіт агент прочитає як «не працює», а не як «повільно».
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 60_000,
+    // Порожній рядок — це «не задано», а не «поточний каталог»: у конфізі хоста
+    // порожнє поле трапляється частіше за навмисний вибір, і писати від нього
+    // файли туди, звідки запустили хост, було б сюрпризом. Нерозгорнутий
+    // `${…}` — те саме «не задано», лише голосніше: інакше обгортка створила б
+    // каталог із таким іменем і чесно поклала б у нього файл.
+    downloadDir: downloadDir && !/^\$\{.*\}$/.test(downloadDir)
+      ? downloadDir.replace(/[\\/]+$/, "")
+      : null,
   };
 }
 
@@ -118,6 +163,16 @@ export function assertCatalogShape(rows: unknown[], url: string): void {
 
 export class AlteraClient {
   constructor(private readonly config: AlteraConfig) {}
+
+  /**
+   * Каталог вивантаження або `null`, якщо його не задали.
+   *
+   * Питається ДО походу в базу: інакше відмова «нема куди класти» приходила б
+   * після того, як сервер намалював стосторінковий бланк.
+   */
+  get downloadDir(): string | null {
+    return this.config.downloadDir;
+  }
 
   /** Каталог моделей: що є в базі й що з цим можна робити. */
   async models(): Promise<AlteraModelEntry[]> {
@@ -187,6 +242,106 @@ export class AlteraClient {
     return await this.request("/api/blob/upload", { method: "POST", body: form });
   }
 
+  /**
+   * Вкладення запису — метадані, не байти: `attachment/list`.
+   *
+   * Через ту саму `call`, що й будь-яка інша команда: вкладення — звичайна
+   * модель ядра, з правом `attachment:view` і фільтром за правами користувача.
+   * Окремого входу «дай файли запису» немає навмисно — він був би другим
+   * списком того, що агенту дозволено, а другий список розходиться з першим
+   * мовчки (D10).
+   */
+  async attachments(ownerModel: string, ownerId: string): Promise<AlteraAttachment[]> {
+    const answer = await this.call("attachment", "list", { ownerModel, ownerId });
+    return commandRows(answer) as AlteraAttachment[];
+  }
+
+  /** Одне вкладення за його id — звідси беруться ім\'я, тип і токен доступу. */
+  async attachment(id: string): Promise<AlteraAttachment> {
+    const item = commandItem(await this.call("attachment", "get", { id })) as
+      | AlteraAttachment
+      | null;
+
+    // База відповідає `ok: true` з порожнім `item` — вкладення могло бути
+    // видалене або належати іншій установці. Для агента це не «помилка бази», а
+    // «такого id немає», і сказати треба саме так.
+    if (!item?.id) throw new AlteraError(`Вкладення ${id} не знайдено.`);
+    return item;
+  }
+
+  /**
+   * Байти вкладення: `GET /api/blob/:id?token=…`.
+   *
+   * Токен їде В URL, і це не недогляд, а той самий канал, яким користується
+   * браузер: право доступу несе сам запит, бо в `<img src>` заголовка не
+   * почепиш. Тому й ланцюжок тут двокроковий — спершу команда моделі віддає
+   * підписаний токен, потім по ньому забираються байти.
+   *
+   * `disp=attachment` навмисно: обгортка кладе файл на диск, і `inline` для
+   * неї нічого не означає.
+   */
+  async blob(attachment: AlteraAttachment): Promise<Uint8Array> {
+    const query = new URLSearchParams({ token: attachment.token, disp: "attachment" });
+    const url = `${this.config.url}/api/blob/${encodeURIComponent(attachment.id)}?${query}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { authorization: `Bearer ${this.config.token}` },
+        signal: AbortSignal.timeout(this.config.timeoutMs),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new AlteraError(`База ${this.config.url} не віддала файл: ${reason}`);
+    }
+
+    if (!response.ok) {
+      await response.body?.cancel();
+      // 404 тут означає не «немає такого id», а «токен виданий не на це
+      // вкладення» — id ми щойно прочитали з бази. Найімовірніша причина —
+      // протермінований токен, і другий підхід її знімає.
+      throw new AlteraError(
+        response.status === 404
+          ? `Токен доступу до вкладення ${attachment.id} не прийнято (404): найпевніше він ` +
+            `протермінований. Повтори виклик — токен береться заново.`
+          : `Файл ${attachment.id} не віддано: HTTP ${response.status}.`,
+      );
+    }
+
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  /**
+   * Друкована форма запису: команда `printPdf` і PDF у відповіді.
+   *
+   * Байти приходять base64 всередині конверта — так друк влаштований у
+   * застосунку, і міняти це заради агента не треба. Важливо інше: base64 не
+   * виходить за межі цього методу. Обгортка декодує його, кладе файл на диск і
+   * віддає агенту шлях — інакше кожен бланк осідав би в контексті розміром у
+   * півтори сотні кілобайтів (це і є відповідь на Q3 плану).
+   */
+  async print(model: string, id: string, templateCode?: string): Promise<AlteraPrintout> {
+    const payload: Record<string, unknown> = { id };
+    if (templateCode) payload.templateCode = templateCode;
+
+    const extra = commandExtra(await this.call(model, "printPdf", payload));
+    const base64 = typeof extra.pdfBase64 === "string" ? extra.pdfBase64 : "";
+
+    if (!base64) {
+      throw new AlteraError(
+        `Модель «${model}» не віддала PDF. Найімовірніше, у неї немає активного шаблону друку ` +
+          `або команда printPdf їй не оголошена.`,
+      );
+    }
+
+    return {
+      bytes: decodeBase64(base64),
+      fileName: typeof extra.fileName === "string" && extra.fileName ? extra.fileName : `${model}-${id}.pdf`,
+      templateCode: typeof extra.templateCode === "string" ? extra.templateCode : undefined,
+      templateName: typeof extra.templateName === "string" ? extra.templateName : undefined,
+    };
+  }
+
   private async rows(path: string): Promise<unknown[]> {
     const envelope = await this.request(path) as ListEnvelope;
     return Array.isArray(envelope.data?.rows) ? envelope.data.rows : [];
@@ -240,6 +395,48 @@ export class AlteraClient {
 
     return body;
   }
+}
+
+/**
+ * Дані команди всередині відповіді агента.
+ *
+ * Шарів два: зовнішній — відповідь входу (`{ok, result, messages}`), внутрішній
+ * — звичайний конверт моделі (`{item, rows, extra}`). Розбирати їх на місці
+ * кожного виклику означало б чотири рівні `?.` у трьох методах; тут це сказано
+ * один раз. Відмова сюди не доходить взагалі — її ловить `request`.
+ */
+function commandData(answer: unknown): Record<string, unknown> {
+  const result = (answer as { result?: { data?: unknown } } | null)?.result;
+  const data = result?.data;
+  return data && typeof data === "object" ? data as Record<string, unknown> : {};
+}
+
+function commandRows(answer: unknown): unknown[] {
+  const rows = commandData(answer).rows;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function commandItem(answer: unknown): unknown {
+  return commandData(answer).item ?? null;
+}
+
+function commandExtra(answer: unknown): Record<string, unknown> {
+  const extra = commandData(answer).extra;
+  return extra && typeof extra === "object" ? extra as Record<string, unknown> : {};
+}
+
+/**
+ * base64 → байти.
+ *
+ * Своя реалізація замість `@std/encoding`: заради одного рядка тягти залежність
+ * у пакет, який ставиться командою `deno run jsr:@altera/mcp`, не варто —
+ * `atob` є в рантаймі й робить рівно те саме.
+ */
+function decodeBase64(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }
 
 /**

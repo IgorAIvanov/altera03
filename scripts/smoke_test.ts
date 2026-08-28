@@ -1492,6 +1492,74 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           );
         }
 
+        // Друкована форма — те, що людина називає «дай накладну»: не JSON
+        // документа, а бланк. Команда `printPdf` виводиться з непорожнього
+        // `prints` манифеста, і в переліку агента вона мусить бути так само,
+        // як у формі, — інакше диспетчер відмовляє тому, що перелік показує.
+        assertEquals(catalog.find((entry) => entry.model === "invoice")?.commands.includes("printPdf"), true);
+        // Друк читає, а не пише, тож токен «тільки для читання» його бачить.
+        assertEquals(
+          readerCatalog.find((entry) => entry.model === "invoice")?.commands.includes("printPdf"),
+          true,
+        );
+
+        const invoices = await client.model("invoice", "list", { pageSize: 1 });
+        const invoice = (invoices.body.data.rows as Array<{ id: string }>)[0];
+        if (invoice) {
+          const printed = await callModel(full.token, "invoice", "printPdf", { id: invoice.id });
+          assertEquals(printed.body.ok, true);
+
+          const extra = (printed.body.result as { data?: { extra?: Record<string, unknown> } })
+            .data?.extra ?? {};
+          // `JVBERi0` — це «%PDF-» у base64: перевіряємо, що приїхав саме
+          // документ, а не порожнеча з правильною формою конверта.
+          assertEquals(String(extra.pdfBase64 ?? "").startsWith("JVBERi0"), true);
+          assertEquals(typeof extra.fileName, "string");
+        }
+
+        // Вкладення назовні — ланцюжок із двох кроків, і перевіряти його треба
+        // цілим. Команда моделі віддає ПІДПИСАНИЙ токен (сирий access_key
+        // назовні не виходить ніколи), а байти забираються вже ним, власним
+        // каналом. Розірвати ланцюг можна з обох боків — прибрати `attachment`
+        // із переліку агента або перестати підписувати токени в конверті, — і
+        // жодна з половин сама собою про це не скаже.
+        assertEquals(
+          catalog.find((entry) => entry.model === "attachment")?.commands.sort(),
+          ["get", "list"],
+        );
+
+        if (existing) {
+          const scan = await client.upload(
+            { name: "smoke-agent-scan.txt", type: "text/plain", bytes: bytes("scan") },
+            { ownerModel: "bank", ownerId: existing.id },
+          );
+          const attachment = scan.body.data.item as { id: string } | null;
+          assertExists(attachment);
+
+          try {
+            const listed = await callModel(full.token, "attachment", "list", {
+              ownerModel: "bank",
+              ownerId: existing.id,
+            });
+            assertEquals(listed.body.ok, true);
+
+            const row = ((listed.body.result as { data?: { rows?: Array<Record<string, string>> } })
+              .data?.rows ?? []).find((entry) => entry.id === attachment.id);
+            assertExists(row);
+            // Підпис, а не сирий uuid: токен складається з претензій і HMAC
+            // через крапку, і саме цим він і не вгадується за id.
+            assertEquals(row.token.includes("."), true);
+
+            const downloaded = await client.fetch(
+              `/api/blob/${row.id}?token=${encodeURIComponent(row.token)}&disp=attachment`,
+            );
+            assertEquals(downloaded.status, 200);
+            assertEquals(await downloaded.text(), "scan");
+          } finally {
+            await purge("app.attachment", attachment.id);
+          }
+        }
+
         const revoked = await client.json<Envelope>("/api/auth/tokens/revoke", {
           method: "POST",
           headers: browser,

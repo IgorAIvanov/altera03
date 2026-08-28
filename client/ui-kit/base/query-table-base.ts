@@ -365,7 +365,10 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
     // Той самий довід, що й у reload(): відбір змінився — позначки застаріли.
     this.clearChecked();
     this.page = 1;
-    clearTimeout(this.#searchTimer);
+    // Перевірка на `undefined` — з тієї ж причини, що й тип поля вище: під
+    // @types/node `clearTimeout` не приймає ані `undefined`, ані `number`, і
+    // пакет не проходить перевірку типів при публікації.
+    if (this.#searchTimer !== undefined) clearTimeout(this.#searchTimer);
     this.#searchTimer = setTimeout(() => this.load(), this.searchDebounceMs);
   }
 

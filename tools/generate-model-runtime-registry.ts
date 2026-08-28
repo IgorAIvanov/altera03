@@ -182,6 +182,13 @@ function agentCommandsFor(manifest: ManifestRecord): string[] {
 
   const base = agentBaseCommands(manifest.type ?? "catalog");
 
+  // Друк виводиться з непорожнього `prints` — там само, звідки береться і сам
+  // хендлер, і право на нього. Агенту він потрібен рівно тому ж, чому й людині:
+  // «дай накладну» означає паперовий бланк, а не JSON документа. Байти при
+  // цьому в контекст агента не потрапляють — обгортка кладе PDF на диск і
+  // віддає шлях (див. mcp/main.ts, altera_print).
+  if (Object.keys(manifest.prints ?? {}).length > 0) base.push("printPdf");
+
   if (Array.isArray(agent.allowCommands)) {
     return base.filter((command) => agent.allowCommands!.includes(command));
   }

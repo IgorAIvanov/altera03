@@ -16,11 +16,22 @@ import { icons } from "@client/ui-kit/icons.ts";
 export const tagName = "user-group-edit";
 
 /**
+ * Моделі ядра: вони працюють командами, як усі, але манифеста не мають, тож у
+ * реєстр застосунку не потрапляють.
+ *
+ * Без цього рядка право на них можна було видати лише зіркою — тобто разом з
+ * усім іншим. Помітно це стало, щойно вкладення знадобилися зовнішньому агенту
+ * (`altera_fetch`): звичайний користувач бачив накладну й не бачив жодного
+ * прикріпленого до неї файлу, а видати йому саме це право не було чим.
+ */
+const CORE_MODELS = ["attachment"];
+
+/**
  * Моделі беруться з того самого реєстру, що й рантайм: право описується іменем
  * моделі з manifest.json, і список, набраний руками, розійшовся б із ним при
  * першій новій моделі. `*` — усі моделі, тому йде першим.
  */
-const MODEL_OPTIONS = ["*", ...Object.keys(generatedModelRegistry).sort()];
+const MODEL_OPTIONS = ["*", ...[...CORE_MODELS, ...Object.keys(generatedModelRegistry)].sort()];
 
 @customElement(tagName)
 export class UserGroupEdit extends BaseUI<UserGroupEditRoot> {

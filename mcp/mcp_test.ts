@@ -36,8 +36,28 @@ interface FakeAltera {
   close(): Promise<void>;
 }
 
-/** Підроблена база: віддає заготовлені конверти й запам'ятовує, чим її кликали. */
-function fakeAltera(rows: unknown[], callEnvelope: unknown): FakeAltera {
+/** Тіло виклику команди — за ним підроблена база й вирішує, що відповісти. */
+interface FakeCall {
+  model: string;
+  command: string;
+  payload: Record<string, unknown>;
+}
+
+/** Байти, які база віддає на `GET /api/blob/:id`. Ключ — id вкладення. */
+type FakeBlobs = Record<string, { bytes: Uint8Array; mime: string }>;
+
+/**
+ * Підроблена база: віддає заготовлені конверти й запам'ятовує, чим її кликали.
+ *
+ * `callEnvelope` буває функцією — саме тому, що вивантаження файлу це ЛАНЦЮЖОК:
+ * спершу команда моделі віддає метадані з токеном, потім по токену забираються
+ * байти. Одна відповідь на всі виклики перевірила б лише перший крок.
+ */
+function fakeAltera(
+  rows: unknown[],
+  callEnvelope: unknown | ((call: FakeCall) => unknown),
+  blobs: FakeBlobs = {},
+): FakeAltera {
   const authorizations: string[] = [];
   const paths: string[] = [];
   const uploads: FakeUpload[] = [];
@@ -49,6 +69,18 @@ function fakeAltera(rows: unknown[], callEnvelope: unknown): FakeAltera {
       const url = new URL(request.url);
       authorizations.push(request.headers.get("authorization") ?? "");
       paths.push(url.pathname + url.search);
+
+      // Байти віддаються лише з токеном у запиті — рівно як у справжній базі:
+      // право доступу несе сам URL, бо в `<img src>` заголовка не почепиш.
+      const blobMatch = url.pathname.match(/^\/api\/blob\/(\d+)$/);
+      if (blobMatch) {
+        const blob = blobs[blobMatch[1]];
+        if (!url.searchParams.get("token")) return new Response("Forbidden", { status: 403 });
+        if (!blob) return new Response("Not found", { status: 404 });
+        return new Response(blob.bytes as unknown as BodyInit, {
+          headers: { "content-type": blob.mime },
+        });
+      }
 
       // Завантаження розбираємо по-справжньому: перевіряти треба саме те, що
       // доїхало до бази — ім'я, тип і власника, — а не те, що ми відправляли.
@@ -72,7 +104,9 @@ function fakeAltera(rows: unknown[], callEnvelope: unknown): FakeAltera {
       }
 
       const body = url.pathname === "/api/agent/call"
-        ? callEnvelope
+        ? typeof callEnvelope === "function"
+          ? (callEnvelope as (call: FakeCall) => unknown)(await request.json() as FakeCall)
+          : callEnvelope
         : { ok: true, data: { rows, totals: { count: rows.length } }, messages: [] };
 
       return new Response(JSON.stringify(body), {
@@ -105,7 +139,10 @@ class McpProbe {
 
   constructor(env: Record<string, string>) {
     this.process = new Deno.Command(Deno.execPath(), {
-      args: ["run", "--allow-net", "--allow-env", "--allow-read", MAIN],
+      // `--allow-write` тут повний, а не звужений до каталогу: проба щоразу
+      // бере свій тимчасовий, і в реальному конфізі хоста дозвіл звужують саме
+      // до ALTERA_DOWNLOAD_DIR (див. README).
+      args: ["run", "--allow-net", "--allow-env", "--allow-read", "--allow-write", MAIN],
       env,
       stdin: "piped",
       stdout: "piped",
@@ -208,16 +245,19 @@ Deno.test("обгортка: рукостискання, перелік і ви�
     const info = (initialized.result as { serverInfo?: { name?: string } }).serverInfo;
     assertEquals(info?.name, "altera");
 
-    // Чотири інструменти, а не дзеркало команд: опис лежить у контексті завжди,
-    // тож його розмір і є ціна рішення. Четвертий тут не тому, що моделей
-    // побільшало, а тому що каналів у базі два — команди й байти.
+    // Шість інструментів, а не дзеркало команд: опис лежить у контексті завжди,
+    // тож його розмір і є ціна рішення. Три останні тут не тому, що моделей
+    // побільшало, а тому що канал байтів двосторонній: покласти файл, забрати
+    // файл, отримати намальований на вимогу бланк.
     const list = await probe.request("tools/list");
     const tools = (list.result as { tools: Array<Record<string, unknown>> }).tools;
     assertEquals(tools.map((tool) => tool.name).sort(), [
       "altera_attach",
       "altera_call",
       "altera_describe",
+      "altera_fetch",
       "altera_models",
+      "altera_print",
     ]);
 
     // Хост показує ці позначки людині у вікні підтвердження: різниця «читає»
@@ -359,6 +399,197 @@ Deno.test("обгортка: файлу немає — це помилка шл�
     });
     assertEquals(toolResult(noOwner).isError, true);
     assertEquals(toolResult(noOwner).text.includes("id"), true);
+  } finally {
+    await probe.close();
+    await altera.close();
+  }
+});
+
+/** Найменший коректний PNG (1×1). На ньому й перевіряється мініатюра. */
+const PNG_1x1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+function bytesOf(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+interface ContentBlock {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+}
+
+function blocks(response: Record<string, unknown>): ContentBlock[] {
+  return (response.result as { content?: ContentBlock[] })?.content ?? [];
+}
+
+/** Конверт відповіді агента навколо звичайного конверта моделі. */
+function agentEnvelope(model: string, command: string, data: Record<string, unknown>) {
+  return {
+    ok: true,
+    result: { ok: true, model, command, messages: [], data },
+    messages: [],
+  };
+}
+
+Deno.test("обгортка: вкладення лягають на диск, а в контекст іде шлях", async () => {
+  const scan = bytesOf(PNG_1x1);
+  const act = new TextEncoder().encode("%PDF-1.4 акт");
+
+  const altera = fakeAltera(
+    CATALOG,
+    (call: FakeCall) =>
+      call.model === "attachment" && call.command === "list"
+        ? agentEnvelope("attachment", "list", {
+          rows: [
+            { id: "77", name: "скан.png", mime: "image/png", size: scan.length, token: "signed-77" },
+            { id: "78", name: "акт.pdf", mime: "application/pdf", size: act.length, token: "signed-78" },
+          ],
+        })
+        : { ok: false, result: null, messages: [`несподіваний виклик ${call.model}/${call.command}`] },
+    {
+      "77": { bytes: scan, mime: "image/png" },
+      "78": { bytes: act, mime: "application/pdf" },
+    },
+  );
+
+  const directory = await Deno.makeTempDir();
+  const probe = new McpProbe({
+    ALTERA_URL: altera.url,
+    ALTERA_TOKEN: TOKEN,
+    ALTERA_DOWNLOAD_DIR: directory,
+  });
+
+  try {
+    await handshake(probe);
+    const fetched = await probe.request("tools/call", {
+      name: "altera_fetch",
+      arguments: { model: "invoice", id: "42" },
+    });
+
+    const content = blocks(fetched);
+    const files = (JSON.parse(content[0].text ?? "{}") as {
+      files: Array<{ name: string; path: string; size: number; preview?: string }>;
+    }).files;
+
+    assertEquals(files.map((file) => file.name), ["скан.png", "акт.pdf"]);
+
+    // Файли справді лежать на диску — і саме ті, що віддала база.
+    assertEquals(await Deno.readTextFile(files[1].path), "%PDF-1.4 акт");
+
+    // Головне цієї проби: вміст у відповідь не поїхав. Текст несе шлях і
+    // метадані, і жодного base64 у ньому немає.
+    assertEquals(content[0].text?.includes("JVBER"), false);
+    assertEquals(content[0].text?.includes(PNG_1x1.slice(0, 24)), false);
+
+    // Зображення описується ще й мініатюрою: шлях каже, ДЕ файл, і не каже,
+    // ЩО це. PDF мініатюри не має — рендерера в обгортці немає навмисно.
+    const images = content.filter((block) => block.type === "image");
+    assertEquals(images.length, 1);
+    assertEquals(images[0].mimeType, "image/jpeg");
+    assertEquals(files[0].preview, "нижче");
+    assertEquals(files[1].preview, undefined);
+
+    // Байти забиралися тим самим каналом, що й у браузера: токеном у запиті.
+    assertEquals(altera.paths.some((path) => path.startsWith("/api/blob/77?token=signed-77")), true);
+  } finally {
+    await probe.close();
+    await altera.close();
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("обгортка: друкована форма стає файлом, а не base64 у розмові", async () => {
+  // Вміст навмисно ASCII: він їде base64, а `btoa` кирилиці не приймає — як і
+  // справжній сервер, який кодує БАЙТИ, а не рядок.
+  const pdf = "%PDF-1.4 invoice";
+  const printed = agentEnvelope("invoice", "printPdf", {
+    extra: {
+      mimeType: "application/pdf",
+      pdfBase64: btoa(pdf),
+      fileName: "invoice-НК-000012.pdf",
+      templateCode: "invoice_default",
+      templateName: "Накладна",
+    },
+  });
+
+  const altera = fakeAltera(CATALOG, printed);
+  const directory = await Deno.makeTempDir();
+  const probe = new McpProbe({
+    ALTERA_URL: altera.url,
+    ALTERA_TOKEN: TOKEN,
+    ALTERA_DOWNLOAD_DIR: directory,
+  });
+
+  try {
+    await handshake(probe);
+    const result = await probe.request("tools/call", {
+      name: "altera_print",
+      arguments: { model: "invoice", id: "12" },
+    });
+
+    const answer = JSON.parse(toolResult(result).text) as {
+      path: string;
+      name: string;
+      templateName: string;
+    };
+    assertEquals(answer.name, "invoice-НК-000012.pdf");
+    assertEquals(answer.templateName, "Накладна");
+    assertEquals(await Deno.readTextFile(answer.path), pdf);
+    // Заради чого все й робилося: бланк не осів у контексті.
+    assertEquals(toolResult(result).text.includes(btoa(pdf)), false);
+
+    // Той самий бланк через altera_call — байти зрізані, і сказано, чим їх узяти.
+    const direct = await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: { model: "invoice", command: "printPdf", payload: { id: "12" } },
+    });
+    assertEquals(toolResult(direct).text.includes(btoa(pdf)), false);
+    assertEquals(toolResult(direct).text.includes("altera_print"), true);
+
+    // Друге вивантаження того самого бланка не затирає перше.
+    const again = await probe.request("tools/call", {
+      name: "altera_print",
+      arguments: { model: "invoice", id: "12" },
+    });
+    assertEquals(
+      (JSON.parse(toolResult(again).text) as { name: string }).name,
+      "invoice-НК-000012 (2).pdf",
+    );
+  } finally {
+    await probe.close();
+    await altera.close();
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("обгортка: без каталогу вивантаження файли не забираються взагалі", async () => {
+  const altera = fakeAltera(CATALOG, CALL_ENVELOPE);
+  const probe = new McpProbe({ ALTERA_URL: altera.url, ALTERA_TOKEN: TOKEN });
+
+  try {
+    await handshake(probe);
+
+    for (const call of [
+      { name: "altera_fetch", arguments: { model: "invoice", id: "42" } },
+      { name: "altera_print", arguments: { model: "invoice", id: "42" } },
+    ]) {
+      const refused = await probe.request("tools/call", call);
+      const { text, isError } = toolResult(refused);
+      assertEquals(isError, true);
+      // Причина названа налаштуванням хоста, а не помилкою бази: інакше агент
+      // піде лікувати не те, а людина не дізнається, що дописати в конфіг.
+      assertEquals(text.includes("ALTERA_DOWNLOAD_DIR"), true);
+      assertEquals(text.includes("--allow-write"), true);
+    }
+
+    // І в базу за цим не ходили: рахувати бланк, щоб потім не мати куди його
+    // покласти, — марна робота, а на великому документі ще й повільна.
+    assertEquals(altera.paths.some((path) => path === "/api/agent/call"), false);
   } finally {
     await probe.close();
     await altera.close();

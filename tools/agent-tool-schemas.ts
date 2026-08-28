@@ -199,6 +199,24 @@ function payloadSchemaFor(
     };
   }
 
+  // Друк: `id` записи плюс необов'язковий код шаблону. Схеми в моделі немає й
+  // бути не може — payload належить рантайму друку, а не моделі, і однаковий у
+  // всіх. Порожній `templateCode` означає активний шаблон, і саме це потрібно
+  // в дев'яти випадках із десяти.
+  if (command === "printPdf") {
+    return {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "ID запису, який друкуємо" },
+        templateCode: {
+          type: "string",
+          description: "Код шаблону друку. Без нього — активний шаблон моделі",
+        },
+      },
+      required: ["id"],
+    };
+  }
+
   if (command === "list") return listPayloadFallback();
   if (command === "lookup") {
     return {
