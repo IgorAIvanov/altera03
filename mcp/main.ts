@@ -17,6 +17,16 @@
  * вимогу. Тобто інструменти ростуть від НАПРЯМКІВ каналів, а не від моделей:
  * скільки б команд не додали, цих напрямків лишиться три.
  *
+ * РОСТУТЬ ПАРАМЕТРИ, А НЕ ПЕРЕЛІК. Пакет однотипних викликів, звуження каталогу
+ * і стисла відповідь — усе це поля наявних інструментів, а не сьомий і восьмий
+ * інструмент. Причина та сама, що й вище: перелік лежить у контексті завжди, а
+ * поле читається лише тим, хто до нього дійшов. Тому «додати можливість» тут
+ * майже ніколи не означає «додати інструмент».
+ *
+ * ЩО САМЕ ОСІДАЄ В КОНТЕКСТІ — окремий модуль (`answer.ts`), і він чистий.
+ * Помилка в цьому місці не падає: вона тихо коштує грошей щоразу, коли до
+ * повідомлення повертаються, — тож тримається під пробами.
+ *
  * БАЙТИ НЕ ПОТРАПЛЯЮТЬ У КОНТЕКСТ АГЕНТА — В ОБИДВА БОКИ. Вхідний файл
  * називається шляхом, вихідний лягає на диск і теж віддається шляхом:
  * накладна на 420 КБ у base64 — це 560 КБ у розмові, за які платять щоразу,
@@ -35,11 +45,18 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { type AlteraAttachment, AlteraClient, AlteraError, configFromEnv } from "./altera-client.ts";
+import {
+  condense,
+  CONDENSED_NOTE,
+  filterModels,
+  isEchoingCommand,
+  withoutInlineBytes,
+} from "./answer.ts";
 import { saveDownload } from "./file-sink.ts";
 import { imagePreview } from "./preview.ts";
 
 /** Тримати в парі з `version` у deno.json — її видно хосту при `initialize`. */
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 /**
  * Блок відповіді MCP. Крім тексту буває `image` — ним їде мініатюра вкладення;
@@ -66,8 +83,24 @@ const TOOLS = [
     description:
       "Каталог моделей облікової бази: імена, назви людською мовою, синоніми та перелік " +
       "доступних команд. Без схем — з цього починають, щоб зрозуміти, що в базі є. " +
-      "Перелік уже звужений правами користувача, якому належить токен.",
-    inputSchema: { type: "object", properties: {} },
+      "Перелік уже звужений правами користувача, якому належить токен. " +
+      "ЗВУЖУЙ ЙОГО: у робочій базі моделей буває півтори сотні, і каталог цілком — це десятки " +
+      "кілобайтів у контексті розмови. `q` шукає за технічним іменем, назвою й синонімами " +
+      "(«банк», «накладна», «контрагент»), `type` лишає самі довідники або самі документи.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: {
+          type: "string",
+          description: "Слово, яким модель називають: «банк», «накладна», counterparty",
+        },
+        type: {
+          type: "array",
+          items: { type: "string" },
+          description: "Лише названі типи: catalog, document, register, report",
+        },
+      },
+    },
     annotations: { title: "Каталог моделей", readOnlyHint: true },
   },
   {
@@ -99,13 +132,30 @@ const TOOLS = [
       "Виконати команду моделі від імені власника токена. Стандартні команди: list, get, " +
       "save, delete, lookup; документи додатково post/unpost; звіти — index. " +
       "Команди, що змінюють стан (delete, undelete, post, unpost), вимагають \"confirm\": true " +
-      "у payload. У відповіді є `route` — посилання на вкладку застосунку, яке можна дати людині.",
+      "у payload. У відповіді є `route` — посилання на вкладку застосунку, яке можна дати людині. " +
+      "ШУКАЙ, А НЕ ЧИТАЙ ЦІЛКОМ: `list` бере `search`, `limit` і відбори — щоб знайти один рядок, " +
+      "не треба тягнути довідник на тисячу. " +
+      "ОДНОТИПНЕ — ОДНИМ ВИКЛИКОМ: замість `payload` можна дати `payloads`, масив тіл ТІЄЇ САМОЇ " +
+      "команди (вісім позицій номенклатури за раз).",
     inputSchema: {
       type: "object",
       properties: {
         model: { type: "string", description: "Ім'я моделі з altera_models" },
         command: { type: "string", description: "Команда моделі" },
         payload: { type: "object", description: "Тіло команди за схемою з altera_describe" },
+        payloads: {
+          type: "array",
+          items: { type: "object" },
+          description:
+            "Кілька тіл тієї самої команди замість payload, до 50 за виклик. Виконуються по " +
+            "черзі; невдалі позначені ok: false — повторювати треба ЛИШЕ їх, решта вже записана",
+        },
+        verbose: {
+          type: "boolean",
+          description:
+            "Повна відповідь. Умовчання — стисла для команд, що пишуть (save, post, unpost, " +
+            "delete, undelete): вони віддають ехо надісланого, і вкладене з нього зрізано",
+        },
       },
       required: ["model", "command"],
     },
@@ -373,22 +423,166 @@ async function printToDisk(
 }
 
 /**
- * Відповідь команди без вбудованих байтів.
+ * Скільки моделей у каталозі, щоб іще мовчати про фільтр.
  *
- * `printPdf` можна покликати й через `altera_call` — він оголошений моделі як
- * звичайна команда, — і тоді ста́ла б у контекст уся друкована форма в base64:
- * сотня-друга кілобайтів, які агент навіть не може ні відкрити, ні зберегти.
- * Тому байти звідси зрізаються, а на їхньому місці лишається вказівка на
- * інструмент, який зробить те, чого агент насправді хотів.
+ * Поріг, а не завжди: у навчальній базі два десятки моделей, і приписка там
+ * була б шумом. Він трохи нижчий за розмір справжнього рішення навмисно — сенс
+ * підказки в тому, щоб вона з'явилася ДО того, як каталог почне важити.
  */
-function withoutInlineBytes(answer: unknown): unknown {
-  const extra = (answer as { result?: { data?: { extra?: Record<string, unknown> } } })
-    ?.result?.data?.extra;
+const CATALOG_HINT_FROM = 40;
 
-  if (extra && typeof extra.pdfBase64 === "string") {
-    extra.pdfBase64 = "⟨PDF вирізано: щоб отримати файл, поклич altera_print⟩";
+/** `type` буває рядком, буває списком: агенти пишуть і так, і так. */
+function typeList(value: unknown): string[] {
+  if (typeof value === "string") return value.trim() ? [value] : [];
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string") as string[] : [];
+}
+
+/**
+ * Каталог моделей, звужений до того, про що спитали.
+ *
+ * Фільтрує ОБГОРТКА, а не база: `GET /api/agent/tools` іншого не вміє, та й
+ * платимо ми не за байти в мережі, а за байти в контексті. `total` при цьому
+ * лишається — інакше три відфільтровані рядки агент прочитав би як «більше в
+ * базі нічого немає».
+ */
+async function listModels(
+  client: AlteraClient,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const all = await client.models();
+  const query = typeof args.q === "string" ? args.q : undefined;
+  const types = typeList(args.type);
+  const models = filterModels(all, query, types);
+  const narrowed = Boolean(query?.trim()) || types.length > 0;
+
+  const note = narrowed && models.length === 0
+    ? `У каталозі ${all.length} моделей, але під фільтр не підійшла жодна. Спробуй інше ` +
+      `слово: синоніми задає застосунок, і моделі може просто не бути в цій базі.`
+    : !narrowed && all.length >= CATALOG_HINT_FROM
+    ? `Каталог віддано цілком (${all.length} моделей). Наступного разу звужуй — q: "банк" ` +
+      `або type: ["document"]: це той самий каталог, але не в контексті.`
+    : undefined;
+
+  return text({ total: all.length, shown: models.length, models, note });
+}
+
+/**
+ * Скільки тіл приймається за один виклик.
+ *
+ * Обмеження не технічне, а про ціну помилки: пакет виконується по черзі й
+ * посеред нього може відмовити будь-який елемент. Півсотні — це ще перелік,
+ * який агент прочитає й доробить руками; тисяча — це вже імпорт, і робити його
+ * наосліп із чату не варто.
+ */
+const BATCH_LIMIT = 50;
+
+function payloadList(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new AlteraError("payloads: очікується непорожній масив тіл команди.");
   }
-  return answer;
+  if (value.length > BATCH_LIMIT) {
+    throw new AlteraError(
+      `payloads: за раз не більше ${BATCH_LIMIT}, прийшло ${value.length}. Поділи на частини — ` +
+        `так видно, де саме зупинилося, якщо щось відмовить.`,
+    );
+  }
+
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new AlteraError(`payloads[${index}]: очікується об'єкт-тіло команди.`);
+    }
+    return item as Record<string, unknown>;
+  });
+}
+
+/** Один виклик: байти зрізані завжди, ехо — якщо не просили повністю. */
+async function callOnce(
+  client: AlteraClient,
+  model: string,
+  command: string,
+  payload: Record<string, unknown>,
+  verbose: boolean,
+): Promise<unknown> {
+  const answer = withoutInlineBytes(await client.call(model, command, payload));
+  if (verbose || !isEchoingCommand(command)) return answer;
+  return condense(answer) ? { ...answer as Record<string, unknown>, note: CONDENSED_NOTE } : answer;
+}
+
+/**
+ * Пакет однотипних викликів.
+ *
+ * ПО ЧЕРЗІ, А НЕ ПАРАЛЕЛЬНО. Пакет майже завжди пише, а запис в обліку ділить
+ * лічильники нумератора: паралельні `save` змагалися б за один рядок
+ * `app.numerator` і в кращому разі чекали б одне одного всередині бази. Виграш
+ * тут не в часі бази — він в ОБЕРТАХ АГЕНТА: вісім позицій номенклатури це
+ * вісім кроків розмови, а тепер один.
+ *
+ * ВІДМОВА ОДНОГО НЕ СПИНЯЄ РЕШТУ, і відповідь не позначається помилкою навіть
+ * тоді, коли впала половина. Помилка змусила б агента повторити ВЕСЬ пакет —
+ * тобто завести ще сім записів поверх семи вже заведених. Тому статус лежить
+ * при кожному елементі, а не над усіма.
+ */
+async function callBatch(
+  client: AlteraClient,
+  model: string,
+  command: string,
+  payloads: Array<Record<string, unknown>>,
+  verbose: boolean,
+): Promise<ToolResult> {
+  const results: Array<Record<string, unknown>> = [];
+  let failed = 0;
+
+  for (const [index, payload] of payloads.entries()) {
+    try {
+      const answer = await callOnce(client, model, command, payload, verbose);
+      results.push({ index, ok: true, answer });
+    } catch (error) {
+      failed++;
+      results.push({
+        index,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return text({
+    model,
+    command,
+    count: payloads.length,
+    failed,
+    results,
+    note: failed
+      ? `Відмовили ${failed} з ${payloads.length}. Повторюй ЛИШЕ елементи з ok: false — ` +
+        `решта вже записана, і другий прогін пакета завів би їх ще раз.`
+      : undefined,
+  });
+}
+
+/** Виклик команди: одне тіло або пакет однотипних. */
+async function callCommand(
+  client: AlteraClient,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const model = requiredString(args.model, "model");
+  const command = requiredString(args.command, "command");
+  const verbose = args.verbose === true;
+
+  if (args.payloads === undefined) {
+    const payload = (args.payload ?? {}) as Record<string, unknown>;
+    return text(await callOnce(client, model, command, payload, verbose));
+  }
+
+  // Обидва разом — це не «і те, і те», а промах: незрозуміло, чи `payload`
+  // мав бути дев'ятим елементом, чи лишився від попереднього виклику. Мовчки
+  // взяти один із них означало б тихо загубити запис.
+  if (args.payload !== undefined) {
+    throw new AlteraError(
+      "payload і payloads разом не приймаються: або одне тіло, або масив тіл.",
+    );
+  }
+
+  return await callBatch(client, model, command, payloadList(args.payloads), verbose);
 }
 
 function failure(message: string): ToolResult {
@@ -428,7 +622,7 @@ export function createMcpServer(client: AlteraClient): Server {
     try {
       switch (request.params.name) {
         case "altera_models":
-          return text(await client.models());
+          return await listModels(client, args);
 
         case "altera_describe":
           return text(await client.describe(
@@ -437,11 +631,7 @@ export function createMcpServer(client: AlteraClient): Server {
           ));
 
         case "altera_call":
-          return text(withoutInlineBytes(await client.call(
-            requiredString(args.model, "model"),
-            requiredString(args.command, "command"),
-            (args.payload ?? {}) as Record<string, unknown>,
-          )));
+          return await callCommand(client, args);
 
         case "altera_attach": {
           // Аргументи звіряються ДО читання файлу: інакше неповний виклик

@@ -272,8 +272,15 @@ Deno.test("обгортка: рукостискання, перелік і ви�
       name: "altera_models",
       arguments: {},
     });
-    const rows = JSON.parse(toolResult(catalog).text) as Array<{ model: string }>;
-    assertEquals(rows[0].model, "bank");
+    // Каталог їде разом із власним розміром: `shown` проти `total` — це те, що
+    // дає агенту зрозуміти, чи бачить він базу цілком, чи вже звужену вибірку.
+    const answer = JSON.parse(toolResult(catalog).text) as {
+      total: number;
+      shown: number;
+      models: Array<{ model: string }>;
+    };
+    assertEquals(answer.models[0].model, "bank");
+    assertEquals([answer.total, answer.shown], [1, 1]);
 
     // Токен їде заголовком і лише ним: у командний рядок він не потрапляє
     // ніколи (аргументи видно в списку процесів).
@@ -666,4 +673,230 @@ Deno.test("обгортка: без токена не стартує й каже
   const message = new TextDecoder().decode(stderr);
   assertEquals(message.includes("ALTERA_TOKEN"), true);
   assertExists(message);
+});
+
+/**
+ * Каталог, на якому видно різницю: три моделі, два типи, синоніми в кожної.
+ *
+ * Синоніми тут головні — агент приходить зі словом «накладна», а не з іменем
+ * `invoice`, і саме за цим збігом фільтр і має спрацьовувати.
+ */
+const WIDE_CATALOG = [
+  {
+    model: "bank",
+    type: "catalog",
+    titles: { uk: "Банки", en: "Banks" },
+    aliases: ["банк", "банки"],
+    commands: ["list", "get", "save", "lookup"],
+  },
+  {
+    model: "counterparty",
+    type: "catalog",
+    titles: { uk: "Контрагенти", en: "Counterparties" },
+    aliases: ["контрагент", "постачальник"],
+    commands: ["list", "get", "save", "lookup"],
+  },
+  {
+    model: "invoice",
+    type: "document",
+    titles: { uk: "Видаткова накладна", en: "Invoice" },
+    aliases: ["накладна"],
+    commands: ["list", "get", "save", "post", "unpost"],
+  },
+];
+
+interface CatalogAnswer {
+  total: number;
+  shown: number;
+  models: Array<{ model: string }>;
+  note?: string;
+}
+
+Deno.test("обгортка: каталог звужується до того, про що спитали", async () => {
+  const altera = fakeAltera(WIDE_CATALOG, CALL_ENVELOPE);
+  const probe = new McpProbe({ ALTERA_URL: altera.url, ALTERA_TOKEN: TOKEN });
+
+  const catalog = async (args: Record<string, unknown>): Promise<CatalogAnswer> => {
+    const answer = await probe.request("tools/call", { name: "altera_models", arguments: args });
+    assertEquals(toolResult(answer).isError, false);
+    return JSON.parse(toolResult(answer).text) as CatalogAnswer;
+  };
+
+  try {
+    await handshake(probe);
+
+    // Слово, яким модель називають люди, а не її технічне ім'я: саме з цим
+    // агент і приходить.
+    const byWord = await catalog({ q: "постачальник" });
+    assertEquals(byWord.models.map((row) => row.model), ["counterparty"]);
+    // `total` лишається завжди — інакше один рядок у відповіді агент прочитав
+    // би як «більше в базі нічого немає» і пішов би вигадувати обхід.
+    assertEquals(byWord.total, 3);
+    assertEquals(byWord.shown, 1);
+
+    assertEquals((await catalog({ q: "накладна" })).models.map((row) => row.model), ["invoice"]);
+    assertEquals((await catalog({ type: ["document"] })).models.map((row) => row.model), [
+      "invoice",
+    ]);
+
+    // Тип рядком, а не списком: агенти пишуть і так, і так.
+    assertEquals((await catalog({ type: "catalog" })).shown, 2);
+
+    // Без фільтра — усе, як і було: звуження це можливість, а не обмеження.
+    assertEquals((await catalog({})).shown, 3);
+
+    // Порожньо — це не помилка, але й не мовчання: агент має зрозуміти, що
+    // справа у слові, а не в правах чи в поламаній базі.
+    const nothing = await catalog({ q: "зарплата" });
+    assertEquals(nothing.shown, 0);
+    assertEquals(nothing.note?.includes("не підійшла жодна"), true);
+
+    // Фільтрує обгортка: база однаково віддає каталог цілком, іншого вона не
+    // вміє. Платимо ми не за байти в мережі, а за байти в контексті.
+    assertEquals(altera.paths.filter((path) => path === "/api/agent/tools").length, 6);
+  } finally {
+    await probe.close();
+    await altera.close();
+  }
+});
+
+/** Тіло `save` довідника — рівно стільки, скільки треба підробленій базі. */
+function savePayload(name: string): Record<string, unknown> {
+  return { item: { name } };
+}
+
+interface BatchAnswer {
+  count: number;
+  failed: number;
+  note?: string;
+  results: Array<{ index: number; ok: boolean; error?: string; answer?: unknown }>;
+}
+
+Deno.test("обгортка: пакет однотипних викликів — один оберт замість восьми", async () => {
+  const altera = fakeAltera(WIDE_CATALOG, (call: FakeCall) => {
+    const item = (call.payload.item ?? {}) as { name?: string };
+    return item.name
+      ? agentEnvelope(call.model, call.command, { item: { id: `id-${item.name}`, name: item.name } })
+      : { ok: false, result: null, messages: [{ type: "error", text: "Поле «name» обов'язкове" }] };
+  });
+  const probe = new McpProbe({ ALTERA_URL: altera.url, ALTERA_TOKEN: TOKEN });
+
+  try {
+    await handshake(probe);
+
+    const batch = await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: {
+        model: "counterparty",
+        command: "save",
+        payloads: [savePayload("Альфа"), { item: {} }, savePayload("Гамма")],
+      },
+    });
+
+    const answer = JSON.parse(toolResult(batch).text) as BatchAnswer;
+    assertEquals(answer.count, 3);
+    assertEquals(answer.failed, 1);
+
+    // Відмова посеред пакета не спиняє решту: третій запис зроблено.
+    assertEquals(answer.results.map((row) => row.ok), [true, false, true]);
+    assertEquals(answer.results[1].error?.includes("name"), true);
+    assertEquals(altera.paths.filter((path) => path === "/api/agent/call").length, 3);
+
+    // ГОЛОВНЕ ЦІЄЇ ПРОБИ: часткова відмова не позначається помилкою відповіді.
+    // Позначена, вона змусила б агента повторити ВЕСЬ пакет — тобто завести
+    // ще два записи поверх двох уже заведених.
+    assertEquals(toolResult(batch).isError, false);
+    assertEquals(answer.note?.includes("ok: false"), true);
+
+    // Обидва тіла разом — промах, а не «і те, і те»: мовчки взяти одне з них
+    // означало б тихо загубити запис.
+    const both = await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: {
+        model: "counterparty",
+        command: "save",
+        payload: savePayload("Дельта"),
+        payloads: [savePayload("Омега")],
+      },
+    });
+    assertEquals(toolResult(both).isError, true);
+    assertEquals(altera.paths.filter((path) => path === "/api/agent/call").length, 3);
+  } finally {
+    await probe.close();
+    await altera.close();
+  }
+});
+
+/** Документ із табличною частиною — те саме ехо, яке `save` віддає назад. */
+const SAVED_DOCUMENT = {
+  id: "1032",
+  number: "НК-000012",
+  date: "2026-08-28",
+  total: 4200,
+  posted: false,
+  rows: [
+    { lineNumber: 1, nomenclatureName: "Корпус", quantity: 6, price: 200 },
+    { lineNumber: 2, nomenclatureName: "Кришка", quantity: 6, price: 300 },
+    { lineNumber: 3, nomenclatureName: "Гвинт", quantity: 24, price: 50 },
+  ],
+  organization: { id: "1", name: "ТОВ «Проба»" },
+};
+
+Deno.test("обгортка: ехо запису вкорочується, відповідь на питання — ні", async () => {
+  const altera = fakeAltera(
+    WIDE_CATALOG,
+    (call: FakeCall) => agentEnvelope(call.model, call.command, { item: SAVED_DOCUMENT }),
+  );
+  const probe = new McpProbe({ ALTERA_URL: altera.url, ALTERA_TOKEN: TOKEN });
+
+  const itemOf = (response: Record<string, unknown>) =>
+    (JSON.parse(toolResult(response).text) as {
+      result: { data: { item: Record<string, unknown> } };
+      note?: string;
+    });
+
+  try {
+    await handshake(probe);
+
+    const saved = itemOf(await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: { model: "invoice", command: "save", payload: { item: SAVED_DOCUMENT } },
+    }));
+
+    // Скаляри лишаються — саме за ними документ і впізнають.
+    assertEquals(saved.result.data.item.number, "НК-000012");
+    assertEquals(saved.result.data.item.total, 4200);
+    assertEquals(saved.result.data.item.posted, false);
+
+    // Вкладене зрізано: табличну частину агент щойно надіслав сам, і повертати
+    // її йому — це платити за неї вдруге.
+    assertEquals(saved.result.data.item.rows, "⟨вирізано рядків: 3⟩");
+    assertEquals(saved.result.data.item.organization, "⟨вирізано вкладений об'єкт⟩");
+
+    // Зрізане має бути назване зрізаним, інакше воно читається як відсутнє.
+    assertEquals(saved.note?.includes("verbose"), true);
+
+    const verbose = itemOf(await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: {
+        model: "invoice",
+        command: "save",
+        payload: { item: SAVED_DOCUMENT },
+        verbose: true,
+      },
+    }));
+    assertEquals((verbose.result.data.item.rows as unknown[]).length, 3);
+    assertEquals(verbose.note, undefined);
+
+    // А от читання не чіпається взагалі: `get` віддає те, заради чого його й
+    // кликали, і вкорочувати це означало б вкорочувати саму роботу.
+    const read = itemOf(await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: { model: "invoice", command: "get", payload: { id: "1032" } },
+    }));
+    assertEquals((read.result.data.item.rows as unknown[]).length, 3);
+  } finally {
+    await probe.close();
+    await altera.close();
+  }
 });
