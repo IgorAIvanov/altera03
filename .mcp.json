@@ -11,7 +11,7 @@
         "--allow-env",
         "--allow-read",
         "--allow-write",
-        "jsr:@altera/mcp@^0.3.0"
+        "jsr:@altera/mcp@^0.4.0"
       ],
       "env": {
         "ALTERA_URL": "${ALTERA_URL:-http://localhost:3000}",
