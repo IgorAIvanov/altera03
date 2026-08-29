@@ -900,3 +900,55 @@ Deno.test("обгортка: ехо запису вкорочується, ві�
     await altera.close();
   }
 });
+
+interface RoutedAnswer {
+  result: { route?: string };
+}
+
+Deno.test("обгортка: посилання доїжджає повною адресою, а не шляхом", async () => {
+  // База віддає ШЛЯХ і правильно робить: свого публічного адреса вона не знає.
+  // Знає його обгортка — `ALTERA_URL` у власному оточенні, — і більше ніхто:
+  // оточення процесу в контекст розмови не потрапляє ніколи. Тому шлях, який
+  // доїхав до агента шляхом, він і віддає людині, а клікнути там нема по чому.
+  const routed = (call: FakeCall, route: string) => ({
+    ok: true,
+    result: { ok: true, model: call.model, command: call.command, route, messages: [] },
+    messages: [],
+  });
+  const altera = fakeAltera(CATALOG, (call: FakeCall) =>
+    // `get` тут відповідає вже абсолютним: так виглядатиме база, яка колись
+    // назве адресу сама (`AUTH_PUBLIC_BASE_URL`). Її знання про себе точніше
+    // за наше, і чіпати його обгортка не має права.
+    call.command === "get"
+      ? routed(call, "https://buh.example.com/catalog/bank/edit/5")
+      : routed(call, "/catalog/bank/edit/5"));
+  const probe = new McpProbe({ ALTERA_URL: altera.url, ALTERA_TOKEN: TOKEN });
+
+  try {
+    await handshake(probe);
+
+    const saved = await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: { model: "bank", command: "save", payload: { item: { name: "Проба" } } },
+    });
+    const answer = JSON.parse(toolResult(saved).text) as RoutedAnswer;
+    assertEquals(answer.result.route, `${altera.url}/catalog/bank/edit/5`);
+
+    const already = JSON.parse(toolResult(await probe.request("tools/call", {
+      name: "altera_call",
+      arguments: { model: "bank", command: "get", payload: { id: "5" } },
+    })).text) as RoutedAnswer;
+    assertEquals(already.result.route, "https://buh.example.com/catalog/bank/edit/5");
+
+    // Каталог носить посилання так само: ним агент відповідає на «де подивитися
+    // банки», не викликаючи взагалі нічого.
+    const catalog = JSON.parse(toolResult(await probe.request("tools/call", {
+      name: "altera_models",
+      arguments: {},
+    })).text) as { models: Array<{ route?: string }> };
+    assertEquals(catalog.models[0].route, `${altera.url}/catalog/bank/list`);
+  } finally {
+    await probe.close();
+    await altera.close();
+  }
+});

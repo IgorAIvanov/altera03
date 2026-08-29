@@ -174,6 +174,15 @@ export class AlteraClient {
     return this.config.downloadDir;
   }
 
+  /**
+   * Адреса бази — вона ж походження застосунку: API і в'ю віддає той самий
+   * сервер. Потрібна не для запитів (їх будує сам клієнт), а щоб дописати
+   * посилання, яке агент дасть людині.
+   */
+  get origin(): string {
+    return this.config.url;
+  }
+
   /** Каталог моделей: що є в базі й що з цим можна робити. */
   async models(): Promise<AlteraModelEntry[]> {
     const rows = await this.rows("/api/agent/tools");

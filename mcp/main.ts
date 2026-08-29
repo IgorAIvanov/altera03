@@ -46,6 +46,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { type AlteraAttachment, AlteraClient, AlteraError, configFromEnv } from "./altera-client.ts";
 import {
+  absolutizeAnswer,
+  absolutizeCatalog,
   condense,
   CONDENSED_NOTE,
   filterModels,
@@ -132,7 +134,8 @@ const TOOLS = [
       "Виконати команду моделі від імені власника токена. Стандартні команди: list, get, " +
       "save, delete, lookup; документи додатково post/unpost; звіти — index. " +
       "Команди, що змінюють стан (delete, undelete, post, unpost), вимагають \"confirm\": true " +
-      "у payload. У відповіді є `route` — посилання на вкладку застосунку, яке можна дати людині. " +
+      "у payload. У відповіді є `route` — повна адреса вкладки застосунку, яку можна дати " +
+      "людині як є. " +
       "ШУКАЙ, А НЕ ЧИТАЙ ЦІЛКОМ: `list` бере `search`, `limit` і відбори — щоб знайти один рядок, " +
       "не треба тягнути довідник на тисячу. " +
       "ОДНОТИПНЕ — ОДНИМ ВИКЛИКОМ: замість `payload` можна дати `payloads`, масив тіл ТІЄЇ САМОЇ " +
@@ -452,7 +455,7 @@ async function listModels(
   const all = await client.models();
   const query = typeof args.q === "string" ? args.q : undefined;
   const types = typeList(args.type);
-  const models = filterModels(all, query, types);
+  const models = absolutizeCatalog(filterModels(all, query, types), client.origin);
   const narrowed = Boolean(query?.trim()) || types.length > 0;
 
   const note = narrowed && models.length === 0
@@ -503,7 +506,10 @@ async function callOnce(
   payload: Record<string, unknown>,
   verbose: boolean,
 ): Promise<unknown> {
-  const answer = withoutInlineBytes(await client.call(model, command, payload));
+  const answer = absolutizeAnswer(
+    withoutInlineBytes(await client.call(model, command, payload)),
+    client.origin,
+  );
   if (verbose || !isEchoingCommand(command)) return answer;
   return condense(answer) ? { ...answer as Record<string, unknown>, note: CONDENSED_NOTE } : answer;
 }

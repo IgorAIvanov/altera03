@@ -155,3 +155,50 @@ export function filterModels<T extends CatalogEntry>(
     );
   });
 }
+
+/**
+ * Посилання на вкладку — абсолютне, бо агент бази не бачить.
+ *
+ * Сервер віддає ШЛЯХ (`/catalog/bank/edit/5`), і правильно робить: свого
+ * публічного адреса він не знає — `AUTH_PUBLIC_BASE_URL` за умовчанням
+ * порожній. Знає його обгортка, і тільки вона: `ALTERA_URL` живе в оточенні ЇЇ
+ * процесу, а оточення в контекст розмови не потрапляє ніколи. Тому склеїти дві
+ * половинки може лише це місце — агент, до якого доїхав самий шлях, чесно дає
+ * людині «/catalog/bank/edit/5», і клікнути там нема по чому.
+ *
+ * Замінюємо НА МІСЦІ, а не додаємо друге поле поруч: друге поле це і зайві
+ * байти в кожній відповіді, і вибір, у якому агент помилятиметься.
+ */
+export function absoluteRoute(origin: string, route: string): string {
+  // Абсолютне лишаємо як є: якщо база колись почне віддавати повну адресу —
+  // свою, з `AUTH_PUBLIC_BASE_URL`, — вона знає її точніше за нас.
+  if (/^https?:\/\//i.test(route)) return route;
+  return `${origin}${route.startsWith("/") ? "" : "/"}${route}`;
+}
+
+/** Те саме у відповіді команди: посилання лежить у `result.route`. */
+export function absolutizeAnswer(answer: unknown, origin: string): unknown {
+  const result = (answer as { result?: Record<string, unknown> } | null)?.result;
+  if (result && typeof result.route === "string") {
+    result.route = absoluteRoute(origin, result.route);
+  }
+  return answer;
+}
+
+/**
+ * Те саме в каталозі: `route` кожного рядка — маршрут списку моделі.
+ *
+ * Каталог теж носить посилання, і саме ним агент відповідає на «де подивитися
+ * банки», нічого не викликаючи. Дописувати після звуження, а не до: платимо за
+ * те, що лягає в контекст, а не за те, що приїхало з бази.
+ */
+export function absolutizeCatalog<T extends { route?: string }>(
+  rows: T[],
+  origin: string,
+): T[] {
+  return rows.map((row) =>
+    typeof row.route === "string"
+      ? { ...row, route: absoluteRoute(origin, row.route) }
+      : row
+  );
+}
