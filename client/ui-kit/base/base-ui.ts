@@ -801,6 +801,16 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * підписи звичайних інпутів і компонентів ui-kit виглядають по-різному в
    * одній формі.
    *
+   * Сітка тут ОДНА на весь набір, і тримається вона на двох дрібницях:
+   * проміжок `gap-1` і `leading-none` на підписі — рівно те, що стоїть у
+   * кожного контрола ui-kit. Розійтися їм не можна: голого текстового поля в
+   * наборі немає (номер документа — звичайний `<input>` через цей метод), тож
+   * шапка будь-якого документа неминуче змішує обидва способи, і різниця в
+   * один клас ставить поля ОДНОГО рядка на різні висоти. Доти тут стояв
+   * `gap-px`, а в `ui-decimal` підпис був без `leading-none` — виходили три
+   * сітки (15 / 18 / 24 px від верху поля до контрола), помітні оком одразу й
+   * невидимі в коді: розмітка форми симетрична, класи однакові.
+   *
    * Класу `form-control` тут немає свідомо: у daisyUI 5 його не існує (це
    * клас четвертої версії), і саме він ламав вирівнювання підписів.
    *
@@ -827,7 +837,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
 
     const error = opts.field ? this.fieldErrors[opts.field] : undefined;
     return html`
-      <label class="flex flex-col gap-px ${opts.class ?? ""} ${error ? "field-invalid" : ""}"
+      <label class="flex flex-col gap-1 ${opts.class ?? ""} ${error ? "field-invalid" : ""}"
         data-field=${opts.field ?? nothing}>
         <span class="label text-sm leading-none">
           ${label}${required ? html`<span class="field-required">*</span>` : ""}

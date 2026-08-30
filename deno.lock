@@ -1893,7 +1893,7 @@
       },
       "create": {
         "dependencies": [
-          "jsr:@altera/skills@~0.1.57",
+          "jsr:@altera/skills@~0.1.58",
           "jsr:@std/path@^1.1.2"
         ]
       },

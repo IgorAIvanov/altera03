@@ -201,7 +201,7 @@ export class UiDecimal extends GlobalStyledLitElement {
       `
       : html`
         <div class="flex flex-col gap-1 ${this.invalid ? "field-invalid" : ""}" style=${style}>
-          ${this.label ? html`<span class="label text-sm">${this.label}${this.required ? html`<span class="field-required">*</span>` : ""}</span>` : ""}
+          ${this.label ? html`<span class="label text-sm leading-none">${this.label}${this.required ? html`<span class="field-required">*</span>` : ""}</span>` : ""}
           ${input}
           ${this.invalid ? html`<span class="field-error">${this.invalid}</span>` : ""}
         </div>
