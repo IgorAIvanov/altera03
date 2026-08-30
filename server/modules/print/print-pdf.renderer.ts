@@ -1024,7 +1024,13 @@ export async function renderPrintPdfWithLayout(
     }
   };
 
-  const hasFlow = renderPlan.some((block) => block.placement.mode === "flow");
+  // Потокову розкладку вмикає не лише `flow`, а й ОГОЛОШЕНИЙ розрив сторінки:
+  // «нова сторінка» — поняття вертикалі, а евристика підвалу вертикалі не веде
+  // взагалі (вона ділить блоки на «до першої таблиці» й «після»). Доти розрив на
+  // абсолютному блоці не робив нічого — ні тут, ні в самому потоці, — тож бланк
+  // «по аркушу на людину» з шапкою на координатах друкувався одним аркушем, на
+  // якому всі записи лежали один поверх одного.
+  const hasFlow = renderPlan.some((block) => block.placement.mode === "flow" || block.pageBreakBefore);
 
   if (hasFlow) {
     // ПОТОЧНА РОЗКЛАДКА. Курсор — низ останнього намальованого блока; блок у
@@ -1041,6 +1047,14 @@ export async function renderPrintPdfWithLayout(
       const block = renderPlan[index]!;
 
       if (block.placement.mode !== "flow") {
+        // Розрив читається й тут. Координата каже, ДЕ блок стоїть на аркуші, і
+        // нічого не каже про те, на ЯКОМУ, — а затверджена форма «по аркушу на
+        // запис» верстає шапку саме координатами. На першому блоці бланка не
+        // діє з тієї ж причини, що в потоці: порожній перший аркуш.
+        if (block.pageBreakBefore && cursorY !== null) {
+          page = pdf.addPage(pageSize);
+        }
+
         cursorY = await drawAndReport(block, topYOf(block));
         continue;
       }
@@ -1050,7 +1064,13 @@ export async function renderPrintPdfWithLayout(
       while (
         group[group.length - 1]!.keepTogether &&
         index + 1 < renderPlan.length &&
-        renderPlan[index + 1]!.placement.mode === "flow"
+        renderPlan[index + 1]!.placement.mode === "flow" &&
+        // Оголошений розрив сильніший за «не відривати»: обидва — наміри, але
+        // цей каже про АРКУШ, а той лише про сусідство. Без цієї межі останній
+        // блок запису, позначений `keepTogether`, затягував би в свою групу
+        // початок наступного запису — і розрив між ними зникав мовчки, бо
+        // перевіряється він лише на першому блоці групи.
+        !renderPlan[index + 1]!.pageBreakBefore
       ) {
         index += 1;
         group.push(renderPlan[index]!);

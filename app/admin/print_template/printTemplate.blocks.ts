@@ -19,6 +19,7 @@ export const BLOCK_TYPES: PrintTemplateBlockType[] = [
   "text",
   "field-list",
   "table",
+  "repeat",
   "image",
   "barcode",
   "char-cells",
@@ -122,6 +123,24 @@ export function createBlock(type: PrintTemplateBlockType): PrintTemplateBlock {
     };
   }
 
+  if (type === "repeat") {
+    return {
+      key: newKey(),
+      type: "repeat",
+      source: "",
+      pageBreakBetween: true,
+      blocks: [],
+      visibleWhen: "",
+      keepTogether: false,
+      pageBreakBefore: false,
+      // Рамка повторювача на папір не йде — він розкривається в план рендеру, а
+      // не малюється. На полотні вона потрібна лише щоб блок було за що вхопити
+      // й видно, де він у стосі стоїть.
+      placement: createPlacement({ mode: "flow", gapPt: "0", heightPercent: "4" }),
+      text: createTextOptions(),
+    };
+  }
+
   if (type === "image") {
     return {
       key: newKey(),
@@ -221,6 +240,10 @@ export function cloneBlock(block: PrintTemplateBlock): PrintTemplateBlock {
         footer: cloneRows(block.sections.footer),
       },
     };
+  }
+
+  if (block.type === "repeat") {
+    return { ...block, key: newKey(), blocks: block.blocks.map((child) => cloneBlock(child)) };
   }
 
   return { ...block, key: newKey() };

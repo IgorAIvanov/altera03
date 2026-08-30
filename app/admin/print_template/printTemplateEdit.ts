@@ -21,6 +21,19 @@ import {
   createTableColumn,
 } from "./printTemplate.blocks.ts";
 import {
+  appendBlockDeep,
+  type BlockTreeEntry,
+  childBlocksOf,
+  findBlockDeep,
+  flattenBlocks,
+  insertAfterDeep,
+  mapBlockDeep,
+  moveBlockDeep,
+  moveBlockToParent,
+  removeBlockDeep,
+  repeatAncestorsOf,
+} from "./printTemplate.tree.ts";
+import {
   addColumn,
   buildGrid,
   createCell,
@@ -245,9 +258,9 @@ function toSectionRows(value: unknown): PrintTemplateTableRow[] {
 
 /** Блоки з БД/файлу → форма, з якою працює редактор. */
 function normalizeLoadedBlocks(blocks: PrintTemplateBlock[]): PrintTemplateBlock[] {
-  return (Array.isArray(blocks) ? blocks : []).map((block) => (
-    block?.type === "table"
-      ? {
+  return (Array.isArray(blocks) ? blocks : []).map((block) => {
+    if (block?.type === "table") {
+      return {
         ...block,
         columns: Array.isArray(block.columns) ? block.columns : [],
         sections: {
@@ -255,9 +268,19 @@ function normalizeLoadedBlocks(blocks: PrintTemplateBlock[]): PrintTemplateBlock
           row: toSectionRows(block.sections?.row),
           footer: toSectionRows(block.sections?.footer),
         },
-      }
-      : block
-  ));
+      };
+    }
+
+    // Рекурсія обов'язкова, а не для симетрії: доповнення тут і є захистом від
+    // напівописаного блока з бази, а таблиця всередині повторювача приїжджає
+    // звідти так само. Без цього кроку вона впала б на першому ж `sections.row`
+    // — і не на завантаженні, а пізніше, на малюванні сітки.
+    if (block?.type === "repeat") {
+      return { ...block, blocks: normalizeLoadedBlocks(block.blocks as PrintTemplateBlock[]) };
+    }
+
+    return block;
+  });
 }
 
 /** Короткий підпис блока у списку. */
@@ -266,6 +289,7 @@ function blockLabel(block: PrintTemplateBlock): string {
   // списку як «Текст» без жодної ознаки, чим він відрізняється від сусіднього.
   if (block.type === "text") return (block.value || block.path).slice(0, 40) || t("printTemplate.blockType.text");
   if (block.type === "table") return block.title || block.source || t("printTemplate.blockType.table");
+  if (block.type === "repeat") return block.source || t("printTemplate.blockType.repeat");
   if (block.type === "field-list") return block.items.map((item) => item.label).filter(Boolean).join(", ").slice(0, 40);
   if (block.type === "char-cells") {
     return (block.value || block.path).slice(0, 40) || t("printTemplate.blockType.char-cells");
@@ -348,6 +372,18 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       color: rgba(22, 119, 255, 0.8);
       pointer-events: none;
     }
+    /* Повторювач сам нічого не малює: на папір іде не він, а його блоки — по
+       разу на кожен запис. Тому рамка тут інакшого кольору й підписана
+       джерелом: інакше вона читалася б як порожній блок, який чомусь нічого не
+       друкує. Блоки ВСЕРЕДИНІ нього дістають ту саму облямівку зліва — на
+       полотні, яке показує одну сторінку, це єдиний спосіб побачити, що вони
+       повторюються. */
+    .frame.frame-repeat {
+      border-style: solid;
+      border-color: rgba(180, 83, 9, 0.65);
+      background: rgba(180, 83, 9, 0.05);
+    }
+    .frame.frame-in-repeat { border-left: 3px solid rgba(180, 83, 9, 0.55); }
     .frame.frame-hidden { opacity: 0.4; }
     .frame.frame-hidden::after {
       content: "";
@@ -536,7 +572,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     const x = [0, 50, 100];
     const y = [0, 50, 100];
 
-    for (const block of this.blocks) {
+    for (const { block } of this.blockEntries) {
       if (block.key === exceptKey) continue;
       const box = this.boxOf(block);
       x.push(box.x, box.x + box.w / 2, box.x + box.w);
@@ -779,12 +815,44 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
   }
 
   private get selectedBlock(): PrintTemplateBlock | null {
-    return this.blocks.find((block) => block.key === this.selectedBlockKey) ?? null;
+    return this.selectedBlockKey ? findBlockDeep(this.blocks, this.selectedBlockKey) : null;
+  }
+
+  /**
+   * Плаский обхід дерева в порядку друку — те, чим доти був сам масив блоків.
+   *
+   * Полотно, список і прилипання ходять саме тут: усі троє мусять бачити ВСІ
+   * блоки, включно з тими, що лежать у повторювачі, а різницю рівнів кожен із
+   * них показує по-своєму.
+   */
+  private get blockEntries(): BlockTreeEntry[] {
+    return flattenBlocks(this.blocks);
   }
 
   /** Точкове оновлення блока — усі зміни властивостей ідуть сюди. */
   private updateBlock(blockKey: string, updater: (block: PrintTemplateBlock) => PrintTemplateBlock) {
-    this.setBlocks(this.blocks.map((block) => (block.key === blockKey ? updater(block) : block)));
+    this.setBlocks(mapBlockDeep(this.blocks, blockKey, updater));
+  }
+
+  /**
+   * Дані, від яких рахуються шляхи ВСЕРЕДИНІ блока.
+   *
+   * Для блока верхнього рівня це дані прев'ю цілком, для блока в повторювачі —
+   * ПЕРШИЙ запис його джерела (і так на кожному рівні вкладеності). Правило те
+   * саме, що на папері: повторювач зсуває корінь на запис. Полотно показує
+   * перший запис не заради простоти, а тому, що воно взагалі показує ОДНУ
+   * сторінку — скільки їх вийшло, видно на вкладці PDF.
+   */
+  private scopeOf(blockKey: string): unknown {
+    let scope: unknown = this.previewData;
+
+    for (const repeat of repeatAncestorsOf(this.blocks, blockKey)) {
+      if (repeat.type !== "repeat") continue;
+      const records = resolvePath(scope, repeat.source);
+      scope = Array.isArray(records) ? records[0] ?? {} : {};
+    }
+
+    return scope;
   }
 
   private updatePlacement(blockKey: string, patch: Partial<PrintTemplateBlockPlacement>) {
@@ -795,9 +863,10 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     this.updateBlock(blockKey, (block) => ({ ...block, text: { ...block.text, ...patch } }));
   }
 
-  private addBlock(type: PrintTemplateBlockType) {
+  /** Порожній `parentKey` — верхній рівень, інакше кінець списку названого повторювача. */
+  private addBlock(type: PrintTemplateBlockType, parentKey = "") {
     const block = createBlock(type);
-    this.setBlocks([...this.blocks, block]);
+    this.setBlocks(appendBlockDeep(this.blocks, parentKey, block));
     this.selectedBlockKey = block.key;
     this.cellSelection = null;
   }
@@ -807,27 +876,24 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
     if (!source) return;
 
     const copy = cloneBlock(source);
-    const index = this.blocks.findIndex((block) => block.key === source.key);
-    const next = [...this.blocks];
-    next.splice(index + 1, 0, copy);
-    this.setBlocks(next);
+    this.setBlocks(insertAfterDeep(this.blocks, source.key, copy));
     this.selectedBlockKey = copy.key;
   }
 
   private deleteSelected() {
     if (!this.selectedBlockKey) return;
-    this.setBlocks(this.blocks.filter((block) => block.key !== this.selectedBlockKey));
+    this.setBlocks(removeBlockDeep(this.blocks, this.selectedBlockKey));
     this.selectedBlockKey = null;
     this.cellSelection = null;
   }
 
-  private moveBlock(from: number, to: number) {
-    if (to < 0 || to >= this.blocks.length) return;
-    const next = [...this.blocks];
-    const [moved] = next.splice(from, 1);
-    if (!moved) return;
-    next.splice(to, 0, moved);
-    this.setBlocks(next);
+  /** Вище/нижче — СЕРЕД СУСІДІВ: рівень міняє окрема дія, бо разом із ним міняється корінь шляхів. */
+  private moveBlock(blockKey: string, delta: number) {
+    this.setBlocks(moveBlockDeep(this.blocks, blockKey, delta));
+  }
+
+  private moveBlockInto(blockKey: string, parentKey: string) {
+    this.setBlocks(moveBlockToParent(this.blocks, blockKey, parentKey));
   }
 
   // ── Прев'ю ──────────────────────────────────────────────────────────────────
@@ -1114,9 +1180,14 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       return html`<div class="p-4 text-center text-sm text-muted">${t("printTemplate.propertiesEmpty")}</div>`;
     }
 
-    const scalarPaths = sortPaths(collectScalarPaths(this.previewData));
-    const arrayPaths = sortPaths(collectArrayPaths(this.previewData));
-    const supportsText = block.type !== "image" && block.type !== "horizontal-line" && block.type !== "vertical-line";
+    // Шляхи пропонуються від ТОГО кореня, від якого їх рахуватиме друк: у блока
+    // всередині повторювача це запис, а не дані бланка. Список кореневих полів
+    // тут показувати не можна — жоден із них на папері не знайдеться.
+    const scope = this.scopeOf(block.key);
+    const scalarPaths = sortPaths(collectScalarPaths(scope));
+    const arrayPaths = sortPaths(collectArrayPaths(scope));
+    const supportsText = block.type !== "image" && block.type !== "horizontal-line" &&
+      block.type !== "vertical-line" && block.type !== "repeat";
 
     return html`
       <div class="flex flex-col gap-3 p-3">
@@ -1132,7 +1203,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
              картинку підпису й лишити риску під нею було б гірше, ніж не мати
              умовності зовсім. -->
         ${this.field(t("printTemplate.visibleWhen"), this.pathSelect(block.visibleWhen, scalarPaths, (v) => this.updateBlock(block.key, (b) => ({ ...b, visibleWhen: v }))))}
-        ${block.visibleWhen && !this.isConditionMet(this.previewData, block.visibleWhen)
+        ${block.visibleWhen && !this.isConditionMet(scope, block.visibleWhen)
           ? html`<div class="text-xs text-warning">${t("printTemplate.visibleWhenHiddenNow")}</div>`
           : nothing}
 
@@ -1168,7 +1239,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         ${block.placement.mode === "flow" ? html`
           <div class="grid grid-cols-2 gap-2">
             ${this.field(t("printTemplate.placementGap"), this.textInput(block.placement.gapPt, (v) => this.updatePlacement(block.key, { gapPt: v })))}
-            ${block.type === "table" ? nothing : this.field(t("printTemplate.keepTogether"), html`
+            ${block.type === "table" || block.type === "repeat" ? nothing : this.field(t("printTemplate.keepTogether"), html`
               <input type="checkbox" class="checkbox checkbox-sm" .checked=${block.keepTogether}
                 @change=${(e: Event) => this.updateBlock(block.key, (b) => ({ ...b, keepTogether: (e.target as HTMLInputElement).checked }))} />
             `)}
@@ -1354,6 +1425,8 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
         ${block.type === "field-list" ? this.renderFieldListProperties(block, scalarPaths) : nothing}
         ${block.type === "table" ? this.renderTableProperties(block, arrayPaths) : nothing}
+        ${block.type === "repeat" ? this.renderRepeatProperties(block, arrayPaths) : nothing}
+        ${this.renderParentPicker(block)}
       </div>
     `;
   }
@@ -1813,11 +1886,91 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
 
   // ── Рендер ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Властивості повторювача: джерело записів і розрив між ними.
+   *
+   * Кегль, колір і вирівнювання сюди не показуються навмисно — сам блок на
+   * папір не йде, і органи керування, які нічого не міняють, гірші за їхню
+   * відсутність. Те саме з «не відривати від наступного»: повторювач буває
+   * довшим за аркуш, як і таблиця.
+   */
+  private renderRepeatProperties(
+    block: Extract<PrintTemplateBlock, { type: "repeat" }>,
+    arrayPaths: PathOption[],
+  ): TemplateResult {
+    return html`
+      <div class="flex flex-col gap-2 border-t pt-2">
+        ${this.field(t("printTemplate.repeatSource"), this.pathSelect(block.source, arrayPaths, (v) => this.updateBlock(block.key, (b) => (
+          b.type === "repeat" ? { ...b, source: v } : b
+        ))))}
+
+        <!-- Не плутати з «Звідси — новий аркуш» вище: той спрацьовує ОДИН раз,
+             перед першим записом, а цей — між кожними двома. У бланку «по
+             аркушу на людину» потрібен саме цей. -->
+        ${this.field(t("printTemplate.pageBreakBetween"), html`
+          <input type="checkbox" class="checkbox checkbox-sm" .checked=${block.pageBreakBetween}
+            @change=${(e: Event) => this.updateBlock(block.key, (b) => (
+              b.type === "repeat" ? { ...b, pageBreakBetween: (e.target as HTMLInputElement).checked } : b
+            ))} />
+        `)}
+
+        <details class="dropdown">
+          <summary class="btn btn-sm btn-outline w-full">${icons.add} ${t("printTemplate.addBlockInside")}</summary>
+          <ul class="menu dropdown-content z-20 w-52 rounded-box bg-base-100 p-2 shadow">
+            ${BLOCK_TYPES.map((type) => html`
+              <li><a @click=${() => this.addBlock(type, block.key)}>${t(`printTemplate.blockType.${type}`)}</a></li>
+            `)}
+          </ul>
+        </details>
+
+        <div class="text-xs text-muted">${t("printTemplate.repeatHint")}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * У якому повторювачі лежить блок — вибором, а не перетягуванням.
+   *
+   * Разом із рівнем міняється КОРІНЬ шляхів усередині блока: те, що читалося від
+   * даних бланка, починає читатися від запису. Зробити це ненароком, тягнучи
+   * мишею, означало б мовчки знеструмити всі прив'язки блока, тож дія названа
+   * окремо й лишає слід у списку.
+   */
+  private renderParentPicker(block: PrintTemplateBlock): TemplateResult {
+    const repeats = this.blockEntries.filter((entry) => entry.block.type === "repeat");
+    if (!repeats.length) return html``;
+
+    // Себе й власне піддерево пропускаємо: повторювач, покладений у себе, зник
+    // би з дерева разом із усім, що в ньому лежить.
+    const own = childBlocksOf(block);
+    const ownKeys = new Set(own ? flattenBlocks(own).map((entry) => entry.block.key) : []);
+    const options = repeats.filter((entry) => entry.block.key !== block.key && !ownKeys.has(entry.block.key));
+    if (!options.length) return html``;
+
+    const parent = repeatAncestorsOf(this.blocks, block.key).at(-1)?.key ?? "";
+
+    return this.field(t("printTemplate.blockParent"), html`
+      <select class="select select-sm select-bordered w-full"
+        @change=${(e: Event) => this.moveBlockInto(block.key, (e.target as HTMLSelectElement).value)}>
+        <option value="" ?selected=${!parent}>${t("printTemplate.blockParentRoot")}</option>
+        ${options.map((entry) => html`
+          <option value=${entry.block.key} ?selected=${entry.block.key === parent}>
+            ${" ".repeat(entry.depth * 2)}${blockLabel(entry.block)}
+          </option>
+        `)}
+      </select>
+    `);
+  }
+
   private renderBlockList() {
     return html`
       <div class="flex flex-col gap-1">
-        ${this.blocks.map((block, index) => html`
-          <div class="flex items-center gap-1">
+        <!-- Дерево, а не список: блоки повторювача лежать усередині нього, і
+             плоский перелік приховав би саме те, що вирішує вигляд бланка, —
+             від якого кореня рахуються шляхи в кожному рядку. Стрілки рухають
+             блок серед СУСІДІВ; рівень міняє окремий вибір у властивостях. -->
+        ${this.blockEntries.map(({ block, depth, index, siblingCount }) => html`
+          <div class="flex items-center gap-1" style="margin-left:${depth * 12}px">
             <button
               class="btn btn-xs flex-1 justify-start ${block.key === this.selectedBlockKey ? "btn-primary" : "btn-ghost"}"
               @click=${() => { this.selectedBlockKey = block.key; this.cellSelection = null; }}
@@ -1826,9 +1979,9 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               <span class="truncate">${blockLabel(block)}</span>
             </button>
             <button class="btn btn-ghost btn-xs" ?disabled=${index === 0}
-              @click=${() => this.moveBlock(index, index - 1)}>↑</button>
-            <button class="btn btn-ghost btn-xs" ?disabled=${index === this.blocks.length - 1}
-              @click=${() => this.moveBlock(index, index + 1)}>↓</button>
+              @click=${() => this.moveBlock(block.key, -1)}>↑</button>
+            <button class="btn btn-ghost btn-xs" ?disabled=${index === siblingCount - 1}
+              @click=${() => this.moveBlock(block.key, 1)}>↓</button>
           </div>
         `)}
         ${this.blocks.length === 0
@@ -1848,7 +2001,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
    * Розміри шрифтів задані в `cqw` (1cqw = 1 % ширини аркуша), тому пункти PDF
    * лягають на екран у масштабі: 1pt = 100/595.28 cqw.
    */
-  private renderFrameContent(block: PrintTemplateBlock): TemplateResult {
+  private renderFrameContent(block: PrintTemplateBlock, scope: unknown): TemplateResult {
     const pt = (value: string | number, fallback = 10) => {
       const size = typeof value === "number" ? value : toNumber(value, fallback);
       return `${(size * 100) / 595.28}cqw`;
@@ -1860,11 +2013,25 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       `color:${options.color}`,
     ].join(";");
 
+    if (block.type === "repeat") {
+      // Повторювач малює не себе, а СКІЛЬКИ разів повторяться його блоки. Це
+      // єдине, чого не видно ні з рамки, ні з полотна: сторінку воно показує
+      // одну, а записів у даних може бути тридцять.
+      const records = resolvePath(scope, block.source);
+      const count = Array.isArray(records) ? records.length : 0;
+
+      return html`<div class="frame-body flex items-center gap-2 px-1" style="font-size:1.8cqw">
+        <span class="opacity-70">${t("printTemplate.repeatSource")}:</span>
+        <strong>${block.source || "—"}</strong>
+        <span class="opacity-70">${t("printTemplate.repeatRecordCount", { count: String(count) })}</span>
+      </div>`;
+    }
+
     if (block.type === "text") {
       // Те саме правило, що в комірці й у штрих-коді: статичний текст перекриває
       // прив'язку.
       const text = block.value ||
-        (block.path ? stringifyValue(resolvePath(this.previewData, block.path)) : "");
+        (block.path ? stringifyValue(resolvePath(scope, block.path)) : "");
       return html`<div class="frame-body" style="${common(block.text)};white-space:pre-wrap;${VERTICAL_TEXT_STYLE[block.textOrientation]}">${text}</div>`;
     }
 
@@ -1873,7 +2040,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
         <div class="frame-body frame-fields" style=${common(block.text)}>
           ${block.items.map((item) => html`
             <div>
-              ${item.label ? html`<strong>${item.label}:</strong> ` : nothing}${stringifyValue(resolvePath(this.previewData, item.path))}
+              ${item.label ? html`<strong>${item.label}:</strong> ` : nothing}${stringifyValue(resolvePath(scope, item.path))}
             </div>
           `)}
         </div>
@@ -1886,7 +2053,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       // посунеш. Умова кожної видна поруч у панелі властивостей, а результат —
       // на вкладці PDF. Блок цілком — інша річ: те, що він не піде на папір,
       // видно з розкладки сусідів, тому рамка блока блідне (`.frame-hidden`).
-      const source = resolvePath(this.previewData, block.source);
+      const source = resolvePath(scope, block.source);
       const records = Array.isArray(source) ? source.slice(0, SCHEMATIC_TABLE_ROWS) : [];
       const columnCount = block.columns.length;
       const totalWeight = block.columns.reduce((sum, column) => sum + (toNumber(column.widthPercent, 0) || 1), 0) || 1;
@@ -1925,11 +2092,11 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               `)}
             </colgroup>
             <tbody>
-              ${sectionRows(block.sections.header, this.previewData, true)}
+              ${sectionRows(block.sections.header, scope, true)}
               ${records.length
                 ? records.flatMap((record) => sectionRows(block.sections.row, record, false))
                 : sectionRows(block.sections.row, {}, false)}
-              ${sectionRows(block.sections.footer, this.previewData, false)}
+              ${sectionRows(block.sections.footer, scope, false)}
             </tbody>
           </table>
           ${columnCount === 0
@@ -1943,7 +2110,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       // Прив'язана картинка теж малюється на полотні: інакше блок із печаткою
       // виглядав би порожнім рівно там, де компонують підвал бланка. Значення
       // беремо з демо-даних, як і решта прив'язок.
-      const bound = block.path ? resolvePath(this.previewData, block.path) : null;
+      const bound = block.path ? resolvePath(scope, block.path) : null;
       const src = block.src.trim() || (typeof bound === "string" ? bound.trim() : "");
       return src
         ? html`<img class="frame-body" src=${src} alt=${block.alt}
@@ -1956,7 +2123,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       // залежністю), і тягнути його в браузер заради ескізу ні до чого. Реальні
       // штрихи показує вкладка PDF — вона малюється тим самим рендерером, що й друк.
       const value = block.value ||
-        (block.path ? stringifyValue(resolvePath(this.previewData, block.path)) : "");
+        (block.path ? stringifyValue(resolvePath(scope, block.path)) : "");
       const stripes = block.symbology === "qr"
         ? "repeating-conic-gradient(#262626 0% 25%, transparent 0% 50%) 50% / 22% 22%"
         : "repeating-linear-gradient(90deg, #262626 0 2px, transparent 2px 5px)";
@@ -1975,7 +2142,7 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
       // Клітинки рахує ядро — тією ж функцією, що й друк: вирівнювання тут не
       // косметика, воно вирішує, який кінець задовгого значення лишиться.
       const value = block.value ||
-        (block.path ? stringifyValue(resolvePath(this.previewData, block.path)) : "");
+        (block.path ? stringifyValue(resolvePath(scope, block.path)) : "");
       const cells = distributePrintTemplateCharCells(
         value,
         resolvePrintTemplateCharCellCount(block.count),
@@ -2043,9 +2210,12 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               style=${guide.orientation === "vertical" ? `left:${guide.position}%` : `top:${guide.position}%`}></div>
           `)}
 
-          ${this.blocks.map((block) => {
+          ${this.blockEntries.map(({ block, depth }) => {
             const box = this.boxOf(block);
             const selected = block.key === this.selectedBlockKey;
+            // Корінь шляхів цього блока: для вкладеного — перший запис
+            // повторювача, рівно як на папері.
+            const scope = this.scopeOf(block.key);
             // Порожня висота в полі по клітинках означає КВАДРАТНУ клітинку —
             // рендерер бере її з ширини. Полотно мусить показувати те саме:
             // інакше рамка тут схлопнулась би в смужку, а на папір пішли б
@@ -2059,18 +2229,19 @@ export class PrintTemplateEdit extends BaseUI<PrintTemplateEditRoot> {
               height > 0 ? `height:${height}%` : "",
             ].filter(Boolean).join(";");
 
-            const hidden = !this.isConditionMet(this.previewData, block.visibleWhen);
+            const hidden = !this.isConditionMet(scope, block.visibleWhen);
             const label = `${t(`printTemplate.blockType.${block.type}`)}: ${blockLabel(block)}` +
-              (block.placement.mode === "flow" ? ` · ${t("printTemplate.placementMode.flow")}` : "");
+              (block.placement.mode === "flow" ? ` · ${t("printTemplate.placementMode.flow")}` : "") +
+              (depth > 0 ? ` · ${t("printTemplate.insideRepeat")}` : "");
 
             return html`
               <div
-                class="frame ${selected ? "selected" : ""} ${hidden ? "frame-hidden" : ""} ${block.placement.mode === "flow" ? "frame-flow" : ""}"
+                class="frame ${selected ? "selected" : ""} ${hidden ? "frame-hidden" : ""} ${block.placement.mode === "flow" ? "frame-flow" : ""} ${block.type === "repeat" ? "frame-repeat" : ""} ${depth > 0 ? "frame-in-repeat" : ""}"
                 style=${style}
                 title=${hidden ? `${label} — ${t("printTemplate.visibleWhenHiddenNow")}` : label}
                 @pointerdown=${(e: PointerEvent) => this.startDrag(e, "move", block)}
               >
-                ${this.renderFrameContent(block)}
+                ${this.renderFrameContent(block, scope)}
                 ${selected ? html`
                   <span class="frame-badge">
                     ${box.x.toFixed(1)}, ${box.y.toFixed(1)} · ${box.w.toFixed(1)} × ${box.h.toFixed(1)}

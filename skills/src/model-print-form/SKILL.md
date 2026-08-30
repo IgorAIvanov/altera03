@@ -155,8 +155,8 @@ jump while typing; `resolvePrintTemplateBlockPlacement` converts them).
 }
 ```
 
-Block types: `text`, `field-list`, `table`, `image`, `barcode`, `char-cells`,
-`horizontal-line`, `vertical-line`.
+Block types: `text`, `field-list`, `table`, `repeat`, `image`, `barcode`,
+`char-cells`, `horizontal-line`, `vertical-line`.
 Every block has `key`, `placement` (`xPercent`/`yPercent`/`widthPercent`/`heightPercent`
 in % of the print area = A4 minus 40pt margins) and `text` (fontSize, align, fontWeight, color).
 
@@ -205,6 +205,37 @@ So a block can stand **under the previous one instead**:
   side starts on a new sheet ALWAYS, even when the front took half a page. Read in `flow`
   only, like `keepTogether`, and ignored on the blank's first block: an empty first sheet
   reads as broken printing, not as a break. Requires `@altera/server` 0.25.0;
+- **one blank per record** — a `repeat` block draws its children once per record
+  of `source`, resolving paths inside **against the record**, exactly as the
+  `row` section does for cells:
+
+  ```json
+  { "key": "sheet", "type": "repeat", "source": "sheets",
+    "pageBreakBetween": true,
+    "blocks": [
+      { "key": "title",  "type": "text",  "path": "personName" },
+      { "key": "accrue", "type": "table", "source": "accruals" },
+      { "key": "total",  "type": "field-list",
+        "items": [{ "key": "toPay", "label": "До виплати", "path": "toPay",
+                    "format": "amountInWords" }] }
+    ]}
+  ```
+
+  Reach for it when the paper is **personal** and the document is a list — a
+  payslip, an income certificate, an ОЗ-6 card per asset, labels and price tags.
+  A `table` is the wrong tool there: it repeats *rows*, and a payslip is a whole
+  blank per person, not a row.
+
+  `pageBreakBetween` is "each next record on a new sheet"; it is not
+  `pageBreakBefore`, which fires **once**, before the first record — a blank that
+  follows a document header wants both. It does not require `flow` children: an
+  approved form lays its header out by coordinate, and that works. The block
+  itself never prints (the render plan expands it in place), so `keepTogether`,
+  `placement` and the font settings on it decide nothing; its children carry
+  their own. Keys in the layout report carry the record number —
+  `sheet#2.title`. A `source` that is not an array prints **nothing at all**, more
+  quietly than a table (which at least shows its header) — check it with
+  `@altera/server/print/plan`, not with your eyes on the PDF;
 - **a two-level header can be written as a list of columns** instead of `colSpan`/`rowSpan`:
 
   ```json

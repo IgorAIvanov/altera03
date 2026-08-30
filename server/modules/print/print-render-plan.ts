@@ -9,7 +9,7 @@ import { buildBarcode } from "./barcode/barcode.ts";
 import type { BarcodeShape } from "./barcode/barcode.ts";
 import {
   distributePrintTemplateCharCells,
-  getRenderablePrintTemplateBlocks,
+  getRenderablePrintTemplateBlockList,
   getRenderablePrintTemplateTableColumns,
   isPrintTemplateElementVisible,
   layoutPrintTemplateGrid,
@@ -21,6 +21,7 @@ import {
   stringifyPrintTemplateValue,
 } from "./print-template.ts";
 import type {
+  PrintTemplateBlock,
   PrintTemplateColumnAlign,
   PrintTemplateFontWeight,
   PrintTemplateSchema,
@@ -251,12 +252,26 @@ function buildSectionRows(
     .filter((row) => row.cells.length > 0);
 }
 
-export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source: unknown): PrintTemplateRenderBlock[] {
-  // Мова й валюта бланка — з самого шаблону: регламентована форма заводиться
-  // окремим шаблоном на кожну мову, тож питати їх у даних нема потреби.
-  const context: PrintTemplateValueContext = { locale: schema.locale, currency: schema.currency };
-
-  return getRenderablePrintTemplateBlocks(schema).flatMap<PrintTemplateRenderBlock>((block: PrintTemplateSchema["blocks"][number]) => {
+/**
+ * Список блоків → плаский стос із підставленими значеннями.
+ *
+ * Функція рекурсивна через повторювач: він не малює нічого сам, а розкривається
+ * тут-таки, по разу на запис, зі зсунутим коренем шляхів. Тому рендерер про тип
+ * `repeat` не знає взагалі — до нього доїжджає готовий плаский стос, такий
+ * самий, який автор шаблону написав би руками, якби знав число записів.
+ *
+ * `keyPrefix` — слід повторювачів, які нас сюди привели (`sheet#2.`). Ключ у
+ * плані мусить лишатися впізнаваним: за ним застосунок шукає свій блок у звіті
+ * про розкладку, і тридцять однакових ключів зробили б звіт непридатним рівно
+ * там, де він потрібен найбільше.
+ */
+function buildBlocks(
+  blocks: PrintTemplateBlock[],
+  source: unknown,
+  context: PrintTemplateValueContext,
+  keyPrefix: string,
+): PrintTemplateRenderBlock[] {
+  return getRenderablePrintTemplateBlockList(blocks).flatMap<PrintTemplateRenderBlock>((block: PrintTemplateBlock) => {
     // Умова показу — на блоці БУДЬ-ЯКОГО типу, включно з лініями: підвал із
     // факсиміле це рамка плюс картинка плюс риска, і сховати з них частину
     // означало б лишити на бланку висячу лінію.
@@ -272,7 +287,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
         : "";
 
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "text",
         text: block.value || bound,
         textOrientation: block.textOrientation,
@@ -285,7 +300,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
 
     if (block.type === "field-list") {
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "field-list",
         items: block.items
           .filter((item: typeof block.items[number]) => isPrintTemplateElementVisible(source, item.visibleWhen))
@@ -326,7 +341,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
       const columnCount = block.columns.length;
 
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "table",
         title: block.title,
         columns: getRenderablePrintTemplateTableColumns(columns),
@@ -340,6 +355,33 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
       }];
     }
 
+    if (block.type === "repeat") {
+      const records = resolvePrintTemplatePath(source, block.source);
+      const items = Array.isArray(records) ? records : [];
+      const expanded: PrintTemplateRenderBlock[] = [];
+
+      for (let index = 0; index < items.length; index += 1) {
+        // Корінь шляхів усередині — САМ ЗАПИС, рівно як у комірках секції
+        // `row`. Одне правило на весь формат: те, що повторюється по записах,
+        // читає запис, а не дані бланка.
+        const group = buildBlocks(block.blocks, items[index], context, `${keyPrefix}${block.key}#${index}.`);
+
+        // Запис, від якого не лишилося жодного блока (усе сховане умовами), не
+        // має ані що друкувати, ані звідки починати аркуш.
+        if (!group.length) continue;
+
+        // Намір «з нового аркуша» лягає на перший блок, що СПРАВДІ малюється:
+        // перший за списком міг зникнути за `visibleWhen`, і разом із ним поїхав
+        // би розрив. `pageBreakBefore` дочірнього блока при цьому не чіпаємо —
+        // перекриваємо лише там, де розрив вимагає сам повторювач.
+        const wantsBreak = index === 0 ? block.pageBreakBefore : block.pageBreakBetween;
+        if (wantsBreak) expanded.push({ ...group[0]!, pageBreakBefore: true }, ...group.slice(1));
+        else expanded.push(...group);
+      }
+
+      return expanded;
+    }
+
     if (block.type === "image") {
       // Те саме правило, що всюди в форматі: статичне значення сильніше. Але
       // через `stringifyPrintTemplateValue` це не пропускаємо — його «-» для
@@ -348,7 +390,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
       const bound = block.path ? resolvePrintTemplatePath(source, block.path) : null;
 
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "image",
         src: block.src || (typeof bound === "string" ? bound : ""),
         alt: block.alt,
@@ -368,7 +410,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
       const built = buildBarcode(block.symbology, raw);
 
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "barcode",
         shape: built.ok ? built.shape : null,
         error: built.ok ? "" : built.message,
@@ -389,7 +431,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
       const textOptions = resolvePrintTemplateBlockTextOptions(block.text);
 
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "char-cells",
         cells: distributePrintTemplateCharCells(
           block.value || stringifyPrintTemplateValue(bound),
@@ -406,7 +448,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
 
     if (block.type === "horizontal-line") {
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "horizontal-line",
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
@@ -417,7 +459,7 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
 
     if (block.type === "vertical-line") {
       return [{
-        key: block.key,
+        key: keyPrefix + block.key,
         type: "vertical-line",
         placement: resolvePrintTemplateBlockPlacement(block.placement),
         keepTogether: block.keepTogether,
@@ -428,4 +470,12 @@ export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source
 
     return [];
   });
+}
+
+export function buildPrintTemplateRenderPlan(schema: PrintTemplateSchema, source: unknown): PrintTemplateRenderBlock[] {
+  // Мова й валюта бланка — з самого шаблону: регламентована форма заводиться
+  // окремим шаблоном на кожну мову, тож питати їх у даних нема потреби.
+  const context: PrintTemplateValueContext = { locale: schema.locale, currency: schema.currency };
+
+  return buildBlocks(schema.blocks, source, context, "");
 }

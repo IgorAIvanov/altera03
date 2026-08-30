@@ -40,6 +40,7 @@ export type PrintTemplateBlockType =
   | "text"
   | "field-list"
   | "table"
+  | "repeat"
   | "image"
   | "barcode"
   | "char-cells"
@@ -377,6 +378,66 @@ export interface PrintTemplateTableBlock extends PrintTemplateBlockBase {
 }
 
 /**
+ * Блок, що ПОВТОРЮЄТЬСЯ по записах: свої дочірні блоки він малює один раз на
+ * кожен запис `source`, розв'язуючи шляхи всередині відносно запису.
+ *
+ * ЧОМУ ЦЬОГО НЕ РОБИТЬ ТАБЛИЦЯ. Повторювач у форматі вже був — але повторював
+ * він РЯДКИ: секція `row` малюється по разу на запис, і все, що можна сказати
+ * про запис, мусить влізти в рядок сітки. Персональний папір влаштований
+ * інакше: розрахунковий листок це шапка з ПІБ, дві таблиці з власними
+ * підсумками й підвал — тобто ЦІЛИЙ БЛАНК на запис, а не рядок. Сказати
+ * «намалюй ці п'ять блоків для кожного працівника» не було чим: `visibleWhen`
+ * вибирає, а не множить, `pageBreakBefore` — властивість блока, а не запису,
+ * а `mode: "flow"` ставить блок під попереднім, але сам список блоків
+ * статичний.
+ *
+ * Ціна відсутності — не незручність, а РІЗНІ відповіді в кожному застосунку:
+ * цикл на клієнті з тридцятьма вкладками й тридцятьма файлами, «збірний»
+ * шаблон із заздалегідь відомим числом людей, звіт замість бланка. Жодна з них
+ * не схожа на друк, і жодну не можна віддати бухгалтеру.
+ *
+ * Сам блок не малює нічого: план рендеру розкриває його на місці, тому рендерер
+ * про цей тип не знає взагалі — він бачить готовий плаский стос. Звідси й межі:
+ *
+ * - **`keepTogether` не читається** — та сама причина, що в таблиці: повторювач
+ *   буває довшим за аркуш, і вимога «цілком на одній сторінці» означала б
+ *   бланк, який не друкується;
+ * - **`placement` і `text` власного вигляду не мають** — місце й кегль називає
+ *   кожен дочірній блок сам. Рамка на полотні редактора лишається тільки
+ *   заради того, щоб блок було за що вхопити;
+ * - **`pageBreakBefore` діє на ПЕРШИЙ запис**, `pageBreakBetween` — на кожен
+ *   наступний. Це різні наміри: «бланк починається з нового аркуша» і «кожна
+ *   людина на своєму аркуші», і в бланку з двох повторювачів потрібні обидва.
+ */
+export interface PrintTemplateRepeatBlock extends PrintTemplateBlockBase {
+  type: "repeat";
+  /**
+   * Шлях до масиву записів — від того самого кореня, що й `source` таблиці.
+   *
+   * Не масив (немає поля, прийшов об'єкт, порожній шлях) — записів нуль, і
+   * бланк друкується БЕЗ цієї частини. Тихіше, ніж у таблиці: та хоч шапку
+   * покаже, а повторювач не лишає й сліду. Тому шлях сюди варто звіряти планом
+   * рендеру (`@altera/server/print/plan`), а не оком по готовому PDF.
+   */
+  source: string;
+  /**
+   * «Кожен наступний запис — з нового аркуша».
+   *
+   * Не плутати з `pageBreakBefore` самого блока: той каже «почни повторювач з
+   * нового аркуша» і спрацьовує ОДИН раз, перед першим записом.
+   */
+  pageBreakBetween: boolean;
+  /**
+   * Що саме малюється на кожен запис. Шляхи всередині — від ЗАПИСУ, рівно як
+   * у комірках секції `row`; умова показу дочірнього блока рахується там само.
+   *
+   * Повторювач усередині повторювача дозволений: правило про корінь від цього
+   * не міняється — кожен рівень зсуває корінь на свій запис.
+   */
+  blocks: PrintTemplateBlock[];
+}
+
+/**
  * Картинка. Значення береться за тим самим правилом, що в тексті, комірці й
  * штрих-коді: статичний `src` перекриває прив'язку `path`.
  *
@@ -484,6 +545,7 @@ export type PrintTemplateBlock =
   | PrintTemplateTextBlock
   | PrintTemplateFieldListBlock
   | PrintTemplateTableBlock
+  | PrintTemplateRepeatBlock
   | PrintTemplateImageBlock
   | PrintTemplateBarcodeBlock
   | PrintTemplateCharCellsBlock
@@ -975,6 +1037,29 @@ function normalizeBlock(value: unknown): PrintTemplateBlock | null {
     };
   }
 
+  if (type === "repeat") {
+    return {
+      key,
+      type,
+      source: normalizeString(value.source),
+      pageBreakBetween: value.pageBreakBetween === true,
+      // Рекурсія тим самим входом: повторювач усередині повторювача — це той
+      // самий блок, лише корінь зсунутий ще на один запис. Окремої глибини не
+      // задаємо — її задає сам шаблон, а він скінченний.
+      blocks: Array.isArray(value.blocks)
+        ? value.blocks.map((child) => normalizeBlock(child)).filter((child): child is PrintTemplateBlock => Boolean(child))
+        : [],
+      visibleWhen: normalizeString(value.visibleWhen),
+      // `keepTogether` тут читається так само, як у таблиці, — тобто ніяк:
+      // повторювач буває довшим за аркуш. Поле лишається в базі блока, і
+      // приймати його мовчки чесніше, ніж вдавати, що його немає.
+      keepTogether: value.keepTogether === true,
+      pageBreakBefore: value.pageBreakBefore === true,
+      placement: normalizeBlockPlacement(value.placement),
+      text: normalizeBlockTextOptions(value.text, getDefaultBlockTextOptions(type)),
+    };
+  }
+
   if (type === "image") {
     return {
       key,
@@ -1066,8 +1151,18 @@ export function normalizePrintTemplateSchema(schema: unknown): PrintTemplateSche
   };
 }
 
+/**
+ * Блоки, які взагалі малюються: правило одне — блок без ключа не існує.
+ *
+ * Живе окремо від входу зі схемою, бо той самий список тепер буває вкладеним:
+ * дочірні блоки повторювача проходять ту саму перевірку, а схеми в них немає.
+ */
+export function getRenderablePrintTemplateBlockList(blocks: PrintTemplateBlock[]): PrintTemplateBlock[] {
+  return blocks.filter((block) => block.key);
+}
+
 export function getRenderablePrintTemplateBlocks(schema: PrintTemplateSchema): PrintTemplateBlock[] {
-  return schema.blocks.filter((block) => block.key);
+  return getRenderablePrintTemplateBlockList(schema.blocks);
 }
 
 export function sanitizePrintTemplateBlocks(blocks: PrintTemplateBlock[]): PrintTemplateBlock[] {
