@@ -145,6 +145,44 @@ protected override extraPayload() {
 
 Keep the flag in `@state`, not in `$root`: it is transient UI, not model data.
 
+### Filters in the dialog
+
+A catalogue that outgrew one page needs more than the search box — editions of a
+report form by kind and validity date, goods by group and warehouse. Declare
+`renderFilters()` exactly as on a list screen and the base does the rest: the
+**Filters** button appears in the toolbar with a count of active filters, the
+panel opens as a **strip above the table** (not a side column — the dialog is
+narrow and short-lived), and the values travel in the lookup payload under
+`filters`, the same key the list uses.
+
+```ts
+protected override renderFilters() {
+  return html`
+    <ui-picker class="w-64" label-position="left" .label=${this.t("reportFormVersion.form")}
+      show-clear
+      .value=${this.filterValue<FilterRef>("form") ?? null}
+      url="catalog/report_form"
+      @value-changed=${(e: PickerChangeEvent) => this.setFilter("form", e.detail.value)}
+    ></ui-picker>
+  `;
+}
+```
+
+**Two channels reach the dialog from the form, and they mean different things:**
+
+| From the form | The dialog treats it as |
+|---|---|
+| `<ui-picker .filters=${…}>` | Narrowing the user may not lift. Applied **on top of** the panel, so `Reset` cannot remove it, and the panel never shows it |
+| `<ui-picker .pickerParams=${{ filters: … }}>` | The dialog's **initial** filter state — `defaultFilters()`. The user edits it, `Reset` returns to it |
+
+Anything you put in `defaultFilters()` is seeded **before the first request** —
+no extra round trip, and no flash of unfiltered rows. Do not seed filters by hand
+in `connectedCallback()`.
+
+A picker inside a picker (a reference filter in the toolbar) is ordinary
+nesting: dialogs are stacked, the choice made in the top one returns to whoever
+opened it, and the one underneath keeps its state.
+
 ### Multiple selection
 
 The **caller** decides, not the picker — the same catalogue is picked one value at a

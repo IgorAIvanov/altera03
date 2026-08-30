@@ -237,11 +237,17 @@ export class UiPicker extends GlobalStyledLitElement {
 
   private async _onBrowse() {
     if (!this.url) return;
-    // Діалогу відбір іде тим самим ключем: список підбору читає `filters` так
-    // само, як список моделі.
+    // Два канали, і вони НЕ однакові, хоч доти йшли одним ключем:
+    //  - `filters` — звуження формою, знімати його людині не можна, тож у
+    //    діалог воно їде окремим `lockedFilters` і накладається поверх панелі;
+    //  - `pickerParams` — «відкрий діалог ось так»: усе, що в ньому лежить під
+    //    ключем `filters`, діалог візьме за ПОЧАТКОВИЙ стан своєї панелі
+    //    (`ModelPickerBase.defaultFilters()`), і людина його поправить.
+    // Доти обидва писалися в `params.filters`, другий затирав перший, і
+    // «звузили» від «підставили» не відрізнялося ніяк.
     const params = {
-      ...(this.filters ? { filters: this.filters } : {}),
       ...this.pickerParams,
+      ...(this.filters ? { lockedFilters: this.filters } : {}),
     };
     const result = await bus.pick(
       `${this.url}/${this.picker}`,

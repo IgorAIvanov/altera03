@@ -340,9 +340,10 @@ on a table screen.
   makes old marks meaningless. Paging and sorting keep them.
 - **Filters go to the right, not above the table** — the base puts them there. On a
   hierarchical catalogue the panel and the group tree share that one column, filters on
-  top, tree below.
+  top, tree below. A picker dialog is the exception the base handles itself: there the
+  panel is a strip above the table, because the dialog is narrow and short-lived.
 
-## Reset returns to the screen's defaults
+## The screen opens with its defaults, and Reset returns to them
 
 ```ts
 protected override defaultFilters() {
@@ -354,6 +355,11 @@ A document journal opens narrowed — to the current organisation (the base does
 the period from the user's settings. A journal over all time is the most expensive query on
 the screen, and without an organisation it shows two sets of books mixed together. So
 «Скинути» returns the filters to that state rather than emptying them.
+
+`defaultFilters()` is what the screen **opens** with, not only what `Reset` restores: the
+base seeds it into `$filters` before the first request, so there is no extra round trip and
+no flash of unfiltered rows. It fills only keys that are still unset — a restored tab or a
+link that carries its own filters keeps them.
 
 Always call `super.defaultFilters()`; skipping it silently drops the base's own default.
 Do not override `resetFilters()` and do not hide the button with CSS — both were workarounds
@@ -426,6 +432,12 @@ narrowed at all, because the mistake is invisible.
 the user sets the filter from the panel and may clear it; here the form sets it
 and the user must not be able to: an account of your own organization in the
 "payer's account" field is not a narrowed choice, it is a data entry error.
+
+**A picker dialog can have filters of its own, and they are a different thing.**
+`.filters` narrows; `.pickerParams = { filters: … }` sets the dialog's *initial*
+panel state, which the user may then change (`Reset` returns to it, not to
+nothing). Declare the controls in the dialog's `renderFilters()` — see
+[model-picker-form](../model-picker-form/SKILL.md).
 
 **An unknown key is refused, not ignored.** A form that narrowed a picker
 believes it narrowed it; silently dropping a mistyped filter name leaves the full

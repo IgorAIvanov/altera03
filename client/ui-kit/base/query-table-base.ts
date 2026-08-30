@@ -195,9 +195,10 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
     // Панель відкрита за пам'яттю користувача; без запису — розгорнута, якщо
     // фільтри взагалі оголошені: інакше про них можна не дізнатися ніколи.
     if (this.hasFilters) {
-      const saved = readUserScoped(`${FILTER_PANEL_KEY}:${this.model}`);
+      const saved = readUserScoped(this.filterPanelStateKey);
       this.filterPanelOpen = typeof saved === "boolean" ? saved : true;
     }
+    this.seedDefaultFilters();
     if (this.defaultPageSize !== undefined) this.pageSize = this.defaultPageSize;
     if (!this.sortBy) {
       // Перша СОРТОВАНА колонка, а не просто перша: сортувати за колонкою,
@@ -269,9 +270,51 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
    */
   protected filterReset = true;
 
+  /**
+   * Як лежать контроли в панелі: колонкою (бічна панель списку) чи рядком
+   * (смуга над таблицею в діалозі підбору). Властивість, а не прапорець
+   * `if (picker)` в основі: основа малює панель однаково, а місце для неї
+   * вибирає нащадок — і разом із місцем вибирає розкладку.
+   */
+  protected filterPanelDirection: "column" | "row" = "column";
+
   protected toggleFilterPanel() {
     this.filterPanelOpen = !this.filterPanelOpen;
-    writeUserScoped(`${FILTER_PANEL_KEY}:${this.model}`, this.filterPanelOpen);
+    writeUserScoped(this.filterPanelStateKey, this.filterPanelOpen);
+  }
+
+  /**
+   * Під яким ключем пам'ятається розгорнутість панелі. Модель плюс РІД екрана:
+   * список і діалог підбору тієї самої моделі — різні поверхні (панель списку
+   * стоїть збоку й живе довго, панель діалогу — смуга на кілька секунд), і
+   * згорнута в одному вона не має згортатися в другому.
+   */
+  protected get filterPanelStateKey(): string {
+    return `${FILTER_PANEL_KEY}:${this.model}`;
+  }
+
+  /**
+   * Засіяти умовчання відбору ДО першого завантаження.
+   *
+   * `defaultFilters()` документований як «відбори, з якими екран
+   * ВІДКРИВАЄТЬСЯ», але доти його читали лише «Скинути» й лічильник, а сіяв
+   * себе кожен екран сам (журнал документів — організацію, діалог підбору —
+   * те, що передала форма). Виходило, що метод виглядає механізмом, а працює
+   * як оголошення: у списку відбір з'являвся, у діалозі — ні, і різниці ніде
+   * не видно.
+   *
+   * Сіється лише в НЕЗАДАНІ ключі: відновлена вкладка чи перехід із
+   * параметрами вже несуть свій відбір, і затирати його не можна.
+   */
+  protected seedDefaultFilters() {
+    for (const [key, value] of Object.entries(this.defaultFilters())) {
+      // Те саме правило порожнечі, що в `setFilters` і `resetFilters`: порожнє
+      // значення не зберігається, а відсутнє — інакше умовчання-порожнеча
+      // рахувалося б за діючий відбір у лічильнику панелі.
+      if (value === false) continue;
+      if (this.filterValue(key) !== undefined) continue;
+      this.seedFilter(key, value);
+    }
   }
   /** Додаткові кнопки тулбара — точка розширення ЗАСТОСУНКУ (є і в пікері). */
   protected renderToolbarExtra(): TemplateResult | string { return ""; }
@@ -604,6 +647,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
    */
   protected renderFilterPanel(): TemplateResult | string {
     if (!this.hasFilters || !this.filterPanelOpen) return "";
+
     return html`
       <div class="filter-panel flex flex-col min-h-0">
         <div class="flex items-center justify-between px-2 py-1 border-b border-base-300">
@@ -617,7 +661,8 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
             `
             : ""}
         </div>
-        <div class="flex-1 min-h-0 overflow-auto p-2 flex flex-col gap-2">
+        <div class="flex-1 min-h-0 overflow-auto p-2 flex gap-2 ${
+          this.filterPanelDirection === "row" ? "flex-row flex-wrap items-end" : "flex-col"}">
           ${this.renderBuiltInFilters()}
           ${this.renderFilters()}
         </div>
