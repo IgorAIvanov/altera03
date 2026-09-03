@@ -67,7 +67,16 @@ export class AgentController {
       }
 
       const tools = await this.agentToolsService.listTools(auth.userId, caller, { models, command });
-      return { ok: true, data: { rows: tools, totals: { count: tools.length } }, messages: [] };
+      // Схема каже, які є ПОЛЯ, і мовчить про те, чого застосунок робити не
+      // стане. Правила їдуть тут, а не в каталозі: каталог мусить лишатися
+      // малим на сотні моделей, а правила потрібні тому, хто вже дійшов до
+      // конкретної моделі.
+      const rules = this.agentToolsService.rules(models, query.get("lang")?.trim() || undefined);
+      return {
+        ok: true,
+        data: { rows: tools, extra: { rules }, totals: { count: tools.length } },
+        messages: [],
+      };
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
         return jsonResponse(agentError(error.message), 401);

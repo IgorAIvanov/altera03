@@ -80,8 +80,20 @@ export interface AlteraPrintout {
 
 interface ListEnvelope {
   ok: boolean;
-  data?: { rows?: unknown[] };
+  data?: { rows?: unknown[]; extra?: Record<string, unknown> };
   messages?: unknown[];
+}
+
+/** Що модель відмовиться робити: ключ правила й те, що воно скаже людині. */
+export interface AlteraModelRule {
+  key: string;
+  text: string;
+}
+
+/** Відповідь `altera_describe`: схеми плюс оголошені обмеження названих моделей. */
+export interface AlteraDescription {
+  tools: AlteraTool[];
+  rules: Record<string, AlteraModelRule[]>;
 }
 
 /** Відмова, яку варто показати агенту словами, а не стеком. */
@@ -190,11 +202,26 @@ export class AlteraClient {
     return rows as AlteraModelEntry[];
   }
 
-  /** Схеми payload-ів названих моделей. */
-  async describe(models: string[], command?: string): Promise<AlteraTool[]> {
+  /**
+   * Схеми payload-ів названих моделей — і те, чого застосунок робити не стане.
+   *
+   * Правила їдуть саме тут, разом зі схемою: схема каже, які є ПОЛЯ, і мовчить
+   * про поведінку. Поле в ній буває, а команда його відбиває — і доти
+   * відрізнити «поле є» від «поведінка є» через MCP не можна було нічим.
+   */
+  async describe(models: string[], command?: string): Promise<AlteraDescription> {
     const query = new URLSearchParams({ model: models.join(",") });
     if (command) query.set("command", command);
-    return await this.rows(`/api/agent/tools?${query}`) as AlteraTool[];
+
+    const envelope = await this.request(`/api/agent/tools?${query}`) as ListEnvelope;
+    const rules = envelope.data?.extra?.rules;
+
+    return {
+      tools: Array.isArray(envelope.data?.rows) ? envelope.data.rows as AlteraTool[] : [],
+      // Старший сервер правил не віддає взагалі — тоді їх просто немає, а не
+      // «жодна модель нічого не забороняє».
+      rules: (rules && typeof rules === "object" ? rules : {}) as Record<string, AlteraModelRule[]>,
+    };
   }
 
   /**

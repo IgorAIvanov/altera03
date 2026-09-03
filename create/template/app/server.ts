@@ -18,6 +18,7 @@ import { generatedModelRegistry } from "./_generated/model-registry.generated.ts
 import { generatedTsCommandBindings } from "./_generated/ts-commands.generated.ts";
 import { agentModelRoutes } from "./_generated/agent-routes.generated.ts";
 import { agentToolSchemas } from "./_generated/agent-tools.generated.ts";
+import { agentModelRules } from "./_generated/agent-rules.generated.ts";
 import { viewManifest } from "./_generated/view-manifest.generated.ts";
 
 // Корінь проєкту — батьківський каталог app/.
@@ -90,6 +91,7 @@ export async function createServer() {
     models: { registry: generatedModelRegistry, tsCommands: generatedTsCommandBindings },
     agentRoutes: agentModelRoutes,
     agentTools: agentToolSchemas,
+    agentRules: agentModelRules,
     // Маркер `@[ключ]` розгортає клієнт — але в каналі зовнішнього агента
     // клієнта немає, і там замість речення їхало б внутрішнє ім'я ключа.
     messages: {

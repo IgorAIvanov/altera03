@@ -19,6 +19,7 @@ import { generatedModelRegistry } from "./_generated/model-registry.generated.ts
 import { generatedTsCommandBindings } from "./_generated/ts-commands.generated.ts";
 import { agentModelRoutes } from "./_generated/agent-routes.generated.ts";
 import { agentToolSchemas } from "./_generated/agent-tools.generated.ts";
+import { agentModelRules } from "./_generated/agent-rules.generated.ts";
 import { viewManifest } from "./_generated/view-manifest.generated.ts";
 import { devAuthMethods } from "./login/dev-redirect-auth.method.ts";
 
@@ -138,6 +139,7 @@ export async function createServer(): Promise<AppServer> {
     },
     agentRoutes: agentModelRoutes,
     agentTools: agentToolSchemas,
+    agentRules: agentModelRules,
     // Маркер `@[ключ]` розгортає клієнт — але в агентському каналі клієнта
     // немає, і туди доти їхало внутрішнє ім'я ключа замість речення.
     messages: {

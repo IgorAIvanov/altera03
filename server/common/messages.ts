@@ -57,7 +57,7 @@ export interface ResolvedMessage {
 }
 
 /** Порядок пошуку ключа: обрана мова сильніша за запасну (як у клієнта). */
-function lookup(
+export function lookup(
   key: string,
   dictionaries: MessageDictionaries,
   locale: string,
@@ -89,6 +89,17 @@ function substitute(text: string, params?: MessageParams): string {
  * прочитає як текст і перекаже людині, а `@[core.foo]{…}` видно як несправність
  * — до того ж разом із параметрами, які інакше зникли б.
  */
+/**
+ * Текст за ключем, без маркера навколо.
+ *
+ * Потрібен там, де ключ уже відомий сам собою — у переліку оголошених
+ * обмежень моделі: там зберігається саме ключ, а рядок береться в рантаймі,
+ * тому мова працює тим самим механізмом і перекладу ніде не дублюється.
+ */
+export function messageText(key: string, config: MessagesConfig): string | undefined {
+  return lookup(key, config.dictionaries, config.locale, config.fallback);
+}
+
 export function resolveMarker(text: unknown, config: MessagesConfig): ResolvedMessage {
   if (typeof text !== "string" || !text.startsWith("@[")) {
     return { text: typeof text === "string" ? text : String(text ?? "") };

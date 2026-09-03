@@ -189,6 +189,14 @@ export interface ServerOptions {
    * Не передав — поведінка та сама, що була: агент отримує маркер як є.
    */
   messages?: Partial<MessagesConfig>;
+  /**
+   * Оголошені обмеження моделей: `"month_close"` → ключі її відмов.
+   *
+   * Тексти сюди не передаються — вони беруться зі словників `messages` у
+   * рантаймі, тобто мовою виклику й без жодного дубля перекладу. Застосунок
+   * передає згенероване `app/_generated/agent-rules.generated.ts`.
+   */
+  agentRules?: Record<string, string[]>;
 }
 
 /** Повна конфігурація після застосування дефолтів. Такою її бачать сервіси. */
@@ -202,6 +210,7 @@ export interface ServerConfig {
   blob: BlobConfig;
   version: VersionInfo;
   messages: MessagesConfig;
+  agentRules: Record<string, string[]>;
 }
 
 const DEFAULT_AUTH: AuthConfig = {
@@ -251,6 +260,7 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
     blob: { ...DEFAULT_BLOB, ...options.blob },
     version: options.version ?? {},
     messages: { ...DEFAULT_MESSAGES, ...options.messages },
+    agentRules: options.agentRules ?? {},
   };
 }
 

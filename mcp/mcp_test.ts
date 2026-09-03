@@ -53,6 +53,11 @@ type FakeBlobs = Record<string, { bytes: Uint8Array; mime: string }>;
  * спершу команда моделі віддає метадані з токеном, потім по токену забираються
  * байти. Одна відповідь на всі виклики перевірила б лише перший крок.
  */
+/** Оголошені обмеження, які віддає підроблена база на опис моделі. */
+const FAKE_RULES = {
+  bank: [{ key: "bank.mfoTaken", text: "Банк із таким МФО вже заведений" }],
+};
+
 function fakeAltera(
   rows: unknown[],
   callEnvelope: unknown | ((call: FakeCall) => unknown),
@@ -107,7 +112,17 @@ function fakeAltera(
         ? typeof callEnvelope === "function"
           ? (callEnvelope as (call: FakeCall) => unknown)(await request.json() as FakeCall)
           : callEnvelope
-        : { ok: true, data: { rows, totals: { count: rows.length } }, messages: [] };
+        : {
+          ok: true,
+          data: {
+            rows,
+            // Правила віддає лише опис названих моделей, як і справжня база:
+            // у каталозі їх немає навмисно.
+            ...(url.searchParams.get("model") ? { extra: { rules: FAKE_RULES } } : {}),
+            totals: { count: rows.length },
+          },
+          messages: [],
+        };
 
       return new Response(JSON.stringify(body), {
         headers: { "content-type": "application/json" },
@@ -291,6 +306,15 @@ Deno.test("обгортка: рукостискання, перелік і ви�
       arguments: { models: ["bank", "counterparty"], command: "save" },
     });
     assertEquals(toolResult(describe).isError, false);
+    // Схема каже, які є ПОЛЯ, і мовчить про поведінку. Правила їдуть разом із
+    // нею — інакше «поле є» від «поведінка є» через MCP не відрізнити нічим, і
+    // агент упевнено радить те, що застосунок відіб'є.
+    const described = JSON.parse(toolResult(describe).text) as {
+      tools: unknown[];
+      rules: Record<string, Array<{ key: string; text: string }>>;
+    };
+    assertEquals(described.tools.length > 0, true);
+    assertEquals(described.rules.bank[0].text, "Банк із таким МФО вже заведений");
     // Кілька моделей — одним запитом, а не трьома обертами.
     assertEquals(
       altera.paths.at(-1),

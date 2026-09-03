@@ -1,6 +1,7 @@
 import { dirname, join, relative, resolve, SEPARATOR } from "@std/path";
 import { AgentSchemaLoadError, buildAgentToolsForModel, renderAgentTools } from "./agent-tool-schemas.ts";
 import { documentHeaderSpecifier } from "./generate-model-sql.ts";
+import { scanMarkers } from "./scan-translation-markers.ts";
 
 type ManifestSqlCommand = string | {
   schema?: string;
@@ -531,6 +532,82 @@ function titlesFor(
   return Object.keys(titles).length > 0 ? titles : null;
 }
 
+/**
+ * Правила, які модель ОГОЛОШУЄ — перелік ключів її відмов.
+ *
+ * Навіщо. Схема каже агентові, які в моделі є ПОЛЯ, і мовчить про те, що
+ * застосунок робити відмовиться. Різниця не теоретична: `depreciationMethod`
+ * приймає `production` за типом, довідники на місці — а закриття місяця цей
+ * спосіб відбиває. Не знаючи цього, агент упевнено розписує ланцюжок
+ * документів, і людина впирається в нього через місяць роботи.
+ *
+ * Тексти вже написані й перекладені — тут збирається лише ПРИВ'ЯЗКА: який ключ
+ * чия модель називає. Самі рядки беруться в рантаймі зі словників повідомлень
+ * (`bootstrap({ messages })`), тому мова працює сама собою, а перекладу тут не
+ * дублюється жодного.
+ *
+ * Чия модель — видно з КАТАЛОГУ, у якому лежить файл; розбирати SQL не треба.
+ * Вкладена модель (форма звіту всередині документа) виграє в зовнішньої за
+ * довжиною префікса — інакше її правила приписалися б власникові каталогу.
+ *
+ * Не рахується правилом сід і міграції: маркер у `data.sql` — це НАЗВА (пункт
+ * меню, вид документа), а не відмова, і в переліку обмежень вона була б шумом
+ * рівно там, де його найбільше. `_generated/` і `_sqlpackage/` відсіює сам
+ * сканер.
+ *
+ * Решта береться ЦІЛКОМ, без спроби відрізнити відмову від підтвердження. Один
+ * підхід тут уже був — рахувати маркер лише в рядку з `raise exception`, `err(`
+ * чи типом `error`, — і він відсіював рівно те, заради чого все й робиться:
+ * прикладні TS-команди відмовляють через власні хелпери (`fail(...)`), а
+ * назвати їх у ФРЕЙМВОРКУ означало б зашити сюди звички одного застосунку. Два
+ * напрями помилки коштують по-різному: зайве «Пароль встановлено» в переліку —
+ * шум, який агент прочитає й пройде повз, а загублена відмова невидима взагалі,
+ * тобто повертає туди, звідки почали.
+ */
+const SEED_FILES = ["data.sql", "migration.sql"];
+
+async function buildAgentRules(
+  allManifests: Array<{ manifestPath: string; manifest: { model?: string } }>,
+  appDirs: string[],
+): Promise<Record<string, string[]>> {
+  const rules: Record<string, string[]> = {};
+
+  for (const appDir of appDirs) {
+    const owners = allManifests
+      .map(({ manifestPath, manifest }) => ({
+        model: manifest.model ?? "",
+        prefix: `${toPosixPath(relative(appDir, dirname(manifestPath)))}/`,
+      }))
+      .filter((owner) => owner.model && owner.prefix !== "/" && !owner.prefix.startsWith(".."))
+      // Найдовший префікс перший: вкладена модель сильніша за зовнішню.
+      .sort((left, right) => right.prefix.length - left.prefix.length);
+
+    for (const use of await scanMarkers(appDir)) {
+      if (SEED_FILES.some((name) => use.file.endsWith(`/${name}`))) continue;
+
+      const owner = owners.find((candidate) => use.file.startsWith(candidate.prefix));
+      if (!owner) continue;
+
+      const list = rules[owner.model] ??= [];
+      if (!list.includes(use.key)) list.push(use.key);
+    }
+  }
+
+  for (const list of Object.values(rules)) list.sort();
+  return rules;
+}
+
+function renderAgentRules(rules: Record<string, string[]>): string {
+  const models = Object.keys(rules).sort();
+  if (!models.length) return `export const agentModelRules: Record<string, string[]> = {};\n`;
+
+  const body = models
+    .map((model) => `  ${JSON.stringify(model)}: ${JSON.stringify(rules[model])},`)
+    .join("\n");
+
+  return `export const agentModelRules: Record<string, string[]> = {\n${body}\n};\n`;
+}
+
 function renderAgentRoutesMulti(
   manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
   appDirs: string[],
@@ -831,6 +908,8 @@ export async function generateModelRuntimeRegistry(
   const tsCommandsPath = join(dirname(outputPath), "ts-commands.generated.ts");
   // Те саме міркування, що й для ts-commands: ім'я фіксоване, сусідом реєстру.
   const agentToolsPath = join(dirname(outputPath), "agent-tools.generated.ts");
+  // Те саме міркування: ім'я фіксоване, сусідом реєстру.
+  const agentRulesPath = join(dirname(outputPath), "agent-rules.generated.ts");
 
   const writeRegistry = async () => {
     const allManifests = (await Promise.all(appDirs.map(collectManifests))).flat();
@@ -925,6 +1004,15 @@ export async function generateModelRuntimeRegistry(
       `${renderAgentTools(agentTools)}`;
 
     // View-manifest: route → moduleFile (відносно кореня репо) → titleKey
+    // Оголошені обмеження: модель → ключі її відмов. Тексти НЕ дублюються —
+    // вони приходять зі словників повідомлень у рантаймі.
+    const agentRulesSource = `// Generated from model sources. Do not edit manually.
+` +
+      `// Ключі відмов, які оголошує модель — див. tools/generate-model-runtime-registry.ts.
+
+` +
+      `${renderAgentRules(await buildAgentRules(allManifests, appDirs))}`;
+
     const viewManifestSource = `// Generated from model manifests. Do not edit manually.\n\n${renderViewManifest(allManifests, appDirs)}`;
 
     // Записи — усі разом і аж тепер, коли впасти вже нічому. Доти помилка в
@@ -943,6 +1031,9 @@ export async function generateModelRuntimeRegistry(
 
     await Deno.mkdir(dirname(agentToolsPath), { recursive: true });
     await Deno.writeTextFile(agentToolsPath, `${agentToolsSource}\n`);
+
+    await Deno.mkdir(dirname(agentRulesPath), { recursive: true });
+    await Deno.writeTextFile(agentRulesPath, `${agentRulesSource}\n`);
 
     await Deno.mkdir(dirname(viewManifestPath), { recursive: true });
     await Deno.writeTextFile(viewManifestPath, `${viewManifestSource}\n`);

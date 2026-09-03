@@ -1358,6 +1358,36 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertExists(save);
         assertExists((save.input as { properties?: unknown }).properties);
 
+        // Оголошені обмеження їдуть разом зі схемою.
+        //
+        // Схема каже, які в моделі є ПОЛЯ, і мовчить про те, чого застосунок
+        // робити не стане: поле буває, а команда його відбиває. Побачити це
+        // доти можна було лише спрацьованим — тобто на живих даних у замовника,
+        // після того, як людина вже вибудувала на цьому роботу.
+        const described = await client.json<
+          { data?: { extra?: { rules?: Record<string, Array<{ key: string; text: string }>> } } }
+        >("/api/agent/tools?model=invoice", {
+          headers: { authorization: `Bearer ${full.token}` },
+        });
+        const invoiceRules = described.body.data?.extra?.rules?.invoice ?? [];
+        const noAmount = invoiceRules.find((rule) => rule.key === "invoice.postNoAmount");
+        assertExists(noAmount);
+        assertEquals(noAmount.text, "Накладна без суми — проведення неможливе");
+
+        // Правило називається тим самим ключем, яким позначена сама відмова
+        // (`messages[].key`), — тобто агент може сказати, що вперся саме в це.
+        const englishRules = await client.json<
+          { data?: { extra?: { rules?: Record<string, Array<{ key: string; text: string }>> } } }
+        >("/api/agent/tools?model=invoice&lang=en", {
+          headers: { authorization: `Bearer ${full.token}` },
+        });
+        assertEquals(
+          englishRules.body.data?.extra?.rules?.invoice?.find((rule) =>
+            rule.key === "invoice.postNoAmount"
+          )?.text,
+          "An invoice with no amount cannot be posted",
+        );
+
         // Маркер перекладу в АГЕНТСЬКОМУ каналі розгортає сервер.
         //
         // Браузера тут немає, а тексту сервер не перекладає — він його називає

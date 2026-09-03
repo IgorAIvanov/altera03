@@ -6,6 +6,7 @@
 import { assertEquals } from "@std/assert";
 import {
   mergeMessageDictionaries,
+  messageText,
   type MessagesConfig,
   resolveMarker,
   resolveMessages,
@@ -107,4 +108,11 @@ Deno.test("злиття словників: застосунок перекри�
   assertEquals(merged.uk["core.a"], "застосунок");
   assertEquals(merged.uk["core.b"], "ядро b");
   assertEquals(merged.en["core.a"], "core");
+});
+
+Deno.test("текст за ключем — без маркера навколо (перелік правил моделі)", () => {
+  // Перелік обмежень зберігає КЛЮЧІ, а рядок бере в рантаймі: інакше переклад
+  // дублювався б у генерованому файлі й розходився з локалями.
+  assertEquals(messageText("core.onlyUk", config), "Тільки українською");
+  assertEquals(messageText("core.nope", config), undefined);
 });

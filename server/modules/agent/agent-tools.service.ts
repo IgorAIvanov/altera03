@@ -24,6 +24,7 @@ import { getServerConfig } from "../../config/server-config.ts";
 import { AuthService } from "../auth/auth.service.ts";
 import { getAgentRoutes } from "./agent-routes.ts";
 import type { ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
+import { messageText } from "../../common/messages.ts";
 
 /**
  * Право, потрібне СТАНДАРТНІЙ команді. Той самий вивід, що робить рантайм.
@@ -44,6 +45,12 @@ const COMMAND_ACTION: Record<string, string> = {
 };
 
 const CHANGING_ACTIONS = ["create", "edit", "delete", "post", "unpost"];
+
+/** Оголошене обмеження моделі: ключ правила й те, що воно скаже людині. */
+export interface AgentModelRule {
+  key: string;
+  text: string;
+}
 
 export interface AgentToolListItem {
   model: string;
@@ -126,6 +133,42 @@ export class AgentToolsService {
       (!wanted || wanted.has(tool.model)) &&
       (!filter.command || tool.command === filter.command)
     );
+  }
+
+  /**
+   * Що модель ВІДМОВИТЬСЯ робити — перелік її оголошених обмежень.
+   *
+   * Схема каже, які є поля, і мовчить про поведінку: `depreciationMethod`
+   * приймає `production` за типом, а закриття місяця цей спосіб відбиває. Не
+   * знаючи цього, агент упевнено розписує ланцюжок документів, і людина
+   * впирається в нього через місяць роботи. Побачити правило доти можна було
+   * лише спрацьованим — тобто на живих даних.
+   *
+   * Їде разом зі схемами (`?model=…`), а не в каталозі: каталог мусить лишатися
+   * малим на сотні моделей, а правила потрібні саме тому, хто вже дійшов до
+   * конкретної моделі. Ціна — кілька сотень байтів на модель.
+   *
+   * Ключ лишається поруч із текстом: ним же позначена й сама відмова, коли вона
+   * станеться (`messages[].key`), тож агент може сказати, що впирається саме в
+   * це правило, а не в щось схоже.
+   */
+  rules(models: string[], locale?: string): Record<string, AgentModelRule[]> {
+    const { agentRules, messages } = getServerConfig();
+    const texts = locale ? { ...messages, locale } : messages;
+    const found: Record<string, AgentModelRule[]> = {};
+
+    for (const model of models) {
+      const rules = (agentRules[model] ?? [])
+        .map((key) => ({ key, text: messageText(key, texts) }))
+        // Ключ без перекладу не показуємо: у переліку правил він читався б як
+        // текст правила. Порожнього ключа тут бути не мусить — за цим стежить
+        // проба маркерів, — але покладатися на це в рантаймі нема потреби.
+        .filter((rule): rule is AgentModelRule => typeof rule.text === "string");
+
+      if (rules.length) found[model] = rules;
+    }
+
+    return found;
   }
 
   /** Усе, що цьому користувачу цим викликом дозволено. Спільне для обох режимів. */
