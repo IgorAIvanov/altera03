@@ -1,5 +1,6 @@
 import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
 import { printPdfHandler, printPreviewHandler } from "../print/print.handlers.ts";
+import { postPreviewHandler } from "../document/post-preview.handler.ts";
 import { getServerConfig, type ModelsConfig } from "../../config/server-config.ts";
 
 /**
@@ -9,6 +10,7 @@ import { getServerConfig, type ModelsConfig } from "../../config/server-config.t
 const RUNTIME_HANDLERS: Record<string, TsModelCommandConfig["handler"]> = {
   "runtime.printPdf": printPdfHandler,
   "runtime.printPreview": printPreviewHandler,
+  "runtime.postPreview": postPreviewHandler,
 };
 
 /**

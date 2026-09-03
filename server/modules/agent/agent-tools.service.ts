@@ -23,7 +23,7 @@ import { Injectable } from "@danet/core";
 import { getServerConfig } from "../../config/server-config.ts";
 import { AuthService } from "../auth/auth.service.ts";
 import { getAgentRoutes } from "./agent-routes.ts";
-import type { ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
+import { isChangingCall, type ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 import { messageText } from "../../common/messages.ts";
 import { coreAgentRules } from "./core-agent-rules.generated.ts";
 
@@ -227,7 +227,10 @@ export class AgentToolsService {
         action && (allowed.has(`${model}:${action}`) || allowedEverywhere.has(action))
       );
 
-      const changing = actions.some((action) => action && CHANGING_ACTIONS.includes(action));
+      // Сухий прогін проведення просить право `post`, а не змінює нічого —
+      // і саме тому токен «тільки читання» його бачить: агент-порадник має
+      // показувати наслідок, не маючи права його спричинити.
+      const changing = actions.some((action) => action && isChangingCall(action, command));
       if (readOnly && changing) continue;
 
       if (permitted) tools.push({ model, command, input });

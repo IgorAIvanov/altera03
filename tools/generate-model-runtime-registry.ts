@@ -198,6 +198,10 @@ function agentBaseCommands(type: string): string[] {
 function derivedCommands(manifest: ManifestRecord): string[] {
   const commands: string[] = [];
   if (Object.keys(manifest.prints ?? {}).length > 0) commands.push("printPdf");
+  // Сухий прогін — у КОЖНОГО документа: він не додає моделі поведінки, а
+  // показує ту, що вже є. Оголошувати його в манифесті означало б, що документ
+  // без оголошення тихо лишається без відповіді на «що вийде, якщо провести».
+  if (manifest.type === "document") commands.push("postPreview");
   if (manifest.periodic) commands.push("at", "history", "set");
   return commands;
 }
@@ -258,6 +262,7 @@ export function agentCommandsFor(manifest: ManifestRecord): string[] {
 
   const base = agentBaseCommands(manifest.type ?? "catalog");
   if (Object.keys(manifest.prints ?? {}).length > 0) base.push("printPdf");
+  if (manifest.type === "document") base.push("postPreview");
 
   if (!Array.isArray(agent.allowCommands)) return base;
 
@@ -376,6 +381,13 @@ function accessFor(manifest: ManifestRecord): Record<string, string> {
 
   if (Object.keys(manifest.prints ?? {}).length > 0 && !access.printPdf) {
     access.printPdf = "view";
+  }
+
+  // Прогін — це предпоказ ДІЇ, а не читання даних: право те саме, що в
+  // проведення. Читати чужі проводки постфактум можна й з правом `view`, а
+  // питати «що буде, якщо я проведу» має сенс тому, хто проводить.
+  if (manifest.type === "document" && !access.postPreview) {
+    access.postPreview = "post";
   }
 
   if (manifest.periodic) {
@@ -721,6 +733,10 @@ function renderTsBindings(
     // Модель із блоком `prints` друкується — команду друку виводимо з нього,
     // щоб маніфест не повторював те, що вже сказав. Явне оголошення в
     // commands.ts лишається можливим: воно перекриває хендлер ядра.
+    if (manifest.type === "document" && !manifest.commands?.ts?.postPreview) {
+      tsCommands.push(["postPreview", { handlerKey: "runtime.postPreview" }]);
+    }
+
     if (Object.keys(manifest.prints ?? {}).length > 0 && !manifest.commands?.ts?.printPdf) {
       tsCommands.push(["printPdf", { handlerKey: "runtime.printPdf" }]);
     }

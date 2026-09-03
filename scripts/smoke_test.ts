@@ -660,7 +660,31 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertExists(doc);
         docs.push(doc.id);
 
+        // Сухий прогін: показати проводки, не проводячи. Кличе ту саму
+        // `invoice_post` і відкочує транзакцію — тобто це не модель поведінки,
+        // а сама поведінка, тільки без запису.
+        const preview = await client.model("invoice", "postPreview", { id: doc.id });
+        assertEquals(preview.body.ok, true);
+        const previewRows = preview.body.data.rows as Array<
+          { debitAccount: string | null; creditAccount: string | null; amount: string }
+        >;
+        assertEquals(previewRows.length > 0, true);
+
+        // Слідів не лишилося: ні проведення, ні проводок. Третій доказ —
+        // нижче: журнал гака `doc_before_write` не бачить цього `post`, бо
+        // його запис відкотився разом із усім іншим.
+        const afterPreview = await client.model("invoice", "get", { id: doc.id });
+        assertEquals((afterPreview.body.data.item as { isPosted?: boolean }).isPosted, false);
+        await withDb(async (sql) => {
+          const [row] = await sql<{ count: number }[]>`
+            select count(*)::int as count from app.journal_entry where document_id = ${doc.id}::bigint
+          `;
+          assertEquals(row.count, 0);
+        });
+
+        // Проведений документ прогону не отримує: там дивляться справжні рухи.
         assertEquals((await client.model("invoice", "post", { id: doc.id })).body.ok, true);
+        assertEquals((await client.model("invoice", "postPreview", { id: doc.id })).body.ok, false);
         assertEquals((await client.model("invoice", "unpost", { id: doc.id })).body.ok, true);
 
         assertEquals((await client.model("invoice", "delete", { id: doc.id })).body.ok, true);

@@ -103,6 +103,12 @@ Extra commands follow the same naming style: `nextCode`, `nextNumber`, `<verb><N
 
 - Standard catalog-style models have a base function contract: list, get, save, delete, lookup.
 - Document models keep the same base contract and add `post` and `unpost` when the manifest declares `type: "document"`.
+- Every document also gets `postPreview` for free — a **dry run**: the core calls your
+  `{model}_post` inside a transaction, returns the entries it produced together with their
+  analytics, and rolls everything back. You write nothing for it. What this asks of your
+  `_post`: it must not depend on being committed, and it must leave its refusals in the
+  envelope (or as `raise exception`) rather than half-writing and returning `ok`. Both are
+  already required — the dry run just makes a violation visible.
 - Information registers (`type: register`) get the generated CRUD — `list`, `get`, `save`,
   `delete` — like a catalog, minus `lookup`: nothing references a register row, so there is
   nobody to pick it in a picker, and no `LookupRowSchema` is required. What generation does

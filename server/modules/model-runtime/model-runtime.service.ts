@@ -77,6 +77,29 @@ const CHANGING_ACTIONS = new Set(["create", "edit", "delete", "post", "unpost"])
 const CONFIRM_REQUIRED_ACTIONS = new Set(["delete", "post", "unpost"]);
 
 /**
+ * Команди, які ВИМАГАЮТЬ права зміни, але нічого не змінюють.
+ *
+ * Сухий прогін проведення кличе ту саму `<model>_post` і відкочує транзакцію —
+ * права він просить як у проведення (питати «що буде, якщо я проведу» має сенс
+ * тому, хто проводить), а наслідків не лишає жодних. Тому три речі, які
+ * дивляться на дію, мусять дивитися ще й на команду:
+ *
+ *   - **токен «тільки читання» прогін виконує.** Це не послаблення, а те, що
+ *     робить прогін корисним: агент-порадник може показати наслідок, не маючи
+ *     права його спричинити;
+ *   - **підтвердження не питається.** Воно є тому, що проведений заднім числом
+ *     документ уже вплинув на облік; прогін не впливає ні на що;
+ *   - **у журнал змін не пише.** Інакше «зміни» рясніли б записами, після яких
+ *     нічого не змінилося.
+ */
+const NON_WRITING_COMMANDS = new Set(["postPreview"]);
+
+/** Чи міняє щось ця пара «дія + команда». Одне джерело для всіх трьох перевірок. */
+export function isChangingCall(action: string | null, command: string): boolean {
+  return action !== null && CHANGING_ACTIONS.has(action) && !NON_WRITING_COMMANDS.has(command);
+}
+
+/**
  * Скільки живе прочитаний перелік рівнів.
  *
  * Кеш тут є, хоча в перевірці ПРАВ його свідомо немає: право стосується одного
@@ -260,11 +283,13 @@ export interface ModelCommandCaller {
  */
 function assertCallerMayRun(
   action: string,
+  command: string,
   payload: Record<string, unknown>,
   caller: ModelCommandCaller,
 ): void {
   const token = caller.accessToken;
   if (!token) return;
+  if (NON_WRITING_COMMANDS.has(command)) return;
 
   if (token.readOnly && CHANGING_ACTIONS.has(action)) {
     throw ModelCommandError.forbidden(
@@ -334,7 +359,7 @@ export class ModelRuntimeService {
     // порядок відмов нижче лишається старим: спершу «немає команди», потім
     // «право не оголошене».
     const action = resolveRequiredAction(model, command, normalizedPayload, config);
-    const audited = await this.shouldAudit(model, action);
+    const audited = await this.shouldAudit(model, command, action);
 
     let result: unknown;
     try {
@@ -358,7 +383,7 @@ export class ModelRuntimeService {
         throw ModelCommandError.accessNotDeclared(model, command);
       }
 
-      assertCallerMayRun(action, normalizedPayload, caller);
+      assertCallerMayRun(action, command, normalizedPayload, caller);
 
       const candidate = tsCommand
         ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand, action)
@@ -417,10 +442,10 @@ export class ModelRuntimeService {
    * права — тобто зламана конфігурація) рахується читанням: такий виклик і так
    * не виконається, а рівень `all` його все одно збереже.
    */
-  private async shouldAudit(model: string, action: string | null) {
+  private async shouldAudit(model: string, command: string, action: string | null) {
     const level = await this.auditLevel(model);
     if (level === "all") return true;
-    if (level === "changes") return action !== null && CHANGING_ACTIONS.has(action);
+    if (level === "changes") return isChangingCall(action, command);
     return false;
   }
 

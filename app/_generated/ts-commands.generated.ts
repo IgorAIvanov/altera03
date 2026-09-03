@@ -7,7 +7,9 @@ import ts_user_setPassword from "../admin/user/db/user.commands.ts";
 
 export const generatedTsCommandBindings = [
   { model: "bank", command: "ping", handler: ts_bank_ping },
+  { model: "invoice", command: "postPreview", handlerKey: "runtime.postPreview" },
   { model: "invoice", command: "printPdf", handlerKey: "runtime.printPdf" },
+  { model: "manual_entry", command: "postPreview", handlerKey: "runtime.postPreview" },
   { model: "print_template", command: "preview", handlerKey: "runtime.printPreview" },
   { model: "user", command: "setPassword", handler: ts_user_setPassword }
 ];

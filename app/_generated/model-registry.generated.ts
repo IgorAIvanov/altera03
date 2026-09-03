@@ -75,13 +75,17 @@ export const generatedModelRegistry = {
     "printData": "invoice_print_data"
     },
     access: {
+    "postPreview": "post",
     "printData": "view",
     "printPdf": "view"
     }
   },
   "manual_entry": {
     type: "document",
-    schema: "app"
+    schema: "app",
+    access: {
+    "postPreview": "post"
+    }
   },
   "menu": {
     type: "catalog",
