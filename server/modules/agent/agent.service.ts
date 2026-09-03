@@ -2,7 +2,8 @@ import { Injectable } from "@danet/core";
 import { ModelRuntimeService, type ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 import { getServerConfig } from "../../config/server-config.ts";
 import { getAgentRoutes } from "./agent-routes.ts";
-import type { AgentCallRequest, AgentCommandResult, AgentResponse } from "./agent.types.ts";
+import type { AgentCallRequest, AgentCommandResult, AgentMessage, AgentResponse } from "./agent.types.ts";
+import { resolveMarker, resolveMessages } from "../../common/messages.ts";
 
 @Injectable()
 export class AgentService {
@@ -15,6 +16,11 @@ export class AgentService {
   ): Promise<AgentResponse> {
     const { model, command, payload } = request;
 
+    // Мова каналу: назвав її виклик — беремо його, інакше конфігурацію. Питати
+    // нема в кого, браузера тут немає.
+    const config = getServerConfig();
+    const texts = request.lang ? { ...config.messages, locale: request.lang } : config.messages;
+
     const routes = getAgentRoutes()[model];
     if (!routes) {
       return this.errorResponse(`Модель '${model}' не знайдена або не підтримується агентом`);
@@ -26,7 +32,7 @@ export class AgentService {
     // імен, — і саме через нього агент не міг покликати звіт: перелік показував
     // би `index`, а диспетчер відмовляв. Розходження двох білих списків тихе за
     // побудовою: помітно його лише тоді, коли агент уперше спробує.
-    const tools = getServerConfig().agentTools;
+    const tools = config.agentTools;
     if (!tools[`${model}.${command}`]) {
       return this.errorResponse(
         Object.keys(tools).length === 0
@@ -39,16 +45,18 @@ export class AgentService {
     try {
       rawResult = await this.modelRuntime.execute(model, command, payload, userId, "", caller);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return this.errorResponse(`Помилка виконання команди: ${message}`);
+      const raw = error instanceof Error ? error.message : String(error);
+      // Відмова з SQL приїжджає МАРКЕРОМ (`@[monthClose.productionMethod]`), і
+      // саме тут — остання точка, де його ще є чим розгорнути. Ключ лишаємо
+      // поруч: далі за нього чіпляється питання «а де це правило налаштоване».
+      const { text, key } = resolveMarker(raw, texts);
+      return this.errorResponse(`Помилка виконання команди: ${text}`, key);
     }
 
     const envelope = rawResult as Record<string, unknown>;
     const ok = envelope?.ok === true;
     const data = envelope?.data as Record<string, unknown> | undefined;
-    const messages = Array.isArray(envelope?.messages)
-      ? (envelope.messages as string[])
-      : [];
+    const envelopeMessages = resolveMessages(envelope?.messages, texts) as AgentMessage[];
 
     const item = data?.item as Record<string, unknown> | undefined;
     const rawId = item?.id;
@@ -62,11 +70,11 @@ export class AgentService {
       // Тільки на успіху: посилання на запис, якого не створилося, гірше за
       // його відсутність — людина піде дивитися й побачить порожню форму.
       route: ok ? this.routeFor(routes, id) : undefined,
-      messages,
+      messages: envelopeMessages,
       data,
     };
 
-    return { ok, result, messages };
+    return { ok, result, messages: envelopeMessages };
   }
 
   /**
@@ -88,7 +96,14 @@ export class AgentService {
     return routes.listPath;
   }
 
-  private errorResponse(message: string): AgentResponse {
-    return { ok: false, result: null, messages: [message] };
+  /**
+   * Відмова без конверта. `key` є лише тоді, коли текст був маркером: у решті
+   * випадків (модель не знайдена, команда не оголошена) правила за
+   * повідомленням не стоїть, і вигаданий ключ був би гіршим за його
+   * відсутність.
+   */
+  private errorResponse(message: string, key?: string): AgentResponse {
+    const entry: AgentMessage = key ? { type: "error", text: message, key } : message;
+    return { ok: false, result: null, messages: [entry] };
   }
 }

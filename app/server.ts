@@ -5,7 +5,15 @@
 import { fromFileUrl } from "jsr:@std/path@^1.1.2";
 import { serveDir } from "jsr:@std/http@^1.0.18/file-server";
 
-import { bootstrap, configFromEnv, type VersionInfo } from "@altera/server";
+import { bootstrap, configFromEnv, mergeMessageDictionaries, type VersionInfo } from "@altera/server";
+import { CLIENT_LOCALES } from "@client/locales.ts";
+
+// Тексти повідомлень для каналу зовнішнього агента. Обидва словники є тільки
+// тут: рядки ядра везе `@altera/client`, рядки моделей збирає
+// `deno task locales:build`. Сервер їх не шукає — він їх отримує, як і все
+// інше, одним аргументом bootstrap().
+import appLocaleUk from "./_locales/uk.json" with { type: "json" };
+import appLocaleEn from "./_locales/en.json" with { type: "json" };
 
 import { generatedModelRegistry } from "./_generated/model-registry.generated.ts";
 import { generatedTsCommandBindings } from "./_generated/ts-commands.generated.ts";
@@ -130,6 +138,11 @@ export async function createServer(): Promise<AppServer> {
     },
     agentRoutes: agentModelRoutes,
     agentTools: agentToolSchemas,
+    // Маркер `@[ключ]` розгортає клієнт — але в агентському каналі клієнта
+    // немає, і туди доти їхало внутрішнє ім'я ключа замість речення.
+    messages: {
+      dictionaries: mergeMessageDictionaries(CLIENT_LOCALES, { uk: appLocaleUk, en: appLocaleEn }),
+    },
     views: {
       manifest: viewManifest,
       projectRoot,

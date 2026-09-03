@@ -58,6 +58,12 @@ export type {
 // Спільний конверт відповіді — один на команди моделей і на авторизацію.
 export type { Envelope, EnvelopeData } from "./common/response.ts";
 
+// Тексти повідомлень для агентського каналу: словники передає застосунок
+// (тільки він має і рядки ядра, і свої), розгортає сервер — див.
+// common/messages.ts.
+export type { MessageDictionaries, MessagesConfig } from "./common/messages.ts";
+export { mergeMessageDictionaries } from "./common/messages.ts";
+
 // Контекст TS-команди моделі: те, що хендлер отримує другим аргументом (зокрема
 // `db` — SQL-контекст). Без цього експорту нестандартна команда не виражається у
 // ВСТАНОВЛЕНОМУ застосунку взагалі: у монорепо тип брали відносним імпортом у

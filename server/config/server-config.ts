@@ -17,6 +17,7 @@ import type { AgentModelRoute } from "../modules/agent/agent-routes.ts";
 import { coreAgentRoutes, coreAgentToolSchemas } from "../modules/agent/core-agent-tools.ts";
 import type { ViewManifestEntry } from "../modules/model-view/model-view.registry.ts";
 import type { AuthMethod } from "../modules/auth/auth.types.ts";
+import type { MessagesConfig } from "../common/messages.ts";
 
 /**
  * Режим TLS у термінах libpq (`sslmode`). Драйвер окремого `verify-ca` не має,
@@ -178,6 +179,16 @@ export interface ServerOptions {
   auth?: Partial<AuthConfig>;
   blob?: Partial<BlobConfig>;
   version?: VersionInfo;
+  /**
+   * Тексти повідомлень для каналу зовнішнього агента: маркер `@[ключ]` сервер
+   * розгортає сам лише там, де його нема кому розгорнути (див.
+   * `common/messages.ts`).
+   *
+   * Словники приходять від ЗАСТОСУНКУ, бо тільки він має обидва: рядки ядра
+   * лежать у локалях `@altera/client`, рядки моделей — у власних `_locales/`.
+   * Не передав — поведінка та сама, що була: агент отримує маркер як є.
+   */
+  messages?: Partial<MessagesConfig>;
 }
 
 /** Повна конфігурація після застосування дефолтів. Такою її бачать сервіси. */
@@ -190,6 +201,7 @@ export interface ServerConfig {
   auth: AuthConfig;
   blob: BlobConfig;
   version: VersionInfo;
+  messages: MessagesConfig;
 }
 
 const DEFAULT_AUTH: AuthConfig = {
@@ -200,6 +212,18 @@ const DEFAULT_AUTH: AuthConfig = {
   passwordEnabled: true,
   methods: [],
   publicBaseUrl: null,
+};
+
+/**
+ * Порожній словник — свідоме умовчання: без нього перший же застосунок, який
+ * оновив пакет і нічого не передав, почав би отримувати голі ключі там, де
+ * доти був маркер. Промах по словнику лишає маркер недоторканим, тобто
+ * сьогоднішня поведінка і є запасний варіант.
+ */
+const DEFAULT_MESSAGES: MessagesConfig = {
+  dictionaries: {},
+  locale: "uk",
+  fallback: "en",
 };
 
 const DEFAULT_BLOB: BlobConfig = {
@@ -226,6 +250,7 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
     auth: { ...DEFAULT_AUTH, ...options.auth },
     blob: { ...DEFAULT_BLOB, ...options.blob },
     version: options.version ?? {},
+    messages: { ...DEFAULT_MESSAGES, ...options.messages },
   };
 }
 

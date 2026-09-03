@@ -1358,6 +1358,49 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertExists(save);
         assertExists((save.input as { properties?: unknown }).properties);
 
+        // Маркер перекладу в АГЕНТСЬКОМУ каналі розгортає сервер.
+        //
+        // Браузера тут немає, а тексту сервер не перекладає — він його називає
+        // (`@[core.lookupNoFilters]{"model":"bank"}`), і доти агент отримував
+        // саме ім'я ключа. Причому рівно в тому класі повідомлень, яким база
+        // пояснює, чому щось не вийшло: правила обліку живуть у SQL. Браузерний
+        // канал маркер отримує й далі — інакше зникла б друга мова.
+        const refusal = await client.json<{ ok: boolean; messages: unknown[] }>(
+          "/api/agent/call",
+          {
+            method: "POST",
+            headers: { authorization: `Bearer ${full.token}`, "content-type": "application/json" },
+            body: JSON.stringify({ model: "bank", command: "lookup", payload: { filters: { bogus: "1" } } }),
+          },
+        );
+        assertEquals(refusal.body.ok, false);
+        const refused = refusal.body.messages[0] as { text: string; key?: string };
+        assertEquals(
+          refused.text.includes("@["),
+          false,
+          `маркер доїхав до агента нерозгорнутим: ${refused.text}`,
+        );
+        assertEquals(refused.text.includes("Підбір «bank» відборів не оголошує"), true);
+        // Ключ лишається поруч із текстом: це ідентифікатор правила, за який
+        // чіпляється питання «а де воно налаштоване».
+        assertEquals(refused.key, "core.lookupNoFilters");
+
+        // Мову каналу називає виклик, бо спитати нема в кого.
+        const english = await client.json<{ messages: unknown[] }>("/api/agent/call", {
+          method: "POST",
+          headers: { authorization: `Bearer ${full.token}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "bank",
+            command: "lookup",
+            payload: { filters: { bogus: "1" } },
+            lang: "en",
+          }),
+        });
+        assertEquals(
+          (english.body.messages[0] as { text: string }).text.includes("picker declares no filters"),
+          true,
+        );
+
         // Кілька моделей одним запитом — заради цього список і зроблено:
         // диспетчеру потрібні дві-три одразу, а три запити коштують трьох
         // обертів.

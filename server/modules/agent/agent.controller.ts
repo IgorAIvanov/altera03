@@ -112,6 +112,7 @@ export class AgentController {
           model: request.model,
           command: request.command,
           payload: (request.payload ?? {}) as Record<string, unknown>,
+          lang: typeof request.lang === "string" && request.lang ? request.lang : undefined,
         },
         auth.userId,
         { accessToken: auth.accessToken },

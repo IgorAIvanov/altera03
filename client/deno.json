@@ -11,6 +11,7 @@
     "./data/api.ts": "./data/api.ts",
     "./data/data-service.ts": "./data/data-service.ts",
     "./locale.ts": "./locale.ts",
+    "./locales.ts": "./locales.ts",
     "./shared/datetime.ts": "./shared/datetime.ts",
     "./shared/organization-context.ts": "./shared/organization-context.ts",
     "./shared/period.ts": "./shared/period.ts",

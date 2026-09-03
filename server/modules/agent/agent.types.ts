@@ -22,18 +22,40 @@ export interface AgentCommandResult {
    * відкриється порожнім — це видно й це поки так.
    */
   route?: string;
-  messages: string[];
+  messages: AgentMessage[];
   data?: unknown;
 }
+
+/**
+ * Повідомлення конверта, як його бачить агент.
+ *
+ * Форма подвійна, бо такою вона приходить із бази: проста відмова — рядок,
+ * прив'язана до поля — об'єкт. Маркери перекладу тут уже розгорнуті (див.
+ * `common/messages.ts`), а `key` лишається поруч із текстом: це ідентифікатор
+ * правила, за який чіпляється все, що спитають далі («де це налаштоване»).
+ */
+export type AgentMessage = string | {
+  type?: string;
+  text: string;
+  field?: string;
+  key?: string;
+  [extra: string]: unknown;
+};
 
 export interface AgentResponse {
   ok: boolean;
   result: AgentCommandResult | null;
-  messages: string[];
+  messages: AgentMessage[];
 }
 
 export interface AgentCallRequest {
   model: string;
   command: string;
   payload: Record<string, unknown>;
+  /**
+   * Якою мовою відповідати. Умовчання — `messages.locale` конфігурації:
+   * браузера в цьому каналі немає, тож мову нема в кого спитати, і хтось мусить
+   * її назвати.
+   */
+  lang?: string;
 }
