@@ -12,7 +12,8 @@
 // Розсинхрон ловиться з двох боків: новий `.sql`, якого немає в мапі, валить
 // збірку пакета (`getCoreSqlPackage` кидає), а змінений — пробу
 // `server/sql/core-sql_test.ts` у `deno task test:unit`.
-import { join, relative, SEPARATOR } from "@std/path";
+import { dirname, join, relative, SEPARATOR } from "@std/path";
+import { findMarkers } from "./scan-translation-markers.ts";
 
 const HEADER = `// ЗГЕНЕРОВАНО \`deno task core:sql\` з server/sql/**/db/*.sql — не редагувати.
 //
@@ -20,6 +21,66 @@ const HEADER = `// ЗГЕНЕРОВАНО \`deno task core:sql\` з server/sql/*
 // (\`with { type: "text" }\`) — у tools/generate-core-sql.ts: їх не розбирає
 // граф JSR, і публікація server-пакета падає.
 `;
+
+/**
+ * Правила, які оголошує САМЕ ЯДРО, — і кому вони стосуються.
+ *
+ * Реєстр обмежень збирається з джерел ЗАСТОСУНКУ, тож правила ядра в нього не
+ * потрапляли взагалі. А найважчі з них там і живуть: усе, що відбиває
+ * проведення (немає рахунку, не заповнене субконто, нульова сума, однобічна
+ * проводка на балансовому рахунку), написано в `document_core` — один раз на
+ * всі документи всіх застосунків.
+ *
+ * Ключ мапи — не модель, а КОМУ правило стосується: `document_core` пише
+ * правила будь-якого документа, а не якоїсь однієї моделі, і приписати їх
+ * моделі з таким іменем було б неправдою. `"*"` — усім.
+ *
+ * Чого тут свідомо немає:
+ *   - `database/database-error.ts` — це переклад кодів PostgreSQL (унікальність,
+ *     зовнішній ключ), а не оголошене обмеження моделі. Одинадцять однакових
+ *     рядків у кожної моделі — шум там, де перелік і цінний своєю стислістю;
+ *   - `sql/access` — адміністрування токенів і користувачів; до того, що агент
+ *     планує робити з обліком, воно не належить.
+ */
+const CORE_RULE_SCOPES: Record<string, string> = {
+  document_core: "document",
+  numerator: "*",
+};
+
+const RULES_HEADER = `// ЗГЕНЕРОВАНО \`deno task core:sql\` з server/sql/**/db/*.sql — не редагувати.
+//
+// Правила, які оголошує ядро, за тим, кому вони стосуються: "*" — усім,
+// "document" — будь-якому документу. Тексти НЕ дублюються: тут лише ключі,
+// рядок береться в рантаймі зі словників повідомлень.
+`;
+
+/** Ключі маркерів пакета ядра, згруповані за тим, кому правило стосується. */
+function collectCoreRules(files: string[], sqlDir: string): Record<string, string[]> {
+  const scopes: Record<string, string[]> = {};
+
+  for (const file of files) {
+    const pkg = relative(sqlDir, file).replaceAll(SEPARATOR, "/").split("/")[0];
+    const scope = CORE_RULE_SCOPES[pkg];
+    if (!scope) continue;
+
+    const list = scopes[scope] ??= [];
+    for (const use of findMarkers(Deno.readTextFileSync(file), file)) {
+      if (!list.includes(use.key)) list.push(use.key);
+    }
+  }
+
+  for (const list of Object.values(scopes)) list.sort();
+  return scopes;
+}
+
+function renderCoreRules(scopes: Record<string, string[]>): string {
+  const body = Object.keys(scopes).sort()
+    .map((scope) => `  ${JSON.stringify(scope)}: ${JSON.stringify(scopes[scope])},`)
+    .join("\n");
+
+  return `${RULES_HEADER}
+export const coreAgentRules: Record<string, string[]> = {\n${body}\n};\n`;
+}
 
 /** Усі `.sql` пакета ядра: <назва>/db/<файл>.sql, у стабільному порядку. */
 async function collectSqlFiles(sqlDir: string): Promise<string[]> {
@@ -45,7 +106,7 @@ async function collectSqlFiles(sqlDir: string): Promise<string[]> {
 
 export async function generateCoreSql(
   options: { sqlDir: string; verbose?: boolean },
-): Promise<{ outFile: string; count: number }> {
+): Promise<{ outFile: string; rulesFile: string; count: number }> {
   const { sqlDir } = options;
   const files = await collectSqlFiles(sqlDir);
 
@@ -71,7 +132,13 @@ ${entries.join("\n")}
 };
 `;
   await Deno.writeTextFile(outFile, body);
-  return { outFile, count: files.length };
+
+  // Правила ядра — сусідній вихід того самого прогону: джерело в них те саме,
+  // і розійтися вони не мають права.
+  const rulesFile = join(dirname(sqlDir), "modules", "agent", "core-agent-rules.generated.ts");
+  await Deno.writeTextFile(rulesFile, renderCoreRules(collectCoreRules(files, sqlDir)));
+
+  return { outFile, rulesFile, count: files.length };
 }
 
 async function main() {
@@ -81,8 +148,9 @@ async function main() {
     throw new Error("Вкажи каталог SQL ядра: generate-core-sql <sqlDir> [--verbose]");
   }
 
-  const { outFile, count } = await generateCoreSql({ sqlDir: dirArg, verbose });
+  const { outFile, rulesFile, count } = await generateCoreSql({ sqlDir: dirArg, verbose });
   console.log(`✓ ${count} файлів → ${outFile}`);
+  console.log(`✓ правила ядра → ${rulesFile}`);
 }
 
 if (import.meta.main) {

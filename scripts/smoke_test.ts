@@ -1374,6 +1374,23 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertExists(noAmount);
         assertEquals(noAmount.text, "Накладна без суми — проведення неможливе");
 
+        // Правила ядра — теж тут, і саме вони найважчі: усе, що відбиває
+        // ПРОВЕДЕННЯ, написано в `document_core` один раз на всі документи всіх
+        // застосунків, тобто з реєстру застосунку не видно взагалі. Підбирає їх
+        // ТИП моделі: «немає рахунку» — правило будь-якого документа, а не
+        // якоїсь однієї моделі.
+        const coreRule = invoiceRules.find((rule) => rule.key === "core.entryNoAccount");
+        assertExists(coreRule);
+        assertEquals(coreRule.text.includes("@["), false);
+
+        // А довіднику проводочні правила не приписуються.
+        const bankRules = (await client.json<
+          { data?: { extra?: { rules?: Record<string, Array<{ key: string }>> } } }
+        >("/api/agent/tools?model=bank", {
+          headers: { authorization: `Bearer ${full.token}` },
+        })).body.data?.extra?.rules?.bank ?? [];
+        assertEquals(bankRules.some((rule) => rule.key === "core.entryNoAccount"), false);
+
         // Правило називається тим самим ключем, яким позначена сама відмова
         // (`messages[].key`), — тобто агент може сказати, що вперся саме в це.
         const englishRules = await client.json<

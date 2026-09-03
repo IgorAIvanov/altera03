@@ -54,3 +54,30 @@ Deno.test("core-sql.generated.ts збігається з .sql на диску", 
     }
   });
 });
+
+/**
+ * Правила ядра — сусідній вихід того самого прогону, і застаріти вони можуть
+ * тихіше за SQL: новий `raise exception` у `document_core` просто не з'явиться
+ * в переліку, який агент читає перед тим, як радити порядок дій. Тобто вийде
+ * рівно те, від чого перелік і рятує, — правило є, а видно його не буде.
+ */
+Deno.test("core-agent-rules.generated.ts збігається з маркерами ядра", async () => {
+  const { coreAgentRules } = await import("../modules/agent/core-agent-rules.generated.ts");
+  const { findMarkers } = await import("@altera/tools/scan-translation-markers");
+
+  const documentKeys = new Set<string>();
+  const dbDir = join(SQL_DIR, "document_core", "db");
+  for await (const entry of Deno.readDir(dbDir)) {
+    if (!entry.isFile || !entry.name.endsWith(".sql")) continue;
+    const path = join(dbDir, entry.name);
+    for (const use of findMarkers(await Deno.readTextFile(path), path)) {
+      documentKeys.add(use.key);
+    }
+  }
+
+  assertEquals(
+    coreAgentRules.document ?? [],
+    [...documentKeys].sort(),
+    "маркери document_core змінилися — виконай `deno task core:sql`",
+  );
+});

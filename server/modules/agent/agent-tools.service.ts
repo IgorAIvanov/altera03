@@ -25,6 +25,7 @@ import { AuthService } from "../auth/auth.service.ts";
 import { getAgentRoutes } from "./agent-routes.ts";
 import type { ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 import { messageText } from "../../common/messages.ts";
+import { coreAgentRules } from "./core-agent-rules.generated.ts";
 
 /**
  * Право, потрібне СТАНДАРТНІЙ команді. Той самий вивід, що робить рантайм.
@@ -155,10 +156,22 @@ export class AgentToolsService {
   rules(models: string[], locale?: string): Record<string, AgentModelRule[]> {
     const { agentRules, messages } = getServerConfig();
     const texts = locale ? { ...messages, locale } : messages;
+    const routes = getAgentRoutes();
     const found: Record<string, AgentModelRule[]> = {};
 
     for (const model of models) {
-      const rules = (agentRules[model] ?? [])
+      // Спершу власні правила моделі, потім ядрові. Найважчі обмеження — те,
+      // що відбиває ПРОВЕДЕННЯ (немає рахунку, не заповнене субконто, нульова
+      // сума), — написані в ядрі один раз на всі документи всіх застосунків, і
+      // з реєстру застосунку їх не видно взагалі. Стосуються вони не «моделі
+      // document_core», а будь-якого документа, тому й підбираються за типом.
+      const keys = [
+        ...(agentRules[model] ?? []),
+        ...(coreAgentRules[routes[model]?.type ?? ""] ?? []),
+        ...(coreAgentRules["*"] ?? []),
+      ];
+
+      const rules = [...new Set(keys)]
         .map((key) => ({ key, text: messageText(key, texts) }))
         // Ключ без перекладу не показуємо: у переліку правил він читався б як
         // текст правила. Порожнього ключа тут бути не мусить — за цим стежить
