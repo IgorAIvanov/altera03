@@ -3,6 +3,7 @@ import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { AgentService } from "./agent.service.ts";
 import { AgentToolsService } from "./agent-tools.service.ts";
+import { AgentNoteService } from "./agent-note.service.ts";
 import { getAgentRoutes } from "./agent-routes.ts";
 import type { AgentCallRequest } from "./agent.types.ts";
 
@@ -15,6 +16,7 @@ export class AgentController {
   constructor(
     private agentService: AgentService,
     private agentToolsService: AgentToolsService,
+    private agentNoteService: AgentNoteService,
     private requestUserService: RequestUserService,
   ) {}
 
@@ -47,9 +49,18 @@ export class AgentController {
 
       if (!models.length) {
         const catalog = await this.agentToolsService.listModels(auth.userId, caller);
+        // Пам'ятка бази їде з КАТАЛОГОМ, тобто з першого виклику розмови.
+        // Не пошуком: пам'ятка, яку треба здогадатися пошукати, допомагає лише
+        // тому, хто вже підозрює, що чогось не знає, — а не знає він якраз
+        // того, про існування чого не здогадується.
+        const note = await this.agentNoteService.root();
         return {
           ok: true,
-          data: { rows: catalog, totals: { count: catalog.length } },
+          data: {
+            rows: catalog,
+            ...(note.length ? { extra: { note } } : {}),
+            totals: { count: catalog.length },
+          },
           messages: [],
         };
       }
@@ -72,9 +83,12 @@ export class AgentController {
       // малим на сотні моделей, а правила потрібні тому, хто вже дійшов до
       // конкретної моделі.
       const rules = this.agentToolsService.rules(models, query.get("lang")?.trim() || undefined);
+      // Записки саме цих моделей — другий рівень пам'ятки, як вкладений
+      // CLAUDE.md у підкаталозі.
+      const notes = await this.agentNoteService.forScopes(models);
       return {
         ok: true,
-        data: { rows: tools, extra: { rules }, totals: { count: tools.length } },
+        data: { rows: tools, extra: { rules, notes }, totals: { count: tools.length } },
         messages: [],
       };
     } catch (error) {

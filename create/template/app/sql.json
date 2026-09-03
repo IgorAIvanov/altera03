@@ -11,6 +11,7 @@
     "@core/base",
     "@core/access",
     "@core/audit",
+    "@core/agent_note",
     "@core/remark",
     "@core/menu",
     "admin/menu",

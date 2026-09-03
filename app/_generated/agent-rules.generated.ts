@@ -2,6 +2,7 @@
 // Ключі відмов, які оголошує модель — див. tools/generate-model-runtime-registry.ts.
 
 export const agentModelRules: Record<string, string[]> = {
+  "agent_note": ["core.agentNoteEmpty"],
   "audit_setting": ["auditSetting.unknownLevel","auditSetting.unknownModel"],
   "invoice": ["invoice.postNoAmount"],
   "manual_entry": ["manualEntry.lineNoAccount","manualEntry.postNoEntries"],

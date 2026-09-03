@@ -6,6 +6,12 @@ export const agentModelRoutes = {
     type: "report",
     titles: {"en":"Account card","uk":"Картка рахунку"}
   },
+  "agent_note": {
+    editPath: "/admin/agent_note/edit",
+    listPath: "/admin/agent_note/list",
+    type: "admin",
+    titles: {"en":"Base memo","uk":"Пам'ятка бази"}
+  },
   "audit_log": {
     listPath: "/admin/audit_log/list",
     type: "admin",

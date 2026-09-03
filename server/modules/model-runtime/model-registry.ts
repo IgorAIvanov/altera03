@@ -1,6 +1,7 @@
 import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
 import { printPdfHandler, printPreviewHandler } from "../print/print.handlers.ts";
 import { postPreviewHandler } from "../document/post-preview.handler.ts";
+import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import { getServerConfig, type ModelsConfig } from "../../config/server-config.ts";
 
 /**
@@ -52,6 +53,27 @@ function buildRegistry(
       sqlCommands: config.sqlCommands ? { ...config.sqlCommands } : undefined,
       tsCommands: config.tsCommands ? { ...config.tsCommands } : undefined,
     };
+  }
+
+  // Команди моделей ЯДРА, які застосунок не оголошує й оголосити не може.
+  //
+  // Доки моделі ядра не було в реєстрі застосунку взагалі (`attachment`),
+  // рантайм резолвив її команду за домовленістю — `app.<модель>_<команда>` — і
+  // цього вистачало. Але щойно застосунок заводить ЕКРАН до тієї ж моделі
+  // (`admin/agent_note`), у реєстрі з'являється запис із власним переліком
+  // команд, і команда ядра в ньому відсутня: рантайм відмовляє «не
+  // налаштовано» — на команді, яку сам же й дає. Тобто наявність екрана
+  // вимикала б частину фреймворку, і мовчки.
+  for (const key of Object.keys(coreModelAccess)) {
+    const separator = key.lastIndexOf(".");
+    const model = key.slice(0, separator);
+    const command = key.slice(separator + 1);
+
+    const config = result[model] ??= {};
+    // Оголошене застосунком сильніше: якщо він написав свою реалізацію
+    // команди, вона й виконується.
+    config.sqlCommands = { [command]: {}, ...config.sqlCommands };
+    config.access = { [command]: coreModelAccess[key], ...config.access };
   }
 
   for (const binding of bindings) {

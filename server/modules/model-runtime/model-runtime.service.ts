@@ -4,6 +4,7 @@ import { isMissingDatabaseFunction } from "../../database/database-error.ts";
 import { signEnvelopeTokens } from "../blob/blob-token.ts";
 import { looksLikeEnvelope, ModelCommandError } from "./model-runtime.errors.ts";
 import { getModelConfig, supportsPosting } from "./model-registry.ts";
+import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import type {
   ModelBackendConfig,
   ModelCommandContext,
@@ -311,7 +312,10 @@ function resolveRequiredAction(
   payload: Record<string, unknown>,
   config: ModelBackendConfig | undefined,
 ): string | null {
-  const declared = config?.access?.[command];
+  // Оголошене право моделі застосунку, а якщо моделі в реєстрі немає —
+  // ядра: у моделі ядра манифеста немає, тож інакше її команда з власним
+  // іменем упиралася б у 501 назавжди.
+  const declared = config?.access?.[command] ?? coreModelAccess[`${model}.${command}`];
   if (declared) return declared;
 
   // `save` — це створення або зміна, і різниця видна лише з payload: новий

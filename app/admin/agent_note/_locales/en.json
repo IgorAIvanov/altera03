@@ -1,0 +1,14 @@
+{
+  "agentNote.titleOne": "Memo note",
+  "agentNote.titleMany": "Base memo",
+  "agentNote.scope": "Scope",
+  "agentNote.scopeAll": "Whole base",
+  "agentNote.content": "Convention",
+  "agentNote.status": "Status",
+  "agentNote.status.draft": "Draft",
+  "agentNote.status.confirmed": "Confirmed",
+  "agentNote.source": "Source",
+  "agentNote.source.admin": "Person",
+  "agentNote.source.agent": "Agent",
+  "agentNote.hint": "What the agent cannot know about this enterprise: how things are done here, what a reference item means, what is never done. It already knows general accounting — do not write that here: the memo sits in the context of every conversation. One note, one thought. Only confirmed notes reach the context."
+}

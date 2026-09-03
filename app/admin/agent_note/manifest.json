@@ -1,0 +1,16 @@
+{
+  "model": "agent_note",
+  "type": "admin",
+  "schema": "app",
+  "sql": { "generate": false },
+  "views": {
+    "list": {
+      "module": "./agentNoteList.ts",
+      "titleKey": "agentNote.titleMany"
+    },
+    "edit": {
+      "module": "./agentNoteEdit.ts",
+      "titleKey": "agentNote.titleOne"
+    }
+  }
+}

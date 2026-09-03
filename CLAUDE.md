@@ -570,10 +570,14 @@ skill — [`model-form-root`](skills/src/model-form-root/SKILL.md). Головн
 відповіді `altera_call` їх зрізає. **MCP-обгортка** — окремий пакет `mcp/` (шість
 інструментів замість дзеркала команд, одна база на процес) —
 [`mcp/README.md`](mcp/README.md). Рішення й план —
-[`docs/external-agent-plan.md`](docs/external-agent-plan.md). Наступний крок —
-**пам'ятка бази** (`CLAUDE.md` для облікової системи, але в базі): агент знає
-бухгалтерію й не знає домовленостей цього підприємства. Коду ще немає, розбір —
-[`docs/agent-note-plan.md`](docs/agent-note-plan.md).
+[`docs/external-agent-plan.md`](docs/external-agent-plan.md). **Пам'ятка бази**
+(`CLAUDE.md` для облікової системи, але в базі) — `app.agent_note`, пакет ядра
+`@core/agent_note`, екран `app/admin/agent_note/`: агент знає бухгалтерію й не
+знає домовленостей цього підприємства. Записки їдуть НЕ пошуком: коренева
+(`model_key = '*'`) — з каталогом моделей, по-модельна — з описом моделі, поруч
+із обмеженнями. У контекст іде лише підтверджене людиною; агент пропонує
+командою `agent_note.propose`, яка завжди пише чернетку. Розбір і відкладені
+питання — [`docs/agent-note-plan.md`](docs/agent-note-plan.md).
 
 ## План розвитку
 

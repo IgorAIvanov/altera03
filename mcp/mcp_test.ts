@@ -58,6 +58,9 @@ const FAKE_RULES = {
   bank: [{ key: "bank.mfoTaken", text: "Банк із таким МФО вже заведений" }],
 };
 
+/** Пам'ятка бази — домовленості підприємства, які їдуть із каталогом. */
+const FAKE_MEMO = ["Склад №3 — відповідальне зберігання"];
+
 function fakeAltera(
   rows: unknown[],
   callEnvelope: unknown | ((call: FakeCall) => unknown),
@@ -118,7 +121,11 @@ function fakeAltera(
             rows,
             // Правила віддає лише опис названих моделей, як і справжня база:
             // у каталозі їх немає навмисно.
-            ...(url.searchParams.get("model") ? { extra: { rules: FAKE_RULES } } : {}),
+            extra: url.searchParams.get("model")
+              // Опис моделі несе обмеження й записки саме цих моделей…
+              ? { rules: FAKE_RULES }
+              // …а каталог — пам'ятку бази, тобто те, що потрібне з першого кроку.
+              : { note: FAKE_MEMO },
             totals: { count: rows.length },
           },
           messages: [],
@@ -292,10 +299,14 @@ Deno.test("обгортка: рукостискання, перелік і ви�
     const answer = JSON.parse(toolResult(catalog).text) as {
       total: number;
       shown: number;
+      memo?: string[];
       models: Array<{ model: string }>;
     };
     assertEquals(answer.models[0].model, "bank");
     assertEquals([answer.total, answer.shown], [1, 1]);
+    // Пам'ятка бази їде з каталогом: домовленості цього підприємства потрібні
+    // з першого кроку, а не тоді, коли агент здогадається їх пошукати.
+    assertEquals(answer.memo, FAKE_MEMO);
 
     // Токен їде заголовком і лише ним: у командний рядок він не потрапляє
     // ніколи (аргументи видно в списку процесів).

@@ -134,6 +134,17 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
     },
   },
   {
+    // Пам'ятка бази: домовленості підприємства, які агент не може вивести ні з
+    // коду, ні з даних. Таблиця в ядрі, бо доставка (`/api/agent/tools`) —
+    // частина фреймворку; екран правки належить застосунку.
+    name: "agent_note",
+    files: {
+      structure: [file("agent_note/db/struc.sql")],
+      migrations: [file("agent_note/db/migration.sql")],
+      models: [file("agent_note/db/agent_note.sql")],
+    },
+  },
+  {
     name: "help_content",
     files: {
       structure: [file("help_content/db/struc.sql")],

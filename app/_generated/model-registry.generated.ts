@@ -11,6 +11,10 @@ export const generatedModelRegistry = {
     "index": "view"
     }
   },
+  "agent_note": {
+    type: "admin",
+    schema: "app"
+  },
   "audit_log": {
     type: "admin",
     schema: "app"

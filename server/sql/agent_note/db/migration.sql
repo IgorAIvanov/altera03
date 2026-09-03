@@ -1,0 +1,1 @@
+-- Intentionally empty. Migrations for agent_note will be added here when needed.

@@ -90,10 +90,22 @@ export interface AlteraModelRule {
   text: string;
 }
 
-/** Відповідь `altera_describe`: схеми плюс оголошені обмеження названих моделей. */
+/** Відповідь `altera_describe`: схеми, оголошені обмеження й записки моделей. */
 export interface AlteraDescription {
   tools: AlteraTool[];
   rules: Record<string, AlteraModelRule[]>;
+  /** Домовленості ЦЬОГО підприємства щодо названих моделей. */
+  notes: Record<string, string[]>;
+}
+
+/** Записки за моделями — форма з `data.extra.notes`, обережно розібрана. */
+function asNotes(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object") return {};
+  const notes: Record<string, string[]> = {};
+  for (const [model, list] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(list)) notes[model] = list.filter((line): line is string => typeof line === "string");
+  }
+  return notes;
 }
 
 /** Відмова, яку варто показати агенту словами, а не стеком. */
@@ -195,11 +207,23 @@ export class AlteraClient {
     return this.config.url;
   }
 
-  /** Каталог моделей: що є в базі й що з цим можна робити. */
-  async models(): Promise<AlteraModelEntry[]> {
-    const rows = await this.rows("/api/agent/tools");
+  /**
+   * Каталог моделей — і пам'ятка бази разом із ним.
+   *
+   * Пам'ятка їде саме тут, а не окремим інструментом: домовленості цього
+   * підприємства потрібні з першого кроку, а те, що треба здогадатися
+   * запитати, допомагає лише тому, хто вже підозрює, що чогось не знає.
+   */
+  async models(): Promise<{ models: AlteraModelEntry[]; note: string[] }> {
+    const envelope = await this.request("/api/agent/tools") as ListEnvelope;
+    const rows = Array.isArray(envelope.data?.rows) ? envelope.data.rows : [];
     assertCatalogShape(rows, this.config.url);
-    return rows as AlteraModelEntry[];
+
+    const note = envelope.data?.extra?.note;
+    return {
+      models: rows as AlteraModelEntry[],
+      note: Array.isArray(note) ? note.filter((line) => typeof line === "string") : [],
+    };
   }
 
   /**
@@ -221,6 +245,7 @@ export class AlteraClient {
       // Старший сервер правил не віддає взагалі — тоді їх просто немає, а не
       // «жодна модель нічого не забороняє».
       rules: (rules && typeof rules === "object" ? rules : {}) as Record<string, AlteraModelRule[]>,
+      notes: asNotes(envelope.data?.extra?.notes),
     };
   }
 

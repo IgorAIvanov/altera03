@@ -43,6 +43,25 @@ export const coreAgentToolSchemas: Record<string, unknown> = {
     properties: { id: { type: "string", description: "ID вкладення" } },
     required: ["id"],
   },
+  "agent_note.propose": {
+    type: "object",
+    properties: {
+      content: {
+        type: "string",
+        description:
+          "Домовленість ЦЬОГО підприємства, одним реченням. Те, що правда й на іншому " +
+          "підприємстві, сюди не пишеться: загальну методологію ти й так знаєш, а пам'ятка " +
+          "лежить у контексті кожної розмови й тим дорога",
+      },
+      model: {
+        type: "string",
+        description:
+          "Модель, якої це стосується. Без неї записка про всю базу — так і треба, " +
+          "коли домовленість не про один документ",
+      },
+    },
+    required: ["content"],
+  },
 };
 
 /**
@@ -58,4 +77,26 @@ export const coreAgentRoutes: Record<string, AgentModelRoute> = {
     titles: { uk: "Вкладення", en: "Attachments" },
     aliases: ["вкладення", "прикріплений файл", "скан", "attachment"],
   },
+  agent_note: {
+    type: "system",
+    titles: { uk: "Пам'ятка бази", en: "Base memo" },
+    aliases: ["пам'ятка", "домовленість", "як у нас прийнято", "memo"],
+  },
+};
+
+/**
+ * Право нестандартної команди моделі ЯДРА.
+ *
+ * Стандартні імена (`list`, `get`) рантайм виводить сам, а `propose` не
+ * виведе — і оголосити його нема де: `commands.access` живе в манифесті, а в
+ * моделі ядра манифеста немає. Доти це означало, що модель ядра взагалі не
+ * може мати команди з власним іменем: рантайм відмовляв би 501, свідомо
+ * fail-closed.
+ *
+ * `create`, а не `authenticated`: пропозиція пише рядок у базу. Непідтверджена
+ * записка нікому не видима й тим майже нешкідлива — але «майже» тут не привід
+ * пускати в запис токен «тільки читання».
+ */
+export const coreModelAccess: Record<string, string> = {
+  "agent_note.propose": "create",
 };

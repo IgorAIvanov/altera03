@@ -455,7 +455,7 @@ async function listModels(
   client: AlteraClient,
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
-  const all = await client.models();
+  const { models: all, note: memo } = await client.models();
   const query = typeof args.q === "string" ? args.q : undefined;
   const types = typeList(args.type);
   const models = absolutizeCatalog(filterModels(all, query, types), client.origin);
@@ -469,7 +469,16 @@ async function listModels(
       `або type: ["document"]: це той самий каталог, але не в контексті.`
     : undefined;
 
-  return text({ total: all.length, shown: models.length, models, note });
+  // `memo` — пам'ятка бази: домовленості ЦЬОГО підприємства. Їде з каталогом,
+  // тобто з першого кроку, і навіть тоді, коли каталог звужено до нуля: вона
+  // не про моделі, вона про те, як тут прийнято.
+  return text({
+    total: all.length,
+    shown: models.length,
+    ...(memo.length ? { memo } : {}),
+    models,
+    note,
+  });
 }
 
 /**

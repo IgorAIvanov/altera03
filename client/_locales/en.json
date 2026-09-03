@@ -179,5 +179,7 @@
   "core.subordinate.saveOwnerFirst": "Save the record to keep this list",
   "core.subordinate.lockedByDocument": "This row was written by a document — change it there",
   "core.subordinate.scopeNotSet": "The list's scope is not set yet",
-  "core.subordinate.goToDate": "Go to date"
+  "core.subordinate.goToDate": "Go to date",
+  "core.agentNoteEmpty": "Empty note: say what the convention actually is",
+  "core.agentNoteProposed": "The note is recorded as a draft — it reaches the context once a person confirms it"
 }

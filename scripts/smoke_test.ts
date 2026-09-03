@@ -1382,6 +1382,89 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertExists(save);
         assertExists((save.input as { properties?: unknown }).properties);
 
+        // Пам'ятка бази: домовленості ЦЬОГО підприємства, яких агент не
+        // виведе ні з коду, ні з даних.
+        //
+        // Коренева їде з КАТАЛОГОМ — тобто з першого виклику розмови, а не
+        // пошуком: пам'ятка, яку треба здогадатися пошукати, допомагає лише
+        // тому, хто вже підозрює, що чогось не знає.
+        const notes: string[] = [];
+        try {
+          for (const [scope, text, status] of [
+            ["*", "SMOKE: склад №3 — відповідальне зберігання", "confirmed"],
+            ["*", "SMOKE: чернетка, яка не має доїхати", "draft"],
+            ["invoice", "SMOKE: ТЗР у вартості запасу", "confirmed"],
+          ] as const) {
+            const saved = await client.model("agent_note", "save", {
+              item: { modelKey: scope, content: text, status },
+            });
+            notes.push((saved.body.data.item as { id: string }).id);
+          }
+
+          const withNote = await client.json<
+            { data?: { extra?: { note?: string[] } } }
+          >("/api/agent/tools", { headers: { authorization: `Bearer ${full.token}` } });
+          const rootNote = withNote.body.data?.extra?.note ?? [];
+          assertEquals(rootNote.includes("SMOKE: склад №3 — відповідальне зберігання"), true);
+          // Чернетку міг написати сам агент. Непідтверджена, вона означала б, що
+          // наступний прочитає його догадку як домовленість підприємства.
+          assertEquals(rootNote.some((line) => line.includes("чернетка")), false);
+
+          const scoped = await client.json<
+            { data?: { extra?: { notes?: Record<string, string[]> } } }
+          >("/api/agent/tools?model=invoice", {
+            headers: { authorization: `Bearer ${full.token}` },
+          });
+          // `includes`, а не рівність: у живій базі пам'ятка не порожня, і проба,
+          // яка цього вимагає, зеленою буває лише на чистій машині.
+          assertEquals(
+            (scoped.body.data?.extra?.notes?.invoice ?? []).includes("SMOKE: ТЗР у вартості запасу"),
+            true,
+          );
+
+          // Агент пропонує, але завжди чернеткою: інакше «підтверджено» не
+          // означало б нічого — той, хто пише, ставив би позначку собі сам.
+          const proposed = await client.json<{ ok: boolean; result: { data?: unknown } }>(
+            "/api/agent/call",
+            {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${full.token}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "agent_note",
+                command: "propose",
+                payload: { content: "SMOKE: пропозиція агента" },
+              }),
+            },
+          );
+          assertEquals(proposed.body.ok, true, JSON.stringify(proposed.body));
+          const proposedItem = (proposed.body.result.data as { item: { id: string; status: string } })
+            .item;
+          notes.push(proposedItem.id);
+          assertEquals(proposedItem.status, "draft");
+
+          // Токен «тільки читання» пропозицією не пише: непідтверджена записка
+          // нікому не видима й тим майже нешкідлива — але «майже» не привід
+          // пускати його в запис.
+          const refused = await client.json<{ ok: boolean }>("/api/agent/call", {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${reader.token}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "agent_note",
+              command: "propose",
+              payload: { content: "SMOKE: не має записатися" },
+            }),
+          });
+          assertEquals(refused.body.ok, false);
+        } finally {
+          for (const id of notes) await purge("app.agent_note", id);
+        }
+
         // Оголошені обмеження їдуть разом зі схемою.
         //
         // Схема каже, які в моделі є ПОЛЯ, і мовчить про те, чого застосунок

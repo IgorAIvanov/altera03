@@ -26,6 +26,7 @@ import { getAgentRoutes } from "./agent-routes.ts";
 import { isChangingCall, type ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 import { messageText } from "../../common/messages.ts";
 import { coreAgentRules } from "./core-agent-rules.generated.ts";
+import { coreModelAccess } from "./core-agent-tools.ts";
 
 /**
  * Право, потрібне СТАНДАРТНІЙ команді. Той самий вивід, що робить рантайм.
@@ -211,7 +212,8 @@ export class AgentToolsService {
       // Оголошене право сильніше за вивід з імені — інакше звіт (`index`),
       // друк і будь-яка TS-команда лишалися б невидимі для агента, хоч і
       // виконувані: вивід знає лише вісім стандартних дій.
-      const declared = models.registry[model]?.access?.[command];
+      const declared = models.registry[model]?.access?.[command] ??
+        coreModelAccess[`${model}.${command}`];
 
       // `save` — це ДВА різні права: новий запис вимагає `create`, наявний
       // `edit`. Рантайм розрізняє їх за наявністю `item.id`, а тут запису ще
