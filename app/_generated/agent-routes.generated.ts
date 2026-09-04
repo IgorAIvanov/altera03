@@ -10,6 +10,7 @@ export const agentModelRoutes = {
     editPath: "/admin/agent_note/edit",
     listPath: "/admin/agent_note/list",
     type: "admin",
+    allow: false,
     titles: {"en":"Base memo","uk":"Пам'ятка бази"}
   },
   "audit_log": {
@@ -117,6 +118,7 @@ export const agentModelRoutes = {
   "setting": {
     editPath: "/admin/setting/edit",
     type: "admin",
+    allowCommands: ["get"],
     titles: {"en":"Settings","uk":"Налаштування"}
   },
   "turnover_balance": {

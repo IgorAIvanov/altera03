@@ -1382,6 +1382,24 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertExists(save);
         assertExists((save.input as { properties?: unknown }).properties);
 
+        // Admin-екрани відкриті агенту НА ЧИТАННЯ: саме там лежать відповіді
+        // на «чому номер такий» і «чому цього немає в журналі». Запису немає —
+        // неправильний нумератор не падає, а тихо викривляє все, що порахують
+        // далі.
+        const adminCatalog = await catalogOf(full.token);
+        const numerator = adminCatalog.find((entry) => entry.model === "numerator");
+        assertExists(numerator);
+        assertEquals(numerator.commands.includes("get"), true);
+        assertEquals(numerator.commands.some((command) => command === "save"), false);
+
+        // А пам'ятка читанням таблиці НЕ відкрита: у ній лежать чернетки, і
+        // непідтверджені вони саме для того, щоб агент їх не читав. Свої дві
+        // команди вона має від ядра.
+        const memoModel = adminCatalog.find((entry) => entry.model === "agent_note");
+        assertExists(memoModel);
+        assertEquals(memoModel.commands.includes("list"), false);
+        assertEquals(memoModel.commands.includes("topic"), true);
+
         // Пам'ятка бази: домовленості ЦЬОГО підприємства, яких агент не
         // виведе ні з коду, ні з даних.
         //

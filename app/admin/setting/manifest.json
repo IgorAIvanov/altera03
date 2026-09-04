@@ -2,7 +2,9 @@
   "model": "setting",
   "type": "admin",
   "schema": "app",
-  "sql": { "generate": false },
+  "sql": {
+    "generate": false
+  },
   "commands": {
     "sql": {
       "effective": "setting_effective"
@@ -17,5 +19,11 @@
       "module": "./settingEdit.ts",
       "titleKey": "setting.titleOne"
     }
+  },
+  "//agent": "Список тут не існує: запис один на установку, і SQL-функції `setting_list` немає. Базовий набір admin-моделі дав би агенту команду, яка відмовить 501.",
+  "agent": {
+    "allowCommands": [
+      "get"
+    ]
   }
 }

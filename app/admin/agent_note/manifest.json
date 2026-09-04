@@ -2,7 +2,9 @@
   "model": "agent_note",
   "type": "admin",
   "schema": "app",
-  "sql": { "generate": false },
+  "sql": {
+    "generate": false
+  },
   "views": {
     "list": {
       "module": "./agentNoteList.ts",
@@ -12,5 +14,9 @@
       "module": "./agentNoteEdit.ts",
       "titleKey": "agentNote.titleOne"
     }
+  },
+  "//agent": "Пам'ятку агент отримує ДОСТАВКОЮ (каталог і опис моделі), а не читанням таблиці: у ній лежать і чернетки, а вони не підтверджені саме для того, щоб він їх не читав. Свої дві команди — `propose` і `topic` — він має від ядра, і `allow: false` їх не чіпає.",
+  "agent": {
+    "allow": false
   }
 }
