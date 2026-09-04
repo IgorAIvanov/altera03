@@ -15,11 +15,26 @@ export const AGENT_NOTE_ROOT = "*";
 export const AGENT_NOTE_STATUSES = ["draft", "confirmed"] as const;
 export type AgentNoteStatus = (typeof AGENT_NOTE_STATUSES)[number];
 
+/**
+ * Два види, і різниця не в довжині тексту, а в тому, ЯК вони доїжджають.
+ *
+ * `note` лежить у контексті агента завжди — тому одна думка на запис. `topic`
+ * це процедура на сторінку-другу; завжди їде лише покажчик (`slug`, назва,
+ * «коли потрібно»), а тіло агент читає командою, коли задача збіглася.
+ */
+export const AGENT_NOTE_KINDS = ["note", "topic"] as const;
+export type AgentNoteKind = (typeof AGENT_NOTE_KINDS)[number];
+
 // ── 1. Item — форма редагування та payload для save ───────────────────────────
 
 export const AgentNoteItemSchema = Type.Object({
   id: Type.Union([Type.String(), Type.Null()], { default: null }),
+  kind: Type.String({ title: "Вид", default: "note", maxLength: 20 }),
   modelKey: Type.String({ title: "Область", default: AGENT_NOTE_ROOT, maxLength: 100 }),
+  /** Далі три — тільки в теми. У записки порожні, і це не «недозаповнено». */
+  slug: Type.Optional(Type.String({ title: "Ім'я теми", default: "", maxLength: 100 })),
+  title: Type.Optional(Type.String({ title: "Назва", default: "", maxLength: 200 })),
+  summary: Type.Optional(Type.String({ title: "Коли потрібна", default: "" })),
   content: Type.String({ title: "Домовленість", default: "" }),
   status: Type.String({ title: "Стан", default: "draft", maxLength: 20 }),
   /** Хто склав формулювання. Читається, не пишеться: агент ставить його сам. */
@@ -31,7 +46,10 @@ export type AgentNoteItem = Static<typeof AgentNoteItemSchema>;
 
 export const AgentNoteRowSchema = Type.Object({
   id: Type.String(),
+  kind: Type.String(),
   modelKey: Type.String(),
+  title: Type.String(),
+  summary: Type.String(),
   content: Type.String(),
   status: Type.String(),
   source: Type.String(),
@@ -52,7 +70,12 @@ export const AgentNoteListPayloadSchema = Type.Object({
   page: Type.Optional(Type.Number({ minimum: 1 })),
   pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
   sortBy: Type.Optional(
-    Type.Union([Type.Literal("modelKey"), Type.Literal("status"), Type.Literal("content")]),
+    Type.Union([
+      Type.Literal("kind"),
+      Type.Literal("modelKey"),
+      Type.Literal("status"),
+      Type.Literal("content"),
+    ]),
   ),
   sortDir: Type.Optional(SortDirSchema),
 });

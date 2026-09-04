@@ -29,7 +29,7 @@ declare
   v_rows      jsonb;
   v_total     int;
 begin
-  if v_sort_by not in ('modelKey', 'status', 'content') then
+  if v_sort_by not in ('kind', 'modelKey', 'status', 'content') then
     v_sort_by := 'modelKey';
   end if;
 
@@ -45,13 +45,18 @@ begin
     select
       jsonb_build_object(
         'id',       n.id::text,
+        'kind',     n.kind,
         'modelKey', n.model_key,
+        'title',    coalesce(n.title, ''),
+        'summary',  coalesce(n.summary, ''),
         'content',  n.content,
         'status',   n.status,
         'source',   n.source
       ) as r,
       row_number() over (
         order by
+          case when v_sort_by = 'kind'     and v_sort_dir = 'asc'  then n.kind      end asc,
+          case when v_sort_by = 'kind'     and v_sort_dir = 'desc' then n.kind      end desc,
           case when v_sort_by = 'modelKey' and v_sort_dir = 'asc'  then n.model_key end asc,
           case when v_sort_by = 'modelKey' and v_sort_dir = 'desc' then n.model_key end desc,
           case when v_sort_by = 'status'   and v_sort_dir = 'asc'  then n.status    end asc,
@@ -94,7 +99,11 @@ declare
 begin
   select jsonb_build_object(
     'id',       n.id::text,
+    'kind',     n.kind,
     'modelKey', n.model_key,
+    'slug',     coalesce(n.slug, ''),
+    'title',    coalesce(n.title, ''),
+    'summary',  coalesce(n.summary, ''),
     'content',  n.content,
     'status',   n.status,
     'source',   n.source
@@ -121,6 +130,10 @@ declare
   v_model   text  := coalesce(nullif(trim(v_item->>'modelKey'), ''), '*');
   v_content text  := nullif(btrim(coalesce(v_item->>'content', '')), '');
   v_status  text  := coalesce(nullif(v_item->>'status', ''), 'draft');
+  v_kind    text  := case when v_item->>'kind' = 'topic' then 'topic' else 'note' end;
+  v_slug    text  := nullif(btrim(coalesce(v_item->>'slug', '')), '');
+  v_title   text  := nullif(btrim(coalesce(v_item->>'title', '')), '');
+  v_summary text  := nullif(btrim(coalesce(v_item->>'summary', '')), '');
 begin
   if v_content is null then
     return jsonb_build_object(
@@ -136,13 +149,37 @@ begin
     v_status := 'draft';
   end if;
 
+  -- Тема без покажчика не доїде до агента ніколи: у переліку стоятиме порожній
+  -- рядок, і відкривати її ніхто не піде. Три поля разом або жодного.
+  if v_kind = 'topic' and (v_slug is null or v_title is null or v_summary is null) then
+    return jsonb_build_object(
+      'ok', false,
+      'data', jsonb_build_object('item', null, 'rows', '[]'::jsonb, 'options', '{}'::jsonb, 'totals', '{}'::jsonb),
+      'messages', jsonb_build_array(
+        jsonb_build_object('type', 'error', 'text', '@[core.agentNoteTopicIncomplete]', 'field', 'summary')
+      )
+    );
+  end if;
+
+  -- У записки полів теми немає — інакше вони лишалися б від виду, який
+  -- перемкнули, і `slug` мовчки тримав би зайняте ім'я.
+  if v_kind = 'note' then
+    v_slug := null;
+    v_title := null;
+    v_summary := null;
+  end if;
+
   if v_id is null then
-    insert into app.agent_note (model_key, content, status, source, updated_by)
-    values (v_model, v_content, v_status, 'admin', user_id)
+    insert into app.agent_note (model_key, kind, slug, title, summary, content, status, source, updated_by)
+    values (v_model, v_kind, v_slug, v_title, v_summary, v_content, v_status, 'admin', user_id)
     returning id into v_id;
   else
     update app.agent_note
        set model_key  = v_model,
+           kind       = v_kind,
+           slug       = v_slug,
+           title      = v_title,
+           summary    = v_summary,
            content    = v_content,
            status     = v_status,
            updated_at = now(),

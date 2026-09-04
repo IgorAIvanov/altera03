@@ -84,6 +84,13 @@ interface ListEnvelope {
   messages?: unknown[];
 }
 
+/** Рядок покажчика тем: тіло читається окремо, коли задача збіглася. */
+export interface AlteraTopicEntry {
+  slug: string;
+  title: string;
+  summary: string;
+}
+
 /** Що модель відмовиться робити: ключ правила й те, що воно скаже людині. */
 export interface AlteraModelRule {
   key: string;
@@ -214,15 +221,19 @@ export class AlteraClient {
    * підприємства потрібні з першого кроку, а те, що треба здогадатися
    * запитати, допомагає лише тому, хто вже підозрює, що чогось не знає.
    */
-  async models(): Promise<{ models: AlteraModelEntry[]; note: string[] }> {
+  async models(): Promise<{ models: AlteraModelEntry[]; note: string[]; topics: AlteraTopicEntry[] }> {
     const envelope = await this.request("/api/agent/tools") as ListEnvelope;
     const rows = Array.isArray(envelope.data?.rows) ? envelope.data.rows : [];
     assertCatalogShape(rows, this.config.url);
 
     const note = envelope.data?.extra?.note;
+    const topics = envelope.data?.extra?.topics;
     return {
       models: rows as AlteraModelEntry[],
       note: Array.isArray(note) ? note.filter((line) => typeof line === "string") : [],
+      // Покажчик тем: рядок на тему, тіло — окремою командою. Старший сервер
+      // тем не віддає взагалі, і тоді їх просто немає.
+      topics: Array.isArray(topics) ? topics as AlteraTopicEntry[] : [],
     };
   }
 

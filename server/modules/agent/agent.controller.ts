@@ -54,11 +54,19 @@ export class AgentController {
         // тому, хто вже підозрює, що чогось не знає, — а не знає він якраз
         // того, про існування чого не здогадується.
         const note = await this.agentNoteService.root();
+        // Теми — покажчиком, без тіл: процедура важить сторінки, а знадобиться
+        // одна з двадцяти. Тіло агент забере `agent_note.topic`, коли задача
+        // збіглася.
+        const topics = await this.agentNoteService.topics();
+        const extra = {
+          ...(note.length ? { note } : {}),
+          ...(topics.length ? { topics } : {}),
+        };
         return {
           ok: true,
           data: {
             rows: catalog,
-            ...(note.length ? { extra: { note } } : {}),
+            ...(Object.keys(extra).length ? { extra } : {}),
             totals: { count: catalog.length },
           },
           messages: [],

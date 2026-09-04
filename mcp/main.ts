@@ -455,7 +455,7 @@ async function listModels(
   client: AlteraClient,
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
-  const { models: all, note: memo } = await client.models();
+  const { models: all, note: memo, topics } = await client.models();
   const query = typeof args.q === "string" ? args.q : undefined;
   const types = typeList(args.type);
   const models = absolutizeCatalog(filterModels(all, query, types), client.origin);
@@ -476,6 +476,10 @@ async function listModels(
     total: all.length,
     shown: models.length,
     ...(memo.length ? { memo } : {}),
+    // Покажчик тем: назва й «коли потрібна». Тіло — altera_call agent_note.topic
+    // зі `slug`, і кликати його варто тоді, коли задача збіглася з рядком, а не
+    // про всяк випадок: тема це сторінка-друга тексту.
+    ...(topics.length ? { topics } : {}),
     models,
     note,
   });

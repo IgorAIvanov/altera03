@@ -10,5 +10,14 @@
   "agentNote.source": "Source",
   "agentNote.source.admin": "Person",
   "agentNote.source.agent": "Agent",
-  "agentNote.hint": "What the agent cannot know about this enterprise: how things are done here, what a reference item means, what is never done. It already knows general accounting — do not write that here: the memo sits in the context of every conversation. One note, one thought. Only confirmed notes reach the context."
+  "agentNote.hint": "What the agent cannot know about this enterprise: how things are done here, what a reference item means, what is never done. It already knows general accounting — do not write that here: the memo sits in the context of every conversation. One note, one thought. Only confirmed notes reach the context.",
+  "agentNote.kind": "Kind",
+  "agentNote.kind.note": "Note",
+  "agentNote.kind.topic": "Topic",
+  "agentNote.scopeOrTitle": "About",
+  "agentNote.slug": "Topic name",
+  "agentNote.title": "Title",
+  "agentNote.summary": "When it is needed",
+  "agentNote.body": "Topic text",
+  "agentNote.hintTopic": "A topic is the order of work at THIS enterprise: which documents, in what order, what is different here. The agent knows the general method — do not retell the textbook. Only the «when it is needed» line sits in the agent's context, and it alone decides whether the topic is opened: write a reason to open it, not a heading."
 }

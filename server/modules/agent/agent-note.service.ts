@@ -29,6 +29,14 @@ interface NoteRow {
   content: string;
 }
 
+/** Рядок покажчика тем — те, що лежить у контексті завжди. */
+export interface AgentTopicIndexEntry {
+  slug: string;
+  title: string;
+  /** Коли ця тема потрібна. Найважливіше поле: воно й вирішує, чи відкриють. */
+  summary: string;
+}
+
 @Injectable()
 export class AgentNoteService {
   constructor(private db: DatabaseService) {}
@@ -52,7 +60,7 @@ export class AgentNoteService {
       rows = await this.db.sql<NoteRow[]>`
         select model_key, content
         from app.agent_note
-        where status = 'confirmed' and model_key in ${this.db.sql(wanted)}
+        where kind = 'note' and status = 'confirmed' and model_key in ${this.db.sql(wanted)}
         order by model_key, id
       `;
     } catch (error) {
@@ -79,5 +87,28 @@ export class AgentNoteService {
   /** Коренева пам'ятка — те, що їде з каталогом моделей. */
   async root(): Promise<string[]> {
     return (await this.forScopes([AGENT_NOTE_ROOT]))[AGENT_NOTE_ROOT] ?? [];
+  }
+
+  /**
+   * Покажчик тем — назви й «коли потрібно», без тіл.
+   *
+   * Тема це процедура на півтори-три сторінки, і їх буде десяток: віддавати їх
+   * усі завжди означало б вивалювати в кожну розмову те, що знадобиться в одній
+   * із двадцяти. Тому як у скіла: рядок завжди, тіло — командою
+   * `agent_note.topic`, коли задача збіглася.
+   */
+  async topics(): Promise<AgentTopicIndexEntry[]> {
+    try {
+      return await this.db.sql<AgentTopicIndexEntry[]>`
+        select slug, title, summary
+        from app.agent_note
+        where kind = 'topic' and status = 'confirmed'
+        order by slug
+      `;
+    } catch {
+      // Таблиці немає — те саме, що з записками: без пам'ятки агент працює як
+      // працював. Скаржиться на це `forScopes`, двічі в консоль не пишемо.
+      return [];
+    }
   }
 }

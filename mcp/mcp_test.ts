@@ -61,6 +61,13 @@ const FAKE_RULES = {
 /** Пам'ятка бази — домовленості підприємства, які їдуть із каталогом. */
 const FAKE_MEMO = ["Склад №3 — відповідальне зберігання"];
 
+/** Покажчик тем: рядок на тему, тіло читається окремою командою. */
+const FAKE_TOPICS = [{
+  slug: "close-month",
+  title: "Порядок закриття місяця",
+  summary: "Що робимо перед закриттям місяця й у якому порядку",
+}];
+
 function fakeAltera(
   rows: unknown[],
   callEnvelope: unknown | ((call: FakeCall) => unknown),
@@ -125,7 +132,7 @@ function fakeAltera(
               // Опис моделі несе обмеження й записки саме цих моделей…
               ? { rules: FAKE_RULES }
               // …а каталог — пам'ятку бази, тобто те, що потрібне з першого кроку.
-              : { note: FAKE_MEMO },
+              : { note: FAKE_MEMO, topics: FAKE_TOPICS },
             totals: { count: rows.length },
           },
           messages: [],
@@ -300,6 +307,7 @@ Deno.test("обгортка: рукостискання, перелік і ви�
       total: number;
       shown: number;
       memo?: string[];
+      topics?: Array<{ slug: string; summary: string }>;
       models: Array<{ model: string }>;
     };
     assertEquals(answer.models[0].model, "bank");
@@ -307,6 +315,9 @@ Deno.test("обгортка: рукостискання, перелік і ви�
     // Пам'ятка бази їде з каталогом: домовленості цього підприємства потрібні
     // з першого кроку, а не тоді, коли агент здогадається їх пошукати.
     assertEquals(answer.memo, FAKE_MEMO);
+    // Тема їде ПОКАЖЧИКОМ: назва й «коли потрібна», без тіла. Тіло — процедура
+    // на сторінку-другу, і в кожній розмові воно було б чистою тратою.
+    assertEquals(answer.topics, FAKE_TOPICS);
 
     // Токен їде заголовком і лише ним: у командний рядок він не потрапляє
     // ніколи (аргументи видно в списку процесів).

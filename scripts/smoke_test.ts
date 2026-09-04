@@ -1410,6 +1410,51 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           // наступний прочитає його догадку як домовленість підприємства.
           assertEquals(rootNote.some((line) => line.includes("чернетка")), false);
 
+          // Тема їде ПОКАЖЧИКОМ, тіло — окремою командою: процедура важить
+          // сторінку-другу, а знадобиться одна з двадцяти. Те саме, що у скіла
+          // з його frontmatter і тілом.
+          const topicSaved = await client.model("agent_note", "save", {
+            item: {
+              kind: "topic",
+              slug: "smoke-topic",
+              title: "SMOKE: порядок закриття",
+              summary: "SMOKE: коли це потрібно",
+              content: "SMOKE: крок перший, крок другий",
+              status: "confirmed",
+            },
+          });
+          notes.push((topicSaved.body.data.item as { id: string }).id);
+
+          const withTopic = await client.json<
+            { data?: { extra?: { topics?: Array<{ slug: string; summary: string }> } } }
+          >("/api/agent/tools", { headers: { authorization: `Bearer ${full.token}` } });
+          const listed = (withTopic.body.data?.extra?.topics ?? [])
+            .find((entry) => entry.slug === "smoke-topic");
+          assertExists(listed);
+          assertEquals(listed.summary, "SMOKE: коли це потрібно");
+          // Тіла в покажчику немає — інакше вся економія зникає.
+          assertEquals("content" in listed, false);
+
+          const topicBody = await client.json<{ ok: boolean; result: { data?: unknown } }>(
+            "/api/agent/call",
+            {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${full.token}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "agent_note",
+                command: "topic",
+                payload: { slug: "smoke-topic" },
+              }),
+            },
+          );
+          assertEquals(
+            (topicBody.body.result.data as { item: { content: string } }).item.content,
+            "SMOKE: крок перший, крок другий",
+          );
+
           const scoped = await client.json<
             { data?: { extra?: { notes?: Record<string, string[]> } } }
           >("/api/agent/tools?model=invoice", {

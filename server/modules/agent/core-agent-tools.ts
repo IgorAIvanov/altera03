@@ -59,8 +59,36 @@ export const coreAgentToolSchemas: Record<string, unknown> = {
           "Модель, якої це стосується. Без неї записка про всю базу — так і треба, " +
           "коли домовленість не про один документ",
       },
+      kind: {
+        type: "string",
+        enum: ["note", "topic"],
+        description:
+          "note (умовчання) — одна думка, вона лежить у контексті завжди й тому мусить " +
+          "бути короткою. topic — процедура на сторінку-другу («Порядок закриття місяця»): " +
+          "завжди лежить лише покажчик, тіло читають командою topic",
+      },
+      slug: { type: "string", description: "Ім'я теми латиницею: close-month. Лише для topic" },
+      title: { type: "string", description: "Назва теми для людини. Лише для topic" },
+      summary: {
+        type: "string",
+        description:
+          "КОЛИ ця тема потрібна — рядок, який лежить у контексті завжди й вирішує, чи " +
+          "відкриють тіло. Пиши привід, а не заголовок: «close-month» у голові нічого не " +
+          "запускає, «що робимо перед закриттям місяця й у якому порядку» — запускає. " +
+          "Лише для topic",
+      },
     },
     required: ["content"],
+  },
+  "agent_note.topic": {
+    type: "object",
+    properties: {
+      slug: { type: "string", description: "Ім'я теми з покажчика: close-month" },
+    },
+    required: ["slug"],
+    description:
+      "Тіло теми — порядок дій на ЦЬОМУ підприємстві. Кликати тоді, коли задача збіглася " +
+      "з рядком покажчика, а не про всяк випадок.",
   },
 };
 
@@ -99,4 +127,7 @@ export const coreAgentRoutes: Record<string, AgentModelRoute> = {
  */
 export const coreModelAccess: Record<string, string> = {
   "agent_note.propose": "create",
+  // Читання теми — читання: право те саме, що в будь-якого перегляду, і токен
+  // «тільки читання» його має.
+  "agent_note.topic": "view",
 };

@@ -1,9 +1,10 @@
 import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
+import { BaseUI, type FieldRules } from "@client/ui-kit/base/base-ui.ts";
 import { generatedModelRegistry } from "../../_generated/model-registry.generated.ts";
 import { modelTitle } from "@shared/model-title.ts";
 import {
+  AGENT_NOTE_KINDS,
   AGENT_NOTE_ROOT,
   AGENT_NOTE_STATUSES,
   AgentNoteEditRootSchema,
@@ -13,12 +14,16 @@ import {
 export const tagName = "agent-note-edit";
 
 /**
- * Записка пам'ятки.
+ * Записка пам'ятки або тема.
+ *
+ * Різниця між ними не в довжині тексту, а в тому, як вони доїжджають до
+ * агента: записка лежить у його контексті ЗАВЖДИ (тому одна думка на запис), а
+ * від теми завжди їде лише покажчик, тіло читається командою. Звідси й форма:
+ * у теми три поля покажчика, у записки — область.
  *
  * Область вибирається зі СПИСКУ моделей, а не набирається руками: записка про
- * модель, якої немає, не доїде нікому — доставка ключується іменем моделі, —
- * і при цьому виглядатиме як збережена. Перелік беремо з реєстру моделей: той
- * самий, з якого екран груп бере моделі для прав.
+ * модель, якої немає, не доїде нікому — доставка ключується іменем моделі, — і
+ * при цьому виглядатиме як збережена.
  */
 @customElement(tagName)
 export class AgentNoteEdit extends BaseUI<AgentNoteEditRoot> {
@@ -52,6 +57,20 @@ export class AgentNoteEdit extends BaseUI<AgentNoteEditRoot> {
       .sort((left, right) => left.title.localeCompare(right.title));
   }
 
+  get #isTopic(): boolean {
+    return this.$root.item.kind === "topic";
+  }
+
+  /**
+   * Три поля покажчика обов'язкові РАЗОМ і лише в теми: тема без «коли
+   * потрібна» не доїде до агента ніколи — у переліку стоятиме порожній рядок,
+   * і відкривати її ніхто не піде.
+   */
+  protected override fieldRules(): FieldRules {
+    const topic = this.#isTopic;
+    return { slug: topic, title: topic, summary: topic, content: true };
+  }
+
   override render() {
     if (this.running === "get") {
       return html`
@@ -60,32 +79,36 @@ export class AgentNoteEdit extends BaseUI<AgentNoteEditRoot> {
     }
 
     const item = this.$root.item;
+    const topic = this.#isTopic;
 
     return this.renderForm(html`
       <div class="flex flex-col gap-2">
-        <p class="text-sm opacity-70">${this.t("agentNote.hint")}</p>
+        <p class="text-sm opacity-70">
+          ${this.t(topic ? "agentNote.hintTopic" : "agentNote.hint")}
+        </p>
+
         ${this.renderField(
-      this.t("agentNote.scope"),
+      this.t("agentNote.kind"),
       html`
           <select
             class="select select-bordered w-full"
-            .value=${item.modelKey ?? AGENT_NOTE_ROOT}
-            @change=${this.bindTo(item, "modelKey")}
+            .value=${item.kind ?? "note"}
+            @change=${this.bindTo(item, "kind")}
           >
-            <option value=${AGENT_NOTE_ROOT}>${this.t("agentNote.scopeAll")}</option>
-            ${this.#models.map((entry) =>
-        html`<option value=${entry.key}>${entry.title}</option>`
+            ${AGENT_NOTE_KINDS.map((value) =>
+        html`<option value=${value}>${this.t(`agentNote.kind.${value}`)}</option>`
       )}
           </select>
         `,
-      { field: "modelKey", class: "w-72" },
+      { field: "kind", class: "w-48" },
     )}
+        ${topic ? this.#renderTopicFields() : this.#renderScope()}
         ${this.renderField(
-      this.t("agentNote.content"),
+      this.t(topic ? "agentNote.body" : "agentNote.content"),
       html`
           <textarea
             class="textarea textarea-bordered w-full"
-            rows="4"
+            rows=${topic ? 12 : 4}
             .value=${item.content ?? ""}
             @input=${this.bindTo(item, "content")}
           ></textarea>
@@ -109,5 +132,58 @@ export class AgentNoteEdit extends BaseUI<AgentNoteEditRoot> {
     )}
       </div>
     `);
+  }
+
+  #renderScope() {
+    const item = this.$root.item;
+    return this.renderField(
+      this.t("agentNote.scope"),
+      html`
+        <select
+          class="select select-bordered w-full"
+          .value=${item.modelKey ?? AGENT_NOTE_ROOT}
+          @change=${this.bindTo(item, "modelKey")}
+        >
+          <option value=${AGENT_NOTE_ROOT}>${this.t("agentNote.scopeAll")}</option>
+          ${this.#models.map((entry) => html`<option value=${entry.key}>${entry.title}</option>`)}
+        </select>
+      `,
+      { field: "modelKey", class: "w-72" },
+    );
+  }
+
+  #renderTopicFields() {
+    const item = this.$root.item;
+    return html`
+      ${this.renderField(
+      this.t("agentNote.slug"),
+      html`<input
+          class="input input-bordered w-full"
+          placeholder="close-month"
+          .value=${item.slug ?? ""}
+          @input=${this.bindTo(item, "slug")}
+        />`,
+      { field: "slug", class: "w-72" },
+    )}
+      ${this.renderField(
+      this.t("agentNote.title"),
+      html`<input
+          class="input input-bordered w-full"
+          .value=${item.title ?? ""}
+          @input=${this.bindTo(item, "title")}
+        />`,
+      { field: "title" },
+    )}
+      ${this.renderField(
+      this.t("agentNote.summary"),
+      html`<textarea
+          class="textarea textarea-bordered w-full"
+          rows="2"
+          .value=${item.summary ?? ""}
+          @input=${this.bindTo(item, "summary")}
+        ></textarea>`,
+      { field: "summary" },
+    )}
+    `;
   }
 }

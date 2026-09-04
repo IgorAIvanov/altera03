@@ -181,5 +181,8 @@
   "core.subordinate.scopeNotSet": "The list's scope is not set yet",
   "core.subordinate.goToDate": "Go to date",
   "core.agentNoteEmpty": "Empty note: say what the convention actually is",
-  "core.agentNoteProposed": "The note is recorded as a draft — it reaches the context once a person confirms it"
+  "core.agentNoteProposed": "The note is recorded as a draft — it reaches the context once a person confirms it",
+  "core.agentNoteTopicIncomplete": "A topic needs a name, a title and a line saying when it is needed — without it nobody will think to open it",
+  "core.agentNoteSlugTaken": "A topic named «{slug}» already exists — pick another name or extend that one",
+  "core.agentNoteTopicNotFound": "There is no topic «{slug}», or it is not confirmed yet"
 }
