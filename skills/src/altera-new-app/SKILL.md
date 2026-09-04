@@ -31,6 +31,30 @@ Ask the user unless already told: the **project name** (lowercase latin letters,
 and **where PostgreSQL comes from** — a Docker container or an existing server. Do not
 invent a name if the directory is not named to the pattern.
 
+**The name must not repeat a neighbouring application's**, and that is not about tidiness:
+the template derives `PGDATABASE`, `PGUSER` and `AUTH_COOKIE_NAME` from it. Two applications
+with different names collide on nothing but the numeric ports; two with the same name collide
+on all three at once — and that one is quiet, because the credentials match too, so
+`sql:publish` publishes this schema into the neighbour's database and says nothing. What is
+already on the machine:
+
+```bash
+docker ps -a --format "{{.Names}}\t{{.Ports}}"
+```
+
+Ports, all three at once (`deno` is here anyway, and this reads the same on Windows and POSIX):
+
+```bash
+deno eval --allow-net "for (const p of [3000,5173,5432]) { try { Deno.listen({port:p}).close(); console.log(p+' free') } catch { console.log(p+' BUSY') } }"
+```
+
+A busy port is not a silent failure — Vite has `strictPort`, `Deno.serve` throws `AddrInUse`,
+Docker says `port is already allocated`. Looking early is about **order**, not about the
+error: `PGPORT` has to be settled *before* `deno task startdb`, because the container creates
+the database with whatever `.env` held at its first start, and editing the file afterwards
+changes nothing (`deno task stopdb` and up again is the way back). `PORT` and `VITE_PORT` can
+be changed at any time — `VITE_PORT` only together with `VITE_DEV_URL`.
+
 ## 1. Scaffold
 
 From inside the empty directory:
@@ -72,7 +96,9 @@ Then edit it — this is not a formality, three values have to change:
 — `AUTH_COOKIE_NAME`. Cookies do not distinguish ports: to a browser `localhost:3000` and
 `localhost:3001` are the same host and one cookie jar, so with a shared name, logging into
 the neighbouring app silently overwrites this session. The template already puts
-`<project>_session` there, so it is enough not to leave someone else's value.
+`<project>_session` there, so with a distinct project name (step 0) the database, the role
+and the cookie differ on their own — what is left to pick by hand is the ports and
+`BLOB_TOKEN_SECRET`.
 
 ## 3. Database
 
@@ -80,8 +106,9 @@ the neighbouring app silently overwrites this session. The template already puts
 deno task startdb
 ```
 
-Brings up PostgreSQL in Docker with the credentials from `.env`. If port 5432 is taken,
-change `PGPORT` rather than fighting someone else's container. With an existing PostgreSQL
+Brings up PostgreSQL in Docker with the credentials from `.env`. If step 0 showed 5432
+busy, change `PGPORT` rather than fighting someone else's container — and change it before
+this command, not after: the container takes `.env` as it is at first start and keeps it. With an existing PostgreSQL
 this step is skipped: create the database and role (`create database <name> owner <role>`)
 and put them into `.env`.
 
