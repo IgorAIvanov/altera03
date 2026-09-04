@@ -2,6 +2,7 @@ import { html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { ModelListBase, stopRow, type ListColumn } from "@client/ui-kit/base/model-list-base.ts";
 import { icons } from "@client/ui-kit/icons.ts";
+import { modelKeysMatching, modelTitle } from "@shared/model-title.ts";
 import { AGENT_NOTE_ROOT, type AgentNoteRow } from "./agent_note.schema.ts";
 
 export const tagName = "agent-note-list";
@@ -19,12 +20,11 @@ export class AgentNoteList extends ModelListBase<AgentNoteRow> {
       width: "12rem",
       sortable: true,
       muted: true,
-      // `*` — технічне значення, і в переліку воно читається як зірочка з
-      // невідомим змістом. Область називаємо словами.
-      render: (row) =>
-        row.modelKey === AGENT_NOTE_ROOT ? this.t("agentNote.scopeAll") : row.modelKey,
-      exportText: (row) =>
-        row.modelKey === AGENT_NOTE_ROOT ? this.t("agentNote.scopeAll") : row.modelKey,
+      // Ключ моделі людині ні про що не каже, а `*` читається як зірочка з
+      // невідомим змістом. Назва вже є в локалях самої моделі — той самий
+      // `modelTitle`, яким користується список налаштувань журналу.
+      render: (row) => this.#scope(row.modelKey),
+      exportText: (row) => this.#scope(row.modelKey),
     },
     { key: "content", title: "agentNote.content", overflow: "ellipsis", sortable: true },
     {
@@ -64,6 +64,23 @@ export class AgentNoteList extends ModelListBase<AgentNoteRow> {
       `,
     },
   ];
+
+  #scope(key: string): string {
+    return key === AGENT_NOTE_ROOT ? this.t("agentNote.scopeAll") : modelTitle(key);
+  }
+
+  /**
+   * Пошук по НАЗВІ моделі, а не лише по ключу.
+   *
+   * У колонці стоїть «Видаткова накладна», а в базі — `invoice`, і без цього
+   * пошук за видимим текстом не знаходив би нічого: виглядає це як зламаний
+   * пошук, а не як домовленість про переклад. Порахувати збіг може лише
+   * клієнт — назва живе в його локалях.
+   */
+  protected override extraPayload(): Record<string, unknown> {
+    const keys = modelKeysMatching(this.search ?? "");
+    return keys.length ? { modelKeys: keys } : {};
+  }
 
   protected override rowLabel(row: AgentNoteRow): string {
     return row.content;

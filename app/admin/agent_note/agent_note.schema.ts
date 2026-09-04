@@ -42,6 +42,13 @@ export type AgentNoteRow = Static<typeof AgentNoteRowSchema>;
 
 export const AgentNoteListPayloadSchema = Type.Object({
   search: Type.Optional(Type.String()),
+  /**
+   * Ключі моделей, чия НАЗВА збіглася з пошуком. Рахує їх клієнт: у базі лежить
+   * ключ (`invoice`), а на екрані стоїть назва («Видаткова накладна»), і
+   * переклад живе в локалях клієнта. Без цього пошук за видимим текстом не
+   * знаходив би нічого.
+   */
+  modelKeys: Type.Optional(Type.Array(Type.String())),
   page: Type.Optional(Type.Number({ minimum: 1 })),
   pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
   sortBy: Type.Optional(

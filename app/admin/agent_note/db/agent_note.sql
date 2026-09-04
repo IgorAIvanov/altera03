@@ -23,6 +23,9 @@ declare
   v_sort_by   text := coalesce(payload->>'sortBy', 'modelKey');
   v_sort_dir  text := case when lower(coalesce(payload->>'sortDir', 'asc')) = 'desc' then 'desc' else 'asc' end;
   v_search    text := nullif(trim(coalesce(payload->>'search', '')), '');
+  -- Ключі моделей, чия НАЗВА збіглася з пошуком. Рахує їх клієнт: назва живе в
+  -- його локалях (той самий довід, що з маркерами `@[…]`), а тут лежить ключ.
+  v_keys      jsonb := coalesce(payload->'modelKeys', '[]'::jsonb);
   v_rows      jsonb;
   v_total     int;
 begin
@@ -34,7 +37,8 @@ begin
   from app.agent_note n
   where v_search is null
      or n.content ilike '%' || v_search || '%'
-     or n.model_key ilike '%' || v_search || '%';
+     or n.model_key ilike '%' || v_search || '%'
+     or n.model_key in (select jsonb_array_elements_text(v_keys));
 
   select coalesce(jsonb_agg(r order by ord), '[]'::jsonb) into v_rows
   from (
@@ -60,6 +64,7 @@ begin
     where v_search is null
        or n.content ilike '%' || v_search || '%'
        or n.model_key ilike '%' || v_search || '%'
+       or n.model_key in (select jsonb_array_elements_text(v_keys))
     order by ord
     limit v_page_size offset (v_page - 1) * v_page_size
   ) t;

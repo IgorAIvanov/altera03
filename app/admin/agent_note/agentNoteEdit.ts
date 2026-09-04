@@ -2,6 +2,7 @@ import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import { generatedModelRegistry } from "../../_generated/model-registry.generated.ts";
+import { modelTitle } from "@shared/model-title.ts";
 import {
   AGENT_NOTE_ROOT,
   AGENT_NOTE_STATUSES,
@@ -40,9 +41,15 @@ export class AgentNoteEdit extends BaseUI<AgentNoteEditRoot> {
     await this.loadInto("get", { id: this.modelId });
   }
 
-  /** Моделі застосунку в алфавітному порядку — область записки. */
-  get #models(): string[] {
-    return Object.keys(generatedModelRegistry).sort();
+  /**
+   * Моделі — за НАЗВОЮ, не за ключем: вибирає людина, і `chart_of_account`
+   * серед двохсот рядків вона шукатиме довше, ніж «План рахунків». Ключ
+   * лишається значенням: доставка ключується саме ним.
+   */
+  get #models(): Array<{ key: string; title: string }> {
+    return Object.keys(generatedModelRegistry)
+      .map((key) => ({ key, title: modelTitle(key) }))
+      .sort((left, right) => left.title.localeCompare(right.title));
   }
 
   override render() {
@@ -66,7 +73,9 @@ export class AgentNoteEdit extends BaseUI<AgentNoteEditRoot> {
             @change=${this.bindTo(item, "modelKey")}
           >
             <option value=${AGENT_NOTE_ROOT}>${this.t("agentNote.scopeAll")}</option>
-            ${this.#models.map((name) => html`<option value=${name}>${name}</option>`)}
+            ${this.#models.map((entry) =>
+        html`<option value=${entry.key}>${entry.title}</option>`
+      )}
           </select>
         `,
       { field: "modelKey", class: "w-72" },
