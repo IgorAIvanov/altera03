@@ -76,6 +76,20 @@ interface StoredTab {
    * попередніми версіями.
    */
   lastUsedAt?: number;
+  /**
+   * Ключ назви — щоб ярлик відновленої вкладки одразу мав ім'я.
+   *
+   * Без нього заглушка підписувалася маршрутом (`catalog/bank`), і назва
+   * з'являлася аж після дозавантаження — а воно йде по вкладці за раз, кожна
+   * своїм запитом за в'ю. Тобто на перезавантаженні сторінки ярлики спершу
+   * показували службові рядки й лише потім, по черзі, ставали назвами.
+   *
+   * Ключ, а не готовий текст: мова живе в браузері й може змінитися між
+   * сеансами, а `t()` розгорне його вже обраною. Може бути відсутнім — і в
+   * знімках попередніх версій, і у вкладки, яку так і не встигли
+   * дозавантажити; тоді все як було, до першого збереження.
+   */
+  titleKey?: string;
 }
 
 interface StoredTabs {
@@ -97,6 +111,7 @@ function loadStoredTabs(): StoredTabs {
     route: v.route,
     modelId: v.modelId ?? null,
     lastUsedAt: typeof v.lastUsedAt === "number" ? v.lastUsedAt : undefined,
+    titleKey: typeof v.titleKey === "string" ? v.titleKey : undefined,
   }));
   const rawActive = parsed.active;
   const active = rawActive && typeof rawActive.route === "string"
@@ -465,6 +480,10 @@ export class TabController extends LitElement {
       modelId: item.modelId,
       element: null,
       lastUsedAt: item.lastUsedAt ?? restoredAt,
+      // Назва зі знімка — ярлик має ім'я вже в першому кадрі. Дозавантаження
+      // перезапише її тим, що скаже реєстр в'ю, тож перейменування моделі
+      // доїде саме собою.
+      titleKey: item.titleKey,
     }));
     const activeTab = active
       ? placeholders.find(t => t.route === active.route && t.modelId === active.modelId)
@@ -952,6 +971,7 @@ export class TabController extends LitElement {
         route: t.route,
         modelId: t.modelId,
         lastUsedAt: t.id === this.activeTabId ? Date.now() : t.lastUsedAt,
+        titleKey: t.titleKey,
       })),
       active: activeTab ? { route: activeTab.route, modelId: activeTab.modelId } : null,
     });

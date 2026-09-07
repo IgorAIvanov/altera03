@@ -1,0 +1,14 @@
+{
+  "//": "Транспіляцію робить Oxc, а налаштування декораторів він бере з найближчого tsconfig.json. Кореневий сюди не дістає: його `include` перелічує app/** і client/**, а стенд лежить у scripts/. Без цього файлу `@customElement` доїжджав би до браузера як є (`export @customElement class …`) і сторінка падала б на «Unexpected token». Deno цей файл не читає — типи він перевіряє за deno.json.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "strict": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true
+  },
+  "include": ["./*.ts"]
+}

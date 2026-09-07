@@ -74,6 +74,10 @@
     // входять — і зламаний список чи базовий клас таблиці ця перевірка мовчки
     // пропускала. Знайдено рівно так: зрізаний метод основи не помітили ні
     // check, ні збірка (Vite типи не перевіряє), ні проби.
+    // Стенд табличної частини (scripts/bench/tabular/README.md): свій Vite на
+    // окремому порту, застосунок і БД не потрібні. Порт 5299 — щоб не
+    // конфліктувати з VITE_PORT застосунку.
+    "bench:tabular": "deno run -A npm:vite --configLoader native --config ./scripts/bench/tabular/vite.config.ts",
     "check": "deno check ./app ./client ./server ./tools ./scripts ./mcp",
     "check:deps": "deno run --allow-read ./scripts/check-deps.ts",
     "smoke": "DENO_EMIT_CACHE_MODE=disable deno test --allow-net --allow-read --allow-write --allow-env --allow-run --env-file ./scripts/smoke_test.ts",

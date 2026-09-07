@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <title>Стенд: таблична частина документа</title>
+  <style>
+    body { font: 13px/1.4 system-ui, sans-serif; margin: 16px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    p.hint { color: #555; margin: 0 0 12px; max-width: 70ch; }
+    #results { border-collapse: collapse; margin: 12px 0; }
+    #results th, #results td { border: 1px solid #ccc; padding: 3px 8px; text-align: right; }
+    #results th:first-child, #results td:first-child { text-align: left; }
+    #json { background: #f6f6f6; padding: 8px; max-height: 220px; overflow: auto; font-size: 11px; }
+    /* Сцена має справжню висоту й прокрутку: без обмеження браузер малював би
+       всю тисячу рядків одним потоком, а в застосунку таблиця живе в панелі
+       вкладки фіксованої висоти. */
+    #stage { height: 420px; overflow: auto; border: 1px solid #ddd; margin-top: 12px; }
+    #status { color: #06c; }
+  </style>
+</head>
+<body>
+  <h1>Стенд: таблична частина документа</h1>
+  <p class="hint">
+    Параметри в URL: <code>?rows=100,1000,3000&amp;auto=1</code>.
+    Міряється таблична частина, як вона є у фреймворку зараз.
+    Результати також лягають у <code>window.__bench</code>.
+  </p>
+  <button id="run">Запустити</button>
+  <span id="status"></span>
+  <table id="results"></table>
+  <pre id="json"></pre>
+  <div id="stage"></div>
+  <script type="module" src="./bench.ts"></script>
+</body>
+</html>

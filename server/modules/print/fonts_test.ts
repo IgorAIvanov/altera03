@@ -61,7 +61,13 @@ Deno.test("fonts.generated.ts збігається з @fontsource/roboto", async
 // OFL саме мінорним підняттям), ТЕКСТ — підміну самої ліцензії.
 Deno.test("THIRD-PARTY-NOTICES.md перелічує вбудовані гарнітури", async (t) => {
   const noticesPath = fromFileUrl(new URL("../../THIRD-PARTY-NOTICES.md", import.meta.url));
-  const notices = await Deno.readTextFile(noticesPath);
+  // Кінці рядків зводимо до LF — так само, як нижче для тексту ліцензії.
+  // У git файл лежить із LF, але на Windows робоча копія дістається з CRLF
+  // (autocrlf), а LICENSE у node_modules приходить із реєстру як є, тобто з LF.
+  // Через це порівняння текстів не збігалося на кожній машині з Windows —
+  // проба була червона там завжди й зелена в CI, тобто мовчала саме там, де на
+  // неї дивляться очима.
+  const notices = (await Deno.readTextFile(noticesPath)).replaceAll("\r\n", "\n");
 
   for (const pkg of FONT_PACKAGES) {
     await t.step(`@fontsource/${pkg}`, async () => {

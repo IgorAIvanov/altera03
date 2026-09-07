@@ -95,6 +95,17 @@ export interface TabularColumn<Line extends object> {
 
   /** custom: повна розмітка комірки (вміст `<td>`). */
   render?: (line: Line, index: number) => TemplateResult;
+
+  /**
+   * Вигляд значення в НЕ поточному записі — там, де контрола немає.
+   *
+   * Готовим видам (`picker`, `decimal`, `date`) подання малює це саме, тож
+   * оголошувати нічого не треба. Потрібен він `custom`-колонці: без нього вона
+   * лишається живою в кожному рядку — і залишається найдорожчою частиною
+   * великої табличної частини. Текст мусить збігатися з тим, що показує сам
+   * контрол, інакше значення «стрибне» при вході в рядок.
+   */
+  display?: (line: Line, index: number) => TemplateResult | string;
 }
 
 export interface TabularConfig<Line extends object> {
@@ -162,12 +173,32 @@ export class TabularSection<Line extends object> {
   }
 
   /**
+   * Лічильник «усе намальоване застаріло» — його читає подання, що кешує рядки
+   * (`guard` у `<ui-tabular-table>`).
+   *
+   * Кеш відрізняє змінений рядок за identity: `patch()` кладе на його місце
+   * НОВИЙ об'єкт. Але дві речі лежать поза рядком і так не видні —
+   * перераховані помилки й стан, який custom-комірка читає з форми. Обидві
+   * рухають це число, і кеш скидається цілком.
+   */
+  #epoch = 0;
+
+  get epoch(): number {
+    return this.#epoch;
+  }
+
+  /**
    * Перемалювати всі подання секції. Потрібен формам, чиї custom-комірки
    * залежать від стану ПОЗА `$root` (кеш конфігурації рахунків у проводках):
    * такий стан сигналами не трекається, і без цього виклику таблиця
    * дізнавалася б про нього лише з наступної дії користувача.
+   *
+   * Відтоді, як подання кешує рядки, цей виклик ще й скидає кеш — інакше
+   * `requestUpdate()` сам собою перемалював би таблицю, а рядки лишив би
+   * старими.
    */
   refresh() {
+    this.#epoch++;
     this.#notify();
   }
 
@@ -191,6 +222,23 @@ export class TabularSection<Line extends object> {
   }
 
   /**
+   * Запис, у якому живуть контроли. Решта рядків показує значення текстом —
+   * так, як це зроблено в облікових системах, звідки ці документи й прийшли.
+   *
+   * Причина не косметична: `<ui-picker>` і `<ui-decimal>` — кастомні елементи
+   * зі своїм shadow root, і в документі на тисячу рядків їх виходить кілька
+   * тисяч. Саме вони, а не самі рядки, роблять відкриття такого документа
+   * секундами.
+   *
+   * Доки не вибрано нічого, контроли тримає ПЕРШИЙ рядок — інакше свіжо
+   * відкрита таблиця не мала б жодного місця, куди веде Tab, і з клавіатури
+   * була б недосяжна взагалі.
+   */
+  get editingIndex(): number {
+    return this.currentIndex >= 0 ? this.currentIndex : 0;
+  }
+
+  /**
    * Колонка з кошиком у рядку. У режимі перегляду вона ЛИШАЄТЬСЯ (кнопки в ній
    * вимкнені) — з тієї ж причини, що й панель дій: зникла колонка каже «дії тут
    * немає ніколи», а проведення документа ще й міняло б від цього ширину
@@ -207,10 +255,84 @@ export class TabularSection<Line extends object> {
   /** Підсумок колонки (total: true) точною десятковою арифметикою. */
   total(key: string): string {
     const col = this.config.columns.find((c) => (c.key ?? "") === key || c.refKey === key);
-    const precision = col?.precision ?? 2;
-    const value = (line: Line): Decimal =>
-      col?.value ? dec(col.value(line)) : dec((line as Record<string, unknown>)[key]);
-    return this.rows.reduce((s, l) => s.plus(value(l)), new Decimal(0)).toFixed(precision);
+    // Ключ кешу — сам рядок `key`, а не знайдена колонка: `columnTotal` тримає
+    // під колонкою СВІЙ внесок (`col.key`), і при збігу через `refKey` це різні
+    // числа. Два записи замість одного — дешевше за пошук збігу, якого не має
+    // бути.
+    return this.#sum(
+      key,
+      (line) => col?.value ? dec(col.value(line)) : dec((line as Record<string, unknown>)[key]),
+      col?.precision ?? 2,
+    );
+  }
+
+  /** Підсумок оголошеної колонки — те, що малює `<tfoot>` подання. */
+  columnTotal(col: TabularColumn<Line>): string {
+    return this.#sum(
+      col,
+      (line) =>
+        col.value ? dec(col.value(line)) : dec((line as Record<string, unknown>)[col.key ?? ""]),
+      col.precision ?? 2,
+    );
+  }
+
+  /**
+   * Кеш внесків рядків у підсумок. Ключ — колонка (або рядковий ключ у
+   * `total`), значення — внески в тому ж порядку, що й рядки.
+   */
+  #totals = new Map<unknown, { epoch: number; rows: Line[]; parts: Decimal[]; sum: Decimal }>();
+
+  /**
+   * Сума з кешем внесків.
+   *
+   * Підсумок стоїть ПОЗА кешем записів подання, тож доти він був єдиним, хто
+   * при кожній правці комірки обходив усі рядки: на тисячі рядків три
+   * підсумкові колонки коштували 10 мс на кожне натискання клавіші. А
+   * змінюється при цьому один рядок із тисячі — решта внесків та сама.
+   *
+   * Незмінний рядок упізнається за identity, як і в кеші записів: `patch()`
+   * кладе на місце зміненого рядка новий об'єкт. Стан ПОЗА рядком (його може
+   * читати `col.value`) кеш не бачить — його скидає `epoch`, тобто той самий
+   * `refresh()`, що й для записів.
+   *
+   * Суму перескладаємо з внесків ЦІЛКОМ, а не правимо відніманням старого й
+   * додаванням нового. Так результат побайтово той самий, що й у повного
+   * перерахунку, і накопичити розбіжність між правками ніяк — а підсумок, що
+   * тихо розійшовся з даними, коштує дорожче за виграні мілісекунди.
+   */
+  #sum(cacheKey: unknown, part: (line: Line) => Decimal, precision: number): string {
+    const rows = this.rows;
+    const cached = this.#totals.get(cacheKey);
+    const usable = cached && cached.epoch === this.#epoch;
+
+    // Той самий масив рядків — рахувати нема чого (перемальовок заради
+    // виділення рядка, чужої колонки, режиму перегляду).
+    if (usable && cached.rows === rows) return cached.sum.toFixed(precision);
+
+    let parts: Decimal[];
+    let changed = true;
+    if (usable && cached.rows.length === rows.length) {
+      parts = cached.parts;
+      changed = false;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i] === cached.rows[i]) continue;
+        const next = part(rows[i]);
+        // Правка сусідньої колонки теж дає новий об'єкт рядка, але на ЦЕЙ
+        // підсумок не впливає — тоді й перескладати нема чого.
+        if (next.equals(parts[i])) continue;
+        parts[i] = next;
+        changed = true;
+      }
+    } else {
+      parts = rows.map(part);
+    }
+
+    const sum = usable && !changed
+      ? cached.sum
+      : parts.reduce((s, p) => s.plus(p), new Decimal(0));
+
+    this.#totals.set(cacheKey, { epoch: this.#epoch, rows, parts, sum });
+    return sum.toFixed(precision);
   }
 
   /**
@@ -296,6 +418,10 @@ export class TabularSection<Line extends object> {
   }
 
   #recompute() {
+    // Помилки лежать поза рядком і можуть переїхати між рядками, лишивши
+    // однакову кількість — отже кеш подання скидаємо на будь-який перерахунок,
+    // а не за `errorCount`.
+    this.#epoch++;
     this.#errors.clear();
     const columns = this.visibleColumns();
     this.rows.forEach((line, index) => {

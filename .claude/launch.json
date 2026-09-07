@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "bench:tabular",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["task", "bench:tabular"],
+      "port": 5299,
+      "autoPort": false
+    },
+    {
       "name": "dev:front",
       "runtimeExecutable": "deno",
       "runtimeArgs": ["run", "-A", "npm:vite"],

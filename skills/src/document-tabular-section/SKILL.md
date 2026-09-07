@@ -70,6 +70,77 @@ The CSS knowledge below still applies to `custom` cells and to fully
 hand-written tables (which remain legal — the primitive is a default, not a
 requirement).
 
+## Rows are REPLACED, never edited in place
+
+The table caches what it has already drawn and redraws only the records that
+changed — that is what keeps a thousand-line inventory sheet typable (a
+keystroke costs 23 ms instead of 78 ms; measured). It tells a changed record
+from the rest by **object identity**, and every action of the section already
+gives it one: `patch`, `addLine`, `copyLine`, `removeLine` and `move` all put a
+NEW object in the row's place.
+
+So one thing is now forbidden that merely "worked" before:
+
+```ts
+this.$root.item.lines[0].qty = "5";     // ✗ таблиця цього не побачить
+this.lines.patch(0, { qty: "5" });      // ✓
+```
+
+Reactivity itself is untouched — the component still redraws on every change of
+`$root`; what it no longer does is re-evaluate rows nobody touched.
+
+The same applies to anything read from **outside** the row — the
+account-configuration cache in a manual journal entry, or an exchange rate a
+`computed` column multiplies by. Signals never saw that state, which is why
+`section.refresh()` has always existed; it now also drops the caches, so keep
+calling it exactly where you change such state (`manualEntryEdit.ts` does, next
+to its `slots` update).
+
+That matters most for **totals**, which are cached the same way: a `<tfoot>` sum
+that quietly lags behind a changed rate is a money bug, not a redraw glitch. A
+total whose column reads only its own row needs nothing — that is the normal
+case, and it recomputes on every edit as before.
+
+Conditional columns (`visible`) need nothing either: the table watches the set
+of visible columns itself.
+
+## Controls live only in the row being edited
+
+Every other row shows its values as text — the way the accounting systems these
+documents come from have always done it. The reason is not taste: `<ui-picker>`,
+`<ui-decimal>` and `<ui-date>` are custom elements with their own shadow root,
+and a thousand-line inventory sheet would otherwise hold several thousand of
+them. It is what made such a document take seconds to open (1000 lines: 1.6 s
+→ 0.6 s, 5002 custom elements → 7; measured).
+
+You get this for free, and for most columns there is nothing to declare:
+
+- `picker`, `decimal` and `date` are drawn as text by the table itself, in the
+  same format the control shows — the value must not shift when you step into
+  the row;
+- `text` and `checkbox` stay live always. They are native `<input>`s, one node
+  each, so there is nothing to win and faking their look would only add ways to
+  get it wrong;
+- `custom` stays live unless the column says how to draw itself flat:
+
+  ```ts
+  { kind: "custom", title: "…", render: (l, i) => this.renderSubconto(l, i),
+    display: (l) => l.analytics?.name ?? "" },   // без цього — живий у кожному рядку
+  ```
+
+  A `custom` column without `display` is the one thing that can still make a
+  large section slow, so give it one whenever the cell has a plain reading.
+
+Nothing changes for the user's hands. Clicking any cell puts the cursor in it —
+the cell itself is the tab stop, so the row becomes current, the control appears
+and takes the focus. Tab is not intercepted at all and keeps walking the table
+exactly as before, buttons inside `<ui-picker>` included; Enter, ↑/↓ and Insert
+work as they always did.
+
+In view mode (no write permission, or a posted document) there is no edited row,
+so every such cell is text. The action panel and the row's delete button still
+stay and dim — they are what the "dims, does not disappear" rule is about.
+
 ## How many sections: as many as the subject area has
 
 One tabular section is the **exception**, not the norm. In the systems these
@@ -300,6 +371,10 @@ database forever, and the old one keeps its rows. When the set of sections chang
 - do not give in-cell controls `height: 100%` or `min-height` — the row only
   grows from it; the control's own height defines the row
 - do not add a focus outline inside a cell
+- do not mutate a row of `$root` in place — go through `patch()` / `setRows()`;
+  the table tells a changed row from the rest by object identity
+- do not forget `section.refresh()` when a `custom` cell depends on state
+  outside `$root`
 - do not change the default appearance of a control to fix a tabular section —
   add or reuse the `cell` mode
 - do not use float arithmetic for amounts, and do not turn decimal form fields
