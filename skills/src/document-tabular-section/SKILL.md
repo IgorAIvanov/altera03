@@ -47,8 +47,8 @@ private lines = new TabularSection<InvoiceLine>(this, {
 What the primitive provides: add / copy (id is stripped — the save merge would
 otherwise overwrite the original) / delete / move up-down with automatic
 `lineNo` renumbering, current-row highlight, live totals in `<tfoot>`
-(`total: true`), empty state, canonical decimal normalization
-(`section.normalizedRows()` — call it around save/get/post), and keyboard
+(`total: true`), empty state, canonical decimal values on the way in and
+`section.normalizedRows()` for the way out (see below), and keyboard
 entry: Enter walks editable cells and appends a row at the end, ↑/↓ move
 between rows, Insert adds, Ctrl+Delete removes. Column kinds: `text`,
 `decimal`, `picker`, `date`, `checkbox`, `computed`, and the escape hatch
@@ -260,8 +260,11 @@ Follow `<ui-decimal>`; the rules that matter for the tabular section:
 - never rewrite the field being edited — the component keeps its own draft, so a
   parent re-render on every keystroke is safe;
 - compute amounts and totals with `decimal.js`, never with float arithmetic;
-- normalize every decimal field again in `save()`, even though blur handlers
-  exist — a row may never lose focus before submit;
+- normalize every decimal field in `save()` — `section.normalizedRows()` —
+  even though blur handlers exist: a row may never lose focus before submit.
+  **Reading needs nothing**: the base canonicalizes decimals itself wherever an
+  answer enters `$root`, so a `normalizedRows()` call after `get` is redundant
+  (harmless, and worth deleting when you next touch the form);
 - typical precision: quantity 3, money 2, exchange rate 6.
 
 ## Required cells and per-cell checks
@@ -311,7 +314,8 @@ database forever, and the old one keeps its rows. When the set of sections chang
 3. Controls → the `cell` attribute; new controls → add `cell` + `cell-control`.
 4. Decimal columns → string fields in the form schema, `@value-input` +
    `@value-changed`, `Decimal` for amounts and totals.
-5. Normalize decimals on load (SQL returns JSON numbers) and again in `save()`.
+5. Normalize decimals in `save()` — `section.normalizedRows()`. On load the
+   base does it for you.
 6. `deno check` on the edit form and the touched components.
 7. Check visually: the row must be exactly as tall as the controls in it.
 

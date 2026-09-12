@@ -76,6 +76,13 @@ export interface FormSection {
   pendingFocus: { row: number; col: number } | null;
   /** Перемалювати подання — після того, як база проставила `pendingFocus`. */
   refresh(): void;
+  /**
+   * Привести щойно прочитані рядки до канонічного вигляду. Кличе `assign()` —
+   * тобто на КОЖНОМУ шляху, яким дані входять у `$root`.
+   *
+   * Необов'язковий: секція, якій нема чого канонізувати, може його не мати.
+   */
+  canonicalize?(): void;
 }
 
 /**
@@ -226,9 +233,12 @@ export abstract class BaseUI<T extends Record<string, unknown>>
 
   /**
    * Зафіксувати поточний стан як «чистий». База кличе це сама після першого
-   * рендера, `loadInto` і `saveItem`; форма, що НОРМАЛІЗУЄ дані після цих
-   * викликів (десяткові в табличній частині), мусить покликати ще раз після
-   * нормалізації — інакше форма виглядатиме зміненою одразу після відкриття.
+   * рендера, `loadInto` і `saveItem`.
+   *
+   * Канонізація десяткових у табличних частинах при цьому вже відбулася —
+   * вона лежить в `assign()`, тобто ДО цієї позначки. Доти її робила форма
+   * після `loadInto`, і кликати `markClean()` вдруге доводилося їй же, інакше
+   * щойно відкритий документ одразу виглядав зміненим.
    */
   protected markClean() {
     this.#cleanSnapshot = this.dirtyTracking ? this.#dataSnapshot() : null;
@@ -624,6 +634,14 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * (напр. `item.counterparty = null`), а не верхнім ключем.
    *
    * Завдяки цьому формам не треба писати захист у кожному `load()`.
+   *
+   * Після злиття рядки табличних частин приводяться до канонічного вигляду.
+   * Місце вибране не заради зручності: `assign()` — ЄДИНА точка, якою дані з
+   * відповіді входять у `$root` (і `loadInto`, і `saveItem`, і будь-яка
+   * команда форми). Доти це робила кожна форма сама й на кожному шляху читання
+   * окремо — а шляхів у документа більше, ніж здається (`load`, перечитування
+   * після «Заповнити», повернення з проведення), тож пропущений один означав
+   * «15» замість «15,000», поки в комірку не тицьнуть.
    */
   protected assign(patch: Partial<T>): void {
     for (const key of Object.keys(patch) as (keyof T)[]) {
@@ -631,6 +649,7 @@ export abstract class BaseUI<T extends Record<string, unknown>>
       if (value == null) continue;
       this.$root[key] = value as T[keyof T];
     }
+    for (const section of this.sections()) section.canonicalize?.();
   }
 
   /**
