@@ -104,43 +104,6 @@ case, and it recomputes on every edit as before.
 Conditional columns (`visible`) need nothing either: the table watches the set
 of visible columns itself.
 
-## Controls live only in the row being edited
-
-Every other row shows its values as text — the way the accounting systems these
-documents come from have always done it. The reason is not taste: `<ui-picker>`,
-`<ui-decimal>` and `<ui-date>` are custom elements with their own shadow root,
-and a thousand-line inventory sheet would otherwise hold several thousand of
-them. It is what made such a document take seconds to open (1000 lines: 1.6 s
-→ 0.6 s, 5002 custom elements → 7; measured).
-
-You get this for free, and for most columns there is nothing to declare:
-
-- `picker`, `decimal` and `date` are drawn as text by the table itself, in the
-  same format the control shows — the value must not shift when you step into
-  the row;
-- `text` and `checkbox` stay live always. They are native `<input>`s, one node
-  each, so there is nothing to win and faking their look would only add ways to
-  get it wrong;
-- `custom` stays live unless the column says how to draw itself flat:
-
-  ```ts
-  { kind: "custom", title: "…", render: (l, i) => this.renderSubconto(l, i),
-    display: (l) => l.analytics?.name ?? "" },   // без цього — живий у кожному рядку
-  ```
-
-  A `custom` column without `display` is the one thing that can still make a
-  large section slow, so give it one whenever the cell has a plain reading.
-
-Nothing changes for the user's hands. Clicking any cell puts the cursor in it —
-the cell itself is the tab stop, so the row becomes current, the control appears
-and takes the focus. Tab is not intercepted at all and keeps walking the table
-exactly as before, buttons inside `<ui-picker>` included; Enter, ↑/↓ and Insert
-work as they always did.
-
-In view mode (no write permission, or a posted document) there is no edited row,
-so every such cell is text. The action panel and the row's delete button still
-stay and dim — they are what the "dims, does not disappear" rule is about.
-
 ## How many sections: as many as the subject area has
 
 One tabular section is the **exception**, not the norm. In the systems these

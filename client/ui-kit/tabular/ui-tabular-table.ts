@@ -11,22 +11,12 @@
  *  - ↑/↓ — та сама колонка сусіднього рядка (не перехоплюються в ui-picker:
  *    його випадний список сам живе на клавіатурі);
  *  - Insert — новий рядок; Ctrl+Delete — видалити поточний.
- * Tab лишається нативним і не перехоплюється: у поточному рядку його веде
- * `delegatesFocus` контролів, а в решті рядків точкою обходу стає сама комірка
- * (`tabindex`) — контролів там немає, вони живуть лише в тому записі, який
- * редагують.
+ * Tab лишається нативним: delegatesFocus у cell-контролів веде його сам.
  *
  * Слухаємо keydown/focusin на контейнері: обидві події composed, тож
  * долітають із shadow DOM контролів уже ретаргетнуті на їхні host-елементи.
  */
-import {
-  css,
-  type CSSResultGroup,
-  html,
-  type LitElement,
-  nothing,
-  type TemplateResult,
-} from "lit";
+import { css, type CSSResultGroup, html, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { guard } from "lit/directives/guard.js";
 import { SignalWatcher } from "@lit-labs/signals";
@@ -34,7 +24,6 @@ import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { tw } from "../../shared/styles.ts";
 import { t } from "../../locale.ts";
 import { dec, type TabularColumn, type TabularSection } from "./tabular-section.ts";
-import { formatDate } from "../../shared/datetime.ts";
 import "../components/ui-picker.ts";
 import "../components/ui-decimal.ts";
 import "../components/ui-date.ts";
@@ -108,21 +97,11 @@ export class UiTabularTable extends Base {
   /**
    * Фокус у контрол комірки. `false` — контрола там немає (custom-комірка, що
    * його не малює), і той, хто кличе, пробує наступну колонку.
-   *
-   * Контрол може бути ЩОЙНО створеним — рядок став поточним аж цим
-   * перемальовком. Тоді елемент у DOM уже є, а вміст його shadow root ще ні:
-   * власний рендер компонента — окремий цикл, який ще не відбувся. Фокус у
-   * таку мить не робить нічого (`delegatesFocus` не має куди вести), і
-   * закінчується це тим, що фокус лишається на комірці, а та вже втратила
-   * `tabindex` — тобто зникає зовсім. Тому чекаємо на `updateComplete`
-   * контрола; у нативного `<input>` його немає, і фокус ставиться одразу.
    */
   #focusCell(row: number, col: number): boolean {
     const control = this.#cellAt(row, col)?.querySelector<HTMLElement>(CELL_CONTROL);
     if (!control) return false;
-    const ready = (control as Partial<LitElement>).updateComplete;
-    if (ready) ready.then(() => control.focus());
-    else control.focus();
+    control.focus();
     return true;
   }
 
@@ -136,42 +115,9 @@ export class UiTabularTable extends Base {
     return null;
   }
 
-  /**
-   * Перейти в комірку — байдуже, чи є там уже контрол.
-   *
-   * У чужому рядку контрола ще немає: спершу цей рядок має стати поточним, і
-   * лише наступний перемальовок його створить. Тому фокус відкладається
-   * (`pendingFocus`), а ставить його `updated()`.
-   */
-  #goToCell(row: number, col: number): boolean {
-    const section = this.section!;
-    if (row < 0 || row >= section.rows.length) return false;
-    if (row === section.editingIndex) return this.#focusCell(row, col);
-    section.select(row);
-    section.pendingFocus = { row, col };
-    return true;
-  }
-
-  /**
-   * Фокус увійшов у комірку.
-   *
-   * Друга половина — про статичну комірку: вона сама точка табуляції
-   * (`tabindex`), і потрапити в неї можна і Tab-ом, і мишею. Обидва шляхи
-   * мають закінчуватися однаково — рядок стає поточним, у ньому з'являються
-   * контроли, і фокус іде в той, на який цілилися. Саме тому Tab не
-   * перехоплюється взагалі: порядок обходу лишається нативним, як і доти, і
-   * кнопки всередині `<ui-picker>` з нього не випадають.
-   */
   #onFocusIn = (e: Event) => {
     const cell = this.#eventCell(e);
-    if (!cell) return;
-    const section = this.section;
-    if (!section) return;
-    section.select(cell.row);
-    if ((e.target as HTMLElement)?.tagName === "TD") {
-      section.pendingFocus = { row: cell.row, col: cell.col };
-      this.requestUpdate();
-    }
+    if (cell) this.section?.select(cell.row);
   };
 
   #editableCols(): number[] {
@@ -222,10 +168,10 @@ export class UiTabularTable extends Base {
       for (const c of editable) {
         if (c > cell.col && this.#focusCell(cell.row, c)) return;
       }
-      // У наступному рядку контролів ще немає — туди веде #goToCell, а перебір
-      // колонок, якщо перша не візьме фокус, доробить `updated()`.
       if (cell.row + 1 < section.rows.length) {
-        this.#goToCell(cell.row + 1, editable[0] ?? 0);
+        for (const c of editable) {
+          if (this.#focusCell(cell.row + 1, c)) return;
+        }
         return;
       }
       section.addLine();
@@ -236,60 +182,11 @@ export class UiTabularTable extends Base {
       const target = cell.row + (e.key === "ArrowUp" ? -1 : 1);
       if (target < 0 || target >= section.rows.length) return;
       e.preventDefault();
-      this.#goToCell(target, cell.col);
+      this.#focusCell(target, cell.col);
     }
   };
 
   // ── Комірки ────────────────────────────────────────────────────────────────
-
-  /**
-   * Чи малює ця комірка значення текстом замість контрола.
-   *
-   * Статичними стають лише види на КАСТОМНИХ ЕЛЕМЕНТАХ (`picker`, `decimal`,
-   * `date`) — кожен зі своїм shadow root, і саме їх у великому документі
-   * тисячі. Нативні `text` і `checkbox` коштують один вузол, тож лишаються
-   * живими завжди: інакше довелося б підробляти вигляд галочки й поля вводу, а
-   * виграти не було б чого. `custom` стає статичною, лише якщо колонка сама
-   * сказала як (`display`).
-   */
-  #isStatic(col: TabularColumn<Record<string, unknown>>, index: number): boolean {
-    const section = this.section!;
-    if (!section.readonly && index === section.editingIndex) return false;
-    if (col.display) return true;
-    return col.kind === "picker" || col.kind === "decimal" || col.kind === "date";
-  }
-
-  /**
-   * Значення текстом — те, що видно в рядку, який зараз не редагують.
-   *
-   * Формат мусить збігатися з тим, що показує контрол, інакше значення
-   * «стрибне» при вході в рядок. Тому дата йде через той самий `formatDate`,
-   * що й `<ui-date>`, а десяткове — через `toFixed(precision)`; порожнє
-   * лишається порожнім, як і в `<ui-decimal>` без `empty-as-zero`.
-   */
-  #display(
-    col: TabularColumn<Record<string, unknown>>,
-    line: Record<string, unknown>,
-    index: number,
-  ): TemplateResult | string {
-    if (col.display) return col.display(line, index);
-    const key = col.key ?? "";
-    switch (col.kind) {
-      case "decimal": {
-        const raw = line[key];
-        return raw == null || raw === "" ? "" : dec(raw).toFixed(col.precision ?? 2);
-      }
-      case "date":
-        return formatDate(String(line[key] ?? ""));
-      case "picker": {
-        const refKey = col.refKey ?? (key.endsWith("Id") ? key.slice(0, -2) : key);
-        const ref = line[refKey] as Record<string, unknown> | null;
-        return String(ref?.[col.displayField ?? "name"] ?? "");
-      }
-      default:
-        return String(line[key] ?? "");
-    }
-  }
 
   #cellContent(
     col: TabularColumn<Record<string, unknown>>,
@@ -298,7 +195,6 @@ export class UiTabularTable extends Base {
   ): TemplateResult | string {
     const section = this.section!;
     const key = col.key ?? "";
-    if (this.#isStatic(col, index)) return this.#display(col, line, index);
     switch (col.kind) {
       case "custom":
         return col.render?.(line, index) ?? "";
@@ -350,35 +246,11 @@ export class UiTabularTable extends Base {
     const align = col.align ?? (col.kind === "decimal" || col.kind === "computed" ? "right" : "left");
     const parts: string[] = [];
     if (col.kind === "computed") parts.push("cell-text", "tabular-nums");
-    // `cell-static` — не те саме, що `cell-text`: він тримає ще й висоту рядка.
-    // Без неї рядок без контролів був би нижчим за той, у якому редагують, і
-    // таблиця смикалася б при кожному переході по рядках.
-    if (this.#isStatic(col, index)) {
-      parts.push("cell-static");
-      if (col.kind === "decimal") parts.push("tabular-nums");
-    }
     if (col.kind === "checkbox") parts.push("text-center");
     if (align === "right") parts.push("text-right");
     if (align === "center" && col.kind !== "checkbox") parts.push("text-center");
     if (this.section?.cellError(index, col)) parts.push("cell-invalid");
     return parts.join(" ");
-  }
-
-  /**
-   * Статична комірка — сама точка табуляції.
-   *
-   * Це і є відповідь на «а як тепер ходити по таблиці клавішею Tab»: контролів
-   * у чужих рядках немає, тож без цього Tab вивалювався б із таблиці на кінці
-   * поточного рядка. Комірка стає точкою обходу замість контрола, який у ній
-   * з'явиться, — порядок лишається нативним, перехоплювати Tab не треба, і
-   * кнопки всередині `<ui-picker>` із обходу не зникають.
-   *
-   * У режимі перегляду — жодного tabindex: правити нічого, а тисяча зайвих
-   * зупинок перетворила б таблицю на пастку для клавіатури.
-   */
-  #cellTabIndex(col: TabularColumn<Record<string, unknown>>, index: number) {
-    const section = this.section!;
-    return !section.readonly && this.#isStatic(col, index) && col.kind !== "computed" ? "0" : nothing;
   }
 
   /**
@@ -470,7 +342,6 @@ export class UiTabularTable extends Base {
         line, //                       сам рядок: patch замінює об'єкт
         i, //                          номер: вставка й видалення зсувають хвіст
         i === section.currentIndex, // підсвітка поточного рядка
-        i === section.editingIndex, // тут живуть контроли (без вибору — перший)
         section.readonly, //           режим перегляду (право, проведення)
         section.epoch, //              помилки й стан поза рядком
         colsKey, //                    склад видимих колонок
@@ -503,7 +374,7 @@ export class UiTabularTable extends Base {
           : nothing}
         ${grid.map((col) => html`
           <td data-row=${i} data-col=${columns.indexOf(col)} class=${this.#cellClass(col, i)}
-            tabindex=${this.#cellTabIndex(col, i)} title=${this.#cellTitle(col, i)}>
+            title=${this.#cellTitle(col, i)}>
             ${this.#cellContent(col, line, i)}
           </td>
         `)}
@@ -528,8 +399,7 @@ export class UiTabularTable extends Base {
           <tr class=${cur} @click=${() => section.select(i)}>
             ${subs.map((col) => html`
               <td colspan=${col.span ?? 1} data-row=${i} data-col=${columns.indexOf(col)}
-                class=${this.#cellClass(col, i)} tabindex=${this.#cellTabIndex(col, i)}
-                title=${this.#cellTitle(col, i)}>
+                class=${this.#cellClass(col, i)} title=${this.#cellTitle(col, i)}>
                 ${this.#cellContent(col, line, i)}
               </td>
             `)}
