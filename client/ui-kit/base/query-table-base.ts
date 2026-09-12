@@ -35,7 +35,7 @@
  */
 import { css, type CSSResultGroup, html, nothing, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
-import { t } from "@client/locale.ts";
+import { getLocale, t } from "@client/locale.ts";
 import { tw } from "@client/shared/styles.ts";
 import { formatDate } from "@client/shared/datetime.ts";
 import { readUserScoped, writeUserScoped } from "@client/shared/user-storage.ts";
@@ -44,6 +44,7 @@ import { icons } from "../icons.ts";
 import {
   alignClass,
   cellStyle,
+  columnAlign,
   listRootSchema,
   type ListColumn,
   type ListRoot,
@@ -52,6 +53,40 @@ import {
 
 
 /** Ключ пам'яті про згорнуту панель — свій на кожну модель. */
+/**
+ * Кеш форматувальників. `Intl.NumberFormat` коштує помітно дорожче за сам
+ * виклик `format()`, а сторінка списку це сотня рядків на кожну числову
+ * колонку — тобто без кеша форматувальник будувався б тисячу разів на рендер.
+ */
+const numberFormats = new Map<string, Intl.NumberFormat>();
+
+/**
+ * Число в тому вигляді, яким його оголосила колонка.
+ *
+ * Мова береться з поточної локалі, а не зашита рядком: розділювач розрядів і
+ * знак дробу в українській та англійській різні, і колонка про це знати не
+ * зобов'язана.
+ *
+ * Значення, яке числом не є, віддається як прийшло. Це діагностика: «NaN» чи
+ * «—» у стовпчику сум сховали б те, що колонка дивиться не в те поле.
+ */
+function formatNumber(value: unknown, precision: number, grouping?: boolean): string {
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  const locale = getLocale();
+  const key = `${locale}|${precision}|${grouping === false ? 0 : 1}`;
+  let format = numberFormats.get(key);
+  if (!format) {
+    format = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: precision,
+      maximumFractionDigits: precision,
+      useGrouping: grouping !== false,
+    });
+    numberFormats.set(key, format);
+  }
+  return format.format(num);
+}
+
 const FILTER_PANEL_KEY = "list-filters-open";
 
 export abstract class QueryTableBase<Row extends { id: string }> extends FilteredBase<ListRoot<Row>> {
@@ -474,6 +509,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
     if (col.render) return col.render(row);
     const v = (row as Record<string, unknown>)[col.key];
     if (v == null) return "";
+    if (col.precision != null) return formatNumber(v, col.precision, col.grouping);
     if (col.format) return formatDate(v as string, col.format) || String(v);
     return String(v);
   }
@@ -773,7 +809,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
             ${this.statusColumn ? html`<th class="status-cell"></th>` : nothing}
             ${this.columns.map((col) => html`
               <th
-                class="${col.sortable ? "sortable" : ""} ${alignClass(col.align)}"
+                class="${col.sortable ? "sortable" : ""} ${alignClass(columnAlign(col))}"
                 style=${col.width ? `width:${col.width}` : ""}
                 aria-sort=${col.sortable ? this.#ariaSort(col) : nothing}
               >
@@ -814,7 +850,7 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
                 ? html`<td class="status-cell">${this.renderRowStatus(row)}</td>`
                 : nothing}
               ${this.columns.map((col) => html`
-                <td class="${col.muted ? "text-muted" : ""} ${alignClass(col.align)}"
+                <td class="${col.muted ? "text-muted" : ""} ${alignClass(columnAlign(col))}"
                   style=${[cellStyle(col), this.rowStyle(row)].filter(Boolean).join(";")}
                   title=${col.tooltip ? col.tooltip(row) : nothing}>
                   ${this.cell(row, col)}

@@ -123,6 +123,32 @@ export interface ListColumn<Row> {
    * Ігнорується, якщо задано `render`.
    */
   format?: string;
+  /**
+   * Кількість знаків після коми — і водночас заява «ця колонка ЧИСЛОВА».
+   *
+   * Без неї число показується так, як прийшло: SQL віддає `numeric` числом, і
+   * `JSON.parse` лишає від `8521.40` рядок `8521.4`, а від `300475.00` —
+   * `300475`. У стовпчику сум це видно одразу, щойно поруч стануть значення з
+   * різною кількістю знаків.
+   *
+   * Оголошення дає ще дві речі, яких `render` дати не може, бо він малює текст
+   * і не каже, ЩО це: колонка вирівнюється праворуч сама й отримує табличні
+   * цифри (всі однакової ширини — інакше рівняти стовпчик нема сенсу).
+   *
+   * На вивантаження в Excel НЕ впливає навмисно: туди має їхати число, а не
+   * текст, тож книга отримує сире значення й власний числовий формат.
+   *
+   * Ігнорується, якщо задано `render`.
+   */
+  precision?: number;
+  /**
+   * Розділяти тисячі (`1 234,50`). За замовчуванням так — числова колонка в
+   * обліку це майже завжди сума. `false` для тих, де розряди заважають:
+   * ставка, коефіцієнт, рік.
+   *
+   * Діє лише разом із `precision`.
+   */
+  grouping?: boolean;
   sortable?: boolean;
   /** Нативний tooltip комірки (атрибут title). */
   tooltip?: (row: Row) => string;
@@ -164,6 +190,18 @@ export function alignClass(align?: string): string {
   return align === "right" ? "text-right" : align === "center" ? "text-center" : "";
 }
 
+/**
+ * Вирівнювання колонки. Числова (`precision`) стоїть праворуч, доки не сказано
+ * інакше: рівняти стовпчик сум ліворуч немає сенсу, а писати `align: "right"`
+ * поруч із `precision` означало б оголошувати те саме двічі.
+ *
+ * Читає це і шапка, і комірка, і вивантаження — саме тому воно тут, а не в
+ * місці рендеру: у книзі за правим вирівнюванням упізнається число.
+ */
+export function columnAlign<Row>(col: ListColumn<Row>): ListColumn<Row>["align"] {
+  return col.align ?? (col.precision != null ? "right" : undefined);
+}
+
 /** Inline-стиль комірки: перенос/обрізка тексту + max-width для ellipsis. */
 export function cellStyle<Row>(col: ListColumn<Row>): string {
   const parts: string[] = [];
@@ -172,6 +210,9 @@ export function cellStyle<Row>(col: ListColumn<Row>): string {
     parts.push("white-space:nowrap", "overflow:hidden", "text-overflow:ellipsis");
     if (col.width) parts.push(`max-width:${col.width}`);
   }
+  // Табличні цифри: у пропорційному шрифті «1» вужча за «8», і стовпчик сум
+  // стоїть вразнобій навіть тоді, коли всі значення відформатовані однаково.
+  if (col.precision != null) parts.push("font-variant-numeric:tabular-nums");
   return parts.join(";");
 }
 

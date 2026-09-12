@@ -100,12 +100,15 @@ but opens the record the event was about, and only for rows that name one.
 | `key`      | Row field key **and** the `sortBy` value sent to the server.      |
 | `title`    | Localization key (preferred, e.g. `"common.code"`) or literal — passed through `t()`. |
 | `width`    | CSS width, e.g. `"8rem"`. Omit for a flexible (stretch) column. Use a CSS value, **not** a Tailwind `w-*` class — dynamic Tailwind classes don't survive in shadow DOM here. |
-| `align`    | `"left"` (default) \| `"right"` \| `"center"`.                    |
+| `align`    | `"left"` (default) \| `"right"` \| `"center"`. A column with `precision` is right-aligned on its own. |
+| `format`   | Date/time template for the cell: `dateFormat.date`, `"MM.YYYY"`. Date only — for numbers use `precision`. |
+| `precision`| Decimal places — **and** the declaration "this column is a number". Without it `8521.40` arrives from SQL as `8521.4` and is shown that way. Also right-aligns the column and gives it tabular figures. Does not affect the Excel export (see below). |
+| `grouping` | `false` → no thousands separator (rate, coefficient, year). Default groups. Only meaningful with `precision`. |
 | `overflow` | `"wrap"` (default) \| `"nowrap"` \| `"ellipsis"`. `ellipsis` truncates with `…` and needs `width`. |
 | `muted`    | `true` → dimmed text for secondary data (codes, dates).           |
 | `sortable` | `true` → header is clickable, toggles asc/desc on the server.      |
 | `tooltip`  | `(row) => string` — native cell tooltip (the `title` attribute).   |
-| `render`   | `(row) => TemplateResult \| string` — custom cell (buttons, badges, two-line, formatted dates, picker labels). |
+| `render`   | `(row) => TemplateResult \| string` — custom cell (buttons, badges, two-line, picker labels). Wins over `format` and `precision`; do not use it merely to format a number — a `render` cell is opaque to the export and to alignment. |
 | `exportText` | `(row) => string` — cell text for the Excel export. Needed whenever `render` shows something other than the raw field. |
 | `export`   | `false` → keep the column out of the export. A column with no title (the actions column) is skipped anyway. |
 
@@ -124,7 +127,12 @@ What this means when declaring columns:
   a nested object (`counterparty.name`), a translated code, a badge. Without it
   the file gets `row[key]`, and for an object that is an empty cell;
 - numbers stay numbers; a numeric-looking **string** is converted only in a
-  column with `align: "right"`, so account codes keep their leading zeros;
+  right-aligned column, so account codes keep their leading zeros. A column with
+  `precision` is right-aligned by that alone, so it lands in the file as a real
+  number — which is also why `precision` does **not** format the exported value:
+  a number written as text cannot be summed in the book. The book gives it its
+  own format (`#,##0.00`), so a three-decimal column still shows two decimals
+  there;
 - `boolean` without `exportText` becomes «Так» / empty;
 - `exportRowLimit` (default 10 000) caps the file; the banner reports how many
   rows actually made it.

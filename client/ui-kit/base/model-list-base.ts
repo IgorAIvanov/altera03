@@ -11,7 +11,7 @@ import {
   type OrgRef,
 } from "@client/shared/organization-context.ts";
 import { QueryTableBase } from "./query-table-base.ts";
-import type { ListColumn, ListRoot } from "./table-contract.ts";
+import { columnAlign, type ListColumn, type ListRoot } from "./table-contract.ts";
 import { buildRowsSheet, type ExportColumn } from "../report/rows-sheet.ts";
 import { buildXlsx, downloadFile, safeFileName, XLSX_MIME } from "../report/xlsx.ts";
 // Побічний імпорт — реєструє <ui-group-tree> для ієрархічних довідників.
@@ -269,12 +269,22 @@ export abstract class ModelListBase<Row extends { id: string }> extends QueryTab
       .filter((col) => col.export !== false && t(col.title).trim() !== "")
       .map((col) => ({
         title: t(col.title),
-        align: col.align,
+        // Вирівнювання не косметика: саме за ним аркуш упізнає число (див.
+        // `asNumber` у rows-sheet.ts), тож числова колонка мусить приїхати
+        // сюди правою — навіть якщо форма про це не писала.
+        align: columnAlign(col),
         value: (row: Row) => this.exportValue(row, col),
       }));
   }
 
-  /** Значення комірки для файлу — той самий вміст, що на екрані, але текстом. */
+  /**
+   * Значення комірки для файлу — той самий вміст, що на екрані, але текстом.
+   *
+   * `col.precision` тут навмисно НЕ застосовується, хоч `col.format` і
+   * застосовується. Дата текстом — це дата; число текстом — це вже не число:
+   * у книзі по ньому не порахувати суму, і власний числовий формат Excel до
+   * нього не діє. Тому сире значення їде як є, а вигляд йому дає аркуш.
+   */
   private exportValue(row: Row, col: ListColumn<Row>): string | number {
     if (col.exportText) return col.exportText(row);
 
