@@ -53,6 +53,20 @@ export interface PlacementInput {
    * прокручується.
    */
   desiredHeight?: number;
+  /**
+   * Бік, вибраний раніше. Заданий — не перевибираємо: список, що вже відкрився
+   * вгору, не має стрибати під поле лише тому, що уточнений пошук дав менше
+   * рядків і вони тепер влазять унизу.
+   */
+  direction?: "below" | "above";
+  /**
+   * До якого краю поля притягується вікно, ширше за нього: `left` — ліві краї
+   * збігаються й вікно росте праворуч (умовчання), `right` — збігаються праві
+   * й воно росте ліворуч. Друге — для поля біля правого краю форми чи останньої
+   * колонки таблиці: там вікно, що росте праворуч, упирається в екран і
+   * зсувається на невизначену відстань, а не рівно під поле.
+   */
+  align?: "left" | "right";
 }
 
 export interface Placement {
@@ -60,16 +74,30 @@ export interface Placement {
   left: number;
   /** `undefined` — висоту не обмежуємо. */
   maxHeight?: number;
+  /**
+   * Куди розкрилося — щоб наступне розміщення могло лишитися на тому ж боці.
+   * Вікну збоку (`computeSidePlacement`) не задається.
+   */
+  direction?: "below" | "above";
+  /**
+   * Відстань від НИЖНЬОГО краю вікна перегляду до низу вікна (CSS `bottom`).
+   * Задана лише при розкритті вгору, коли вікно влізло над полем: тоді до поля
+   * притягується його низ, і вміст, що зменшився (менше знайдених рядків),
+   * стискає вікно ДО поля, а не від нього. `top` у такому разі — довідковий.
+   */
+  bottom?: number;
 }
 
 export function computePlacement(input: PlacementInput): Placement {
-  const { anchor, popover, viewport, gap, margin, desiredHeight } = input;
+  const { anchor, popover, viewport, gap, margin, desiredHeight, direction, align } = input;
 
   // ── по вертикалі: вниз, якщо влазить; інакше туди, де місця більше ──
   const wanted = desiredHeight ?? popover.height;
   const below = viewport.height - anchor.bottom - gap;
-  const above = anchor.top - gap;
-  const openAbove = below < wanted && above > below;
+  // Над полем віднімаємо й верхній відступ: інакше обрізане вікно, притиснуте
+  // до `margin`, заходило б низом на саме поле.
+  const above = anchor.top - gap - margin;
+  const openAbove = direction ? direction === "above" : below < wanted && above > below;
   const available = Math.max(0, openAbove ? above : below);
 
   const maxHeight = desiredHeight === undefined ? undefined : Math.min(wanted, available);
@@ -80,15 +108,19 @@ export function computePlacement(input: PlacementInput): Placement {
   const top = openAbove
     ? Math.max(margin, anchor.top - gap - height)
     : anchor.bottom + gap;
+  // Вікно, вище за місце над полем (календар низько на екрані), притиснуте до
+  // верхнього краю і низом до поля не дістає — там `bottom` збрехав би.
+  const bottom = openAbove && height <= above ? viewport.height - (anchor.top - gap) : undefined;
 
-  // ── по горизонталі: за лівим краєм поля, але не за межу вікна ──
+  // ── по горизонталі: за обраним краєм поля, але не за межу вікна ──
   // Саме зсув, а не звуження: вміст розрахований на свою ширину, і стиснути
   // календар — зламати сітку днів. Вікно, ширше за екран, притискається до
   // лівого краю: побачити початок важливіше, ніж кінець.
+  const wantedLeft = align === "right" ? anchor.left + anchor.width - popover.width : anchor.left;
   const maxLeft = viewport.width - popover.width - margin;
-  const left = Math.max(margin, Math.min(anchor.left, maxLeft));
+  const left = Math.max(margin, Math.min(wantedLeft, maxLeft));
 
-  return { top, left, maxHeight };
+  return { top, left, maxHeight, direction: openAbove ? "above" : "below", bottom };
 }
 
 /**
@@ -161,6 +193,10 @@ export interface PlacePopoverOptions {
   matchAnchorWidth?: boolean;
   /** Див. `PlacementInput.desiredHeight`. */
   desiredHeight?: number;
+  /** Див. `PlacementInput.direction`. */
+  direction?: "below" | "above";
+  /** Див. `PlacementInput.align`. */
+  align?: "left" | "right";
 }
 
 /**
@@ -169,12 +205,16 @@ export interface PlacePopoverOptions {
  * Викликати ПІСЛЯ `showPopover()`: у схованого елемента немає розмірів, а без
  * ширини нема чого притискати. Видимого миготіння це не дає — до
  * відмальовування браузер виконує весь синхронний код.
+ *
+ * Кликати можна й на ВІДКРИТЕ вікно, коли змінився вміст: розміщення
+ * перераховується повністю, а бік тримає `options.direction` (результат
+ * попереднього виклику).
  */
 export function placePopover(
   popover: HTMLElement,
   anchor: HTMLElement,
   options: PlacePopoverOptions = {},
-): void {
+): Placement {
   if (options.matchAnchorWidth) {
     popover.style.width = `${anchor.getBoundingClientRect().width}px`;
   }
@@ -189,13 +229,24 @@ export function placePopover(
     gap: options.gap ?? 2,
     margin: options.margin ?? 4,
     desiredHeight: options.desiredHeight,
+    direction: options.direction,
+    align: options.align,
   });
 
   if (placement.maxHeight !== undefined) {
     popover.style.maxHeight = `${placement.maxHeight}px`;
   }
-  popover.style.top = `${placement.top}px`;
+  // Один із двох країв — `auto` явно, а не порожнім рядком: порожній знімає
+  // inline-значення, і з-під нього виходить `inset: 0` стилю браузера.
+  if (placement.bottom !== undefined) {
+    popover.style.top = "auto";
+    popover.style.bottom = `${placement.bottom}px`;
+  } else {
+    popover.style.bottom = "auto";
+    popover.style.top = `${placement.top}px`;
+  }
   popover.style.left = `${placement.left}px`;
+  return placement;
 }
 
 export interface PlaceSidePopoverOptions {

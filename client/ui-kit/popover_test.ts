@@ -34,6 +34,16 @@ Deno.test("біля правого краю вікно зсувається вл
   assertEquals(p.left + 304 <= 1280, true);
 });
 
+Deno.test("align: right — праві краї збігаються, вікно росте ліворуч", () => {
+  const p = computePlacement(input({ left: 600, align: "right" }));
+  assertEquals(p.left, 600 + 200 - 304);
+});
+
+Deno.test("align: right біля ЛІВОГО краю екрана — притискається, а не вилазить", () => {
+  const p = computePlacement(input({ left: 10, align: "right" }));
+  assertEquals(p.left, 4);
+});
+
 Deno.test("вікно, ширше за екран, притискається до ЛІВОГО краю", () => {
   // Побачити початок важливіше, ніж кінець: інакше left став би від'ємним.
   const p = computePlacement(input({
@@ -47,6 +57,27 @@ Deno.test("унизу немає місця — розкривається вг�
   // Поле в самому низу: під ним 800-724-2 = 74 < 260, над ним 698.
   const p = computePlacement(input({ top: 700 }));
   assertEquals(p.top, 700 - 2 - 260); // над полем, на власну висоту
+  assertEquals(p.direction, "above");
+  assertEquals(p.bottom, 800 - 698, "низ вікна притягнутий до поля");
+});
+
+/**
+ * Те, через що з'явилися `bottom` і `direction`: список пікера відкрився вгору,
+ * уточнений пошук дав менше рядків — і вікно стискалося знизу, відклеюючись
+ * від поля, бо тримав його `top`.
+ */
+Deno.test("вгору: менший вміст стискає вікно ДО поля, а не від нього", () => {
+  const many = computePlacement(input({ top: 700, desiredHeight: 400 }));
+  const few = computePlacement(input({ top: 700, desiredHeight: 64, direction: many.direction }));
+  assertEquals(many.bottom, few.bottom);
+  assertEquals(few.maxHeight, 64);
+});
+
+Deno.test("вибраний бік тримається, навіть коли вміст уже влазить унизу", () => {
+  // 64px під полем на 700 влізли б (74), але список уже відкрився вгору.
+  const p = computePlacement(input({ top: 700, desiredHeight: 64, direction: "above" }));
+  assertEquals(p.direction, "above");
+  assertEquals(computePlacement(input({ top: 700, desiredHeight: 64 })).direction, "below");
 });
 
 Deno.test("угорі теж тісно — лишається внизу, бо там місця більше", () => {
@@ -69,8 +100,9 @@ Deno.test("без desiredHeight висоту не чіпаємо — кален�
 Deno.test("розкриття вгору з обрізанням рахує верх за обрізаною висотою", () => {
   // Поле низько, просимо більше, ніж є над ним.
   const p = computePlacement(input({ top: 700, desiredHeight: 900 }));
-  assertEquals(p.maxHeight, 698); // усе вільне місце над полем
+  assertEquals(p.maxHeight, 694); // усе вільне місце над полем, крім margin
   assertEquals(p.top, 4); // margin, а не від'ємне значення
+  assertEquals(p.bottom, 102); // і низом усе одно біля поля
 });
 
 Deno.test("вікно не заходить за верхній край навіть у тісноті", () => {
