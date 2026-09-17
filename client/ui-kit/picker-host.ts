@@ -5,10 +5,18 @@ import { bus } from "../bus/bus.ts";
 import { t } from "../locale.ts";
 import type { PickerOpenMessage } from "../bus/bus.types.ts";
 import { apiFetch, readEnvelope } from "../data/api.ts";
+import { deepActiveElement } from "./focus-order.ts";
 
 interface ActivePicker {
   callbackId: string;
   element: HTMLElement;
+  /**
+   * Де стояв фокус, коли діалог відкривали, — туди він повертається при
+   * закритті. Вікно тут не нативний `<dialog>`, а оверлей: сфокусований
+   * усередині елемент при закритті просто зникає з DOM, і фокус падав на
+   * `body` — після вибору по F4 поле, з якого відкривали, лишалося без нього.
+   */
+  returnFocus: HTMLElement | null;
   width?: string;
   height?: string;
 }
@@ -107,6 +115,9 @@ export class PickerHost extends LitElement {
   }
 
   private async _open(msg: PickerOpenMessage) {
+    // Запам'ятовуємо ДО завантаження чанка: поки він вантажиться, фокус ще там,
+    // звідки відкривали.
+    const returnFocus = deepActiveElement();
     const chunkUrl = await resolveChunk(msg.route);
     if (!chunkUrl) {
       // Раніше тут був лише `console.error`, і натиснута кнопка вибору просто
@@ -138,6 +149,7 @@ export class PickerHost extends LitElement {
       this._stack = [...this._stack, {
         callbackId: msg.callbackId,
         element: el,
+        returnFocus,
         width: el.dialogWidth,
         height: el.dialogHeight,
       }];
@@ -161,7 +173,18 @@ export class PickerHost extends LitElement {
    * наприклад, коли той, хто його відкривав, скасував підбір програмно.
    */
   private _close(callbackId: string) {
+    const closing = this._stack.find((p) => p.callbackId === callbackId);
     this._stack = this._stack.filter((p) => p.callbackId !== callbackId);
+    const back = closing?.returnFocus;
+    // Після рендера: доки оверлей у DOM, фокус із нього нікуди не перенести.
+    // Повертаємо, лише якщо фокус ПРОПАВ: той, хто відкривав, міг уже сам
+    // поставити його, куди треба (новий рядок таблиці), — не перебиваємо.
+    // Власник міг і зникнути за цей час (вкладку закрили) — тоді не чіпаємо.
+    if (back) {
+      void this.updateComplete.then(() => {
+        if (back.isConnected && !deepActiveElement()) back.focus();
+      });
+    }
   }
 
   private _onOverlayClick(e: MouseEvent, picker: ActivePicker) {

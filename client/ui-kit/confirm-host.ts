@@ -9,7 +9,8 @@
  * (знак питання / оклику / хрест / «i»), як у діалогах A2v10.
  *
  * Клавіатура: Enter — підтвердити (у choose — кнопка з primary), Esc або
- * клік повз вікно — відмова. Фокус одразу на головній кнопці.
+ * клік повз вікно — відмова. Фокус одразу на головній кнопці, а після
+ * закриття — назад туди, де стояв до відкриття.
  */
 import { css, type CSSResultGroup, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
@@ -18,6 +19,7 @@ import { tw } from "../shared/styles.ts";
 import { bus } from "../bus/bus.ts";
 import type { ChoiceButton, DialogIcon } from "../bus/bus.types.ts";
 import { t } from "../locale.ts";
+import { deepActiveElement } from "./focus-order.ts";
 
 interface PendingDialog {
   kind: "confirm" | "choice";
@@ -49,6 +51,21 @@ export class ConfirmHost extends GlobalStyledLitElement {
 
   @state() private current: PendingDialog | null = null;
 
+  /**
+   * Де стояв фокус до відкриття. Вікно — оверлей, а не нативний `<dialog>`:
+   * головна кнопка при закритті зникає з DOM разом із фокусом, і без
+   * повернення він падав на `body` — «Видалити рядок? Так» лишало таблицю без
+   * фокуса, і клавіатура переставала працювати до кліку мишею.
+   */
+  #returnFocus: HTMLElement | null = null;
+
+  #remember() {
+    const el = deepActiveElement();
+    // Фокус у самому вікні — це відкриття поверх попереднього: повертатися
+    // треба туди, куди повернувся б перший, а його вже переніс #finish.
+    if (el && !this.renderRoot.contains(el)) this.#returnFocus = el;
+  }
+
   #unsub: Array<() => void> = [];
 
   override connectedCallback() {
@@ -57,6 +74,7 @@ export class ConfirmHost extends GlobalStyledLitElement {
     // відхиляємо, щоб його промис не завис назавжди.
     this.#unsub.push(bus.on("confirm.open", (msg) => {
       if (this.current) this.#finish(null);
+      this.#remember();
       this.current = {
         kind: "confirm",
         text: msg.text,
@@ -70,6 +88,7 @@ export class ConfirmHost extends GlobalStyledLitElement {
     }));
     this.#unsub.push(bus.on("choice.open", (msg) => {
       if (this.current) this.#finish(null);
+      this.#remember();
       this.current = {
         kind: "choice",
         text: msg.text,
@@ -98,6 +117,17 @@ export class ConfirmHost extends GlobalStyledLitElement {
     const dialog = this.current;
     this.current = null;
     if (!dialog) return;
+    const back = this.#returnFocus;
+    this.#returnFocus = null;
+    if (back) {
+      void this.updateComplete.then(() => {
+        // Слідом відкрили нове вікно — воно й поверне фокус, коли закриється.
+        if (this.current) this.#returnFocus ??= back;
+        // Лише якщо фокус пропав: після «Так» форма могла сама поставити
+        // його, куди треба (сусідній рядок замість видаленого).
+        else if (back.isConnected && !deepActiveElement()) back.focus();
+      });
+    }
     if (dialog.kind === "confirm") {
       bus.emit({ type: "confirm.result", callbackId: dialog.callbackId, value: key === "ok" });
     } else {
