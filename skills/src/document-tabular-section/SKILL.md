@@ -50,7 +50,11 @@ otherwise overwrite the original) / delete / move up-down with automatic
 (`total: true`), empty state, canonical decimal values on the way in and
 `section.normalizedRows()` for the way out (see below), and keyboard
 entry: Enter walks editable cells and appends a row at the end, ↑/↓ move
-between rows, Insert adds, Ctrl+Delete removes. Column kinds: `text`,
+between rows, Insert adds, Ctrl+Delete removes. At the very last editable cell
+Enter is two-step: if that Enter committed a typed value (the control fired
+`value-changed` while handling it) it only finishes the edit; the next Enter
+appends the row and puts the focus into its first cell. A `custom` cell gets the
+same behaviour only if its control reports commits through `value-changed`. Column kinds: `text`,
 `decimal`, `picker`, `date`, `checkbox`, `computed`, and the escape hatch
 `custom` (`render(line, index)` returns the `<td>` CONTENT — never the `<td>`
 itself). Conditional columns: `visible: () => boolean` (see currency columns

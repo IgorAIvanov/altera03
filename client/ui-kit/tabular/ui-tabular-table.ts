@@ -7,7 +7,10 @@
  *
  * Клавіатура (операторський ввід, як в 1С):
  *  - Enter — наступна редагована комірка; в останній комірці останнього
- *    рядка — новий рядок;
+ *    рядка — новий рядок і фокус у його першу комірку. Якщо цим Enter
+ *    контрол щойно зафіксував набране (`value-changed` під час тієї самої
+ *    клавіші), рядок не додається: перший Enter завершує правку, другий —
+ *    новий рядок;
  *  - ↑/↓ — та сама колонка сусіднього рядка (не перехоплюються в ui-picker:
  *    його випадний список сам живе на клавіатурі);
  *  - Insert — новий рядок; Ctrl+Delete — видалити поточний.
@@ -62,6 +65,20 @@ export class UiTabularTable extends Base {
 
   #bound?: TabularSection<Record<string, unknown>>;
 
+  /**
+   * Чи зафіксував контрол значення під час ПОТОЧНОЇ клавіші. Скидається на
+   * фазі перехоплення (хост — предок таблиці, тож його capture-слухач іде раніше
+   * за контрол), зводиться `value-changed`, який контрол шле зі свого keydown, —
+   * і до обробника таблиці на спливанні прапорець уже відповідає на питання
+   * «цей Enter щось записав?».
+   */
+  #committed = false;
+
+  constructor() {
+    super();
+    this.addEventListener("keydown", () => { this.#committed = false; }, { capture: true });
+  }
+
   protected override willUpdate() {
     if (this.section !== this.#bound) {
       this.#bound?.unbind(this);
@@ -101,7 +118,14 @@ export class UiTabularTable extends Base {
   #focusCell(row: number, col: number): boolean {
     const control = this.#cellAt(row, col)?.querySelector<HTMLElement>(CELL_CONTROL);
     if (!control) return false;
-    control.focus();
+    // Контрол щойно доданого рядка ще не намалював свого shadow root: таблиця
+    // дістає `updated()` раніше за першу відмальовку дочірніх елементів, і
+    // `focus()` хоста з `delegatesFocus` без вмісту нікуди не веде. Саме тому
+    // після Enter у кінці таблиці рядок з'являвся, а фокус лишався в старому —
+    // і в новий рядок вів лише ДРУГИЙ Enter. Чекаємо на відмальовку контрола.
+    const pending = (control as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete;
+    if (pending) void pending.then(() => control.focus());
+    else control.focus();
     return true;
   }
 
@@ -114,6 +138,10 @@ export class UiTabularTable extends Base {
     }
     return null;
   }
+
+  #onValueChanged = () => {
+    this.#committed = true;
+  };
 
   #onFocusIn = (e: Event) => {
     const cell = this.#eventCell(e);
@@ -174,6 +202,10 @@ export class UiTabularTable extends Base {
         }
         return;
       }
+      // Останній контрол останнього рядка. Enter, що зафіксував набране,
+      // лишається в комірці — людина бачить, що записалося (канонічна сума,
+      // розібрана дата), і новий рядок не з'являється сам на кожне число.
+      if (this.#committed) return;
       section.addLine();
       return;
     }
@@ -292,7 +324,8 @@ export class UiTabularTable extends Base {
 
     return html`
       <table class="table table-sm w-full table-tabular"
-        @keydown=${this.#onKeyDown} @focusin=${this.#onFocusIn}>
+        @keydown=${this.#onKeyDown} @focusin=${this.#onFocusIn}
+        @value-changed=${this.#onValueChanged}>
         ${this.#renderHead(columns, section)}
         <tbody>
           ${section.rows.map((line, i) =>

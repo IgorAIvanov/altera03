@@ -109,7 +109,13 @@ export class UiSubordinateRegister extends Base {
     }
     if (this.#focusedFor === register.draftSeq) return;
     this.#focusedFor = register.draftSeq;
-    this.renderRoot.querySelector<HTMLElement>(`tr.editing ${CELL_CONTROL}`)?.focus();
+    const control = this.renderRoot.querySelector<HTMLElement>(`tr.editing ${CELL_CONTROL}`);
+    // Контрол рядка правки щойно створений і ще не намалював свого shadow root
+    // (панель дістає updated() раніше за дочірні елементи) — `focus()` хоста з
+    // delegatesFocus тоді нікуди не веде. Та сама пастка, що в ui-tabular-table.
+    const pending = (control as (HTMLElement & { updateComplete?: Promise<unknown> }) | null)?.updateComplete;
+    if (pending) void pending.then(() => control!.focus());
+    else control?.focus();
   }
 
   // ── Клавіатура ─────────────────────────────────────────────────────────────

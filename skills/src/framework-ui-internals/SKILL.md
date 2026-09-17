@@ -144,6 +144,14 @@ html`<svg width="13" …>${body}</svg>`
 Та сама пастка вже описана в `ui-tabular-table.ts` для ``css`…` `` — родина одна:
 всередині будь-якого шаблонного рядка коментар не має власних правил цитування.
 
+**`focus()` щойно створеного контрола — лише після його `updateComplete`.**
+Батько дістає `updated()` раніше, ніж дочірні елементи вперше намалюються, тож
+у контрола з `delegatesFocus` ще порожній shadow root, і `host.focus()` мовчки
+нікуди не веде. Так Enter у кінці табличної частини додавав рядок, а фокус
+лишався в старому — у новий рядок вів лише другий Enter. Лікується
+`control.updateComplete.then(() => control.focus())` (див. `#focusCell` у
+`ui-tabular-table.ts`).
+
 **`static styles` не успадковується при перекритті.** У ланцюжку
 `GlobalStyledLitElement → BaseUI → QueryTableBase → ModelListBase` нащадок, що
 оголошує свої стилі, мусить розкласти батьківські:
