@@ -165,6 +165,18 @@ export class UiPeriod extends GlobalStyledLitElement {
 
   // ── Popover ───────────────────────────────────────────────────────────────
 
+  /**
+   * ← / → на кнопці періоду — те саме, що ‹ ›. Самі стрілки-кнопки поза
+   * Tab-чергою: поле періоду — ОДНА зупинка Tab, а не три.
+   */
+  private _onKeyDown(e: KeyboardEvent) {
+    if (this.disabled || this._open || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      this._shift(e.key === "ArrowLeft" ? -1 : 1);
+    }
+  }
+
   private _toggle() {
     this._open = !this._open;
     // Відкриття завжди показує ТЕ, ЩО ЗАРАЗ вибрано: перегорнутий торік рік і
@@ -422,19 +434,20 @@ export class UiPeriod extends GlobalStyledLitElement {
     const btn = this.size ? `btn-${this.size}` : "";
     const group = html`
       <div class="join">
-        <button type="button" class="btn btn-square join-item ${btn}"
-          title=${t("period.prev")}
+        <button type="button" class="btn btn-square join-item ${btn}" tabindex="-1"
+          title=${`${t("period.prev")} (←)`}
           ?disabled=${this.disabled}
           @click=${() => this._shift(-1)}>‹</button>
         <button type="button"
           class="btn join-item ${btn} flex-1 min-w-36 whitespace-nowrap font-normal"
           ?disabled=${this.disabled}
+          @keydown=${this._onKeyDown}
           @click=${this._toggle}>
           ${periodLabel(this._period, this.format) ||
             html`<span class="text-muted">${t("period.label")}</span>`}
         </button>
-        <button type="button" class="btn btn-square join-item ${btn}"
-          title=${t("period.next")}
+        <button type="button" class="btn btn-square join-item ${btn}" tabindex="-1"
+          title=${`${t("period.next")} (→)`}
           ?disabled=${this.disabled}
           @click=${() => this._shift(1)}>›</button>
       </div>

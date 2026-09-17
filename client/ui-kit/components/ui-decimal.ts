@@ -2,6 +2,7 @@ import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { html, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { Decimal } from "decimal.js";
+import { focusNextAfterEnter, isPlainEnter } from "../focus-order.ts";
 
 /**
  * Поле для редагування десяткових чисел.
@@ -12,7 +13,9 @@ import { Decimal } from "decimal.js";
  *  - під час набору значення НЕ переформатовується (каретка не стрибає),
  *    дозволені проміжні стани `1`, `1.`, `,5`, `-`;
  *  - канонічне форматування (`precision` знаків) — тільки на blur / Enter;
- *  - Esc повертає значення, яке було на вході у поле.
+ *  - Esc повертає значення, яке було на вході у поле;
+ *  - Enter після набору форматує й лишається в полі; Enter на заповненому
+ *    полі без правок — до наступного контрола.
  *
  * Події:
  *  - `value-input`   — на кожне натискання, `detail.value` — сирий текст;
@@ -58,6 +61,12 @@ export class UiDecimal extends GlobalStyledLitElement {
 
   /** Значення на момент входу у поле — для відкату по Esc. */
   private _entryValue = "";
+  /**
+   * Чи набирали в полі щось після входу чи останнього Enter. Розводить два
+   * Enter: перший форматує набране, другий — на незмінному заповненому полі —
+   * веде далі.
+   */
+  private _typed = false;
 
   @query("input") private _input?: HTMLInputElement;
 
@@ -109,6 +118,7 @@ export class UiDecimal extends GlobalStyledLitElement {
 
   private _onFocus() {
     this._entryValue = this.value;
+    this._typed = false;
     this._draft = this._input?.value ?? this.value;
     // Lit ще не оновив DOM; виділяємо після рендеру.
     requestAnimationFrame(() => this._selectAll());
@@ -123,6 +133,7 @@ export class UiDecimal extends GlobalStyledLitElement {
       input.setSelectionRange(pos, pos);
     }
     this._draft = clean;
+    this._typed = true;
     this.dispatchEvent(new CustomEvent("value-input", {
       detail: { value: clean },
       bubbles: true,
@@ -151,8 +162,11 @@ export class UiDecimal extends GlobalStyledLitElement {
 
   private _onKeyDown(e: KeyboardEvent) {
     if (e.key === "Enter") {
+      const moveOn = isPlainEnter(e) && !this._typed && this.value !== "";
       this._commit();
-      requestAnimationFrame(() => this._selectAll());
+      this._typed = false;
+      if (moveOn) focusNextAfterEnter(e, e.target as HTMLElement);
+      else requestAnimationFrame(() => this._selectAll());
       return;
     }
     if (e.key === "Escape") {

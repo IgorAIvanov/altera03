@@ -232,3 +232,20 @@ export function todayIso(): string {
 export function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
+
+/**
+ * Зсув дати `YYYY-MM-DD` на місяці, потім на дні. Результат — `YYYY-MM-DD`.
+ *
+ * Місяць зсувається з ПРИТИСКАННЯМ дня: 31 січня + 1 місяць — 28 (29) лютого,
+ * а не 3 березня, як дав би `Date.UTC` з переповненням. Курсор календаря, що
+ * гортає місяці з 31-го, інакше перескакував би через місяць.
+ */
+export function shiftIsoDate(iso: string, days: number, months = 0): string {
+  const p = toParts(iso) ?? toParts(todayIso())!;
+  const total = p.year * 12 + (p.month - 1) + months;
+  const year = Math.floor(total / 12);
+  const month = total - year * 12 + 1;
+  const day = Math.min(p.day, daysInMonth(year, month));
+  const d = new Date(Date.UTC(year, month - 1, day + days));
+  return `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}

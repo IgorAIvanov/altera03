@@ -3,11 +3,13 @@ import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { getLocale, t } from "../../locale.ts";
 import { placePopover, POPOVER_ANCHORED_STYLE } from "../popover.ts";
+import { focusNextAfterEnter, isPlainEnter } from "../focus-order.ts";
 import {
   dateFormat,
   daysInMonth,
   formatDate,
   parseDate,
+  shiftIsoDate,
   todayIso,
   toParts,
 } from "../../shared/datetime.ts";
@@ -32,7 +34,13 @@ import {
  *  - під час набору текст не переформатовується;
  *  - канонічний вигляд — на blur / Enter; нерозбірливий ввід чиститься;
  *  - Esc повертає значення, що було на вході;
- *  - ↑/↓ змінюють дату на день (з відкритим календарем — рухають курсор).
+ *  - стрілки значення не змінюють — ні в полі, ні в комірці (там вони
+ *    дістаються таблиці: рядок вище/нижче);
+ *  - з відкритим календарем стрілки, PageUp/PageDown, Home/End рухають курсор
+ *    календаря, Enter вибирає дату під курсором;
+ *  - Enter після набору фіксує значення й лишається в полі; Enter на
+ *    заповненому полі без правок — до наступного контрола;
+ *  - F4 відкриває/закриває календар (кнопка календаря поза Tab-чергою).
  *
  * Подія `value-changed` з `detail.value` (ISO або `""`) — на комміт.
  */
@@ -75,9 +83,21 @@ export class UiDate extends GlobalStyledLitElement {
   /** Місяць, відкритий у календарі (ISO першого числа). */
   @state() private _view = "";
   @state() private _open = false;
+  /**
+   * Курсор календаря — дата (`YYYY-MM-DD`), на яку стане Enter. Окремо від
+   * `value`: гортати календар стрілками не означає міняти значення поля, і Esc
+   * мусить закрити його, нічого не записавши. Для `MM.YYYY` — перше число місяця.
+   */
+  @state() private _cursor = "";
 
   /** Значення на момент входу у поле — для відкату по Esc. */
   private _entryValue = "";
+  /**
+   * Чи набирали в полі щось після входу чи останнього Enter. Розводить два
+   * Enter: перший фіксує набране (і людина бачить, як воно розібралося),
+   * другий — на незмінному заповненому полі — веде далі.
+   */
+  private _typed = false;
 
   @query("input") private _input?: HTMLInputElement;
   @query("[popover]") private _popover?: HTMLElement;
@@ -118,11 +138,13 @@ export class UiDate extends GlobalStyledLitElement {
   private _onFocus() {
     this._entryValue = this.value;
     this._draft = this._display;
+    this._typed = false;
     requestAnimationFrame(() => this._selectAll());
   }
 
   private _onInput(e: Event) {
     this._draft = (e.target as HTMLInputElement).value;
+    this._typed = true;
   }
 
   /** Розбирає чернетку й повідомляє про зміну. Нерозбірливий ввід → "". */
@@ -146,24 +168,20 @@ export class UiDate extends GlobalStyledLitElement {
     }
   }
 
-  /** Зсув на `days` днів (або `months` місяців) від поточного значення. */
-  private _shift(days: number, months = 0) {
-    const base = toParts(this.value) ?? toParts(todayIso())!;
-    const d = new Date(Date.UTC(base.year, base.month - 1 + months, base.day + days));
-    const iso = d.toISOString().slice(0, 10);
-    const time = /HH|mm|ss/.test(this.format)
-      ? `T${String(base.hour).padStart(2, "0")}:${String(base.minute).padStart(2, "0")}:${String(base.second).padStart(2, "0")}`
-      : "";
-    this._draft = null;
-    this._set(iso + time);
-    requestAnimationFrame(() => this._selectAll());
-  }
-
   private _onKeyDown(e: KeyboardEvent) {
+    if (e.key === "F4" && this._hasDate && !this.readonly && !this.disabled) {
+      e.preventDefault();
+      this._toggleCalendar();
+      return;
+    }
+    if (this._open && this._onCalendarKey(e)) return;
     if (e.key === "Enter") {
+      const moveOn = isPlainEnter(e) && !this._open && !this._typed && this.value !== "";
       if (this._open) this._close();
       this._commit();
-      requestAnimationFrame(() => this._selectAll());
+      this._typed = false;
+      if (moveOn) focusNextAfterEnter(e, e.target as HTMLElement);
+      else requestAnimationFrame(() => this._selectAll());
       return;
     }
     if (e.key === "Escape") {
@@ -176,25 +194,86 @@ export class UiDate extends GlobalStyledLitElement {
       requestAnimationFrame(() => this._selectAll());
       return;
     }
-    if (!this._hasDate || this.readonly || this.disabled) return;
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      e.preventDefault();
-      const step = e.key === "ArrowUp" ? 1 : -1;
-      // спершу фіксуємо те, що вже набрано, потім рухаємо
-      this._commit();
-      this._monthOnly ? this._shift(0, step) : this._shift(step);
-    }
   }
 
   // ── Календар ──────────────────────────────────────────────────────────────
+
+  /**
+   * Клавіші відкритого календаря. `true` — клавішу забрано.
+   *
+   * Фокус при цьому лишається в полі: календар — popover без власного фокуса,
+   * тож слухати клавіші йому нема де, і вони приходять сюди. Стрілки
+   * рухають курсор, а не значення, і далі (до таблиці) не йдуть.
+   *
+   * Enter вибирає курсор, КРІМ випадку, коли в полі щойно набирали: тоді
+   * набране сильніше за курсор, і Enter фіксує його, як без календаря.
+   */
+  private _onCalendarKey(e: KeyboardEvent): boolean {
+    if (e.altKey || e.ctrlKey || e.metaKey) return false;
+    const month = this._monthOnly;
+    // Крок по вертикалі — рядок сітки: 7 днів або 3 місяці.
+    const moves: Record<string, [days: number, months: number]> = month
+      ? { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [0, -3], ArrowDown: [0, 3], PageUp: [0, -12], PageDown: [0, 12] }
+      : { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [-7, 0], ArrowDown: [7, 0], PageUp: [0, -1], PageDown: [0, 1] };
+
+    const cursor = this._cursor || this._viewIso();
+    const p = toParts(cursor)!;
+    let next: string | null = null;
+    if (e.key in moves) {
+      const [days, months] = moves[e.key];
+      // Shift+PageUp/PageDown — на рік (у місячному календарі PageUp уже рік).
+      next = shiftIsoDate(cursor, days, e.shiftKey && !month && e.key.startsWith("Page") ? months * 12 : months);
+    } else if (e.key === "Home") {
+      next = month ? `${String(p.year).padStart(4, "0")}-01-01` : shiftIsoDate(cursor, 1 - p.day);
+    } else if (e.key === "End") {
+      next = month
+        ? `${String(p.year).padStart(4, "0")}-12-01`
+        : shiftIsoDate(cursor, daysInMonth(p.year, p.month) - p.day);
+    }
+
+    // stopPropagation, а не лише preventDefault: таблична частина стрілки й
+    // Enter читає сама (рядок вище/нижче, наступна комірка) і позначку не
+    // перевіряє. Поки календар відкритий, ці клавіші — його, як список пікера.
+    if (next) {
+      e.preventDefault();
+      e.stopPropagation();
+      this._setCursor(next);
+      return true;
+    }
+
+    if (isPlainEnter(e) && !this._typed) {
+      e.preventDefault();
+      e.stopPropagation();
+      const c = toParts(cursor)!;
+      this._pick(c.year, c.month, month ? 1 : c.day);
+      return true;
+    }
+    return false;
+  }
+
+  /** Курсор і сторінка календаря разом: курсор не може стояти на сховану дату. */
+  private _setCursor(iso: string) {
+    const c = toParts(iso)!;
+    this._cursor = this._monthOnly ? `${String(c.year).padStart(4, "0")}-${String(c.month).padStart(2, "0")}-01` : iso;
+    this._view = `${String(c.year).padStart(4, "0")}-${String(c.month).padStart(2, "0")}-01`;
+  }
+
+  /** Перше число відкритої сторінки — звідки починати, якщо курсора ще нема. */
+  private _viewIso(): string {
+    const v = this._viewParts();
+    return `${String(v.year).padStart(4, "0")}-${String(v.month).padStart(2, "0")}-01`;
+  }
 
   private _toggleCalendar() {
     this._open ? this._close() : this._openCalendar();
   }
 
   private _openCalendar() {
-    this._view = (this.value && formatDate(this.value, "YYYY-MM-DD")) || todayIso();
+    this._setCursor((this.value && formatDate(this.value, "YYYY-MM-DD")) || todayIso());
     this._open = true;
+    // Клавіші календаря приходять через поле — фокус мусить бути в ньому, і
+    // тоді, коли календар відкрили мишею з незфокусованого поля.
+    if (this.shadowRoot?.activeElement !== this._input) this._input?.focus();
   }
 
   private _close() {
@@ -233,6 +312,9 @@ export class UiDate extends GlobalStyledLitElement {
     const p = this._viewParts();
     const d = new Date(Date.UTC(p.year, p.month - 1 + months, 1));
     this._view = d.toISOString().slice(0, 10);
+    // Курсор гортається разом зі сторінкою — інакше перша ж стрілка
+    // повернула б календар туди, звідки його щойно перегорнули мишею.
+    if (this._cursor) this._cursor = shiftIsoDate(this._cursor, 0, months);
   }
 
   /** Вибір дня/місяця в календарі: зберігає час поточного значення. */
@@ -274,6 +356,10 @@ export class UiDate extends GlobalStyledLitElement {
     const view = this._viewParts();
     const sel = toParts(this.value);
     const today = toParts(todayIso())!;
+    const cur = toParts(this._cursor);
+    // Курсор — рамкою, а не заливкою: заливка вже означає «вибране значення», і
+    // курсор на іншій даті не має з ним сперечатися.
+    const cursorStyle = "outline:2px solid var(--color-primary); outline-offset:-2px;";
 
     const header = html`
       <div class="flex items-center justify-between gap-1 mb-2">
@@ -295,8 +381,9 @@ export class UiDate extends GlobalStyledLitElement {
         <div class="grid grid-cols-3 gap-1">
           ${months.map((m) => {
             const active = sel && sel.year === view.year && sel.month === m;
+            const isCur = cur && cur.year === view.year && cur.month === m;
             return html`
-              <button type="button"
+              <button type="button" tabindex="-1" style=${isCur ? cursorStyle : ""}
                 class="btn btn-xs ${active ? "btn-primary" : "btn-ghost"}"
                 @click=${() => this._pick(view.year, m, 1)}>
                 ${new Intl.DateTimeFormat(getLocale(), { month: "short" })
@@ -318,8 +405,9 @@ export class UiDate extends GlobalStyledLitElement {
           if (d === null) return html`<span></span>`;
           const isSel = sel && sel.year === view.year && sel.month === view.month && sel.day === d;
           const isToday = today.year === view.year && today.month === view.month && today.day === d;
+          const isCur = cur && cur.year === view.year && cur.month === view.month && cur.day === d;
           return html`
-            <button type="button"
+            <button type="button" tabindex="-1" style=${isCur ? cursorStyle : ""}
               class="btn btn-xs btn-square ${isSel ? "btn-primary" : isToday ? "btn-outline" : "btn-ghost"}"
               @click=${() => this._pick(view.year, view.month, d)}>${d}</button>
           `;
@@ -362,6 +450,7 @@ export class UiDate extends GlobalStyledLitElement {
         />
         ${this._hasDate && !this.readonly ? html`
           <button type="button" class="btn btn-square join-item ${this.size ? `btn-${this.size}` : "btn-sm"}"
+            tabindex="-1" title="F4"
             ?disabled=${this.disabled}
             @mousedown=${(e: Event) => e.preventDefault()}
             @click=${this._toggleCalendar}>

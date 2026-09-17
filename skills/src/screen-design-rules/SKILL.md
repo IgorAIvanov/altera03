@@ -193,5 +193,7 @@ banners and named pagination buttons. What is left for you:
 3. No status conveyed by colour alone.
 4. Field widths hint at content length.
 5. Icon-only buttons have names; every input has a label.
-6. Tab reaches every action; nothing is mouse-only.
+6. Tab reaches every action; nothing is mouse-only. (Inside a ui-kit field the helper
+   buttons — clear, calendar, lookup — are deliberately out of the Tab order: each has a
+   key instead, `F4` / `Delete`, so one field is one Tab stop. Do not put them back.)
 7. The empty state explains itself.

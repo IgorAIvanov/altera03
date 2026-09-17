@@ -4,6 +4,7 @@ import { customElement, property, state, query } from "lit/decorators.js";
 import { bus } from "../../bus/bus.ts";
 import { apiFetch } from "../../data/api.ts";
 import { placePopover, POPOVER_ANCHORED_STYLE } from "../popover.ts";
+import { focusNextAfterEnter, isPlainEnter } from "../focus-order.ts";
 import { icons } from "../icons.ts";
 
 /**
@@ -42,7 +43,30 @@ export class UiPicker extends GlobalStyledLitElement {
    * наприклад код рахунку: «361» без найменування нічого не каже.
    */
   @property({ type: String, attribute: "hint-field" }) hintField = "";
+  /** Висота випадного списку в РЯДКАХ: більше знайдених — прокрутка. */
   @property({ type: Number, attribute: "list-size" }) listSize = 10;
+  /**
+   * Ширина випадного списку, будь-яке CSS-значення (`24rem`, `480px`).
+   *
+   * Це НИЖНЯ межа, а не точна ширина: список не вужчий за поле, але й не
+   * вужчий за задане. Потрібна насамперед комірці табличної частини — колонка
+   * «Товар» вузька, а назва номенклатури в ній переносилася на два-три рядки.
+   * Ширше за екран список не стає, біля правого краю зсувається вліво.
+   */
+  @property({ type: String, attribute: "list-width" }) listWidth = "";
+  /**
+   * Найбільша висота випадного списку, будь-яке CSS-значення (`20rem`).
+   * Задана — сильніша за `list-size`. Список, у якому рядків менше, нижчий за
+   * неї: це межа, а не розмір. Більше, ніж є місця на екрані, все одно не буде.
+   */
+  @property({ type: String, attribute: "list-height" }) listHeight = "";
+  /**
+   * До якого краю контрола притягується список, ширший за нього (`list-width`):
+   * `left` — росте праворуч (умовчання), `right` — ліворуч. Праве — полю біля
+   * правого краю форми: там список, що росте праворуч, упирається в екран.
+   * Не влазить і так — зсувається до краю екрана, як і без параметра.
+   */
+  @property({ type: String, attribute: "list-align" }) listAlign: "left" | "right" = "left";
   @property({ type: Boolean, attribute: "show-clear" }) showClear = false;
   @property({ type: Object, attribute: "picker-params" }) pickerParams: Record<string, unknown> = {};
   @property({ type: Object, attribute: "fetch-params" }) fetchParams: Record<string, unknown> = {};
@@ -91,6 +115,13 @@ export class UiPicker extends GlobalStyledLitElement {
    */
   #typed: string | null = null;
 
+  /**
+   * Бік, на який відкрився список, — до його закриття. Уточнений пошук дає
+   * менше рядків, і без цього список, що відкрився вгору, стрибнув би під
+   * поле, щойно рядки там умістяться.
+   */
+  #direction: "below" | "above" | undefined;
+
   /** Текст у полі: набране має перевагу, інакше підпис із значення. */
   get #text(): string {
     return this.#typed ?? String(this.value?.[this.displayField] ?? "");
@@ -101,11 +132,18 @@ export class UiPicker extends GlobalStyledLitElement {
   }
 
   // синхронизируем состояние popover с _items
-  protected override updated() {
+  protected override updated(changed: PropertyValues) {
     if (!this._popover) return;
     const open = this._popover.matches(":popover-open");
     if (this._items.length > 0 && !open) {
       this._popover.showPopover();
+      this.#direction = undefined;
+      this._positionPopover();
+    } else if (this._items.length > 0 && changed.has("_items")) {
+      // Відкритий список із новим набором рядків — розміщуємо заново: висота
+      // рахується з кількості рядків, і розміщений раз список лишався з
+      // обмеженням від попереднього пошуку (менше — порожнеча, більше — зайва
+      // прокрутка).
       this._positionPopover();
     }
     if (this._items.length === 0 && open) this._popover.hidePopover();
@@ -123,15 +161,40 @@ export class UiPicker extends GlobalStyledLitElement {
    */
   private _positionPopover() {
     if (!this._popover || !this._input) return;
-    placePopover(this._popover, this._input, {
+    // Якір — уся група (поле з кнопками), а не сам input: список завширшки з
+    // контрол, і в комірці таблиці це вся ширина колонки.
+    const anchor = this._input.parentElement ?? this._input;
+    const rows = this._items.length * 28 + 8;
+    const limit = this.listHeight
+      ? this.#lengthPx(this._popover, this.listHeight)
+      : this.listSize * 28 + 8;
+    this.#direction = placePopover(this._popover, anchor, {
       matchAnchorWidth: true,
-      desiredHeight: Math.min(this._items.length, this.listSize) * 28 + 8,
-    });
+      desiredHeight: Math.min(rows, limit),
+      direction: this.#direction,
+      align: this.listAlign,
+    }).direction;
+  }
+
+  /**
+   * CSS-довжина в пікселях — виміром на самому списку, а не розбором рядка:
+   * так працює будь-яка одиниця (`rem`, `vh`, `calc()`), і `rem` рахується від
+   * справжнього кореневого шрифту. Список уже показаний, тож розміри в нього є.
+   */
+  #lengthPx(el: HTMLElement, length: string): number {
+    const { height, maxHeight } = el.style;
+    el.style.maxHeight = "none";
+    el.style.height = length;
+    const px = el.getBoundingClientRect().height;
+    el.style.height = height;
+    el.style.maxHeight = maxHeight;
+    return px;
   }
 
   // браузер закрыл popover (Esc или клік ззовні) — очищаємо список
   private _onPopoverToggle(e: Event) {
     if ((e as ToggleEvent).newState === "closed") {
+      this.#direction = undefined;
       this._items = [];
       this._activeIndex = -1;
     }
@@ -180,7 +243,19 @@ export class UiPicker extends GlobalStyledLitElement {
   }
 
   private _onKeyDown(e: KeyboardEvent) {
-    if (this._items.length === 0) return;
+    // F4 — діалог підбору (як в 1С). Кнопка-лупа з Tab-черги виведена, тож
+    // без клавіші діалог із клавіатури не відкривався б узагалі.
+    if (e.key === "F4" && !this.disabled && this.url) {
+      e.preventDefault();
+      e.stopPropagation();
+      void this._onBrowse();
+      return;
+    }
+
+    if (this._items.length === 0) {
+      if (isPlainEnter(e)) this.#enterOnFilled(e);
+      return;
+    }
 
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -218,9 +293,25 @@ export class UiPicker extends GlobalStyledLitElement {
     });
   }
 
+  /**
+   * Enter у заповненому полі із закритим списком — до наступного контрола.
+   *
+   * «Заповненому» — тобто значення вибране і в полі не лишився недобитий
+   * фрагмент пошуку: Enter після фрагмента, що нічого не знайшов, фокус не
+   * забирає — інакше помилка набору пішла б далі непоміченою.
+   */
+  #enterOnFilled(e: KeyboardEvent) {
+    if (!this.value || this.#typed !== null || !this._input) return;
+    focusNextAfterEnter(e, this._input);
+  }
+
   private _onSelect(item: Record<string, unknown>) {
     this._items = [];
     this._popover?.hidePopover();
+    // Фокус міг стояти на пункті списку (↑/↓), а список зник. Повертаємо в
+    // поле явно: доти, куди саме він дівався, вирішував браузер, і Tab після
+    // вибору йшов не до наступного контрола.
+    this._input?.focus();
     // Віддаємо рівно ключ і підпис, а не весь рядок підбору: значення пікера
     // їде у форму й далі в `save`, і зайві колонки там нікому не потрібні.
     this.#commit({
@@ -253,6 +344,10 @@ export class UiPicker extends GlobalStyledLitElement {
       `${this.url}/${this.picker}`,
       Object.keys(params).length ? params : undefined,
     );
+    // Фокус — у поле, і після вибору, і після відмови: відкривали звідси, і
+    // далі людина йде `Enter`/`Tab` від цього поля. Хост діалогу теж повертає
+    // фокус, але туди, де той стояв, — а при кліку мишею це лупа, а не поле.
+    this._input?.focus();
     if (result) {
       this.#commit({ [this.idField]: result.id, [this.displayField]: result.label });
     }
@@ -285,6 +380,10 @@ export class UiPicker extends GlobalStyledLitElement {
     // рамки, заокруглення й фон знімає він, сітку малює сама таблиця.
     const flat = this.cell ? "cell-control" : "";
 
+    // Кнопки всередині контрола — поза Tab-чергою: Tab із поля веде до
+    // НАСТУПНОГО контрола форми, а не на лупу й хрестик цього ж. З клавіатури
+    // вони доступні інакше — F4 відкриває діалог, стерти текст означає
+    // очистити значення.
     const inputGroup = html`
       <div class="join flex-1 ${flat}">
         <input
@@ -297,14 +396,14 @@ export class UiPicker extends GlobalStyledLitElement {
           @keydown=${this._onKeyDown}
         />
         ${this.showClear ? html`
-          <button class="btn btn-square btn-sm join-item"
+          <button class="btn btn-square btn-sm join-item" tabindex="-1"
             title="Очистити" ?disabled=${this.disabled || !this.#text} @click=${this._onClear}>
             ${icons.clear}
           </button>
         ` : ""}
         ${hasBrowse ? html`
-          <button class="btn btn-square btn-sm join-item"
-            title="Підібрати" ?disabled=${this.disabled || !this.url}
+          <button class="btn btn-square btn-sm join-item" tabindex="-1"
+            title="Підібрати (F4)" ?disabled=${this.disabled || !this.url}
             @click=${this._onBrowse}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -320,7 +419,7 @@ export class UiPicker extends GlobalStyledLitElement {
         @toggle=${this._onPopoverToggle}
         @keydown=${this._onKeyDown}
         class="menu rounded-box shadow-md overflow-y-auto p-1"
-        style=${`${POPOVER_ANCHORED_STYLE} background:#ffffff; border:1px solid var(--color-base-300,#d1d5db); flex-direction:column; flex-wrap:nowrap;${this._items.length === 0 ? "display:none;" : ""}`}
+        style=${`${POPOVER_ANCHORED_STYLE}${this.listWidth ? ` min-width:${this.listWidth}; max-width:calc(100vw - 8px);` : ""} background:#ffffff; border:1px solid var(--color-base-300,#d1d5db); flex-direction:column; flex-wrap:nowrap;${this._items.length === 0 ? "display:none;" : ""}`}
       >
         ${this._items.map((item, index) => html`
           <li>

@@ -2,6 +2,7 @@ import { GlobalStyledLitElement } from "../base/gsle.ts";
 import { html, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { icons } from "../icons.ts";
+import { focusNextAfterEnter, isPlainEnter } from "../focus-order.ts";
 
 export interface UiSelectOption {
   value: string;
@@ -14,6 +15,10 @@ export interface UiSelectOption {
  *
  * `value` зберігає машинний код опції, а `label` лишається лише
  * представленням. Це відповідає TypeBox-переліченням у схемах моделей.
+ *
+ * Клавіатура: стрілки — нативний вибір; Enter на вибраному значенні — до
+ * наступного контрола; Delete — очистити (лише з `show-clear`, кнопка
+ * очищення поза Tab-чергою).
  */
 @customElement("ui-select")
 export class UiSelect extends GlobalStyledLitElement {
@@ -52,6 +57,18 @@ export class UiSelect extends GlobalStyledLitElement {
 
   private _onChange(e: Event) {
     this._set((e.target as HTMLSelectElement).value);
+  }
+
+  private _onKeyDown(e: KeyboardEvent) {
+    if (isPlainEnter(e) && this.value !== "") {
+      focusNextAfterEnter(e, e.target as HTMLElement);
+      return;
+    }
+    // Кнопка очищення поза Tab-чергою — її клавіша тут.
+    if (e.key === "Delete" && !e.ctrlKey && this.showClear && !this.disabled && !this.readonly && this.value) {
+      e.preventDefault();
+      this._set("");
+    }
   }
 
   /**
@@ -97,6 +114,7 @@ export class UiSelect extends GlobalStyledLitElement {
         }"
         ?disabled=${this.disabled || this.readonly}
         @change=${this._onChange}
+        @keydown=${this._onKeyDown}
       >
         ${this.placeholder ? html`<option value="">${this.placeholder}</option>` : ""}
         ${this.options.map((option) => html`
@@ -111,7 +129,7 @@ export class UiSelect extends GlobalStyledLitElement {
           ${select}
           <button type="button"
             class="btn btn-square join-item ${this.size ? `btn-${this.size}` : "btn-sm"}"
-            title="Очистити"
+            tabindex="-1" title="Очистити (Delete)"
             ?disabled=${this.disabled || this.readonly || !this.value}
             @click=${() => this._set("")}>
             ${icons.clear}
