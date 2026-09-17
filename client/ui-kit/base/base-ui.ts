@@ -760,18 +760,32 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * «Enter — далі» рвався на першому ж найменуванні. Тому тут, на обгортці
    * полів, де нативні контроли форми й живуть.
    *
-   * Нативне поле від компонента відрізняє ретаргетинг: подія з shadow root
-   * компонента приходить сюди з `target` = хост, а з нативного поля форми —
-   * з самим полем, тобто `target` збігається з першим елементом шляху. Таблична
-   * частина — теж компонент, тож її комірки сюди не потрапляють.
+   * Поле ui-kit від нативного відрізняє `delegatesFocus` його shadow root: так
+   * компонент оголошує себе ОДНИМ контролом, і `Enter` у ньому — його справа
+   * (`ui-picker`, `ui-date`, `ui-decimal`, `ui-select`). Шлях від поля до
+   * обгортки проходиться до неї: зустрівся такий корінь — подію пропускаємо.
+   *
+   * Не ретаргетингом (`target !== composedPath()[0]`), як було в 0.16.5: той
+   * відсіював БУДЬ-ЯКЕ поле за межею shadow root, а не лише внутрішнє поле
+   * контрола. Вкладки `<ui-form-tabs>` малюють свій вміст у власному тіньовому
+   * корені, тож нативні поля на вкладці картки `Enter` не отримували — а
+   * вкладками ядро саме радить розкладати сторінки форми.
+   *
+   * Таблична частина й підпорядкований регістр `Enter` забирають самі й
+   * позначають `preventDefault()` — сюди вони доходять уже позначеними.
    *
    * `<textarea>` не чіпаємо: `Enter` у ній — новий рядок. Кнопки — теж: там
    * `Enter` натискає кнопку.
    */
   #onFieldsKeyDown = (e: KeyboardEvent) => {
     if (!isPlainEnter(e) || e.defaultPrevented) return;
-    const target = e.composedPath()[0];
-    if (target !== e.target || !isPlainField(target)) return;
+    const path = e.composedPath();
+    const target = path[0];
+    if (!isPlainField(target)) return;
+    for (const node of path) {
+      if (node === e.currentTarget) break;
+      if (node instanceof ShadowRoot && node.delegatesFocus) return;
+    }
     focusNextAfterEnter(e, target);
   };
 
