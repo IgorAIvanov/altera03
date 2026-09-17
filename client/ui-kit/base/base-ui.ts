@@ -8,6 +8,7 @@ import { t } from "@client/locale.ts";
 import { bus } from "@client/bus/bus.ts";
 import { can } from "@client/auth/session.ts";
 import { icons } from "../icons.ts";
+import { focusNextAfterEnter, isPlainEnter } from "../focus-order.ts";
 import { GlobalStyledLitElement } from "./gsle.ts";
 import type { PickerValue } from "../components/ui-picker.ts";
 
@@ -746,8 +747,42 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * б працювати — і переглядач не зміг би вийти з форми.
    */
   protected renderFields(content: TemplateResult): TemplateResult {
-    return html`<fieldset class="contents" ?disabled=${this.readonlyMode}>${content}</fieldset>`;
+    return html`<fieldset class="contents" ?disabled=${this.readonlyMode}
+      @keydown=${this.#onFieldsKeyDown} @keypress=${this.#onFieldsKeyPress}>${content}</fieldset>`;
   }
+
+  /**
+   * `Enter` у НАТИВНОМУ полі форми (`<input>`, `<select>`) — до наступного
+   * контрола, так само як у полях ui-kit.
+   *
+   * Поля ui-kit роблять це самі, а нативне поле не знає нічого: `Enter` у
+   * звичайному текстовому полі просто нічого не робив, і ланцюжок
+   * «Enter — далі» рвався на першому ж найменуванні. Тому тут, на обгортці
+   * полів, де нативні контроли форми й живуть.
+   *
+   * Нативне поле від компонента відрізняє ретаргетинг: подія з shadow root
+   * компонента приходить сюди з `target` = хост, а з нативного поля форми —
+   * з самим полем, тобто `target` збігається з першим елементом шляху. Таблична
+   * частина — теж компонент, тож її комірки сюди не потрапляють.
+   *
+   * `<textarea>` не чіпаємо: `Enter` у ній — новий рядок. Кнопки — теж: там
+   * `Enter` натискає кнопку.
+   */
+  #onFieldsKeyDown = (e: KeyboardEvent) => {
+    if (!isPlainEnter(e) || e.defaultPrevented) return;
+    const target = e.composedPath()[0];
+    if (target !== e.target || !isPlainField(target)) return;
+    focusNextAfterEnter(e, target);
+  };
+
+  /**
+   * Chrome на Windows розкриває нативний `<select>` по `Enter` у default-обробнику
+   * `keypress` — уже після того, як фокус пішов далі. Та сама причина, що в
+   * `ui-select`.
+   */
+  #onFieldsKeyPress = (e: KeyboardEvent) => {
+    if (e.key === "Enter" && e.composedPath()[0] instanceof HTMLSelectElement) e.preventDefault();
+  };
 
   /**
    * Чи має користувач право на дію над ЦІЄЮ моделлю — для кнопок форми:
@@ -1065,4 +1100,12 @@ export abstract class BaseUI<T extends Record<string, unknown>>
       </div>
     `;
   }
+}
+
+const NOT_FIELD_INPUT = new Set(["button", "submit", "reset", "image", "file", "hidden"]);
+
+/** Нативне поле вводу, з якого `Enter` веде далі: не кнопка й не `<textarea>`. */
+function isPlainField(el: EventTarget | undefined): el is HTMLElement {
+  if (el instanceof HTMLSelectElement) return true;
+  return el instanceof HTMLInputElement && !NOT_FIELD_INPUT.has(el.type);
 }
