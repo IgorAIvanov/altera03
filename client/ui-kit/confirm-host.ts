@@ -8,9 +8,10 @@
  * Вигляд — контракт `.app-dialog-*` у темі + іконка за типом питання
  * (знак питання / оклику / хрест / «i»), як у діалогах A2v10.
  *
- * Клавіатура: Enter — підтвердити (у choose — кнопка з primary), Esc або
- * клік повз вікно — відмова. Фокус одразу на головній кнопці, а після
- * закриття — назад туди, де стояв до відкриття.
+ * Клавіатура, поки вікно відкрите, належить ЙОМУ цілком (див. #onKeyDown):
+ * Enter — кнопка у фокусі (спершу це головна), ←/→ і Tab/Shift+Tab — між
+ * кнопками по колу, Esc або клік повз вікно — відмова. Після закриття фокус
+ * повертається туди, де стояв до відкриття.
  */
 import { css, type CSSResultGroup, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
@@ -103,13 +104,34 @@ export class ConfirmHost extends GlobalStyledLitElement {
     super.disconnectedCallback();
     this.#unsub.forEach((fn) => fn());
     this.#unsub = [];
+    document.removeEventListener("keydown", this.#onKeyDown, true);
+    this.#shown = null;
     if (this.current) this.#finish(null);
   }
 
+  /** Вікно, для якого вже поставлено початковий фокус і слухача клавіш. */
+  #shown: PendingDialog | null = null;
+
   protected override updated() {
+    if (this.current === this.#shown) return;
+    this.#shown = this.current;
     if (this.current) {
-      this.renderRoot.querySelector<HTMLButtonElement>("button.btn-primary")?.focus();
+      document.addEventListener("keydown", this.#onKeyDown, true);
+      // Фокус — ОДИН раз при відкритті. Доти він ставився на кожне оновлення,
+      // тож вибрана стрілкою кнопка поверталася на головну.
+      this.#actions()[this.#primaryIndex()]?.focus();
+    } else {
+      document.removeEventListener("keydown", this.#onKeyDown, true);
     }
+  }
+
+  #actions(): HTMLButtonElement[] {
+    return [...this.renderRoot.querySelectorAll<HTMLButtonElement>(".app-dialog-actions button")];
+  }
+
+  #primaryIndex(): number {
+    const i = this.current?.buttons.findIndex((b) => b.primary) ?? -1;
+    return i < 0 ? 0 : i;
   }
 
   /** null — відмова (Esc/хрестик/повз вікно). */
@@ -135,22 +157,55 @@ export class ConfirmHost extends GlobalStyledLitElement {
     }
   }
 
+  /**
+   * Клавіші модального вікна — на ФАЗІ ПЕРЕХОПЛЕННЯ документа, а не на оверлеї.
+   *
+   * Слухач на оверлеї чув клавішу лише тоді, коли фокус усередині вікна. А
+   * фокус звідти відбирається легко й непомітно — відкладеним фокусуванням
+   * поля чи комірки, яке спрацьовує вже після відкриття, — і тоді Enter/Esc
+   * летіли у форму ПІД вікном: вікно висить, а клавіатура діє за ним. Модальне
+   * вікно забирає клавіатуру цілком, тож і слухає її раніше за всіх, і далі
+   * не пропускає нічого.
+   *
+   * Enter натискає кнопку У ФОКУСІ, а не завжди головну: доти вибрана Tab-ом
+   * «Не зберігати» по Enter усе одно зберігала.
+   */
   #onKeyDown = (e: KeyboardEvent) => {
+    const dialog = this.current;
+    if (!dialog) return;
+    // Модифікатори самі по собі нічого не роблять — не заважаємо сполученням.
+    if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const actions = this.#actions();
+    const focused = actions.indexOf(this.shadowRoot?.activeElement as HTMLButtonElement);
+
     if (e.key === "Escape") {
-      e.stopPropagation();
       this.#finish(null);
+      return;
     }
-    if (e.key === "Enter") {
-      e.stopPropagation();
-      const primary = this.current?.buttons.find((b) => b.primary);
-      if (primary) this.#finish(primary.key);
+    if (e.key === "Enter" || e.key === " ") {
+      const index = focused >= 0 ? focused : this.#primaryIndex();
+      const button = dialog.buttons[index];
+      if (button) this.#finish(button.key);
+      return;
+    }
+    const step = e.key === "ArrowRight" || (e.key === "Tab" && !e.shiftKey)
+      ? 1
+      : e.key === "ArrowLeft" || (e.key === "Tab" && e.shiftKey)
+      ? -1
+      : 0;
+    if (step && actions.length) {
+      const from = focused >= 0 ? focused : this.#primaryIndex();
+      actions[(from + step + actions.length) % actions.length].focus();
     }
   };
 
   override render(): TemplateResult | typeof nothing {
     if (!this.current) return nothing;
     return html`
-      <div class="app-dialog-overlay" @keydown=${this.#onKeyDown}
+      <div class="app-dialog-overlay"
         @click=${(e: Event) => { if (e.target === e.currentTarget) this.#finish(null); }}>
         <div class="app-dialog">
           <div class="app-dialog-title">
