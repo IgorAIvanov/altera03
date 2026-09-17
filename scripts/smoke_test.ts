@@ -893,6 +893,81 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Нестача при списанні понад залишок — рух КІЛЬКОСТІ, вартість якого ще не
+    // визначена: сума нуль, кількість є. Доти ядро відкидало будь-який нуль, і
+    // перенести з BAS дозвіл від'ємних залишків не було чим. Межа вузька: нуль
+    // виправдовує лише кількість, яку справді записано на кількісний бік.
+    await t.step("проводка: нульова сума — лише з кількістю на кількісному рахунку", async () => {
+      const before = await numeratorSnapshot("manual_entry");
+      const beforeOrg = await numeratorSnapshot("organization");
+
+      const organization = await client.model("organization", "save", {
+        item: { name: "Smoke кількість організація", prefix: "SMQ" },
+      });
+      const org = organization.body.data.item as { id: string } | null;
+      assertExists(org);
+
+      const docs: string[] = [];
+      const entry = async (debit: string, credit: string, quantity: number) => {
+        const res = await client.model("manual_entry", "save", {
+          item: {
+            organizationId: org.id,
+            docDate: "2026-09-17T00:00:00",
+            entries: [{
+              lineNo: 1,
+              debitAccount: debit,
+              debitAnalytics: {},
+              creditAccount: credit,
+              creditAnalytics: {},
+              amount: 0,
+              quantity,
+            }],
+          },
+        });
+        const doc = res.body.data.item as { id: string } | null;
+        assertExists(doc);
+        docs.push(doc.id);
+        return doc;
+      };
+      const refusedZero = async (id: string) => {
+        const res = await client.model("manual_entry", "post", { id });
+        assertEquals(res.body.ok, false);
+        assertEquals(res.body.messages.some((m) => JSON.stringify(m).includes("entryZeroAmount")), true);
+      };
+
+      try {
+        // Рахунки свої: спиратися на ознаки чужого плану рахунків проба не має права.
+        await withDb((sql) => sql`
+          insert into app.chart_of_account (code, name, account_type, is_group, is_quantitative)
+          values ('2SMOKE', 'Smoke кількісний', 'active', false, true),
+                 ('9SMOKE', 'Smoke витрати', 'active', false, false)
+          on conflict (code) do nothing`);
+
+        const shortage = await entry("9SMOKE", "2SMOKE", 2);
+        assertEquals((await client.model("manual_entry", "post", { id: shortage.id })).body.ok, true);
+        const posted = await withDb((sql) =>
+          sql<{ amount: string; quantity_debit: string | null; quantity_credit: string | null }[]>`
+            select amount, quantity_debit, quantity_credit from app.journal_entry
+            where document_id = ${shortage.id}`
+        );
+        assertEquals(posted.length, 1);
+        assertEquals(Number(posted[0].amount), 0);
+        assertEquals(posted[0].quantity_debit, null);
+        assertEquals(Number(posted[0].quantity_credit), 2);
+
+        // Нуль і нульова кількість — рядок, що не рухає нічого.
+        await refusedZero((await entry("9SMOKE", "2SMOKE", 0)).id);
+        // Кількість на рахунках, що її не ведуть, ядро обнуляє — і нуль вона не виправдовує.
+        await refusedZero((await entry("9SMOKE", "9SMOKE", 5)).id);
+      } finally {
+        for (const id of docs) await purge("app.document", id);
+        await withDb((sql) => sql`delete from app.chart_of_account where code in ('2SMOKE', '9SMOKE')`);
+        await purge("app.organization", org.id);
+        await numeratorRestore("manual_entry", before);
+        await numeratorRestore("organization", beforeOrg);
+      }
+    });
+
     // Розріз за субконто мусить давати ту саму суму, що й рахунок цілком.
     //
     // Проба тут, а не в юніт-пробах, бо перевіряється домовленість БАЗИ, і

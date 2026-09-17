@@ -500,6 +500,25 @@ Two ways to pass quantity, and the difference is intent:
   head of a compound entry lives on another row), and `{}` is a revaluation —
   amount with no quantity at all, which used to be inexpressible.
 
+The mirror case — **quantity with no amount** — is lawful too: `p_amount = 0` is
+accepted when at least one quantitative side receives a non-zero quantity. This is
+a shortage when stock is written off beyond the balance (BAS with negative-stock
+control switched off): the balance goes negative by quantity, and the cost is put
+right later by a cost correction. The quantity must actually land on a
+quantitative account — quantity on an account that does not keep it is zeroed by
+the core and justifies nothing. Zero with no quantity is still refused
+(`core.entryZeroAmount`), and so is `{}` with zero: such a line moves nothing.
+
+```sql
+-- shortage: 2 units beyond the balance, cost not known yet
+perform app.doc_entry_add(doc_id, 3, '901', '281', 0, 2.000, 'нестача',
+  dims_901, dims_281);
+```
+
+Who then corrects the cost is the application's methodology, not the core's:
+until a correction runs, the average price after a negative balance is off by the
+value of the unpriced quantity.
+
 Do not fabricate a pair through an auxiliary account to make quantities "balance"
 — they are not supposed to balance, and the register would gain a correspondence
 the books do not have. The sums per account come out right by themselves: debit
