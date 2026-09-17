@@ -173,6 +173,20 @@ export class UiDecimal extends GlobalStyledLitElement {
       // Позначаємо клавішу обробленою: Esc в оболонці закриває вкладку, і без
       // цього відкат чернетки закривав би заразом усю форму.
       e.preventDefault();
+      if (this._typed) {
+        // Відкат, який щось відкотив, далі не йде: у табличній частині той
+        // самий Esc інакше ще й прибрав би новий рядок.
+        e.stopPropagation();
+        // `value-input` зі значенням входу: набране вже пішло назовні
+        // посимвольно, і без цього поле показувало б відкочене, а рядок
+        // таблиці чи форма тримали б набране.
+        this.dispatchEvent(new CustomEvent("value-input", {
+          detail: { value: this._entryValue },
+          bubbles: true,
+          composed: true,
+        }));
+      }
+      this._typed = false;
       this._draft = this._entryValue;
       requestAnimationFrame(() => this._selectAll());
     }

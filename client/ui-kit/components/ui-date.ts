@@ -188,7 +188,11 @@ export class UiDate extends GlobalStyledLitElement {
       // Позначаємо клавішу обробленою: Esc в оболонці закриває вкладку, і без
       // цього відкат чернетки закривав би заразом усю форму.
       e.preventDefault();
-      if (this._open) { this._close(); return; }
+      // Esc, який щось зробив (закрив календар, відкотив набране), далі не йде:
+      // у табличній частині той самий Esc інакше ще й прибрав би новий рядок.
+      if (this._open) { e.stopPropagation(); this._close(); return; }
+      if (this._typed) e.stopPropagation();
+      this._typed = false;
       this._draft = formatDate(this._entryValue, this.format);
       this.value = this._entryValue;
       requestAnimationFrame(() => this._selectAll());

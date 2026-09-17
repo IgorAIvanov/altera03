@@ -54,7 +54,11 @@ between rows, Insert adds, Ctrl+Delete removes. At the very last editable cell
 Enter is two-step: if that Enter committed a typed value (the control fired
 `value-changed` while handling it) it only finishes the edit; the next Enter
 appends the row and puts the focus into its first cell. A `custom` cell gets the
-same behaviour only if its control reports commits through `value-changed`. Column kinds: `text`,
+same behaviour only if its control reports commits through `value-changed`.
+Esc in a just-added row nobody has typed into removes that row and returns to
+the last cell of the previous one (`section.discardNewLine()`); a row with any
+value in it is never removed by Esc. A control that needs Esc itself (an open
+list or calendar, reverting typed text) stops it, so one Esc does one thing. Column kinds: `text`,
 `decimal`, `picker`, `date`, `checkbox`, `computed`, and the escape hatch
 `custom` (`render(line, index)` returns the `<td>` CONTENT — never the `<td>`
 itself). Conditional columns: `visible: () => boolean` (see currency columns

@@ -503,11 +503,25 @@ export class TabularSection<Line extends object> {
     this.#resync();
   }
 
+  /**
+   * Знімок щойно доданого рядка: скільки рядків стало й як він виглядав. За ним
+   * `isUntouchedNewLine` упізнає рядок, у який ще нічого не внесли, — такий Esc
+   * прибирає (як в 1С: додав, передумав, Esc).
+   *
+   * Знімок, а не прапорець «рядок змінено»: правку комірки, що повернула
+   * значення назад (стерли вибране в пікері), прапорець рахував би зміною, а
+   * порожній рядок лишався б порожнім. Рядок зі знімка рахується САМЕ ТИМ
+   * рядком лише доки він останній і кількість рядків та сама — будь-яка
+   * вставка чи видалення знімок знецінює.
+   */
+  #added: { count: number; snapshot: string } | null = null;
+
   addLine() {
     if (this.readonly) return;
     const line = this.#newLine();
     const rows = this.#renumber([...this.rows, line]);
     this.config.setRows(rows);
+    this.#added = { count: rows.length, snapshot: JSON.stringify(this.rows[rows.length - 1]) };
     this.currentIndex = rows.length - 1;
     this.pendingFocus = { row: this.currentIndex, col: 0 };
     this.#resync();
@@ -531,6 +545,28 @@ export class TabularSection<Line extends object> {
     this.pendingFocus = { row: this.currentIndex, col: 0 };
     this.#resync();
     this.#notify();
+  }
+
+  /** Рядок щойно доданий і в нього досі нічого не внесли. */
+  isUntouchedNewLine(index = this.currentIndex): boolean {
+    const added = this.#added;
+    const rows = this.rows;
+    return added !== null
+      && index === rows.length - 1
+      && rows.length === added.count
+      && JSON.stringify(rows[index]) === added.snapshot;
+  }
+
+  /**
+   * Прибрати щойно доданий рядок, якщо в нього нічого не внесли. `false` —
+   * рядок не такий (заповнений, давній, або секція лише для перегляду), і
+   * нічого не сталося: заповнений рядок Esc не видаляє ніколи.
+   */
+  discardNewLine(index = this.currentIndex): boolean {
+    if (this.readonly || !this.isUntouchedNewLine(index)) return false;
+    this.#added = null;
+    this.removeLine(index);
+    return true;
   }
 
   removeLine(index = this.currentIndex) {

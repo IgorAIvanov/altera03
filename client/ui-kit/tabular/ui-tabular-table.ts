@@ -13,7 +13,11 @@
  *    новий рядок;
  *  - ↑/↓ — та сама колонка сусіднього рядка (не перехоплюються в ui-picker:
  *    його випадний список сам живе на клавіатурі);
- *  - Insert — новий рядок; Ctrl+Delete — видалити поточний.
+ *  - Insert — новий рядок; Ctrl+Delete — видалити поточний;
+ *  - Esc у щойно доданому рядку, в який нічого не внесли, — прибрати його й
+ *    повернутися в останню комірку попереднього рядка. Заповнений рядок Esc не
+ *    чіпає. Контрол, якому Esc потрібен самому (відкритий список, календар,
+ *    відкат набраного), його сюди не пропускає — одна клавіша, одна дія.
  * Tab лишається нативним: delegatesFocus у cell-контролів веде його сам.
  *
  * Слухаємо keydown/focusin на контейнері: обидві події composed, тож
@@ -181,6 +185,18 @@ export class UiTabularTable extends Base {
     const inPicker = e.composedPath().some((el) =>
       el instanceof HTMLElement && el.tagName === "UI-PICKER"
     );
+
+    if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      if (!section.discardNewLine(cell.row)) return;
+      // Позначка обов'язкова: Esc, який ніхто не забрав, оболонка читає як
+      // «закрити вкладку».
+      e.preventDefault();
+      const editable = this.#editableCols();
+      if (cell.row > 0 && editable.length) {
+        section.pendingFocus = { row: cell.row - 1, col: editable[editable.length - 1] };
+      }
+      return;
+    }
 
     // Ctrl+Enter — не наш Enter: це кнопка за замовчуванням форми, і секція
     // мусить його пропустити. Без цієї умови таблиця з'їдала б його разом із
