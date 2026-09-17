@@ -38,8 +38,8 @@ import {
  *    дістаються таблиці: рядок вище/нижче);
  *  - з відкритим календарем стрілки, PageUp/PageDown, Home/End рухають курсор
  *    календаря, Enter вибирає дату під курсором;
- *  - Enter після набору фіксує значення й лишається в полі; Enter на
- *    заповненому полі без правок — до наступного контрола;
+ *  - Enter після набору фіксує значення й лишається в полі; Enter без
+ *    правок — до наступного контрола, і в порожньому полі теж;
  *  - F4 відкриває/закриває календар (кнопка календаря поза Tab-чергою).
  *
  * Подія `value-changed` з `detail.value` (ISO або `""`) — на комміт.
@@ -95,7 +95,7 @@ export class UiDate extends GlobalStyledLitElement {
   /**
    * Чи набирали в полі щось після входу чи останнього Enter. Розводить два
    * Enter: перший фіксує набране (і людина бачить, як воно розібралося),
-   * другий — на незмінному заповненому полі — веде далі.
+   * другий — без правок, хай і на порожньому полі — веде далі.
    */
   private _typed = false;
 
@@ -176,7 +176,7 @@ export class UiDate extends GlobalStyledLitElement {
     }
     if (this._open && this._onCalendarKey(e)) return;
     if (e.key === "Enter") {
-      const moveOn = isPlainEnter(e) && !this._open && !this._typed && this.value !== "";
+      const moveOn = isPlainEnter(e) && !this._open && !this._typed;
       if (this._open) this._close();
       this._commit();
       this._typed = false;

@@ -16,9 +16,9 @@ export interface UiSelectOption {
  * `value` зберігає машинний код опції, а `label` лишається лише
  * представленням. Це відповідає TypeBox-переліченням у схемах моделей.
  *
- * Клавіатура: стрілки — нативний вибір; Enter на вибраному значенні — до
- * наступного контрола; Delete — очистити (лише з `show-clear`, кнопка
- * очищення поза Tab-чергою).
+ * Клавіатура: стрілки — нативний вибір; Enter — до наступного контрола (і з
+ * порожнім значенням); Delete — очистити (лише з `show-clear`, кнопка
+ * очищення поза Tab-чергою); F4 / Alt+↓ — розкрити список (нативно).
  */
 @customElement("ui-select")
 export class UiSelect extends GlobalStyledLitElement {
@@ -60,7 +60,7 @@ export class UiSelect extends GlobalStyledLitElement {
   }
 
   private _onKeyDown(e: KeyboardEvent) {
-    if (isPlainEnter(e) && this.value !== "") {
+    if (isPlainEnter(e)) {
       focusNextAfterEnter(e, e.target as HTMLElement);
       return;
     }
@@ -69,6 +69,18 @@ export class UiSelect extends GlobalStyledLitElement {
       e.preventDefault();
       this._set("");
     }
+  }
+
+  /**
+   * Enter НЕ розкриває список. Chrome на Windows розкриває `<select>` по Enter —
+   * у default-обробнику `keypress`, тобто ПІСЛЯ нашого `keydown`: фокус ішов до
+   * наступного поля, а список цього розкривався, і вибір потрапляв не туди, де
+   * людина вже була. Гасимо саме `keypress`, а не `keydown`: позначка на
+   * `keydown` — це сигнал «Enter забрано», за яким таблична частина й поле
+   * вирішують, чи рухати фокус, і стояла б там завжди.
+   */
+  private _onKeyPress(e: KeyboardEvent) {
+    if (e.key === "Enter") e.preventDefault();
   }
 
   /**
@@ -115,6 +127,7 @@ export class UiSelect extends GlobalStyledLitElement {
         ?disabled=${this.disabled || this.readonly}
         @change=${this._onChange}
         @keydown=${this._onKeyDown}
+        @keypress=${this._onKeyPress}
       >
         ${this.placeholder ? html`<option value="">${this.placeholder}</option>` : ""}
         ${this.options.map((option) => html`

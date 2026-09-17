@@ -253,7 +253,7 @@ export class UiPicker extends GlobalStyledLitElement {
     }
 
     if (this._items.length === 0) {
-      if (isPlainEnter(e)) this.#enterOnFilled(e);
+      if (isPlainEnter(e)) this.#enterMovesOn(e);
       return;
     }
 
@@ -294,14 +294,15 @@ export class UiPicker extends GlobalStyledLitElement {
   }
 
   /**
-   * Enter у заповненому полі із закритим списком — до наступного контрола.
+   * Enter із закритим списком — до наступного контрола, і в порожньому полі
+   * теж: необов'язкове поле лишають порожнім саме так, проходячи повз.
    *
-   * «Заповненому» — тобто значення вибране і в полі не лишився недобитий
-   * фрагмент пошуку: Enter після фрагмента, що нічого не знайшов, фокус не
-   * забирає — інакше помилка набору пішла б далі непоміченою.
+   * Не рухає лише тоді, коли в полі лишився недобитий фрагмент пошуку: Enter
+   * після фрагмента, що нічого не знайшов, фокус не забирає — інакше помилка
+   * набору пішла б далі непоміченою. Стерти фрагмент — і Enter знову веде далі.
    */
-  #enterOnFilled(e: KeyboardEvent) {
-    if (!this.value || this.#typed !== null || !this._input) return;
+  #enterMovesOn(e: KeyboardEvent) {
+    if (this.#typed !== null || !this._input) return;
     focusNextAfterEnter(e, this._input);
   }
 

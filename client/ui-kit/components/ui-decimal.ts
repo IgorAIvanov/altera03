@@ -14,8 +14,8 @@ import { focusNextAfterEnter, isPlainEnter } from "../focus-order.ts";
  *    дозволені проміжні стани `1`, `1.`, `,5`, `-`;
  *  - канонічне форматування (`precision` знаків) — тільки на blur / Enter;
  *  - Esc повертає значення, яке було на вході у поле;
- *  - Enter після набору форматує й лишається в полі; Enter на заповненому
- *    полі без правок — до наступного контрола.
+ *  - Enter після набору форматує й лишається в полі; Enter без правок — до
+ *    наступного контрола, і в порожньому полі теж.
  *
  * Події:
  *  - `value-input`   — на кожне натискання, `detail.value` — сирий текст;
@@ -63,8 +63,8 @@ export class UiDecimal extends GlobalStyledLitElement {
   private _entryValue = "";
   /**
    * Чи набирали в полі щось після входу чи останнього Enter. Розводить два
-   * Enter: перший форматує набране, другий — на незмінному заповненому полі —
-   * веде далі.
+   * Enter: перший форматує набране, другий — без правок, хай і на порожньому
+   * полі — веде далі.
    */
   private _typed = false;
 
@@ -162,7 +162,7 @@ export class UiDecimal extends GlobalStyledLitElement {
 
   private _onKeyDown(e: KeyboardEvent) {
     if (e.key === "Enter") {
-      const moveOn = isPlainEnter(e) && !this._typed && this.value !== "";
+      const moveOn = isPlainEnter(e) && !this._typed;
       this._commit();
       this._typed = false;
       if (moveOn) focusNextAfterEnter(e, e.target as HTMLElement);
