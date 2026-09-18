@@ -48,7 +48,7 @@ export class UiDialog extends GlobalStyledLitElement {
          вікно не має ані виходити за екран, ані стискатися в смужку. */
       dialog {
         width: var(--ui-dialog-width, auto);
-        max-width: min(92vw, 44rem);
+        max-width: 92vw;
         max-height: 88vh;
         border: 0;
         padding: 0;
@@ -56,7 +56,12 @@ export class UiDialog extends GlobalStyledLitElement {
         overflow: visible;
       }
       dialog::backdrop { background: rgba(36, 55, 70, .45); }
-      .app-dialog { max-height: 88vh; }
+      /* Тема тримає .app-dialog у 32rem — це межа вікон шини (підтвердження,
+         повідомлення), і для них вона правильна. Але вона ж різала й ширину,
+         названу змінною: вікно з --ui-dialog-width: 40rem лишалося 32rem, і
+         змінна не діяла ніде, де була більша за межу. Тепер межа — сама змінна;
+         без неї лишається 32rem, як і було. */
+      .app-dialog { max-height: 88vh; max-width: var(--ui-dialog-width, 32rem); }
       .app-dialog-body { overflow: auto; }
     `,
   ];

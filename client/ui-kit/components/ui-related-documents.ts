@@ -61,14 +61,25 @@ export class UiRelatedDocuments extends GlobalStyledLitElement {
     ...(GlobalStyledLitElement.styles as CSSResultGroup[]),
     css`
       :host { display: inline-block; }
-      ui-dialog { --ui-dialog-width: 44rem; }
+      /* Подання документа довге за побудовою («Розрахунок коригування
+         №ДПРК-000001 від 26.03.2026, ТОВ …»), і в типовому вікні дата з сумою
+         виїжджали за край — по кожну суму доводилося гортати вбік. Тому вікно
+         вдвічі ширше за типове, а подання ПЕРЕНОСИТЬСЯ: дата й сума мусять
+         бути видні завжди, на будь-якій ширині екрана. */
+      ui-dialog { --ui-dialog-width: min(92vw, 64rem); }
+      table { width: 100%; }
+      td.doc { width: 100%; }
+      td.date, td.total { white-space: nowrap; vertical-align: top; }
+      /* Гілка — окремою колонкою рядка, а не текстом перед назвою: перенесена
+         назва стає під назвою, а не під псевдографікою, і дерево читається. */
+      .line { display: flex; align-items: flex-start; }
       /* Псевдографіка тримається лише на моноширинному шрифті: у
          пропорційному «│» і пробіли різної ширини, і гілки роз'їжджаються. */
-      .branch { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
-      .node { display: inline-flex; align-items: center; gap: .375rem; }
-      .node > .status { display: inline-flex; flex: none; }
-      td.doc { white-space: nowrap; }
-      td.doc .open { text-align: left; }
+      .branch { flex: none; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
+      .node { display: flex; align-items: flex-start; gap: .375rem; min-width: 0; }
+      .node > .status { display: inline-flex; flex: none; padding-top: 1px; }
+      .node .label { overflow-wrap: anywhere; }
+      .node .open { text-align: left; }
     `,
   ];
 
@@ -147,22 +158,25 @@ export class UiRelatedDocuments extends GlobalStyledLitElement {
     // Недоступний вузол: вид документа і більше нічого — ні номера, ні суми,
     // ні переходу. Сервер їх і не віддав.
     if (!node.isAvailable) {
-      return html`<span class="branch">${prefix}</span><span class="node text-muted">
-        ${node.typeName} — ${t("core.related.noAccess")}</span>`;
+      return html`<div class="line"><span class="branch">${prefix}</span><span class="node text-muted">
+        <span class="label">${node.typeName} — ${t("core.related.noAccess")}</span></span></div>`;
     }
 
     const route = node.id && !node.isCurrent && !node.isRepeat ? this.routeOf(node.typeCode) : null;
     const label = this.#label(node);
+    // Позначки «поточний» і «показано вище» — усередині того ж блоку, що й
+    // назва: переносяться разом із нею, а не окремим стовпчиком праворуч.
+    const marks = html`${node.isCurrent ? html` <span class="text-muted">(${t("core.related.current")})</span>` : ""}${
+      node.isRepeat ? html` <span class="text-muted">↺ ${t("core.related.repeat")}</span>` : ""
+    }`;
     return html`
-      <span class="branch">${prefix}</span><span class="node">
+      <div class="line"><span class="branch">${prefix}</span><span class="node">
         ${this.#status(node)}
-        ${route
+        <span class="label">${route
           ? html`<button type="button" class="open link link-hover" @click=${() => this.#go(node, route)}>${label}</button>`
           : html`<span class=${node.isCurrent ? "font-semibold" : ""}
-              aria-current=${node.isCurrent ? "true" : nothing}>${label}</span>`}
-        ${node.isCurrent ? html`<span class="text-muted">(${t("core.related.current")})</span>` : ""}
-        ${node.isRepeat ? html`<span class="text-muted">↺ ${t("core.related.repeat")}</span>` : ""}
-      </span>
+              aria-current=${node.isCurrent ? "true" : nothing}>${label}</span>`}${marks}</span>
+      </span></div>
     `;
   }
 
@@ -193,8 +207,8 @@ export class UiRelatedDocuments extends GlobalStyledLitElement {
           ${this._rows.map((node, index) => html`
             <tr>
               <td class="doc">${this.#node(node, prefixes[index])}</td>
-              <td class="tabular-nums">${node.isAvailable ? formatDate(node.docDate) : ""}</td>
-              <td class="text-right tabular-nums">${node.isAvailable ? this.#formatTotal(node.total) : ""}</td>
+              <td class="date tabular-nums">${node.isAvailable ? formatDate(node.docDate) : ""}</td>
+              <td class="total text-right tabular-nums">${node.isAvailable ? this.#formatTotal(node.total) : ""}</td>
             </tr>
           `)}
         </tbody>
