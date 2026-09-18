@@ -84,6 +84,43 @@ create index if not exists ix_document_posted
 
 create index if not exists ix_document_number on app.document (number);
 
+-- ── Посилання документа на документ ─────────────────────────────────────────
+-- Ребра дерева «Пов'язані документи»: реквізит документа (шапки чи рядка
+-- табличної частини), що посилається на інший документ. Склад знає лише
+-- застосунок — представлення з `union all` по його таблицях генерує
+-- `sql:assemble` зі схем (`x-ref` на документ) і ставить у кінець секції
+-- функцій. Ядро тримає тільки контракт колонок і порожнє умовчання.
+--
+-- Заглушка тут стоїть НЕ лише для застосунку без жодного посилання. Скидання
+-- на кожній публікації — друга її робота: представлення залежить від колонок
+-- таблиць застосунку, і міграція, що видаляє чи змінює таку колонку, інакше
+-- впиралася б у «cannot drop column … because other objects depend on it».
+-- Структура ядра йде раніше за міграції, тож у момент міграцій представлення
+-- ні на що не посилається, а справжнє ставиться вже після них.
+--
+-- Колонки міняти не можна без `drop view`: `create or replace` приймає лише
+-- дописані в кінець.
+create or replace view app.document_link as
+select null::bigint as from_id,   -- документ, у реквізиті якого посилання
+       null::bigint as to_id,     -- документ, на який воно показує
+       null::text   as model,     -- модель документа from_id
+       null::text   as field      -- поле схеми: `baseDocumentId` / `lines.paymentDocumentId`
+ where false;
+
+-- Ті самі ребра довідкою — звідки кожне береться, включно з оголошеними
+-- відмовами (`x-ref.related: false`). Константи, які генерує `sql:assemble`
+-- поруч із `app.document_link`; читає їх `app.document_link_check()`, щоб
+-- назвати колонки без індексу й FK, що ребром не стали.
+create or replace view app.document_link_source as
+select null::text    as model,
+       null::text    as field,
+       null::text    as table_schema,
+       null::text    as table_name,
+       null::text    as owner_column,   -- id документа-власника
+       null::text    as ref_column,     -- id документа, на який посилання
+       null::boolean as is_related      -- false — оголошена відмова
+ where false;
+
 -- ── Види аналітики (субконто) ───────────────────────────────────────────────
 -- Реєстр вимірів: що це за субконто і звідки SQL бере знімок представлення.
 -- Маршрут форми тут НЕ зберігається — клієнт резолвить його з view-manifest

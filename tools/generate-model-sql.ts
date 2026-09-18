@@ -38,6 +38,14 @@ export type XRef = {
   as?: string;
   sortable?: boolean;
   searchable?: boolean;
+  /**
+   * `false` — посилання на документ не є зв'язком для дерева «Пов'язані
+   * документи» (`app.document_link`). Умовчання — є: ссылка документа на
+   * документ майже завжди означає підставу чи продовження, а відмова має бути
+   * видно в схемі, поруч із самим посиланням. На ссылки не на документ не
+   * впливає.
+   */
+  related?: boolean;
 };
 
 /**
@@ -2570,6 +2578,160 @@ async function buildModelMap(appRoot: string, verbose: boolean): Promise<ModelMe
   }
 
   return map;
+}
+
+// ── посилання документа на документ ─────────────────────────────────────────
+
+/**
+ * Одне ребро `app.document_link`: колонка таблиці документа, у якій лежить id
+ * іншого документа.
+ */
+export type DocumentLink = {
+  /** Модель документа, якому належить реквізит. */
+  model: string;
+  /** Поле схеми: `baseDocumentId`, у рядку — `<ключ частини>.<поле>`. */
+  field: string;
+  /** Таблиця зі схемою: шапка моделі або таблиця рядків. */
+  table: string;
+  /** Колонка з id документа-власника: `document_id` шапки чи `parentFk` рядка. */
+  ownerCol: string;
+  /** Колонка з id документа, на який посилання показує. */
+  refCol: string;
+  /**
+   * `false` — посилання оголошене відмовою (`x-ref.related: false`). У дерево не
+   * йде, але в переліку лишається: інакше проба покриття (FK без ребра) не
+   * відрізнила б свідому відмову від забутого `x-ref`.
+   */
+  related: boolean;
+};
+
+/**
+ * Ребра дерева «Пов'язані документи» — з тих самих схем і тим самим резолвом
+ * колонок, що й CRUD.
+ *
+ * Резолв спільний не для економії: колонку посилання вирішує `x-ref.fk`, потім
+ * `x-db-col`, потім ім'я поля, і друга копія цього правила розійшлася б із
+ * першою мовчки — представлення публікувалося б, а на `to_id` лежало б не те.
+ *
+ * Береться лише `models` (тобто `sql.json`): представлення посилається на
+ * таблиці, а таблиці є лише в моделей, чий SQL збирається. Ребрами стають
+ * `x-ref` на модель типу `document` або `entity: "document"` у ItemSchema
+ * документа і в його табличних частинах; `related: false` — відмова (у переліку
+ * лишається з позначкою, див. `DocumentLink.related`). Шапка
+ * (`DocumentHeaderSchema`) не читається: на документи вона не посилається.
+ *
+ * Документ без файлу схеми пропускається — ребер про нього не відомо нічого, а
+ * CRUD без схеми він однаково не має. Покриття проти DDL — окрема проба
+ * (`docs/related-documents-plan.md`, §3.4).
+ */
+export async function collectDocumentLinks(appRoot: string, models: string[]): Promise<DocumentLink[]> {
+  const documentDirs: string[] = [];
+  for (const modelPath of models) {
+    if ((await modelManifest(appRoot, modelPath))?.type === "document") documentDirs.push(modelPath);
+  }
+  if (!documentDirs.length) return [];
+
+  const map = await buildModelMap(appRoot, false);
+  const links: DocumentLink[] = [];
+
+  const isDocumentTarget = (xref: XRef) =>
+    xref.entity === "document" || (xref.model !== undefined && map.get(xref.model)?.isDocument === true);
+
+  for (const modelPath of documentDirs) {
+    const manifest = (await modelManifest(appRoot, modelPath))!;
+    const model = manifest.model?.trim() || basename(modelPath);
+    const meta = map.get(model);
+    // Немає в карті — немає файлу схеми (buildModelMap пояснює це сам у --verbose).
+    if (!meta) continue;
+    assertIdentifier(meta.schema, `${model}: schema`);
+    assertIdentifier(meta.table, `${model}: table`);
+
+    const mod = await importSchema(join(appRoot, modelPath, `${model}.schema.ts`));
+    const itemSchema = mod[`${pascalCase(model)}ItemSchema`];
+    if (!itemSchema) throw new Error(`${model}: очікую ${pascalCase(model)}ItemSchema`);
+
+    const visit = (schema: TSchema, table: string, ownerCol: string, prefix: string, owner: string) => {
+      for (const [key, prop] of Object.entries(schema.properties ?? {})) {
+        if (prop["x-transient"]) continue;
+        const xt = prop["x-table"];
+        if (prop.type === "array" && xt) {
+          // Рядок рядка не буває: табличні частини в генераторі однорівневі.
+          if (prefix) continue;
+          assertIdentifier(xt.table, `${owner}.${key}: x-table.table`);
+          assertIdentifier(xt.parentFk, `${owner}.${key}: x-table.parentFk`);
+          visit(prop.items ?? {}, `${meta.schema}.${xt.table}`, xt.parentFk, `${key}.`, `${owner}.${key}`);
+          continue;
+        }
+        const xref = prop["x-ref"];
+        if (!xref || !isDocumentTarget(xref)) continue;
+        const ref = resolveRef(xref, prop["x-db-col"] ?? camelToSnake(key), map, `${owner}.${key}`);
+        assertIdentifier(ref.fkCol, `${owner}.${key}: колонка посилання`);
+        links.push({
+          model,
+          field: `${prefix}${key}`,
+          table,
+          ownerCol,
+          refCol: ref.fkCol,
+          related: xref.related !== false,
+        });
+      }
+    };
+    visit(itemSchema, `${meta.schema}.${meta.table}`, "document_id", "", model);
+  }
+
+  return links.sort((a, b) => `${a.model}:${a.field}`.localeCompare(`${b.model}:${b.field}`));
+}
+
+/**
+ * `app.document_link` застосунку. Колонки — рівно ті, що в заглушці ядра
+ * (`@core/document_core`, struc.sql): `create or replace view` інших не прийме.
+ *
+ * Гілка на ребро, а не одна гілка на таблицю з `unnest`, — заради відбору:
+ * умова `to_id = $1` проштовхується в кожну гілку й бере індекс її колонки.
+ * `is not null` у гілці — той самий доказ: порожнє посилання ребром не є, і без
+ * нього зворотний обхід тягнув би ці рядки в кожне з'єднання.
+ */
+export function renderDocumentLinkView(links: DocumentLink[]): string {
+  const branches = links.filter((link) => link.related).map((link) =>
+    `select l.${link.ownerCol} as from_id, l.${link.refCol} as to_id, ` +
+    `${literal(link.model)} as model, ${literal(link.field)} as field\n` +
+    `  from ${link.table} l\n` +
+    ` where l.${link.refCol} is not null`
+  );
+  return [
+    "-- Generated from document schemas: посилання документа на документ (x-ref).",
+    "create or replace view app.document_link as",
+    // Самі відмови — представлення лишається порожнім, як заглушка ядра.
+    branches.length
+      ? branches.join("\nunion all\n") + ";"
+      : "select null::bigint as from_id, null::bigint as to_id, null::text as model, null::text as field\n where false;",
+    "",
+  ].join("\n");
+}
+
+/**
+ * `app.document_link_source` — ті самі ребра ДОВІДКОЮ: звідки кожне береться
+ * (таблиця й дві колонки) і чи воно відмова. Константи, а не запит до таблиць:
+ * пробі покриття й індексів потрібен склад, а не дані, і `select distinct` по
+ * `app.document_link` заради нього обійшов би всі таблиці цілком.
+ */
+export function renderDocumentLinkSourceView(links: DocumentLink[]): string {
+  const rows = links.map((link) => {
+    const [schema, table] = link.table.split(".");
+    const texts = [link.model, link.field, schema, table, link.ownerCol, link.refCol].map(literal);
+    return `  (${texts.join(", ")}, ${link.related})`;
+  });
+  return [
+    "create or replace view app.document_link_source as",
+    "select * from (values",
+    rows.join(",\n"),
+    ") v(model, field, table_schema, table_name, owner_column, ref_column, is_related);",
+    "",
+  ].join("\n");
+}
+
+function literal(value: string): string {
+  return `'${value.replaceAll("'", "''")}'::text`;
 }
 
 /**

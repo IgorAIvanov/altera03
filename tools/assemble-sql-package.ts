@@ -1,5 +1,6 @@
 import { basename, join, relative, resolve, SEPARATOR } from "@std/path";
 import { collectAppModelKeys } from "./generate-model-runtime-registry.ts";
+import { collectDocumentLinks, renderDocumentLinkSourceView, renderDocumentLinkView } from "./generate-model-sql.ts";
 
 // SQL ядра приходить АРГУМЕНТОМ, а не імпортом `@altera/server/sql`, і це не
 // косметика. Поки імпорт був тут, версію ядра називав інструмент: у пакеті
@@ -630,6 +631,23 @@ async function buildGeneratedMetadataSections(appDir: string, models: string[]) 
   return sections;
 }
 
+/**
+ * Похідне від схем, що потребує ВСІХ таблиць і міграцій застосунку, — у кінець
+ * секції функцій.
+ *
+ * `app.document_link` посилається на колонки таблиць, тож раніше міграцій стояти
+ * не може; заглушка ядра (struc) скидає його на кожній публікації, і цей крок
+ * ставить справжнє назад. Нема жодного ребра — секції немає, лишається заглушка.
+ */
+async function buildGeneratedModelSections(appDir: string, models: string[]) {
+  const links = await collectDocumentLinks(appDir, models);
+  if (!links.length) return [];
+  return buildSection(
+    "_generated/document-link.sql",
+    renderDocumentLinkView(links) + "\n" + renderDocumentLinkSourceView(links),
+  );
+}
+
 /** Те, що мусить бачити вже засіяні дані застосунку, — після них. */
 async function buildGeneratedDataSections(appDir: string, models: string[]) {
   const sections: string[] = [];
@@ -733,6 +751,9 @@ export async function assembleSqlPackage(
         }
       }
 
+      if (step.key === "models") {
+        sectionChunks.push(...await buildGeneratedModelSections(appDir, manifest.models));
+      }
       if (step.key === "data") {
         sectionChunks.push(...await buildGeneratedDataSections(appDir, manifest.models));
       }

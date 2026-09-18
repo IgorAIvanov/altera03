@@ -132,6 +132,9 @@ the external agent — and the MCP wrapper over it — offers only what the mode
 The list both adds and subtracts. A name from `commands.sql` or `commands.ts` joins the
 default set; a standard name left out of the list is withheld. Omit `allowCommands`
 altogether and the model keeps the default — standard commands only, never a custom one.
+A document's default also carries the two core commands every document has, `postPreview`
+and `related` (the tree of related documents); a document that lists `allowCommands`
+itself gets them only by naming them.
 That is deliberate: `commands.access` says *this command may run with this permission*,
 not *show it to the agent*.
 

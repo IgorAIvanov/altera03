@@ -734,6 +734,128 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Пов'язані документи. Маршрут ядра: команда є в КОЖНОГО документа без
+    // оголошення в манифесті — і немає ні в кого іншого (інакше `bank.related`
+    // кликав би обхід документів із правом на банк).
+    //
+    // Сам обхід перевіряється в базі, у транзакції з відкотом: ребра в
+    // altera03 не оголошені жодним документом, тож дерево тут можна побудувати
+    // лише власним представленням, і лишати його не можна — воно чуже.
+    await t.step("документ: дерево пов'язаних документів", async () => {
+      const notDocument = await client.model("bank", "related", { id: "1" });
+      assertEquals(notDocument.status, 404);
+
+      // Сам застосунок-еталон мусить бути чистим: інакше попередження, що
+      // друкує публікація, звикнуть пропускати тут же.
+      const clean = await withDb((sql) => sql`select * from app.document_link_check()`);
+      assertEquals(clean.length, 0);
+
+      const garbage = await client.model("invoice", "related", { id: "abc" });
+      assertEquals(garbage.body.ok, false);
+      assertEquals(String(garbage.body.messages[0]).startsWith("@[core.documentNotFound]"), true);
+
+      const [existing] = await withDb((sql) =>
+        sql<{ id: string }[]>`
+          select d.id::text as id from app.document d
+          join app.document_type dt on dt.id = d.document_type_id and dt.code = 'invoice'
+          limit 1`
+      );
+      if (existing) {
+        const tree = await client.model("invoice", "related", { id: existing.id });
+        assertEquals(tree.body.ok, true);
+        const current = (tree.body.data.rows as Array<{ id: string | null; isCurrent: boolean }>)
+          .filter((row) => row.isCurrent);
+        assertEquals(current.length > 0 && current.every((row) => row.id === existing.id), true);
+      }
+
+      type Row = { number: string | null; depth: number; parentKey: number | null; isRepeat: boolean };
+      class Rollback extends Error {}
+      await withDb(async (sql) => {
+        try {
+          await sql.begin(async (tx) => {
+            await tx.unsafe(`
+              create table app.smoke_related_ids (name text primary key, id bigint not null);
+              with ins as (
+                insert into app.document (document_type_id, organization_id, number, doc_date, presentation)
+                select (select id from app.document_type where code = 'invoice'),
+                       (select id from app.organization order by id limit 1),
+                       'SMOKEREL-' || v.n, date '2026-01-01' + v.i, 'smoke ' || v.n
+                  from (values ('A', 1), ('B', 2), ('C', 3), ('D', 4), ('F', 5), ('G', 6)) v(n, i)
+                returning id, number
+              )
+              insert into app.smoke_related_ids select substr(number, 10), id from ins;
+              -- D посилається на B і C, обидва — на A; F і G — один на одного.
+              create or replace view app.document_link as
+              select f.id as from_id, t.id as to_id, 'invoice'::text as model, e.fld::text as field
+                from (values ('B', 'A', 'baseId'), ('C', 'A', 'baseId'), ('D', 'B', 'lines.x'),
+                             ('D', 'C', 'lines.x'), ('F', 'G', 'a'), ('G', 'F', 'a')) e(f, t, fld)
+                join app.smoke_related_ids f on f.name = e.f
+                join app.smoke_related_ids t on t.name = e.t;
+            `);
+            const related = async (name: string, userId = 1, limit?: number) => {
+              const [row] = await tx<{ result: { data: { item: { truncated: boolean }; rows: Row[] } } }[]>`
+                select app.document_related(${userId}::bigint, jsonb_build_object(
+                  'id', (select id::text from app.smoke_related_ids where name = ${name}),
+                  'limit', ${limit ?? null}::int
+                )) as result`;
+              return row.result.data;
+            };
+
+            // Від кореня вниз; D під двома батьками, розкритий раз.
+            const tree = (await related("D")).rows
+              .map((r) => `${"  ".repeat(r.depth)}${r.number}${r.isRepeat ? " ↺" : ""}`);
+            assertEquals(tree, [
+              "SMOKEREL-A",
+              "  SMOKEREL-B",
+              "    SMOKEREL-D",
+              "  SMOKEREL-C",
+              "    SMOKEREL-D ↺",
+            ]);
+
+            // Цикл без кореня: дерево починається з поточного й не крутиться.
+            assertEquals((await related("G")).rows.map((r) => r.number), ["SMOKEREL-G", "SMOKEREL-F", "SMOKEREL-G"]);
+
+            // Межа ріже дальній шар і каже про це.
+            assertEquals((await related("D", 1, 3)).item.truncated, true);
+
+            // Без права вузол лишається, але без реквізитів.
+            const denied = (await related("D", 999999999)).rows;
+            assertEquals(denied.length, 5);
+            assertEquals(denied.every((r) => r.number === null), true);
+
+            // Проба ребер, яку друкує публікація. FK шапки на документ без
+            // x-ref — непокритий; щойно він у довідці, лишається лише
+            // відсутній індекс. Власний ключ шапки ребром не рахується.
+            const problems = async () =>
+              (await tx<{ kind: string; column_name: string }[]>`
+                select kind, column_name from app.document_link_check()
+                 where table_name = 'app.smoke_related_doc'`)
+                .map((p) => `${p.kind}:${p.column_name}`);
+            await tx.unsafe(`
+              create table app.smoke_related_doc (
+                document_id bigint primary key references app.document (id),
+                base_id     bigint references app.document (id)
+              );
+            `);
+            assertEquals(await problems(), ["uncovered_fk:base_id"]);
+            await tx.unsafe(`
+              create or replace view app.document_link_source as
+              select * from (values ('smoke'::text, 'baseId'::text, 'app'::text, 'smoke_related_doc'::text,
+                                     'document_id'::text, 'base_id'::text, true)
+              ) v(model, field, table_schema, table_name, owner_column, ref_column, is_related);
+            `);
+            assertEquals(await problems(), ["no_index:base_id"]);
+            await tx.unsafe(`create index on app.smoke_related_doc (base_id)`);
+            assertEquals(await problems(), []);
+
+            throw new Rollback();
+          });
+        } catch (error) {
+          if (!(error instanceof Rollback)) throw error;
+        }
+      });
+    });
+
     // Відбір підбору. Половина механізму була давно — параметри доїжджали в
     // payload, — а друга ні: фільтри збиралися лише для `list`, тож у `lookup`
     // вони МОВЧКИ ігнорувалися. Мовчання й перевіряємо: звужений підбір мусить
@@ -1436,6 +1558,20 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         const bankEntry = catalog.find((entry) => entry.model === "bank");
         assertExists(bankEntry);
         assertEquals(bankEntry.commands.includes("save"), true);
+
+        // Дерево пов'язаних документів: у документа є, у довідника немає, і
+        // токен «тільки читання» його бачить і виконує — це читання.
+        assertEquals(bankEntry.commands.includes("related"), false);
+        const invoiceOf = (rows: Awaited<ReturnType<typeof catalogOf>>) =>
+          rows.find((entry) => entry.model === "invoice")?.commands ?? [];
+        assertEquals(invoiceOf(catalog).includes("related"), true);
+        assertEquals(invoiceOf(await catalogOf(reader.token)).includes("related"), true);
+        const relatedMiss = await callModel(reader.token, "invoice", "related", { id: "abc" });
+        assertEquals(relatedMiss.status, 200);
+        // Відмова — конвертом і вже розгорнутим текстом: браузера в агента немає.
+        assertEquals(relatedMiss.body.ok, false);
+        const relatedText = String(relatedMiss.body.messages?.[0] ?? "");
+        assertEquals(relatedText.length > 0 && !relatedText.startsWith("@["), true, JSON.stringify(relatedMiss.body));
         assertEquals("input" in bankEntry, false);
 
         // Назва мовами застосунку: технічне ім'я `bank` не каже нічого тому,

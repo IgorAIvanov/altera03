@@ -218,6 +218,9 @@ function derivedCommands(manifest: ManifestRecord): string[] {
   // показує ту, що вже є. Оголошувати його в манифесті означало б, що документ
   // без оголошення тихо лишається без відповіді на «що вийде, якщо провести».
   if (manifest.type === "document") commands.push("postPreview");
+  // Дерево пов'язаних документів — теж у кожного документа й з тієї ж
+  // причини: воно показує вже наявне (посилання документа), а не додає нове.
+  if (manifest.type === "document") commands.push("related");
   if (manifest.periodic) commands.push("at", "history", "set");
   return commands;
 }
@@ -279,6 +282,10 @@ export function agentCommandsFor(manifest: ManifestRecord): string[] {
   const base = agentBaseCommands(manifest.type ?? "catalog");
   if (Object.keys(manifest.prints ?? {}).length > 0) base.push("printPdf");
   if (manifest.type === "document") base.push("postPreview");
+  // «Що пов'язано з цим документом» — питання, яке агенту ставлять першим
+  // після «покажи документ», а відповідь (моделі й id вузлів) одразу веде в
+  // `get`. Тільки читання, тож і токену «тільки читання» доступне.
+  if (manifest.type === "document") base.push("related");
 
   if (!Array.isArray(agent.allowCommands)) return base;
 
@@ -404,6 +411,14 @@ function accessFor(manifest: ManifestRecord): Record<string, string> {
   // питати «що буде, якщо я проведу» має сенс тому, хто проводить.
   if (manifest.type === "document" && !access.postPreview) {
     access.postPreview = "post";
+  }
+
+  // Дерево пов'язаних документів — читання. Маршрут і те саме право рантайм
+  // виводить і сам (`CORE_DOCUMENT_COMMANDS`), тож команда працює й без
+  // `sql:registry`; тут право названо для каталогу агента, який читає лише
+  // реєстр.
+  if (manifest.type === "document" && !access.related) {
+    access.related = "view";
   }
 
   if (manifest.periodic) {

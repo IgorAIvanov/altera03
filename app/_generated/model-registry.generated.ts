@@ -81,14 +81,16 @@ export const generatedModelRegistry = {
     access: {
     "postPreview": "post",
     "printData": "view",
-    "printPdf": "view"
+    "printPdf": "view",
+    "related": "view"
     }
   },
   "manual_entry": {
     type: "document",
     schema: "app",
     access: {
-    "postPreview": "post"
+    "postPreview": "post",
+    "related": "view"
     }
   },
   "menu": {

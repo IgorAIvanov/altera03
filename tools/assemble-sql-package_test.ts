@@ -105,3 +105,35 @@ Deno.test("пакет: метадані до сідів застосунку, п
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+/**
+ * `app.document_link` посилається на колонки таблиць застосунку, тож стоїть
+ * після всіх функцій моделей: раніше міграцій бути не може, а заглушка ядра
+ * (struc) скидає його на кожній публікації. Застосунок без жодного посилання
+ * секції не дістає — лишається заглушка.
+ */
+Deno.test("пакет: представлення ребер документів — у кінці секції функцій", async () => {
+  const dir = await buildFixture();
+  try {
+    await assembleSqlPackage(dir, { coreSql: () => undefined });
+    const before = await Deno.readTextFile(join(dir, "_sqlpackage", "models_app.sql"));
+    assertEquals(before.includes("_generated/document-link.sql"), false, "без посилань секції бути не повинно");
+
+    await writeFile(
+      join(dir, "document/bill/bill.schema.ts"),
+      `export const BillItemSchema = { type: "object", properties: {
+        baseDocumentId: { type: "string", "x-ref": { entity: "document", as: "baseDocument" } },
+      } };`,
+    );
+    await writeFile(join(dir, "document/bill/db/bill.custom.sql"), "-- функції документа\n");
+    await assembleSqlPackage(dir, { coreSql: () => undefined });
+
+    const sql = await Deno.readTextFile(join(dir, "_sqlpackage", "models_app.sql"));
+    const sections = [...sql.matchAll(/^-- >>> BEGIN (.+)$/gm)].map((m) => m[1].trim());
+    assertEquals(sections.at(-1), "_generated/document-link.sql");
+    assert(sections.includes("document/bill/db/bill.custom.sql"), "фікстура зламана: функцій моделі немає");
+    assert(sql.includes("from app.bill l"));
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

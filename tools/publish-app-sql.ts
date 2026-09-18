@@ -90,6 +90,7 @@ export async function publishAppSql(options: { appDir: string; verbose?: boolean
     }
 
     await publishRepoPrintTemplates();
+    await reportDocumentLinkProblems();
     return;
   }
 
@@ -107,6 +108,67 @@ export async function publishAppSql(options: { appDir: string; verbose?: boolean
   });
 
   await publishRepoPrintTemplates();
+  await reportDocumentLinkProblems();
+}
+
+type DocumentLinkProblem = {
+  kind: "no_index" | "uncovered_fk";
+  table_name: string;
+  column_name: string;
+  model: string | null;
+  field: string | null;
+};
+
+/**
+ * Проба ребер дерева пов'язаних документів — після публікації, на тій базі,
+ * куди щойно накотили схему (`app.document_link_check()`, `@core/document_core`).
+ *
+ * Попередження, а не відмова: публікацію кличе й розгортання, і валити його
+ * через індекс, якого бракує, означало б зупинити виправлення заради
+ * продуктивності. Але й не мовчання: обидві знахідки на демо-наборі не видно
+ * нічим — ні помилкою, ні повільністю, — вони проявляються через рік роботи
+ * або неповним деревом, яке ніхто не перевіряє.
+ *
+ * Застосунок без `@core/document_core` функції не має — тоді й перевіряти
+ * нічого.
+ */
+async function reportDocumentLinkProblems() {
+  const sql = createSqlClient();
+  let problems: DocumentLinkProblem[];
+  try {
+    problems = await sql<DocumentLinkProblem[]>`select * from app.document_link_check()`;
+  } catch (error) {
+    // 42883 — функції немає, 42P01 — представлення немає: ядро без документів.
+    const code = (error as { code?: string }).code;
+    if (code === "42883" || code === "42P01") return;
+    throw error;
+  } finally {
+    await sql.end();
+  }
+
+  const unindexed = problems.filter((p) => p.kind === "no_index");
+  const uncovered = problems.filter((p) => p.kind === "uncovered_fk");
+
+  if (unindexed.length) {
+    console.warn(
+      `⚠ Пов'язані документи: ${unindexed.length} колонок ребер без індексу — ` +
+        `обхід дерева перегляне ці таблиці цілком:`,
+    );
+    for (const p of unindexed) {
+      console.warn(`    ${p.table_name} (${p.column_name}) — ${p.model}.${p.field}`);
+    }
+    console.warn(`  Індекс, що починається з колонки, — у db/struc.sql моделі.`);
+  }
+
+  if (uncovered.length) {
+    console.warn(
+      `⚠ Пов'язані документи: ${uncovered.length} FK документа на документ не стали ребром дерева:`,
+    );
+    for (const p of uncovered) console.warn(`    ${p.table_name} (${p.column_name})`);
+    console.warn(
+      `  Оголоси поле в схемі через "x-ref" (або "x-ref": { …, "related": false }, якщо це не зв'язок).`,
+    );
+  }
 }
 
 async function main() {

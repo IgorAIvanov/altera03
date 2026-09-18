@@ -233,6 +233,37 @@ Deno.test("стандартне ім'я на admin-моделі приймаєт
   assertEquals(commands, ["list", "get", "answer"]);
 });
 
+/**
+ * Дерево пов'язаних документів — у кожного документа, як сухий прогін: воно
+ * показує вже наявне, а не додає поведінки. Але `allowCommands` лишається
+ * заявою застосунку: документ, що перелічив команди сам, отримує `related`
+ * лише назвавши його — той самий шлях, що в `postPreview`.
+ */
+Deno.test("документ: related в умовчанні, в allowCommands — на ім'я", () => {
+  assertEquals(
+    agentCommandsFor({ model: "invoice", type: "document" }).includes("related"),
+    true,
+  );
+  assertEquals(
+    agentCommandsFor({
+      model: "invoice",
+      type: "document",
+      agent: { allow: true, allowCommands: ["list", "get"] },
+    }).includes("related"),
+    false,
+  );
+  assertEquals(
+    agentCommandsFor({
+      model: "invoice",
+      type: "document",
+      agent: { allow: true, allowCommands: ["list", "get", "related"] },
+    }).includes("related"),
+    true,
+  );
+  // Довідник дерева не має: команда ядра лише в документів.
+  assertEquals(agentCommandsFor({ model: "bank", type: "catalog" }).includes("related"), false);
+});
+
 Deno.test("друк і періодична трійка доступні на ім'я", () => {
   const commands = agentCommandsFor({
     model: "price_setting",

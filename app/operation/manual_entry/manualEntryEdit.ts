@@ -22,6 +22,7 @@ import "@client/ui-kit/tabular/ui-tabular-table.ts";
 import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
 import { icons } from "@client/ui-kit/icons.ts";
 import { movementsButton } from "@shared/document-movements.ts";
+import { relatedDocumentsButton } from "@shared/related-documents.ts";
 
 export const tagName = "manual-entry-edit";
 
@@ -408,7 +409,10 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
    */
   protected override renderAuxActions() {
     const item = this.$root.item;
-    return movementsButton(item.id, item.isPosted, "btn-outline");
+    return html`
+      ${movementsButton(item.id, item.isPosted, "btn-outline")}
+      ${relatedDocumentsButton("manual_entry", item.id)}
+    `;
   }
 
   override render() {

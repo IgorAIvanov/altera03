@@ -216,6 +216,29 @@ function payloadSchemaFor(
     };
   }
 
+  // Дерево пов'язаних документів: `id` і межа. Payload належить ядру, а не
+  // моделі, — як у прогону.
+  if (command === "related") {
+    return {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "ID документа, навколо якого будувати дерево" },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 1000,
+          description: "Межа вузлів; без неї — 200. Вихід за межу позначає data.item.truncated",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+      description:
+        "Пов'язані документи: на які документи цей посилається, які посилаються на нього, і далі " +
+        "ланцюжком. data.rows — вузли в порядку обходу від коренів (key, parentKey, depth); " +
+        "typeCode — модель вузла, id — для її get. Вузол без права: isAvailable=false, реквізити null.",
+    };
+  }
+
   // Друк: `id` записи плюс необов'язковий код шаблону. Схеми в моделі немає й
   // бути не може — payload належить рантайму друку, а не моделі, і однаковий у
   // всіх. Порожній `templateCode` означає активний шаблон, і саме це потрібно

@@ -15,6 +15,7 @@ import { join } from "@std/path";
 import {
   assertFilterDisplayKey,
   booleanDefaultSql,
+  collectDocumentLinks,
   collectModelDirs,
   documentHeaderSpecifier,
   type ModelMetaMap,
@@ -22,6 +23,8 @@ import {
   refJoinSql,
   refLookupSql,
   refObjectSql,
+  renderDocumentLinkSourceView,
+  renderDocumentLinkView,
   resolveRef,
   unpostRecordsHookSql,
 } from "./generate-model-sql.ts";
@@ -509,4 +512,112 @@ Deno.test("невідома сутність названа поіменно", (
     resolveRef({ entity: "catalog" } as never, "x_id", META, "reg.xId")
   );
   assertStringIncludes(error instanceof Error ? error.message : "", "лише \"document\"");
+});
+
+// ── Посилання документа на документ ───────────────────────────────────────────
+
+/**
+ * Застосунок для ребер `app.document_link`. Схеми — голі об'єкти JSON Schema:
+ * генератор читає саме їх, TypeBox тут лише спосіб такий об'єкт написати.
+ */
+async function linkApp(): Promise<string> {
+  const root = await Deno.makeTempDir({ prefix: "altera-links-" });
+  const model = async (path: string, manifest: object, schema?: string) => {
+    await Deno.mkdir(join(root, path), { recursive: true });
+    await Deno.writeTextFile(join(root, path, "manifest.json"), JSON.stringify(manifest));
+    if (schema) await Deno.writeTextFile(join(root, path, `${path.split("/").pop()}.schema.ts`), schema);
+  };
+
+  await model("catalog/bank", { model: "bank", type: "catalog" }, `export const BankItemSchema = { type: "object", properties: {} };`);
+  await model("document/receipt", { model: "receipt", type: "document" }, `export const ReceiptItemSchema = { type: "object", properties: {} };`);
+  await model(
+    "document/sale",
+    { model: "sale", type: "document" },
+    `export const SaleItemSchema = {
+      type: "object",
+      properties: {
+        bankId: { type: "string", "x-ref": { model: "bank" } },
+        baseDocumentId: { type: "string", "x-ref": { entity: "document", as: "baseDocument" } },
+        noteDocumentId: { type: "string", "x-ref": { entity: "document", as: "noteDocument", related: false } },
+        tokenDocumentId: { type: "string", "x-transient": true, "x-ref": { entity: "document" } },
+        lines: {
+          type: "array",
+          "x-table": { table: "sale_line", parentFk: "sale_id" },
+          items: {
+            type: "object",
+            properties: {
+              batchId: { type: "string", "x-ref": { model: "receipt", as: "batch", fk: "receipt_document_id" } },
+              bankId: { type: "string", "x-ref": { model: "bank" } },
+            },
+          },
+        },
+      },
+    };`,
+  );
+  return root;
+}
+
+Deno.test("ребра документа: шапка й рядки; ссылки не на документ — поза ними, відмова — з позначкою", async () => {
+  const root = await linkApp();
+  try {
+    const links = await collectDocumentLinks(root, ["catalog/bank", "document/receipt", "document/sale"]);
+    assertEquals(links, [
+      { model: "sale", field: "baseDocumentId", table: "app.sale", ownerCol: "document_id", refCol: "base_document_id", related: true },
+      // Колонку вирішує `x-ref.fk` — те саме правило, що в CRUD.
+      { model: "sale", field: "lines.batchId", table: "app.sale_line", ownerCol: "sale_id", refCol: "receipt_document_id", related: true },
+      // Відмова лишається в переліку: проба покриття мусить відрізнити її від забутого x-ref.
+      { model: "sale", field: "noteDocumentId", table: "app.sale", ownerCol: "document_id", refCol: "note_document_id", related: false },
+    ]);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+/**
+ * Представлення посилається на таблиці, а таблиці є лише в моделей зі своїм
+ * SQL. Документ поза `sql.json` дав би гілку в неіснуючу таблицю — і падіння
+ * всієї публікації на `create view`.
+ */
+Deno.test("ребра документа: лише моделі зі складу пакета", async () => {
+  const root = await linkApp();
+  try {
+    assertEquals(await collectDocumentLinks(root, ["catalog/bank", "document/receipt"]), []);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+const RENDERED_LINKS = [
+  { model: "sale", field: "baseDocumentId", table: "app.sale", ownerCol: "document_id", refCol: "base_document_id", related: true },
+  { model: "sale", field: "lines.batchId", table: "app.sale_line", ownerCol: "sale_id", refCol: "receipt_document_id", related: true },
+  { model: "sale", field: "noteDocumentId", table: "app.sale", ownerCol: "document_id", refCol: "note_document_id", related: false },
+];
+
+Deno.test("представлення ребер: гілка на ребро, порожнє посилання ребром не є, відмова — теж", () => {
+  const sql = renderDocumentLinkView(RENDERED_LINKS);
+  assertEquals(sql.includes("note_document_id"), false);
+  assertStringIncludes(sql, "create or replace view app.document_link as");
+  assertStringIncludes(
+    sql,
+    "select l.document_id as from_id, l.base_document_id as to_id, 'sale'::text as model, 'baseDocumentId'::text as field\n" +
+      "  from app.sale l\n where l.base_document_id is not null\nunion all\n",
+  );
+  assertStringIncludes(sql, "select l.sale_id as from_id, l.receipt_document_id as to_id");
+  assertEquals(sql.trimEnd().endsWith("is not null;"), true);
+});
+
+Deno.test("представлення ребер з одних відмов — порожнє, а не синтаксична помилка", () => {
+  const sql = renderDocumentLinkView(RENDERED_LINKS.filter((link) => !link.related));
+  assertStringIncludes(sql, "where false;");
+});
+
+Deno.test("довідка ребер: таблиця розкладена на схему й ім'я, відмова позначена", () => {
+  const sql = renderDocumentLinkSourceView(RENDERED_LINKS);
+  assertStringIncludes(sql, "create or replace view app.document_link_source as");
+  assertStringIncludes(
+    sql,
+    "('sale'::text, 'lines.batchId'::text, 'app'::text, 'sale_line'::text, 'sale_id'::text, 'receipt_document_id'::text, true)",
+  );
+  assertStringIncludes(sql, "'note_document_id'::text, false)");
+  assertStringIncludes(sql, "v(model, field, table_schema, table_name, owner_column, ref_column, is_related)");
 });

@@ -20,6 +20,7 @@ import "@client/ui-kit/tabular/ui-tabular-table.ts";
 import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
 import { icons } from "@client/ui-kit/icons.ts";
 import { movementsButton } from "@shared/document-movements.ts";
+import { relatedDocumentsButton } from "@shared/related-documents.ts";
 
 export const tagName = "invoice-edit";
 
@@ -241,6 +242,7 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
         ${t("common.print")}
       </button>
       ${movementsButton(item.id, item.isPosted, "btn-outline")}
+      ${relatedDocumentsButton("invoice", item.id)}
       <!-- Перегляд вкладення поруч із друком: обидві кнопки нічого не міняють
            у записі, а показують те, що з ним пов'язане. Кнопка сама гасне,
            поки прикріпленого файлу немає. -->

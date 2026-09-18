@@ -639,3 +639,377 @@ drop trigger if exists tr_document_guard on app.document;
 create trigger tr_document_guard
 before insert or update or delete on app.document
 for each row execute function app.document_guard();
+
+-- ── Пов'язані документи ─────────────────────────────────────────────────────
+--
+-- Дерево «хто на кого посилається» навколо документа — команда `related`
+-- кожного документа (рантайм веде її сюди сам, як `post` у `<model>_post`).
+-- Ребра — `app.document_link`: склад дає застосунок, генерується зі схем
+-- (див. struc.sql і docs/related-documents-plan.md).
+--
+-- Три кроки, і в кожного своя причина форми:
+--
+-- 1. КОМПОНЕНТА — пошарово, в обидва боки, аж до межі вузлів. Пошарово, а не
+--    рекурсивним CTE: CTE з `union` не бачить уже відвіданих вузлів іншої
+--    глибини, тож цикл «A → B → A» крутився б до межі глибини, а тут
+--    відвідане — масив, і вузол заходить рівно раз. Обидва відбори по
+--    представленню йдуть умовою `= any(масив)`, яка проштовхується в кожну
+--    гілку `union all` і бере її індекс. Межа ріже ДАЛЬНІЙ шар (ближні вузли
+--    лишаються), і вихід за неї віддається прапорцем, а не мовчки.
+--
+-- 2. ДЕРЕВО — від коренів униз, як у 1С. Батько — той, НА КОГО посилаються:
+--    податкова накладна посилається на відвантаження, тож під ним і стоїть.
+--    Корінь — вузол, що ні на що в компоненті не посилається. Вузол із двома
+--    батьками з'являється під кожним, але розкривається один раз, решта —
+--    рядок-повтор: інакше спільна гілка множилася б під кожним батьком. Вузли,
+--    до яких від коренів не дійти (компонента з самого циклу), стають деревом
+--    самі — першим поточний документ.
+--
+-- 3. ПРАВА — по вузлу, `view` моделі самого вузла. Недоступний вузол лишається
+--    в дереві з видом документа, але без id, номера, суми й подання: сховати
+--    його цілком означало б збрехати про те, скільки кроків між документами.
+--    Обхід крізь нього не спиняється — за ним можуть стояти документи, які
+--    користувач бачить за власним правом.
+--
+-- Payload: `{ id, limit? }`; `limit` — межа вузлів, умовчання 200, стеля 1000.
+drop function if exists app.document_related(bigint, jsonb);
+create function app.document_related(p_user_id bigint, p_payload jsonb)
+returns jsonb
+language plpgsql
+stable
+as $$
+declare
+  v_raw_id    text := nullif(trim(coalesce(p_payload->>'id', '')), '');
+  v_raw_limit text := nullif(trim(coalesce(p_payload->>'limit', '')), '');
+  v_id        bigint;
+  v_limit     int := 200;
+  v_nodes     bigint[];
+  v_frontier  bigint[];
+  v_next      bigint[];
+  v_truncated boolean := false;
+
+  -- Ребра всередині компоненти, впорядковані за дитиною СПАДАННЯМ: стек
+  -- розвертає порядок, тож діти виходять за датою зростанням.
+  v_e_from  bigint[];
+  v_e_to    bigint[];
+  v_e_model text[];
+  v_e_field text[];
+
+  -- Стек обходу.
+  v_s_id     bigint[] := '{}';
+  v_s_parent int[]    := '{}';
+  v_s_depth  int[]    := '{}';
+  v_s_model  text[]   := '{}';
+  v_s_field  text[]   := '{}';
+  v_n        int;
+
+  -- Вихід: рядок на кожну появу вузла.
+  v_o_key    int[]     := '{}';
+  v_o_parent int[]     := '{}';
+  v_o_depth  int[]     := '{}';
+  v_o_id     bigint[]  := '{}';
+  v_o_model  text[]    := '{}';
+  v_o_field  text[]    := '{}';
+  v_o_repeat boolean[] := '{}';
+
+  v_expanded  bigint[] := '{}';
+  v_start     bigint[];
+  v_cur       bigint;
+  v_cur_key   int;
+  v_cur_depth int;
+  v_seq       int := 0;
+  v_rows      jsonb;
+begin
+  -- Нечислове id — той самий «не знайдено», а не помилка приведення типу:
+  -- команду кличе й агент, і відмова мусить бути конвертом.
+  -- Дві перевірки, а не одна з `or`: порядок обчислення `or` PostgreSQL не
+  -- обіцяє, і приведення могло б випередити перевірку формату.
+  if v_raw_id ~ '^\d{1,18}$' then
+    v_id := v_raw_id::bigint;
+  end if;
+  if v_id is null or not exists (select 1 from app.document where id = v_id) then
+    return jsonb_build_object(
+      'ok', false,
+      'data', app.access_empty_data(),
+      'messages', jsonb_build_array(
+        '@[core.documentNotFound]' || jsonb_build_object('id', coalesce(v_raw_id, ''))::text
+      )
+    );
+  end if;
+
+  if v_raw_limit ~ '^\d{1,6}$' then
+    v_limit := least(greatest(v_raw_limit::int, 1), 1000);
+  end if;
+
+  -- 1. Компонента.
+  v_nodes := array[v_id];
+  v_frontier := array[v_id];
+  loop
+    select coalesce(array_agg(s.n order by s.n), '{}')
+      into v_next
+      from (
+        select l.to_id as n from app.document_link l where l.from_id = any(v_frontier)
+        union
+        select l.from_id from app.document_link l where l.to_id = any(v_frontier)
+      ) s
+     where s.n <> all(v_nodes)
+       -- Посилання без FK може пережити документ; вузла, якого немає, у дереві
+       -- бути не може.
+       and exists (select 1 from app.document d where d.id = s.n);
+
+    exit when cardinality(v_next) = 0;
+
+    if cardinality(v_nodes) + cardinality(v_next) > v_limit then
+      v_next := v_next[1 : v_limit - cardinality(v_nodes)];
+      v_truncated := true;
+    end if;
+
+    v_nodes := v_nodes || v_next;
+    v_frontier := v_next;
+    exit when v_truncated;
+  end loop;
+
+  -- 2. Ребра компоненти. Два поля одного документа на той самий документ —
+  -- одне ребро: у дереві це один зв'язок, а не два рядки.
+  select coalesce(array_agg(e.from_id order by d.doc_date desc, d.id desc), '{}'),
+         coalesce(array_agg(e.to_id   order by d.doc_date desc, d.id desc), '{}'),
+         coalesce(array_agg(e.model   order by d.doc_date desc, d.id desc), '{}'),
+         coalesce(array_agg(e.field   order by d.doc_date desc, d.id desc), '{}')
+    into v_e_from, v_e_to, v_e_model, v_e_field
+    from (
+      select distinct on (l.from_id, l.to_id) l.from_id, l.to_id, l.model, l.field
+        from app.document_link l
+       where l.from_id = any(v_nodes)
+         and l.to_id = any(v_nodes)
+         and l.from_id <> l.to_id
+       order by l.from_id, l.to_id, l.field
+    ) e
+    join app.document d on d.id = e.from_id;
+
+  -- Корені — у зворотному порядку, бо їх теж кладуть на стек.
+  select coalesce(array_agg(d.id order by d.doc_date desc, d.id desc), '{}')
+    into v_start
+    from app.document d
+   where d.id = any(v_nodes)
+     and d.id <> all(v_e_from);
+
+  loop
+    for i in 1 .. cardinality(v_start) loop
+      v_s_id     := v_s_id || v_start[i];
+      v_s_parent := v_s_parent || null::int;
+      v_s_depth  := v_s_depth || 0;
+      v_s_model  := v_s_model || null::text;
+      v_s_field  := v_s_field || null::text;
+    end loop;
+
+    while cardinality(v_s_id) > 0 loop
+      v_n := cardinality(v_s_id);
+      v_cur := v_s_id[v_n];
+      v_cur_depth := v_s_depth[v_n];
+      v_seq := v_seq + 1;
+      v_cur_key := v_seq;
+
+      v_o_key    := v_o_key || v_cur_key;
+      v_o_parent := v_o_parent || v_s_parent[v_n];
+      v_o_depth  := v_o_depth || v_cur_depth;
+      v_o_id     := v_o_id || v_cur;
+      v_o_model  := v_o_model || v_s_model[v_n];
+      v_o_field  := v_o_field || v_s_field[v_n];
+      v_o_repeat := v_o_repeat || (v_cur = any(v_expanded));
+
+      v_s_id     := v_s_id[1 : v_n - 1];
+      v_s_parent := v_s_parent[1 : v_n - 1];
+      v_s_depth  := v_s_depth[1 : v_n - 1];
+      v_s_model  := v_s_model[1 : v_n - 1];
+      v_s_field  := v_s_field[1 : v_n - 1];
+
+      if v_cur <> all(v_expanded) then
+        v_expanded := v_expanded || v_cur;
+        for i in 1 .. cardinality(v_e_from) loop
+          if v_e_to[i] = v_cur then
+            v_s_id     := v_s_id || v_e_from[i];
+            v_s_parent := v_s_parent || v_cur_key;
+            v_s_depth  := v_s_depth || (v_cur_depth + 1);
+            v_s_model  := v_s_model || v_e_model[i];
+            v_s_field  := v_s_field || v_e_field[i];
+          end if;
+        end loop;
+      end if;
+    end loop;
+
+    -- Нерозкрите лишається тільки в компоненти з самого циклу: коренів у неї
+    -- немає. Першим — поточний документ, далі найраніший.
+    if v_id <> all(v_expanded) then
+      v_start := array[v_id];
+    else
+      select coalesce(array_agg(x.id), '{}')
+        into v_start
+        from (
+          select d.id
+            from app.document d
+           where d.id = any(v_nodes) and d.id <> all(v_expanded)
+           order by d.doc_date, d.id
+           limit 1
+        ) x;
+    end if;
+
+    exit when cardinality(v_start) = 0;
+  end loop;
+
+  -- 3. Реквізити й права. Право рахується раз на тип, а не на рядок.
+  with o as (
+    select *
+      from unnest(v_o_key, v_o_parent, v_o_depth, v_o_id, v_o_model, v_o_field, v_o_repeat)
+        as o(key, parent_key, depth, id, via_model, via_field, is_repeat)
+  ),
+  types as (
+    select dt.id, dt.code, coalesce(nullif(dt.short_name, ''), dt.name) as name,
+           app.access_can(p_user_id, dt.code, 'view') as can
+      from app.document_type dt
+     where dt.id in (select d.document_type_id from app.document d where d.id = any(v_nodes))
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'key',          o.key,
+           'parentKey',    o.parent_key,
+           'depth',        o.depth,
+           'isCurrent',    o.id = v_id,
+           'isRepeat',     o.is_repeat,
+           'isAvailable',  t.can,
+           'typeCode',     t.code,
+           'typeName',     t.name,
+           'id',           case when t.can then o.id::text end,
+           'number',       case when t.can then d.number end,
+           'docDate',      case when t.can then d.doc_date end,
+           'total',        case when t.can then d.total end,
+           'presentation', case when t.can then d.presentation end,
+           'isPosted',     case when t.can then d.is_posted end,
+           'isDeleted',    case when t.can then d.is_deleted end,
+           'viaModel',     o.via_model,
+           'viaField',     o.via_field
+         ) order by o.key), '[]'::jsonb)
+    into v_rows
+    from o
+    join app.document d on d.id = o.id
+    join types t on t.id = d.document_type_id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', jsonb_build_object(
+        'id', v_id::text,
+        'nodes', cardinality(v_nodes),
+        'limit', v_limit,
+        'truncated', v_truncated
+      ),
+      'rows', v_rows,
+      'options', '{}'::jsonb,
+      'totals', '{}'::jsonb
+    ),
+    'messages', '[]'::jsonb
+  );
+end;
+$$;
+
+-- ── Проба ребер: індекси й покриття ─────────────────────────────────────────
+--
+-- Дві речі, яких не видно ні на генерації, ні на публікації, ні на демо-наборі:
+--
+-- `no_index` — колонка ребра без індексу, що з неї починається. Обхід
+--   `app.document_related` відбирає по представленню умовою `= any(масив)` в
+--   обидва боки, і без індексу кожна гілка — повний перегляд таблиці. На
+--   сотні документів різниці немає; вона з'являється в застосунку, що
+--   відпрацював рік (та сама пастка, що в docs/ledger-performance.md).
+--   Перевіряються обидві колонки: посилання (хто посилається на мене) і
+--   власник (на кого посилаюся я) — у шапки власник це первинний ключ, а в
+--   рядка табличної частини — `parentFk`, на якому індексу може й не бути.
+--
+-- `uncovered_fk` — FK таблиці документа на документ, який ребром не став і не
+--   оголошений відмовою. Найчастіша причина — посилання в схемі голим `bigint`
+--   без `x-ref`: база зв'язок знає, генератор — ні, і дерево мовчки неповне.
+--   Таблиця документа — шапка (первинний ключ `document_id` і FK на
+--   `app.document`) або її рядки (FK на шапку з `on delete cascade`). Регістри
+--   сюди не потрапляють: їхній реєстратор — рух документа, а не зв'язок.
+--
+-- Кличе її публікація (`publishAppSql`) і друкує знайдене попередженням:
+-- валити розгортання через індекс не можна, а мовчати — означає не знайти ніколи.
+drop function if exists app.document_link_check();
+create function app.document_link_check()
+returns table (kind text, table_name text, column_name text, model text, field text)
+language sql
+stable
+as $$
+  with src as (
+    select s.model, s.field, s.table_schema, s.table_name, c.col, s.is_related
+      from app.document_link_source s
+      cross join lateral (values (s.owner_column), (s.ref_column)) c(col)
+  ),
+  src_att as (
+    select src.*, cls.oid as relid, a.attnum
+      from src
+      join pg_namespace n on n.nspname = src.table_schema
+      join pg_class cls on cls.relnamespace = n.oid and cls.relname = src.table_name
+      join pg_attribute a on a.attrelid = cls.oid and a.attname = src.col and not a.attisdropped
+  ),
+  unindexed as (
+    select 'no_index'::text as kind,
+           sa.table_schema || '.' || sa.table_name as table_name,
+           sa.col as column_name,
+           min(sa.model) as model,
+           min(sa.field) as field
+      from src_att sa
+     where sa.is_related
+       and not exists (
+         select 1 from pg_index i where i.indrelid = sa.relid and i.indkey[0] = sa.attnum
+       )
+     group by sa.table_schema, sa.table_name, sa.col
+  ),
+  headers as (
+    select con.conrelid as relid
+      from pg_constraint con
+     where con.contype = 'f'
+       and con.confrelid = 'app.document'::regclass
+       and cardinality(con.conkey) = 1
+       and exists (
+         select 1 from pg_constraint pk
+          where pk.conrelid = con.conrelid and pk.contype = 'p' and pk.conkey = con.conkey
+       )
+  ),
+  line_tables as (
+    select distinct con.conrelid as relid, con.oid as owner_fk
+      from pg_constraint con
+     where con.contype = 'f'
+       and con.confrelid in (select relid from headers)
+       and con.confdeltype = 'c'
+       and con.conrelid not in (select relid from headers)
+  ),
+  uncovered as (
+    select 'uncovered_fk'::text as kind,
+           n.nspname || '.' || cls.relname as table_name,
+           a.attname::text as column_name,
+           null::text as model,
+           null::text as field
+      from pg_constraint con
+      join pg_class cls on cls.oid = con.conrelid
+      join pg_namespace n on n.oid = cls.relnamespace
+      join pg_attribute a on a.attrelid = con.conrelid and a.attnum = con.conkey[1]
+     where con.contype = 'f'
+       and cardinality(con.conkey) = 1
+       and (con.confrelid = 'app.document'::regclass or con.confrelid in (select relid from headers))
+       and (con.conrelid in (select relid from headers) or con.conrelid in (select relid from line_tables))
+       -- Власний зв'язок таблиці: шапка → app.document первинним ключем,
+       -- рядок → шапка.
+       and not exists (
+         select 1 from pg_constraint pk
+          where pk.conrelid = con.conrelid and pk.contype = 'p' and pk.conkey = con.conkey
+       )
+       and con.oid not in (select owner_fk from line_tables)
+       and not exists (
+         select 1 from src_att sa
+          where sa.relid = con.conrelid and sa.attnum = con.conkey[1]
+       )
+  )
+  select * from unindexed
+  union all
+  select * from uncovered
+  order by 1, 2, 3;
+$$;

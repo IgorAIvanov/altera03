@@ -40,6 +40,7 @@ Descriptions are quoted from the source as they are written there.
 | `icons.post` | Трикутник — «Провести». |
 | `icons.unpost` | Стрілка назад — «Скасувати проведення». |
 | `icons.movements` | Дві зустрічні стрілки — «Рух документа»: проводки, які документ зробив. |
+| `icons.related` | Три аркуші на гілках — «Пов'язані документи»: хто на кого посилається. |
 
 ## список
 

@@ -109,6 +109,22 @@ Extra commands follow the same naming style: `nextCode`, `nextNumber`, `<verb><N
   `_post`: it must not depend on being committed, and it must leave its refusals in the
   envelope (or as `raise exception`) rather than half-writing and returning `ok`. Both are
   already required — the dry run just makes a violation visible.
+- Every document also gets `related` — the **tree of related documents** around it
+  (`app.document_related`, permission `view`). You write nothing for it either: its edges
+  are every `x-ref` of a document to a document (header or tabular section), collected from
+  the schemas by `sql:assemble`. What this asks of you: a reference to a document is an
+  `x-ref`, not a bare `bigint` column — a bare id with an FK in DDL does not reach the tree.
+  A technical reference that is not a relation says so with `"x-ref": { …, related: false }`.
+  Register rows that point at their registrar are not edges: that is the document's movements.
+  `sql:publish` warns (`⚠ Пов'язані документи`) about both ways this goes wrong — an FK
+  from a document to a document that is not an edge, and an edge column with no index
+  starting at it (the tree walks every edge both ways). Treat both as work to do: the
+  index goes into the model's `db/struc.sql`. On the form the tree is one button in
+  `renderAuxActions()` — `<ui-related-documents model=… .documentId=… .routeOf=…>`; `routeOf`
+  maps a document type code to the form's route through your view manifest, because the
+  framework cannot see it. The agent gets `related` in a document's default command set (read
+  only, so a read-only token sees it too); a document with its own `agent.allowCommands`
+  must name it.
 - Information registers (`type: register`) get the generated CRUD — `list`, `get`, `save`,
   `delete` — like a catalog, minus `lookup`: nothing references a register row, so there is
   nobody to pick it in a picker, and no `LookupRowSchema` is required. What generation does

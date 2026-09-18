@@ -3,7 +3,7 @@ import { DatabaseService } from "../../database/database.service.ts";
 import { isMissingDatabaseFunction } from "../../database/database-error.ts";
 import { signEnvelopeTokens } from "../blob/blob-token.ts";
 import { looksLikeEnvelope, ModelCommandError } from "./model-runtime.errors.ts";
-import { getModelConfig, supportsPosting } from "./model-registry.ts";
+import { getModelConfig, isDocumentModel, supportsPosting } from "./model-registry.ts";
 import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import type {
   ModelBackendConfig,
@@ -17,6 +17,23 @@ import type {
 // самій моделі, тож знати про одну й не знати про другу рантайм не може.
 const STANDARD_COMMANDS = new Set(["list", "get", "save", "delete", "undelete", "lookup"]);
 const STANDARD_DOCUMENT_COMMANDS = new Set(["post", "unpost"]);
+
+/**
+ * Команди, які ядро дає КОЖНОМУ документу однією функцією на всіх.
+ *
+ * Від `post` вони відрізняються тим, що модель їх не пише: `post` — це
+ * `<model>_post` застосунку, а дерево пов'язаних документів однакове для всіх
+ * і живе в `@core/document_core`. Тому маршрут і право тут, у рантаймі, а не в
+ * реєстрі застосунку: команда працює одразу після публікації SQL ядра, без
+ * `sql:registry`, як і `post`. Явне оголошення моделі (`commands.sql`/`ts`,
+ * `commands.access`) перекриває обидва.
+ *
+ * Шлях SQL, а не TS-хендлер, заради права: перевірка лягає в той самий
+ * `select`, що кличе функцію, і відмова не виконує обходу взагалі.
+ */
+const CORE_DOCUMENT_COMMANDS: Record<string, { functionName: string; action: string }> = {
+  related: { functionName: "document_related", action: "view" },
+};
 
 /**
  * Дія, потрібна стандартній команді. `save` тут немає: вона `create` або
@@ -253,6 +270,12 @@ function getSqlCommandConfig(
     };
   }
 
+  const core = CORE_DOCUMENT_COMMANDS[command];
+  if (core && isDocumentModel(model)) {
+    // Схема — ядра, а не моделі: функція одна на всі документи.
+    return { schema: "app", functionName: core.functionName };
+  }
+
   return null;
 }
 
@@ -330,6 +353,9 @@ function resolveRequiredAction(
   if (STANDARD_DOCUMENT_COMMANDS.has(command) && !supportsPosting(model)) {
     return null;
   }
+
+  const core = CORE_DOCUMENT_COMMANDS[command];
+  if (core) return isDocumentModel(model) ? core.action : null;
 
   return STANDARD_COMMAND_ACTIONS[command] ?? null;
 }
