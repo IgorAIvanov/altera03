@@ -910,6 +910,83 @@ begin
 end;
 $$;
 
+-- ── Документ за кодом: `document.locate` ────────────────────────────────────
+--
+-- Навіщо. Бланк друкує в шапці штрихкод з id документа (id, а не номер: номер
+-- кириличний, а Code 128 кодує лише ASCII; і id однозначний між організаціями
+-- й роками нумерації). Прийшов папір — відсканували — має відкритися форма.
+-- Знання «id → тип → модель» живе тут, у ядрі; маршрут форми за моделлю
+-- добудовує TS-хендлер (`server/modules/document/document-locate.handler.ts`),
+-- бо view-manifest у базі не лежить.
+--
+-- Право — `view` на модель ТИПУ документа, і перевіряє його сама функція:
+-- модель команди (`document`) права не несе, до виклику тип ще невідомий.
+-- Та сама схема, що в `app.document_related` по вузлу. Відмова називає ТИП
+-- документа, але не його реквізити — так само, як у дереві пов'язаних. Не
+-- `app.access_denied`: та називає право й модель ключами («view», «invoice»),
+-- а читає це людина біля сканера.
+--
+-- Позначений на видалення документ відкривається: форма сама скаже, що він
+-- позначений, а «не знайдено» про папір у руках було б неправдою.
+--
+-- Payload: `{ code }` — рядок як є зі сканера чи з клавіатури.
+drop function if exists app.document_locate(bigint, jsonb);
+create function app.document_locate(p_user_id bigint, p_payload jsonb)
+returns jsonb
+language plpgsql
+stable
+as $$
+declare
+  v_raw  text := nullif(trim(coalesce(p_payload->>'code', '')), '');
+  v_id   bigint;
+  v_code text;
+  v_name text;
+begin
+  -- Той самий розбір, що в `document_related`: нечисловий код — «не знайдено»,
+  -- а не помилка приведення типу.
+  if v_raw ~ '^\d{1,18}$' then
+    v_id := v_raw::bigint;
+  end if;
+
+  select dt.code, coalesce(nullif(dt.short_name, ''), dt.name)
+    into v_code, v_name
+    from app.document d
+    join app.document_type dt on dt.id = d.document_type_id
+   where d.id = v_id;
+
+  if v_code is null then
+    return jsonb_build_object(
+      'ok', false,
+      'data', app.access_empty_data(),
+      'messages', jsonb_build_array(
+        '@[core.documentNotFound]' || jsonb_build_object('id', coalesce(v_raw, ''))::text
+      )
+    );
+  end if;
+
+  if not app.access_can(p_user_id, v_code, 'view') then
+    return jsonb_build_object(
+      'ok', false,
+      'data', app.access_empty_data(),
+      'messages', jsonb_build_array(
+        '@[core.documentLocate.noAccess]' || jsonb_build_object('type', v_name)::text
+      )
+    );
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object(
+      'item', jsonb_build_object('id', v_id::text, 'typeCode', v_code, 'typeName', v_name),
+      'rows', '[]'::jsonb,
+      'options', '{}'::jsonb,
+      'totals', '{}'::jsonb
+    ),
+    'messages', '[]'::jsonb
+  );
+end;
+$$;
+
 -- ── Проба ребер: індекси й покриття ─────────────────────────────────────────
 --
 -- Дві речі, яких не видно ні на генерації, ні на публікації, ні на демо-наборі:

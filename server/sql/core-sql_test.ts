@@ -64,6 +64,8 @@ Deno.test("core-sql.generated.ts збігається з .sql на диску", 
 Deno.test("core-agent-rules.generated.ts збігається з маркерами ядра", async () => {
   const { coreAgentRules } = await import("../modules/agent/core-agent-rules.generated.ts");
   const { findMarkers } = await import("@altera/tools/scan-translation-markers");
+  // Відмови, що правилами не є, — той самий перелік, що в генераторі, а не копія.
+  const { NOT_CORE_RULES } = await import("@altera/tools/generate-core-sql");
 
   const documentKeys = new Set<string>();
   const dbDir = join(SQL_DIR, "document_core", "db");
@@ -71,7 +73,7 @@ Deno.test("core-agent-rules.generated.ts збігається з маркера�
     if (!entry.isFile || !entry.name.endsWith(".sql")) continue;
     const path = join(dbDir, entry.name);
     for (const use of findMarkers(await Deno.readTextFile(path), path)) {
-      documentKeys.add(use.key);
+      if (!NOT_CORE_RULES.has(use.key)) documentKeys.add(use.key);
     }
   }
 

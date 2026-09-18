@@ -47,6 +47,16 @@ const CORE_RULE_SCOPES: Record<string, string> = {
   numerator: "*",
 };
 
+/**
+ * Маркери з пакетів вище, які правилами НЕ є, хоч і лежать поруч із ними.
+ *
+ * `core.documentLocate.noAccess` — відмова в праві команди `document.locate`
+ * (поле коду документа в шапці): вона каже, що ЦЬОМУ користувачеві не можна,
+ * а не що застосунок відмовиться робити з документом. Агентові цієї команди
+ * не видно взагалі, і в переліку обмежень кожного документа рядок був би шумом.
+ */
+export const NOT_CORE_RULES: ReadonlySet<string> = new Set(["core.documentLocate.noAccess"]);
+
 const RULES_HEADER = `// ЗГЕНЕРОВАНО \`deno task core:sql\` з server/sql/**/db/*.sql — не редагувати.
 //
 // Правила, які оголошує ядро, за тим, кому вони стосуються: "*" — усім,
@@ -65,7 +75,7 @@ function collectCoreRules(files: string[], sqlDir: string): Record<string, strin
 
     const list = scopes[scope] ??= [];
     for (const use of findMarkers(Deno.readTextFileSync(file), file)) {
-      if (!list.includes(use.key)) list.push(use.key);
+      if (!NOT_CORE_RULES.has(use.key) && !list.includes(use.key)) list.push(use.key);
     }
   }
 

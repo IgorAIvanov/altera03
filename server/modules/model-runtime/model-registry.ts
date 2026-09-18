@@ -1,6 +1,7 @@
 import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.types.ts";
 import { printPdfHandler, printPreviewHandler } from "../print/print.handlers.ts";
 import { postPreviewHandler } from "../document/post-preview.handler.ts";
+import { documentLocateHandler } from "../document/document-locate.handler.ts";
 import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import { getServerConfig, type ModelsConfig } from "../../config/server-config.ts";
 
@@ -12,6 +13,18 @@ const RUNTIME_HANDLERS: Record<string, TsModelCommandConfig["handler"]> = {
   "runtime.printPdf": printPdfHandler,
   "runtime.printPreview": printPreviewHandler,
   "runtime.postPreview": postPreviewHandler,
+};
+
+/**
+ * TS-команди моделей ЯДРА, які застосунок не підключає, а отримує готовими.
+ *
+ * `document.locate` — `authenticated`: модель `document` права не несе (прав
+ * на неї ніхто не видає), а потрібне право — `view` на модель ТИПУ знайденого
+ * документа — до виклику невідоме. Його перевіряє сама `app.document_locate`.
+ * В агентський перелік команда не йде: відкрити вкладку агентові нічим.
+ */
+const CORE_TS_COMMANDS: Record<string, { handler: TsModelCommandConfig["handler"]; access: string }> = {
+  "document.locate": { handler: documentLocateHandler, access: "authenticated" },
 };
 
 /**
@@ -78,6 +91,18 @@ function buildRegistry(
     // команди, вона й виконується.
     config.sqlCommands = { [command]: {}, ...config.sqlCommands };
     config.access = { [command]: coreModelAccess[key], ...config.access };
+  }
+
+  // TS-команди моделей ядра — те, яким бази мало (маршрут форми лежить у
+  // view-manifest, а не в SQL). Застосунок так само сильніший.
+  for (const [key, { handler, access }] of Object.entries(CORE_TS_COMMANDS)) {
+    const separator = key.lastIndexOf(".");
+    const model = key.slice(0, separator);
+    const command = key.slice(separator + 1);
+
+    const config = result[model] ??= {};
+    config.tsCommands = { [command]: { handler }, ...config.tsCommands };
+    config.access = { [command]: access, ...config.access };
   }
 
   for (const binding of bindings) {

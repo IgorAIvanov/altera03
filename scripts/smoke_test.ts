@@ -19,6 +19,7 @@ import { assertEquals, assertExists } from "@std/assert";
 import { AppClient, type Envelope } from "@altera/tools/app-client";
 import { configFromEnv } from "@altera/server";
 import { createServer } from "../app/server.ts";
+import { viewManifest } from "../app/_generated/view-manifest.generated.ts";
 
 /** Свідомо неіснуючий користувач: 401 від нього — доказ, що заголовок прочитано. */
 const MISSING_USER_ID = "999999999";
@@ -733,6 +734,34 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         await numeratorRestore("invoice", before);
         await numeratorRestore("counterparty", beforeParty);
         await numeratorRestore("organization", beforeOrg);
+      }
+    });
+
+    // Документ за кодом із бланка: команда моделі ядра `document`, без
+    // манифесту. Маршрут форми рахує сервер з view-manifest — перевіряємо, що
+    // він справжній, а не зібраний як `document/<модель>/edit` навмання.
+    await t.step("документ: відкрити за кодом із бланка", async () => {
+      for (const code of ["abc", "999999999999"]) {
+        const missing = await client.model("document", "locate", { code });
+        assertEquals(missing.body.ok, false);
+        assertEquals(String(missing.body.messages[0]).startsWith("@[core.documentNotFound]"), true);
+      }
+
+      const [existing] = await withDb((sql) =>
+        sql<{ id: string; code: string }[]>`
+          select d.id::text as id, dt.code from app.document d
+          join app.document_type dt on dt.id = d.document_type_id
+          order by d.id limit 1`
+      );
+      if (existing) {
+        // Код зі сканера може прийти з пробілами довкола.
+        const found = await client.model("document", "locate", { code: ` ${existing.id} ` });
+        assertEquals(found.body.ok, true);
+        const item = found.body.data.item as { id: string; route: string; typeCode: string };
+        assertEquals(item.id, existing.id);
+        assertEquals(item.typeCode, existing.code);
+        assertEquals(viewManifest.some((v) => v.route === item.route), true);
+        assertEquals(item.route.endsWith(`/${existing.code}/edit`), true);
       }
     });
 
