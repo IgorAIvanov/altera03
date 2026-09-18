@@ -115,6 +115,28 @@ Custom UI annotations (prefix `x-`):
 
 Width values: `"xs"` (60px), `"sm"` (100px), `"md"` (160px), `"lg"` (240px), `"full"` (flex-1).
 
+### `x-search-via` — search through a subordinate model
+
+When an item has several "alternative keys" in a table of its own — barcodes,
+supplier article numbers, synonyms — the list and picker search must find the
+item by any of them. Declare it on the **root** of the owner's `ItemSchema` (the
+owner has no field to put it on):
+
+```ts
+export const NomenclatureItemSchema = Type.Object({ /* … */ }, {
+  "x-search-via": { model: "nomenclature_barcode", field: "barcode" },
+});
+```
+
+`field` (and optional `fk`) are schema keys of the subordinate model; `fk`
+defaults to its only field with an `x-ref` on the owner. Several tables — an
+array. `sql:gen` adds `or exists (…)` to both `_list` and `_lookup`: the item
+comes once however many of its codes match, a code marked `isDeleted` finds
+nothing, and the owner's own search columns keep working. Give the `fk` column an
+index. Do NOT denormalise the codes into a column of the owner with triggers to
+make them searchable — that is exactly what this annotation replaces. Requires
+`@altera/tools` 0.15.7.
+
 ### `x-filter` — list filters
 
 One line here is the whole SQL side of a filter: `deno task sql:gen` turns it into the

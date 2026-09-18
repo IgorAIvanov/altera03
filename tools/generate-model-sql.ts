@@ -72,6 +72,19 @@ type XTable = { table: string; parentFk: string; orderBy?: string };
 type XFilter = { op?: "eq" | "range" | "like"; key?: string };
 /** Поле-вкладення: у колонці лежить id з app.attachment. */
 type XBlob = { as?: string };
+/**
+ * Пошук крізь ПІДПОРЯДКОВАНУ модель: знайти позицію за штрихкодом, артикулом
+ * постачальника, синонімом назви — за «альтернативним ключем», якого в рядку
+ * самої моделі немає, бо в позиції їх кілька. Оголошується на КОРЕНІ
+ * `ItemSchema` власника (не на полі: поля, за яким шукають, у власника немає):
+ *
+ *   Type.Object({ … }, { "x-search-via": { model: "nomenclature_barcode", field: "barcode" } })
+ *
+ * `field` і `fk` — ключі СХЕМИ підпорядкованої моделі, як усе в схемах, а не
+ * імена колонок. `fk` за умовчанням — її єдине поле з `x-ref` на власника.
+ * Кілька таблиць — масивом.
+ */
+type XSearchVia = { model: string; field: string; fk?: string };
 
 type TSchema = {
   type?: string;
@@ -89,6 +102,7 @@ type TSchema = {
   "x-ref"?: XRef;
   "x-table"?: XTable;
   "x-blob"?: boolean | XBlob;
+  "x-search-via"?: XSearchVia | XSearchVia[];
   /** Поле є в типі форми, але не в таблиці — генератор його не чіпає. */
   "x-transient"?: boolean;
 };
@@ -266,6 +280,8 @@ type ModelSpec = {
   filters: FilterSpec[];
   searchExprsList: string[];
   searchExprsLookup: string[];
+  /** `x-search-via`: умови `exists (…)` — у пошук і списку, і підбору. */
+  searchVia: string[];
   listSort: SortEntry[];
   lookupSort: SortEntry[];
   listJoins: string[];
@@ -296,6 +312,11 @@ export type ModelMeta = {
   displayCol: string;
   /** Модель типу `document`: ключ таблиці `document_id`, шапка — `app.document`. */
   isDocument: boolean;
+  /**
+   * Поля `ItemSchema` моделі — для `x-search-via`, який називає поля ЧУЖОЇ
+   * схеми ключами й мусить їх перевірити. Порожньо — схему не читали.
+   */
+  props?: Record<string, TSchema>;
 };
 export type ModelMetaMap = Map<string, ModelMeta>;
 
@@ -927,11 +948,92 @@ function srcExpr(f: Field, jsonVar: string): string {
   return `nullif(trim(coalesce(${g}, '')), '')`;
 }
 
-function searchClause(exprs: string[], indent: string): string {
-  if (exprs.length === 0) return `${indent}true`;
+/**
+ * `x-search-via` власника → умови `exists (…)` для пошуку `_list` і `_lookup`.
+ *
+ * Доти «шукай ще й у таблиці штрихкодів» не було як сказати: пошук складався
+ * лише з колонок рядка моделі та її join. Обхід у застосунку — денормалізована
+ * колонка плюс два тригери (другий — бо згенерований `save` переписує кожну
+ * колонку схеми значенням із форми, і картка, відкрита до додавання коду,
+ * затирала б перелік). А переписати `_lookup` у `custom.sql` — міна: його
+ * затирає наступний `sql:gen`.
+ *
+ * `exists`, а не join: рядків підпорядкованої таблиці в позиції кілька, і
+ * join множив би позицію у видачі на кількість її кодів.
+ *
+ * Експортовано заради проб: помилки тут видно лише в SQL.
+ */
+export function searchViaPredicates(
+  declared: XSearchVia | XSearchVia[] | undefined,
+  owner: string,
+  pkExpr: string,
+  map: ModelMetaMap,
+): string[] {
+  if (declared === undefined) return [];
+  const list = Array.isArray(declared) ? declared : [declared];
+
+  return list.map((via, index) => {
+    const label = `${owner}: x-search-via[${index}]`;
+    const target = via?.model ? map.get(via.model) : undefined;
+    if (!target?.props) {
+      throw new Error(`${label} → модель '${via?.model ?? ""}' не знайдена (потрібні manifest і схема)`);
+    }
+    // Позначка видалення документа живе в шапці, а не в його таблиці — і
+    // «альтернативних ключів» у документа не буває; тихо згенерувати пошук,
+    // що бачить позначені рядки, гірше за відмову.
+    if (target.isDocument) {
+      throw new Error(`${label}: '${via.model}' — документ; шукати крізь документ не можна`);
+    }
+
+    const props = target.props;
+    const colOf = (key: string) => props[key]["x-db-col"] ?? camelToSnake(key);
+
+    // Поле, за яким шукаємо: текстове й не посилання — `ilike` по id означало б
+    // «знайти позицію, чий штрихкод має в id цифру 7».
+    const field = props[via.field];
+    if (!field || field["x-transient"] || field["x-ref"] || !isStringType(field)) {
+      throw new Error(
+        `${label}: поле '${via.field}' моделі '${via.model}' мусить бути текстовою ` +
+          `колонкою її таблиці (не x-ref і не x-transient)`,
+      );
+    }
+
+    // Зв'язок із власником — поле з x-ref на нього. Названий явно — перевіряємо,
+    // що він справді туди веде; ні — виводимо, і лише коли кандидат один.
+    const toOwner = Object.keys(props).filter((key) => props[key]["x-ref"]?.model === owner);
+    let fk = via.fk;
+    if (fk === undefined) {
+      if (toOwner.length !== 1) {
+        throw new Error(
+          `${label}: у '${via.model}' ${toOwner.length === 0 ? "немає" : "кілька"} полів з x-ref на ` +
+            `'${owner}'${toOwner.length ? ` (${toOwner.join(", ")})` : ""} — назвіть зв'язок явно: fk`,
+        );
+      }
+      fk = toOwner[0];
+    } else if (!toOwner.includes(fk)) {
+      throw new Error(`${label}: поле '${fk}' моделі '${via.model}' не має x-ref на '${owner}'`);
+    }
+
+    const fkCol = colOf(fk);
+    const col = colOf(via.field);
+    for (const [value, what] of [[fkCol, "fk"], [col, "field"], [target.table, "table"], [target.schema, "schema"]]) {
+      assertIdentifier(value, `${label}: ${what}`);
+    }
+
+    // Позначений на видалення код не знаходить позицію — так само, як позначену
+    // позицію не пропонує підбір.
+    const alive = props.isDeleted ? ` and not s${index}.is_deleted` : "";
+    return `exists (select 1 from ${target.schema}.${target.table} s${index} ` +
+      `where s${index}.${fkCol} = ${pkExpr} and s${index}.${col} ilike '%' || (payload->>'search') || '%'${alive})`;
+  });
+}
+
+function searchClause(exprs: string[], indent: string, predicates: string[] = []): string {
+  if (exprs.length === 0 && predicates.length === 0) return `${indent}true`;
   return [
     `${indent}coalesce(payload->>'search', '') = ''`,
     ...exprs.map((e) => `${indent}or ${e} ilike '%' || (payload->>'search') || '%'`),
+    ...predicates.map((p) => `${indent}or ${p}`),
   ].join("\n");
 }
 
@@ -1085,7 +1187,7 @@ begin
 ${sortGuard}${filterMirror}  select count(*)::int into v_total
   from ${spec.fromClause}${joinsCount}
   where (
-${searchClause(spec.searchExprsList, "    ")}
+${searchClause(spec.searchExprsList, "    ", spec.searchVia)}
   )${groupCond("  ")}${filterCond("  ")};
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
@@ -1095,7 +1197,7 @@ ${rowCols}
     ) as r
     from ${spec.fromClause}${joins}
     where (
-${searchClause(spec.searchExprsList, "      ")}
+${searchClause(spec.searchExprsList, "      ", spec.searchVia)}
     )${groupCond("    ")}${filterCond("    ")}
     order by
 ${orderLadder(spec.listSort, "      ", spec.pkExpr)}
@@ -1729,7 +1831,7 @@ begin
 ${sortGuard}${filterGuard}  select count(*)::int into v_total
   from ${spec.fromClause}${joinsCount}
   where ${activeFilterCount}(
-${searchClause(spec.searchExprsLookup, "    ")}
+${searchClause(spec.searchExprsLookup, "    ", spec.searchVia)}
   )${filterCond("  ")};
 
   select coalesce(jsonb_agg(r), '[]'::jsonb) into v_rows
@@ -1739,7 +1841,7 @@ ${cols}
     ) as r
     from ${spec.fromClause}${joinsRows}
     where ${activeFilter}(
-${searchClause(spec.searchExprsLookup, "      ")}
+${searchClause(spec.searchExprsLookup, "      ", spec.searchVia)}
     )${filterCond("    ")}
     order by
 ${orderLadder(spec.lookupSort, "      ", spec.pkExpr)}
@@ -2574,6 +2676,7 @@ async function buildModelMap(appRoot: string, verbose: boolean): Promise<ModelMe
       pk: isDocument ? "document_id" : "id",
       displayCol,
       isDocument,
+      props,
     });
   }
 
@@ -2970,6 +3073,7 @@ async function buildSpec(
     filters,
     searchExprsList,
     searchExprsLookup,
+    searchVia: searchViaPredicates(itemSchema["x-search-via"], model, isDocument ? "h.id" : "t.id", map),
     listSort,
     lookupSort,
     listJoins,

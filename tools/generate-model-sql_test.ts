@@ -18,6 +18,7 @@ import {
   collectDocumentLinks,
   collectModelDirs,
   documentHeaderSpecifier,
+  type ModelMeta,
   type ModelMetaMap,
   refDisplaySql,
   refJoinSql,
@@ -26,6 +27,7 @@ import {
   renderDocumentLinkSourceView,
   renderDocumentLinkView,
   resolveRef,
+  searchViaPredicates,
   unpostRecordsHookSql,
 } from "./generate-model-sql.ts";
 
@@ -620,4 +622,72 @@ Deno.test("довідка ребер: таблиця розкладена на �
   );
   assertStringIncludes(sql, "'note_document_id'::text, false)");
   assertStringIncludes(sql, "v(model, field, table_schema, table_name, owner_column, ref_column, is_related)");
+});
+
+// ── x-search-via: пошук крізь підпорядковану модель ─────────────────────────
+
+/** Штрихкоди позиції: зв'язок з власником, код, позначка видалення. */
+const BARCODE_META: ModelMetaMap = new Map<string, ModelMeta>([
+  ["nomenclature", { schema: "app", model: "nomenclature", table: "nomenclature", pk: "id", displayCol: "name", isDocument: false, props: {} }],
+  ["nomenclature_barcode", {
+    schema: "app",
+    model: "nomenclature_barcode",
+    table: "nomenclature_barcode",
+    pk: "id",
+    displayCol: "barcode",
+    isDocument: false,
+    props: {
+      id: { anyOf: [{ type: "string" }, { type: "null" }] },
+      nomenclatureId: { type: "string", "x-ref": { model: "nomenclature" } },
+      unitId: { type: "string", "x-ref": { model: "unit" } },
+      barcode: { type: "string" },
+      sortKey: { type: "string", "x-db-col": "sort_key_col" },
+      qty: { type: "number" },
+      hint: { type: "string", "x-transient": true },
+      isDeleted: { type: "boolean" },
+    },
+  }],
+  ["goods_sale", { schema: "app", model: "goods_sale", table: "goods_sale", pk: "document_id", displayCol: "presentation", isDocument: true, props: {} }],
+]);
+
+Deno.test("x-search-via: exists з виведеним зв'язком і без позначених", () => {
+  const [pred] = searchViaPredicates({ model: "nomenclature_barcode", field: "barcode" }, "nomenclature", "t.id", BARCODE_META);
+  assertEquals(
+    pred,
+    "exists (select 1 from app.nomenclature_barcode s0 where s0.nomenclature_id = t.id " +
+      "and s0.barcode ilike '%' || (payload->>'search') || '%' and not s0.is_deleted)",
+  );
+});
+
+Deno.test("x-search-via: кілька таблиць — масивом, x-db-col поважається", () => {
+  const preds = searchViaPredicates(
+    [{ model: "nomenclature_barcode", field: "barcode" }, { model: "nomenclature_barcode", field: "sortKey", fk: "nomenclatureId" }],
+    "nomenclature",
+    "t.id",
+    BARCODE_META,
+  );
+  assertEquals(preds.length, 2);
+  assertStringIncludes(preds[1], "s1.sort_key_col ilike");
+});
+
+Deno.test("x-search-via: не оголошено — умов немає", () => {
+  assertEquals(searchViaPredicates(undefined, "nomenclature", "t.id", BARCODE_META), []);
+});
+
+Deno.test("x-search-via: помилки схеми — на генерації, з назвою причини", () => {
+  const cases: Array<[Parameters<typeof searchViaPredicates>[0], string, string]> = [
+    [{ model: "missing", field: "barcode" }, "nomenclature", "не знайдена"],
+    [{ model: "goods_sale", field: "number" }, "nomenclature", "документ"],
+    [{ model: "nomenclature_barcode", field: "nope" }, "nomenclature", "текстовою"],
+    [{ model: "nomenclature_barcode", field: "unitId" }, "nomenclature", "текстовою"],
+    [{ model: "nomenclature_barcode", field: "qty" }, "nomenclature", "текстовою"],
+    [{ model: "nomenclature_barcode", field: "hint" }, "nomenclature", "текстовою"],
+    [{ model: "nomenclature_barcode", field: "barcode", fk: "unitId" }, "nomenclature", "не має x-ref"],
+    // Власник, на якого ніщо не посилається: вивести зв'язок нема з чого.
+    [{ model: "nomenclature_barcode", field: "barcode" }, "counterparty", "немає полів"],
+  ];
+  for (const [via, owner, fragment] of cases) {
+    const error = assertThrows(() => searchViaPredicates(via, owner, "t.id", BARCODE_META));
+    assertStringIncludes((error as Error).message, fragment);
+  }
 });
