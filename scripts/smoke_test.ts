@@ -777,6 +777,11 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           await sql.begin(async (tx) => {
             await tx.unsafe(`
               create table app.smoke_related_ids (name text primary key, id bigint not null);
+              -- Документу потрібна організація, а на свіжій базі (CI) її немає.
+              -- Своя — у тій самій транзакції, тож відкотиться разом з усім.
+              insert into app.organization (code, name)
+              select 'SMKREL', 'Smoke related'
+               where not exists (select 1 from app.organization);
               with ins as (
                 insert into app.document (document_type_id, organization_id, number, doc_date, presentation)
                 select (select id from app.document_type where code = 'invoice'),
