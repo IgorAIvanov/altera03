@@ -2,6 +2,7 @@ import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
 import { isMissingDatabaseFunction } from "../../database/database-error.ts";
 import { signEnvelopeTokens } from "../blob/blob-token.ts";
+import { withTokenAudit, writeAuditEntry } from "../../common/token-audit.ts";
 import { looksLikeEnvelope, ModelCommandError } from "./model-runtime.errors.ts";
 import { getModelConfig, isDocumentModel, supportsPosting } from "./model-registry.ts";
 import { coreModelAccess } from "../agent/core-agent-tools.ts";
@@ -289,8 +290,12 @@ function getSqlCommandConfig(
  */
 /** Хто викликає команду. Порожньо — застосунок або внутрішній виклик. */
 export interface ModelCommandCaller {
-  /** Виклик персональним токеном (агент). */
-  accessToken?: { readOnly: boolean };
+  /**
+   * Виклик персональним токеном (агент). Такий виклик журналюється завжди,
+   * повз рівні `audit_setting`, і в одній транзакції з командою — див.
+   * `server/common/token-audit.ts`.
+   */
+  accessToken?: { id: string; readOnly: boolean };
 }
 
 /**
@@ -389,64 +394,36 @@ export class ModelRuntimeService {
     // порядок відмов нижче лишається старим: спершу «немає команди», потім
     // «право не оголошене».
     const action = resolveRequiredAction(model, command, normalizedPayload, config);
-    const audited = await this.shouldAudit(model, command, action);
+    const token = caller.accessToken;
 
-    let result: unknown;
-    try {
-      const tsCommand = config?.tsCommands?.[command];
+    const run = (db: DatabaseService) =>
+      this.run(model, command, normalizedPayload, userId, config, action, caller, db);
 
-      // Перевірки «чи є така модель у реєстрі» тут свідомо немає. Моделі ядра
-      // (attachment) живуть у server/sql і манифеста в застосунку не мають — вони
-      // доходять сюди з `config === undefined` і працюють стандартним маршрутом
-      // `app.<model>_<command>`. Неіснуючу модель відсіє сама база: функції немає,
-      // і нижче це стане зрозумілою 501.
-      const sqlCommand = tsCommand ? null : getSqlCommandConfig(model, command, config);
-
-      // Спершу з'ясовуємо, чи команда взагалі є, і лише потім — чи є право.
-      // Зворотний порядок перетворював би друкарську помилку в імені команди на
-      // «немає доступу», і шукали б її не там.
-      if (!tsCommand && !sqlCommand) {
-        throw ModelCommandError.notConfigured(model, command);
-      }
-
-      if (action === null) {
-        throw ModelCommandError.accessNotDeclared(model, command);
-      }
-
-      assertCallerMayRun(action, command, normalizedPayload, caller);
-
-      const candidate = tsCommand
-        ? await this.executeTsCommand(model, command, normalizedPayload, userId, tsCommand, action)
-        : await this.executeSqlCommand(model, command, normalizedPayload, userId, config, sqlCommand!, action);
-
-      // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
-      // SQL-функція без `return` або з `return null`: клієнт діставав `null`
-      // замість `{ ok, data, messages }`, форма мовчки не наповнювалася, і слідів
-      // не лишалося ніде. Краще голосна помилка тут, ніж порожня форма там.
-      if (!looksLikeEnvelope(candidate)) {
-        console.error(
-          `❌ ${model}/${command}: відповідь не є конвертом:`,
-          candidate === undefined ? "undefined" : JSON.stringify(candidate)?.slice(0, 200),
-        );
-        throw ModelCommandError.badResponse(model, command);
-      }
-      result = candidate;
-    } catch (error) {
-      if (audited) {
-        await this.writeAudit(model, command, normalizedPayload, userId, false);
-      }
-      throw error;
-    }
-
-    if (audited) {
-      await this.writeAudit(
-        model,
-        command,
-        normalizedPayload,
-        userId,
-        (result as { ok: boolean }).ok,
-        result,
+    let result: { ok: boolean };
+    if (token) {
+      // Токен: журнал — нижня межа, а не рівень (рівень моделі тут не
+      // читається взагалі), і рядок фіксується разом із командою.
+      result = await withTokenAudit(
+        this.db,
+        { userId, model, command, accessTokenId: token.id },
+        run,
+        (envelope) => ({
+          isSuccess: envelope.ok,
+          recordId: auditRecordId(normalizedPayload, envelope),
+        }),
+        auditRecordId(normalizedPayload),
       );
+    } else {
+      const audited = await this.shouldAudit(model, command, action);
+      try {
+        result = await run(this.db);
+      } catch (error) {
+        if (audited) await this.writeAudit(model, command, normalizedPayload, userId, false);
+        throw error;
+      }
+      if (audited) {
+        await this.writeAudit(model, command, normalizedPayload, userId, result.ok, result);
+      }
     }
 
     // Налаштування журналу щойно могли змінитися — читаємо їх заново, не
@@ -459,6 +436,61 @@ export class ModelRuntimeService {
     // Ключі доступу до вкладень (`token`, `<field>Token`) назовні не виходять —
     // рантайм міняє їх на підписані токени. Див. blob-token.ts.
     return await signEnvelopeTokens(result, { userId, sessionId });
+  }
+
+  /**
+   * Сама команда: пошук, право, запобіжники токена, виконання, перевірка
+   * конверта. `db` — пул або транзакція виклику токеном; окремо від `execute`
+   * саме тому, що для токена все це має опинитися всередині транзакції.
+   */
+  private async run(
+    model: string,
+    command: string,
+    normalizedPayload: Record<string, unknown>,
+    userId: string,
+    config: ModelBackendConfig | undefined,
+    action: string | null,
+    caller: ModelCommandCaller,
+    db: DatabaseService,
+  ): Promise<{ ok: boolean }> {
+    const tsCommand = config?.tsCommands?.[command];
+
+    // Перевірки «чи є така модель у реєстрі» тут свідомо немає. Моделі ядра
+    // (attachment) живуть у server/sql і манифеста в застосунку не мають — вони
+    // доходять сюди з `config === undefined` і працюють стандартним маршрутом
+    // `app.<model>_<command>`. Неіснуючу модель відсіє сама база: функції немає,
+    // і нижче це стане зрозумілою 501.
+    const sqlCommand = tsCommand ? null : getSqlCommandConfig(model, command, config);
+
+    // Спершу з'ясовуємо, чи команда взагалі є, і лише потім — чи є право.
+    // Зворотний порядок перетворював би друкарську помилку в імені команди на
+    // «немає доступу», і шукали б її не там.
+    if (!tsCommand && !sqlCommand) {
+      throw ModelCommandError.notConfigured(model, command);
+    }
+
+    if (action === null) {
+      throw ModelCommandError.accessNotDeclared(model, command);
+    }
+
+    assertCallerMayRun(action, command, normalizedPayload, caller);
+
+    const candidate = tsCommand
+      ? await this.executeTsCommand(db, model, command, normalizedPayload, userId, tsCommand, action)
+      : await this.executeSqlCommand(db, model, command, normalizedPayload, userId, config, sqlCommand!, action);
+
+    // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
+    // SQL-функція без `return` або з `return null`: клієнт діставав `null`
+    // замість `{ ok, data, messages }`, форма мовчки не наповнювалася, і слідів
+    // не лишалося ніде. Краще голосна помилка тут, ніж порожня форма там.
+    if (!looksLikeEnvelope(candidate)) {
+      console.error(
+        `❌ ${model}/${command}: відповідь не є конвертом:`,
+        candidate === undefined ? "undefined" : JSON.stringify(candidate)?.slice(0, 200),
+      );
+      throw ModelCommandError.badResponse(model, command);
+    }
+    return candidate as { ok: boolean };
   }
 
   // ── Журнал змін ───────────────────────────────────────────────────────────
@@ -503,7 +535,7 @@ export class ModelRuntimeService {
     return this.auditLevels.get(model) ?? "none";
   }
 
-  /** Аудит не може змінювати результат команди, але збій журналу лишає слід у консолі. */
+  /** Журнал людини: fail-open, збій запису лишає слід у консолі. */
   private async writeAudit(
     model: string,
     command: string,
@@ -512,20 +544,14 @@ export class ModelRuntimeService {
     isSuccess: boolean,
     result?: unknown,
   ) {
-    try {
-      await this.db.sql`
-        insert into app.audit_log (user_id, model, command, record_id, is_success)
-        values (
-          ${userId}::bigint,
-          ${model},
-          ${command},
-          ${auditRecordId(payload, result)}::bigint,
-          ${isSuccess}
-        )
-      `;
-    } catch (error) {
-      console.error(`❌ audit ${model}/${command}: не вдалося записати подію:`, error);
-    }
+    await writeAuditEntry(this.db, {
+      userId,
+      model,
+      command,
+      recordId: auditRecordId(payload, result),
+      isSuccess,
+      accessTokenId: null,
+    });
   }
 
   /**
@@ -534,8 +560,8 @@ export class ModelRuntimeService {
    * відмова приходять разом, тому текст відмови лишається в одному місці — у
    * `app.access_denied`.
    */
-  private async assertAccess(model: string, action: string, userId: string) {
-    const rows = await this.db.sql<{ allowed: boolean; denied: unknown; password_denied: unknown }[]>`
+  private async assertAccess(db: DatabaseService, model: string, action: string, userId: string) {
+    const rows = await db.sql<{ allowed: boolean; denied: unknown; password_denied: unknown }[]>`
       select
         app.access_can(${userId}::bigint, ${model}, ${action})   as allowed,
         app.access_denied(${model}, ${action})                   as denied,
@@ -553,6 +579,7 @@ export class ModelRuntimeService {
   }
 
   private async executeTsCommand(
+    db: DatabaseService,
     model: string,
     command: string,
     payload: Record<string, unknown>,
@@ -561,7 +588,7 @@ export class ModelRuntimeService {
     action: string,
   ) {
     if (action !== AUTHENTICATED) {
-      const denied = await this.assertAccess(model, action, userId);
+      const denied = await this.assertAccess(db, model, action, userId);
       if (denied) return denied;
     }
 
@@ -583,7 +610,7 @@ export class ModelRuntimeService {
     }
 
     const context: ModelCommandContext = {
-      db: this.db,
+      db,
       model,
       command,
       userId,
@@ -593,6 +620,7 @@ export class ModelRuntimeService {
   }
 
   private async executeSqlCommand(
+    db: DatabaseService,
     model: string,
     command: string,
     payload: Record<string, unknown>,
@@ -612,7 +640,7 @@ export class ModelRuntimeService {
     assertIdentifier(schema, "schema");
     assertIdentifier(functionName, "functionName");
 
-    const payloadJson = this.db.sql.json(toSqlJsonPayload(payload));
+    const payloadJson = db.sql.json(toSqlJsonPayload(payload));
 
     try {
       // Перевірка вкладена в той самий `select`, а не зроблена окремим
@@ -625,18 +653,18 @@ export class ModelRuntimeService {
       // обчислює другий аргумент, коли перший не NULL, тож round-trip
       // лишається один, а команда не виконується.
       const rows = action === AUTHENTICATED
-        ? await this.db.sql<{ result: unknown }[]>`
+        ? await db.sql<{ result: unknown }[]>`
             select coalesce(
               app.password_change_denied(${userId}::bigint),
-              ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
+              ${db.sql(schema)}.${db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
             ) as result
           `
-        : await this.db.sql<{ result: unknown }[]>`
+        : await db.sql<{ result: unknown }[]>`
             select coalesce(
               app.password_change_denied(${userId}::bigint),
               case
                 when app.access_can(${userId}::bigint, ${model}, ${action})
-                  then ${this.db.sql(schema)}.${this.db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
+                  then ${db.sql(schema)}.${db.sql(functionName)}(${userId}::bigint, ${payloadJson}::jsonb)
                 else app.access_denied(${model}, ${action})
               end
             ) as result

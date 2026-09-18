@@ -35,5 +35,14 @@
   "header.tokensRevokeConfirm": "Revoke for sure",
   "header.tokensEmpty": "No tokens yet",
   "header.tokensStatus.expired": "expired",
-  "header.tokensStatus.revoked": "revoked"
+  "header.tokensStatus.revoked": "revoked",
+  "header.tokensLog": "Log",
+  "header.tokensLogTitle": "What the token did",
+  "header.tokensLogEmpty": "The token has not done anything yet",
+  "header.tokensLogTime": "Time",
+  "header.tokensLogAction": "Action",
+  "header.tokensLogRecord": "Record",
+  "header.tokensLogResult": "Result",
+  "header.tokensLogSuccess": "success",
+  "header.tokensLogFailure": "refused"
 }

@@ -237,6 +237,33 @@ export class AuthController {
     return await this.accessTokenService.list(sessionUser.user.id);
   }
 
+  /**
+   * Журнал моїх токенів: `?id=` — одного, без нього — усіх. Відповідає за дії
+   * агента його власник, тож бачить їх він сам, без права на `audit_log`.
+   * Лише по сесії, як і решта керування токенами: агенту звіт про себе не
+   * потрібен, а людині — потрібен.
+   */
+  @Get("tokens/log")
+  async tokenLog(@Req() req: HttpRequest) {
+    const sessionUser = await this.authSessionService.resolveSessionUser(req);
+    if (!sessionUser) {
+      return jsonResponse(err("Необхідна авторизація"), 401);
+    }
+
+    const query = new URL(req.url).searchParams;
+    const id = query.get("id")?.trim() ?? "";
+    if (id && !/^\d+$/.test(id)) {
+      return jsonResponse(err("id має бути числом"), 400);
+    }
+    const limit = Number(query.get("limit"));
+
+    return await this.accessTokenService.log(
+      sessionUser.user.id,
+      id || null,
+      Number.isInteger(limit) && limit > 0 ? limit : null,
+    );
+  }
+
   @Post("tokens")
   async createToken(@Req() req: HttpRequest) {
     const sessionUser = await this.authSessionService.resolveSessionUser(req);

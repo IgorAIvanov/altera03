@@ -18,5 +18,12 @@
   "auditLog.cmd.unpost": "Скасування проведення",
   "auditLog.cmd.copy": "Копіювання",
   "auditLog.cmd.moveToGroup": "Переміщення до групи",
-  "auditLog.cmd.setPassword": "Зміна пароля"
+  "auditLog.cmd.setPassword": "Зміна пароля",
+  "auditLog.token": "Токен",
+  "auditLog.actor": "Хто діяв",
+  "auditLog.anyActor": "Будь-хто",
+  "auditLog.actorAgent": "Агент (токен)",
+  "auditLog.actorHuman": "Людина",
+  "auditLog.cmd.upload": "Завантаження файлу",
+  "auditLog.cmd.download": "Отримання файлу"
 }

@@ -18,6 +18,23 @@ create index if not exists ix_audit_log_record
 create index if not exists ix_audit_log_user_time
   on app.audit_log (user_id, occurred_at desc);
 
+-- Яким персональним токеном зроблено виклик. Порожньо — виклик людини.
+--
+-- Токен — це делегування: відповідає людина, яка кроків не бачила, і журнал
+-- для неї єдиний спосіб дізнатися, що зроблено від її імені. Тому виклики
+-- токеном журналюються ЗАВЖДИ, повз рівні `audit_setting` нижче (див.
+-- docs/agent-audit-plan.md). Колонка називає саме токен, а не лише «агент»:
+-- «нічна звірка» і «ноутбук» — різні агенти, і відкликають їх окремо.
+--
+-- `restrict` нічого не блокує: токени не видаляються, а відкликаються
+-- (`revoked_at`), а власник-користувач і так тримається `user_id` вище.
+alter table app.audit_log
+  add column if not exists access_token_id bigint
+    references app.access_token (id) on delete restrict;
+
+create index if not exists ix_audit_log_token_time
+  on app.audit_log (access_token_id, occurred_at desc) where access_token_id is not null;
+
 -- ── Налаштування журналу ────────────────────────────────────────────────────
 -- Що саме журналювати — НАЛАШТУВАННЯ УСТАНОВКИ, а не властивість моделі. Доти
 -- політика жила в `manifest.json`, тобто в рішенні: щоб адміністратор увімкнув

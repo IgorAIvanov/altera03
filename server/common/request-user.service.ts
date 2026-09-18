@@ -31,8 +31,12 @@ export interface RequestAuthContext {
    * яких немає для людини (підтвердження змін стану документа). Людина, що
    * натиснула «Провести», уже підтвердила натисканням; агент мусить сказати це
    * словом.
+   *
+   * `id` — який саме токен: ним підписується кожен рядок журналу
+   * (`app.audit_log.access_token_id`), бо «нічна звірка» і «ноутбук» — різні
+   * агенти, і відкликають їх окремо.
    */
-  accessToken?: { readOnly: boolean };
+  accessToken?: { id: string; readOnly: boolean };
 }
 
 interface ActiveUserRow {
@@ -114,7 +118,7 @@ export class RequestUserService {
       return null;
     }
 
-    const rows = await this.db.sql<Array<{ user_id: string; is_read_only: boolean }>>`
+    const rows = await this.db.sql<Array<{ id: string; user_id: string; is_read_only: boolean }>>`
       UPDATE app.access_token t
          SET last_used_at = NOW(),
              updated_at = NOW()
@@ -124,12 +128,12 @@ export class RequestUserService {
          AND (t.expires_at IS NULL OR t.expires_at > NOW())
          AND u.id = t.user_id
          AND u.is_active = true
-      RETURNING t.user_id::text AS user_id, t.is_read_only
+      RETURNING t.id::text AS id, t.user_id::text AS user_id, t.is_read_only
     `;
 
     const row = rows[0];
     return row
-      ? { userId: row.user_id, sessionId: "", accessToken: { readOnly: row.is_read_only } }
+      ? { userId: row.user_id, sessionId: "", accessToken: { id: row.id, readOnly: row.is_read_only } }
       : null;
   }
 

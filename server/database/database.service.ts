@@ -67,12 +67,44 @@ export class DatabaseService {
     console.log("🔌 Database connection pool closed");
   }
 
+  /**
+   * Транзакція, у якій виконується цей сервіс, якщо він прив'язаний до неї
+   * (`bound`). Тоді «нова транзакція» — це savepoint усередині неї.
+   */
+  private outer: postgres.TransactionSql<Record<string, never>> | null = null;
+
   /** Begin a transaction */
   async transaction<T>(
     fn: (sql: postgres.TransactionSql<Record<string, never>>) => Promise<T>,
   ): Promise<T> {
+    if (this.outer) {
+      return await this.outer.savepoint(async (sql) => await fn(sql)) as T;
+    }
     return await this._sql.begin(async (sql) => {
       return await fn(sql);
     }) as T;
+  }
+
+  /**
+   * Той самий сервіс, але прив'язаний до відкритої транзакції: `sql` ходить
+   * у неї, а `transaction()` відкриває savepoint замість нової транзакції.
+   *
+   * Потрібен там, де чужий код (TS-команда моделі) мусить опинитися в НАШІЙ
+   * транзакції, не знаючи про неї: виклик токеном пишеться в журнал разом із
+   * командою, і відкат одного мусить відкочувати інше. Хендлер, що сам
+   * відкриває транзакцію й відкочує її (`postPreview`), отримує savepoint —
+   * його відкат лишається відкатом, а зовнішня транзакція живе далі.
+   *
+   * Умова, на якій це тримається: хендлер ходить у базу ЛИШЕ через `ctx.db`.
+   * Запит повз нього (глобальний пул) чекав би вільного з'єднання, поки
+   * транзакція тримає своє, — а з `DB_POOL_SIZE` 1–3 це взаємоблокування.
+   */
+  bound(tx: postgres.TransactionSql<Record<string, never>>): DatabaseService {
+    const service = new DatabaseService();
+    // TransactionSql — той самий тегований шаблон без `begin`/`end`/`listen`;
+    // їх через `ctx.db` не кличе ніхто, а `transaction()` вище їх обходить.
+    service._sql = tx as unknown as postgres.Sql<Record<string, never>>;
+    service.outer = tx;
+    return service;
   }
 }

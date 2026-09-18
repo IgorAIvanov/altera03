@@ -5,6 +5,8 @@ export const AuditLogRowSchema = Type.Object({
   id:         Type.String({ "x-db-type": "bigint" }),
   occurredAt: Type.String(),
   user:       Type.String(),
+  /** Назва персонального токена; `null` — діяла людина, не агент. */
+  token:      Type.Union([Type.String(), Type.Null()]),
   model:      Type.String(),
   command:    Type.String(),
   recordId:   Type.Union([Type.String(), Type.Null()], { "x-db-type": "bigint" }),
@@ -31,6 +33,7 @@ export const AuditLogFiltersSchema = Type.Object({
   command:  Type.Optional(Type.String()),
   recordId: Type.Optional(Type.String({ "x-db-type": "bigint" })),
   result:   Type.Optional(Type.Union([Type.Literal("success"), Type.Literal("failure")])),
+  actor:    Type.Optional(Type.Union([Type.Literal("agent"), Type.Literal("human")])),
 });
 export type AuditLogFilters = Static<typeof AuditLogFiltersSchema>;
 
@@ -48,6 +51,7 @@ export const AuditLogListPayloadSchema = Type.Object({
   sortBy:   Type.Optional(Type.Union([
     Type.Literal("occurredAt"),
     Type.Literal("user"),
+    Type.Literal("token"),
     Type.Literal("model"),
     Type.Literal("command"),
     Type.Literal("recordId"),

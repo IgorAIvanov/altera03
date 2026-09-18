@@ -35,5 +35,14 @@
   "header.tokensRevokeConfirm": "Точно відкликати",
   "header.tokensEmpty": "Токенів ще немає",
   "header.tokensStatus.expired": "протермінований",
-  "header.tokensStatus.revoked": "відкликаний"
+  "header.tokensStatus.revoked": "відкликаний",
+  "header.tokensLog": "Журнал",
+  "header.tokensLogTitle": "Що зробив токен",
+  "header.tokensLogEmpty": "Токен ще нічого не робив",
+  "header.tokensLogTime": "Час",
+  "header.tokensLogAction": "Дія",
+  "header.tokensLogRecord": "Запис",
+  "header.tokensLogResult": "Результат",
+  "header.tokensLogSuccess": "успіх",
+  "header.tokensLogFailure": "відмова"
 }

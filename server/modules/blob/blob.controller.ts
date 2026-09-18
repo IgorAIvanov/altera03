@@ -5,8 +5,9 @@ import {
   type HttpRequest,
   jsonResponse,
   ReadOnlyTokenError,
+  resolveSessionToken,
 } from "../../common/http.ts";
-import { RequestUserService } from "../../common/request-user.service.ts";
+import { type RequestAuthContext, RequestUserService } from "../../common/request-user.service.ts";
 import { BlobService, getMaxUploadBytes, isInlineSafe } from "./blob.service.ts";
 
 /** Конверт моделі — щоб клієнт розбирав відповідь так само, як будь-яку іншу. */
@@ -35,6 +36,22 @@ function contentDisposition(disposition: "inline" | "attachment", name: string) 
 }
 
 /**
+ * Персональний токен запиту, якщо він є. Без `Bearer` — `null` і жодного
+ * походу в базу: так ходить браузер, тобто майже кожен запит сюди.
+ *
+ * Функцією поза класом, а не методом контролера: Danet вважає маршрутом кожен
+ * метод прототипу, і метод без декоратора валить реєстрацію роутера.
+ */
+async function bearerAccessToken(
+  users: RequestUserService,
+  req: HttpRequest,
+): Promise<{ userId: string; accessTokenId: string } | null> {
+  if (resolveSessionToken(req)?.source !== "bearer") return null;
+  const auth = await users.resolveAuthContext(req);
+  return auth.accessToken ? { userId: auth.userId, accessTokenId: auth.accessToken.id } : null;
+}
+
+/**
  * Роздача та приймання бінарних даних.
  *
  * Свідомо окремий контролер, а не команда моделі: `/api/model/:model/:command`
@@ -59,8 +76,16 @@ export class BlobController {
   async upload(
     @Req() req: HttpRequest,
   ) {
+    // Поза `try`: відмову токену журнал мусить зберегти й з блоку `catch`.
+    let auth: RequestAuthContext | null = null;
+    // Відмова на вході — теж дія агента, і з відмов якраз видно, як він
+    // поводиться. Запис, що дійшов до `create`, журналюється там.
+    const refuse = async (response: Response) => {
+      if (auth?.accessToken) await this.blobService.recordTokenRefusal(auth.userId, auth.accessToken.id);
+      return response;
+    };
     try {
-      const auth = await this.requestUserService.resolveAuthContext(req);
+      auth = await this.requestUserService.resolveAuthContext(req);
       // Вкладення — це запис, хай і не командою моделі. Перевірка мусить стояти
       // ДО читання тіла: інакше токен для читання змусив би сервер прийняти й
       // розібрати файл на десятки мегабайт, щоб потім його відкинути.
@@ -69,24 +94,24 @@ export class BlobController {
       const form = await req.formData();
       const file = form.get("file");
       if (!(file instanceof File)) {
-        return jsonResponse(errorEnvelope("Файл не передано (поле 'file')"), 400);
+        return await refuse(jsonResponse(errorEnvelope("Файл не передано (поле 'file')"), 400));
       }
 
       const maxBytes = getMaxUploadBytes();
       if (file.size > maxBytes) {
-        return jsonResponse(
+        return await refuse(jsonResponse(
           errorEnvelope(`Розмір файлу перевищує ${Math.round(maxBytes / 1024 / 1024)} МБ`),
           413,
-        );
+        ));
       }
 
       const bytes = new Uint8Array(await file.arrayBuffer());
       // Дубль-перевірка після читання: file.size — те, що заявив клієнт.
       if (bytes.length > maxBytes) {
-        return jsonResponse(
+        return await refuse(jsonResponse(
           errorEnvelope(`Розмір файлу перевищує ${Math.round(maxBytes / 1024 / 1024)} МБ`),
           413,
-        );
+        ));
       }
 
       const ownerModel = typeof form.get("ownerModel") === "string"
@@ -96,6 +121,8 @@ export class BlobController {
       const ownerId = /^\d+$/.test(ownerIdRaw) ? ownerIdRaw : null;
 
       const created = await this.blobService.create({
+        // Токен — виклик агента: запис і рядок журналу однією транзакцією.
+        accessTokenId: auth.accessToken?.id ?? null,
         // Ім'я приходить від клієнта — лишаємо тільки базове, без шляху.
         name: (file.name || "file").split(/[\\/]/).pop() ?? "file",
         mime: file.type || "application/octet-stream",
@@ -112,7 +139,7 @@ export class BlobController {
         return jsonResponse(errorEnvelope(error.message), 401);
       }
       if (error instanceof ReadOnlyTokenError) {
-        return jsonResponse(errorEnvelope(error.message), error.status);
+        return await refuse(jsonResponse(errorEnvelope(error.message), error.status));
       }
       return jsonResponse(
         errorEnvelope(error instanceof Error ? error.message : "Помилка завантаження файлу"),
@@ -126,6 +153,12 @@ export class BlobController {
    *
    * Авторизація — тільки токен: цей URL підставляється в `<img src>` і
    * `<a download>`, куди заголовки не почепиш.
+   *
+   * Але агент (`mcp/altera-client.ts`) шле ще й `Authorization: Bearer`, і
+   * тоді віддача журналюється — під своїм токеном, у транзакції з читанням.
+   * Браузер заголовка не шле, тож для людини тут ні запиту більше, ні рядка.
+   * Недійсний Bearer — 401, а не тиха віддача за підписом URL: відкликаний
+   * токен не має забирати файли, навіть маючи видане раніше посилання.
    */
   @Get(":id")
   async download(
@@ -139,7 +172,10 @@ export class BlobController {
         return new Response("Forbidden", { status: 403 });
       }
 
-      const attachment = await this.blobService.resolveByToken(token);
+      const accessToken = await bearerAccessToken(this.requestUserService, req);
+      const attachment = accessToken
+        ? await this.blobService.resolveByTokenAudited(token, String(id), accessToken)
+        : await this.blobService.resolveByToken(token);
       // Токен видано на інше вкладення — не 200 з чужими байтами.
       if (!attachment || attachment.id !== String(id)) {
         return new Response("Not found", { status: 404 });
@@ -169,6 +205,9 @@ export class BlobController {
         },
       });
     } catch (error) {
+      if (error instanceof AuthenticationRequiredError) {
+        return new Response("Unauthorized", { status: 401 });
+      }
       // Роздача байтів не має віддавати деталі назовні: у відповідь — сухий
       // 500, подробиці в лог сервера.
       console.error("[blob] download failed:", error);

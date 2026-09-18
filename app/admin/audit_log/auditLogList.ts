@@ -63,6 +63,13 @@ export class AuditLogList extends ModelListBase<AuditLogRow> {
     { key: "occurredAt", title: "auditLog.occurredAt", width: "10rem", format: dateFormat.dateTime, sortable: true },
     { key: "user", title: "auditLog.user", width: "12rem", sortable: true, overflow: "ellipsis" },
     {
+      // Токен — це делегування: діяв агент від імені користувача зліва.
+      // Порожньо — людина з браузера.
+      key: "token", title: "auditLog.token", width: "10rem", sortable: true, overflow: "ellipsis",
+      render: (row) => row.token ?? "",
+      exportText: (row) => row.token ?? "",
+    },
+    {
       key: "model", title: "auditLog.model", width: "11rem", sortable: true, overflow: "ellipsis",
       // Ім'я моделі — технічне (`chart_of_account`); у журналі його читає
       // людина, тож показуємо назву, а ключ лишаємо в підказці.
@@ -207,6 +214,18 @@ export class AuditLogList extends ModelListBase<AuditLogRow> {
         ]}
         .value=${this.filterValue<string>("result") ?? ""}
         @value-changed=${(e: SelectEvent) => this.setFilter("result", e.detail.value)}
+      ></ui-select>
+
+      <ui-select
+        .label=${this.t("auditLog.actor")}
+        size="sm"
+        .placeholder=${this.t("auditLog.anyActor")}
+        .options=${[
+          { value: "agent", label: this.t("auditLog.actorAgent") },
+          { value: "human", label: this.t("auditLog.actorHuman") },
+        ]}
+        .value=${this.filterValue<string>("actor") ?? ""}
+        @value-changed=${(e: SelectEvent) => this.setFilter("actor", e.detail.value)}
       ></ui-select>
 
       <label class="flex flex-col gap-1">

@@ -87,6 +87,20 @@ export class AccessTokenService {
     return { ...envelope, data: { ...data, item: { ...item, token } } };
   }
 
+  /**
+   * Що зробили МОЇ токени — усі або один (`tokenId`). Чужих рядків функція не
+   * віддає за побудовою: `user_id` приходить звідси, а не з запиту.
+   */
+  async log(userId: string, tokenId: string | null, limit: number | null): Promise<unknown> {
+    const rows = await this.db.sql<Array<{ result: unknown }>>`
+      SELECT app.access_token_log(
+        ${userId}::bigint,
+        ${this.db.sql.json({ id: tokenId, limit })}::jsonb
+      ) AS result
+    `;
+    return rows[0]?.result;
+  }
+
   /** Відкликати СВІЙ токен. Чужий не відкликається навіть за відомим id. */
   async revoke(userId: string, id: string): Promise<unknown> {
     const rows = await this.db.sql<Array<{ result: unknown }>>`

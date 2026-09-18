@@ -34,6 +34,8 @@ const REDIRECT_PROBE_SUBJECT = "smoke-redirect-subject";
  */
 const AGENT_PROBE_LOGIN = "smoke-agent-probe";
 const AGENT_PROBE_SUBJECT = "smoke-agent-subject";
+const AUDIT_PROBE_LOGIN = "smoke-audit-probe";
+const AUDIT_PROBE_SUBJECT = "smoke-audit-subject";
 
 function bytes(text: string): Uint8Array {
   return new TextEncoder().encode(text);
@@ -2054,6 +2056,224 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         // у групі йдуть каскадом за користувачем; журнал — ні.
         await withDb((sql) => sql`delete from app.audit_log where user_id = ${user.id}::bigint`);
         await purge("app.users", user.id);
+      }
+    });
+
+    /**
+     * Журнал токена — нижня межа, а не рівень (docs/agent-audit-plan.md).
+     *
+     * Рівень моделі тут свідомо `none`: виклик людини в журнал не йде, а виклик
+     * токеном — іде, разом із відмовами й каналом байтів. І йде в ТІЙ САМІЙ
+     * транзакції, що й дія: рядок, який не записався, відкочує запис моделі.
+     * Останнє видно лише пробою — у відповіді різниці немає, поки журнал
+     * пишеться, і вона з'являється тоді, коли вже пізно.
+     */
+    await t.step("агент: журнал токена — завжди і в транзакції з дією", async () => {
+      const [adminGroup] = await withDb((sql) =>
+        sql<Array<{ id: string }>>`select id::text as id from app.user_group where code = 'admin'`
+      );
+      assertExists(adminGroup);
+
+      const level = async (value: string) =>
+        await client.model("audit_setting", "save", { item: { id: "bank", level: value } });
+      const before = await client.model("audit_setting", "get", { id: "bank" });
+      const restore = (before.body.data.item as { level?: string } | null)?.level ?? "none";
+
+      const created = await client.model("user", "save", {
+        item: {
+          login: AUDIT_PROBE_LOGIN,
+          fullName: "Smoke audit probe",
+          isActive: true,
+          groupIds: [adminGroup.id],
+          identities: [{ provider: "dev", externalId: AUDIT_PROBE_SUBJECT }],
+        },
+      });
+      assertEquals(created.body.ok, true);
+      const user = created.body.data.item as { id: string } | null;
+      assertExists(user);
+
+      const blockedMfo = "SMK003";
+      let attachmentId: string | null = null;
+
+      try {
+        await level("none");
+
+        const started = await client.fetch("/api/auth/authorize/dev?redirect=/");
+        const state = stateFromLocation(started.headers.get("location") ?? "");
+        const callback = await client.fetch(
+          `/api/auth/callback/dev?code=dev:${AUDIT_PROBE_SUBJECT}&state=${state}`,
+        );
+        const session = sessionCookie(callback.headers);
+        assertExists(session);
+        const browser = {
+          cookie: `${Deno.env.get("AUTH_COOKIE_NAME")?.trim() || "altera_session"}=${session}`,
+          "x-requested-with": "XMLHttpRequest",
+          "content-type": "application/json",
+        };
+
+        const issue = async (name: string, isReadOnly: boolean) => {
+          const { body } = await client.json<Envelope>("/api/auth/tokens", {
+            method: "POST",
+            headers: browser,
+            body: JSON.stringify({ name, isReadOnly }),
+          });
+          assertEquals(body.ok, true);
+          return body.data.item as { id: string; token: string };
+        };
+        const full = await issue("smoke audit", false);
+        const reader = await issue("smoke audit readonly", true);
+
+        const call = async (token: string, command: string, payload: Record<string, unknown>) =>
+          await client.json<{ ok: boolean; result: unknown; messages: string[] }>("/api/agent/call", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ model: "bank", command, payload }),
+          });
+
+        type Row = { model: string; command: string; record_id: string | null; is_success: boolean };
+        const rowsOf = async (tokenId: string) =>
+          await withDb((sql) =>
+            sql<Row[]>`
+              select model, command, record_id::text as record_id, is_success
+              from app.audit_log where access_token_id = ${tokenId}::bigint order by id`
+          );
+
+        // Читання на моделі з рівнем `none` — у журналі, під своїм токеном.
+        const list = await call(full.token, "list", {});
+        assertEquals(list.body.ok, true);
+        // Відмови — теж: без `confirm` і від токена-читача.
+        assertEquals((await call(full.token, "delete", { id: MISSING_USER_ID })).body.ok, false);
+        assertEquals((await call(reader.token, "save", { item: { name: "x" } })).body.ok, false);
+
+        assertEquals(
+          (await rowsOf(full.id)).map((r) => [r.command, r.is_success]),
+          [["list", true], ["delete", false]],
+        );
+        assertEquals(
+          (await rowsOf(reader.id)).map((r) => [r.command, r.is_success]),
+          [["save", false]],
+        );
+
+        // Людина на тій самій моделі — ні: рівень `none` для неї чинний.
+        await client.fetch("/api/model/bank/list", {
+          method: "POST",
+          headers: browser,
+          body: JSON.stringify({}),
+        });
+        const human = await withDb((sql) =>
+          sql<Array<{ n: number }>>`
+            select count(*)::int as n from app.audit_log
+            where user_id = ${user.id}::bigint and access_token_id is null`
+        );
+        assertEquals(human[0].n, 0);
+
+        // Канал байтів: завантаження й отримання токеном — теж у журналі.
+        const form = new FormData();
+        form.set(
+          "file",
+          new File([bytes("audit") as BufferSource], "smoke-audit.txt", { type: "text/plain" }),
+        );
+        const uploaded = await client.json<Envelope>("/api/blob/upload", {
+          method: "POST",
+          headers: { authorization: `Bearer ${full.token}` },
+          body: form,
+        });
+        assertEquals(uploaded.body.ok, true);
+        const blob = uploaded.body.data.item as { id: string; token: string };
+        attachmentId = blob.id;
+
+        const downloaded = await client.fetch(
+          `/api/blob/${blob.id}?token=${encodeURIComponent(blob.token)}&disp=attachment`,
+          { headers: { authorization: `Bearer ${full.token}` } },
+        );
+        assertEquals(downloaded.status, 200);
+        assertEquals(await downloaded.text(), "audit");
+
+        const readerForm = new FormData();
+        readerForm.set(
+          "file",
+          new File([bytes("no") as BufferSource], "smoke-audit-ro.txt", { type: "text/plain" }),
+        );
+        const refusedUpload = await client.json<Envelope>("/api/blob/upload", {
+          method: "POST",
+          headers: { authorization: `Bearer ${reader.token}` },
+          body: readerForm,
+        });
+        assertEquals(refusedUpload.status, 403);
+
+        assertEquals(
+          (await rowsOf(full.id)).filter((r) => r.model === "attachment")
+            .map((r) => [r.command, r.record_id, r.is_success]),
+          [["upload", blob.id, true], ["download", blob.id, true]],
+        );
+        assertEquals(
+          (await rowsOf(reader.id)).filter((r) => r.model === "attachment")
+            .map((r) => [r.command, r.is_success]),
+          [["upload", false]],
+        );
+
+        // Транзакція: рядок журналу, який база не прийняла, відкочує запис.
+        // Обмеження NOT VALID — перевіряє лише нові рядки, старих не чіпає.
+        await withDb((sql) =>
+          sql.unsafe(`
+            alter table app.audit_log add constraint smoke_audit_block
+              check (access_token_id is distinct from ${Number(full.id)} or command <> 'save') not valid`)
+        );
+        try {
+          const blocked = await call(full.token, "save", {
+            item: { mfo: blockedMfo, name: "Smoke audit tx" },
+          });
+          assertEquals(blocked.body.ok, false);
+          const leaked = await withDb((sql) =>
+            sql<Array<{ n: number }>>`select count(*)::int as n from app.bank where mfo = ${blockedMfo}`
+          );
+          assertEquals(leaked[0].n, 0, "запис моделі пережив відкочений рядок журналу");
+        } finally {
+          await withDb((sql) => sql`alter table app.audit_log drop constraint if exists smoke_audit_block`);
+        }
+
+        // TS-хендлер із власною транзакцією (`postPreview` відкочує її завжди)
+        // під токеном отримує savepoint: його відкат не мусить валити зовнішню
+        // транзакцію, у якій ще лягає рядок журналу. Відмова тут — законна
+        // відповідь хендлера, а не збій: без savepoint вийшла б інша помилка.
+        const preview = await client.json<{ ok: boolean; messages: Array<string | { text?: string }> }>(
+          "/api/agent/call",
+          {
+            method: "POST",
+            headers: { authorization: `Bearer ${full.token}`, "content-type": "application/json" },
+            body: JSON.stringify({ model: "invoice", command: "postPreview", payload: { id: MISSING_USER_ID } }),
+          },
+        );
+        assertEquals(preview.body.ok, false);
+        const previewText = preview.body.messages
+          .map((m) => typeof m === "string" ? m : m.text ?? "").join(" ");
+        assertEquals(previewText.includes("не знайдено"), true, previewText);
+        assertEquals(
+          (await rowsOf(full.id)).filter((r) => r.model === "invoice")
+            .map((r) => [r.command, r.record_id, r.is_success]),
+          [["postPreview", MISSING_USER_ID, false]],
+        );
+
+        // Власник бачить журнал своїх токенів сам — і лише того, про який спитав.
+        const own = await client.json<Envelope>(`/api/auth/tokens/log?id=${reader.id}`, {
+          headers: browser,
+        });
+        assertEquals(own.body.ok, true);
+        const ownRows = own.body.data.rows as Array<{ tokenId: string }>;
+        assertEquals(ownRows.length > 0, true);
+        assertEquals(ownRows.every((row) => row.tokenId === reader.id), true);
+
+        // Агент журналу про себе не читає: керування токенами — лише з браузера.
+        const byToken = await client.json<Envelope>("/api/auth/tokens/log", {
+          headers: { authorization: `Bearer ${full.token}` },
+        });
+        assertEquals(byToken.status, 401);
+      } finally {
+        await withDb((sql) => sql`delete from app.bank where mfo = ${blockedMfo}`);
+        if (attachmentId) await purge("app.attachment", attachmentId);
+        await withDb((sql) => sql`delete from app.audit_log where user_id = ${user.id}::bigint`);
+        await purge("app.users", user.id);
+        await level(restore);
       }
     });
 

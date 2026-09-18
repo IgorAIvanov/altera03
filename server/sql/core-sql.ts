@@ -73,6 +73,7 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
     name: "audit",
     files: {
       structure: [file("audit/db/struc.sql")],
+      models: [file("audit/db/audit.sql")],
       data: [file("audit/db/data.sql")],
     },
   },

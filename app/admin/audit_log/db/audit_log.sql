@@ -14,7 +14,7 @@ as $$
       coalesce(payload->'modelKeys', '[]'::jsonb)                          as model_keys,
       greatest(coalesce((payload->>'page')::int, 1), 1)                    as page,
       least(greatest(coalesce((payload->>'pageSize')::int, 20), 1), 200)   as page_size,
-      case when payload->>'sortBy' in ('occurredAt', 'user', 'model', 'command', 'recordId', 'isSuccess')
+      case when payload->>'sortBy' in ('occurredAt', 'user', 'token', 'model', 'command', 'recordId', 'isSuccess')
         then payload->>'sortBy' else 'occurredAt' end                      as sort_by,
       case lower(coalesce(payload->>'sortDir', 'desc')) when 'asc' then 'asc' else 'desc' end as sort_dir,
       -- Панель фільтрів екрана. Ключі — ті самі, що в `renderFilters()`
@@ -30,7 +30,10 @@ as $$
       -- Трійка «будь-який / успіх / помилка» їде рядком, а не boolean:
       -- `setFilters` видаляє `false` як порожнє значення, тож фільтр «лише
       -- помилки» не дійшов би до сервера взагалі.
-      case f->>'result' when 'success' then true when 'failure' then false else null end as f_success
+      case f->>'result' when 'success' then true when 'failure' then false else null end as f_success,
+      -- Хто діяв: людина з браузера чи агент персональним токеном. Трійка
+      -- рядком з тієї ж причини, що й `result`.
+      nullif(f->>'actor', '')                                              as f_actor
     from (select coalesce(payload->'filters', '{}'::jsonb) as f) src
   ),
   -- Назад той самий ключ їде вже з підписом із бази: id прислав клієнт, ім'я
@@ -50,12 +53,15 @@ as $$
       l.id::text as id,
       l.occurred_at as "occurredAt",
       coalesce(nullif(trim(u.full_name), ''), u.login) as "user",
+      -- Назва токена, яким зроблено виклик; порожньо — діяла людина.
+      t.name as token,
       l.model,
       l.command,
       l.record_id::text as "recordId",
       l.is_success as "isSuccess"
     from app.audit_log l
     join app.users u on u.id = l.user_id
+    left join app.access_token t on t.id = l.access_token_id
     cross join params p
     -- Дужки навколо пошуку обов'язкові: без них перший же `and` нижче
     -- прив'язався б до останнього `or` і фільтри діяли б лише на нього.
@@ -63,6 +69,7 @@ as $$
         p.search is null
         or u.login ilike '%' || p.search || '%'
         or u.full_name ilike '%' || p.search || '%'
+        or t.name ilike '%' || p.search || '%'
         or l.model ilike '%' || p.search || '%'
         or l.model in (select jsonb_array_elements_text(p.model_keys))
         or l.command ilike '%' || p.search || '%'
@@ -79,6 +86,9 @@ as $$
       and (p.f_command is null or l.command ilike '%' || p.f_command || '%')
       and (p.f_record_id is null or l.record_id::text = p.f_record_id)
       and (p.f_success is null or l.is_success = p.f_success)
+      and (p.f_actor is null
+        or (p.f_actor = 'agent' and l.access_token_id is not null)
+        or (p.f_actor = 'human' and l.access_token_id is null))
   ),
   paged as (
     select f.* from filtered f cross join params p
@@ -87,6 +97,8 @@ as $$
       case when p.sort_by = 'occurredAt' and p.sort_dir = 'desc' then f."occurredAt" end desc,
       case when p.sort_by = 'user'       and p.sort_dir = 'asc'  then f."user" end asc,
       case when p.sort_by = 'user'       and p.sort_dir = 'desc' then f."user" end desc,
+      case when p.sort_by = 'token'      and p.sort_dir = 'asc'  then f.token end asc,
+      case when p.sort_by = 'token'      and p.sort_dir = 'desc' then f.token end desc,
       case when p.sort_by = 'model'      and p.sort_dir = 'asc'  then f.model end asc,
       case when p.sort_by = 'model'      and p.sort_dir = 'desc' then f.model end desc,
       case when p.sort_by = 'command'    and p.sort_dir = 'asc'  then f.command end asc,

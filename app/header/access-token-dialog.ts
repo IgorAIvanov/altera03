@@ -36,6 +36,16 @@ interface AccessTokenRow {
   status: "active" | "expired" | "revoked";
 }
 
+/** Рядок журналу токена — `app.access_token_log`. */
+interface AccessTokenLogRow {
+  id: string;
+  occurredAt: string;
+  model: string;
+  command: string;
+  recordId: string | null;
+  isSuccess: boolean;
+}
+
 @customElement(tagName)
 export class AccessTokenDialog extends GlobalStyledLitElement {
   /**
@@ -54,6 +64,17 @@ export class AccessTokenDialog extends GlobalStyledLitElement {
   @state() private busy = false;
   /** Токен, у якого спитали «точно відкликати?» — підтвердження в тому ж рядку. */
   @state() private confirming: string | null = null;
+  /**
+   * Токен, чий журнал розгорнуто. Відповідає за дії агента власник токена,
+   * тож і бачить їх він — тут, без права на екран журналу аудиту.
+   */
+  @state() private logFor: string | null = null;
+  @state() private logRows: AccessTokenLogRow[] = [];
+  /**
+   * Назва моделі. Хелпер тягне реєстр моделей, а вікно лежить в основному
+   * чанку оболонки — тому він вантажиться лише тоді, коли журнал відкрили.
+   */
+  private modelTitle: (key: string) => string = (key) => key;
 
   open(): void {
     this.name = "";
@@ -63,6 +84,8 @@ export class AccessTokenDialog extends GlobalStyledLitElement {
     this.copied = false;
     this.error = "";
     this.confirming = null;
+    this.logFor = null;
+    this.logRows = [];
     this.opened = true;
     void this.load();
   }
@@ -81,6 +104,7 @@ export class AccessTokenDialog extends GlobalStyledLitElement {
           ${this.issued ? this.renderIssued() : this.renderForm()}
           ${this.error ? html`<div class="text-error text-sm">${this.error}</div>` : nothing}
           ${this.renderList()}
+          ${this.logFor ? this.renderLog() : nothing}
         </div>
         <div slot="actions">
           <button class="btn btn-sm" @click=${this.#close}>${t("common.close")}</button>
@@ -185,7 +209,13 @@ export class AccessTokenDialog extends GlobalStyledLitElement {
         <!-- Порожньо означає «жодного разу»: саме за цим і видно, який токен
              можна відкликати без побоювань. -->
         <td class="text-sm">${formatDate(row.lastUsedAt, dateFormat.dateTime) || "—"}</td>
-        <td class="text-right">
+        <td class="text-right whitespace-nowrap">
+          <!-- Журнал — і в відкликаного токена теж: що він встиг зробити до
+               відкликання, питають якраз тоді. -->
+          <button class="btn btn-sm btn-ghost" aria-pressed=${this.logFor === row.id ? "true" : "false"}
+            @click=${() => this.toggleLog(row.id)}>
+            ${t("header.tokensLog")}
+          </button>
           ${inactive ? nothing : this.confirming === row.id
         ? html`
           <button class="btn btn-sm btn-error" @click=${() => this.revoke(row.id)}>
@@ -201,6 +231,64 @@ export class AccessTokenDialog extends GlobalStyledLitElement {
         </td>
       </tr>
     `;
+  }
+
+  private renderLog(): TemplateResult {
+    const token = this.rows.find((row) => row.id === this.logFor);
+    return html`
+      <div class="flex flex-col gap-2">
+        <strong class="text-sm">${t("header.tokensLogTitle")}: ${token?.name ?? ""}</strong>
+        ${this.logRows.length === 0
+      ? html`<p class="text-sm opacity-70">${t("header.tokensLogEmpty")}</p>`
+      : html`
+        <div class="max-h-64 overflow-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>${t("header.tokensLogTime")}</th>
+                <th>${t("header.tokensLogAction")}</th>
+                <th class="text-right">${t("header.tokensLogRecord")}</th>
+                <th>${t("header.tokensLogResult")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${this.logRows.map((row) => html`
+                <tr>
+                  <td class="text-sm tabular-nums">${formatDate(row.occurredAt, dateFormat.dateTime)}</td>
+                  <td class="text-sm" title=${`${row.model}/${row.command}`}>
+                    ${this.modelTitle(row.model)} · ${row.command}
+                  </td>
+                  <td class="text-sm text-right tabular-nums">${row.recordId ?? ""}</td>
+                  <td class=${`text-sm ${row.isSuccess ? "" : "text-error"}`}>
+                    ${row.isSuccess ? t("header.tokensLogSuccess") : t("header.tokensLogFailure")}
+                  </td>
+                </tr>`)}
+            </tbody>
+          </table>
+        </div>`}
+      </div>
+    `;
+  }
+
+  private async toggleLog(id: string): Promise<void> {
+    if (this.logFor === id) {
+      this.logFor = null;
+      return;
+    }
+    this.error = "";
+    try {
+      const [{ modelTitle }, response] = await Promise.all([
+        import("@shared/model-title.ts"),
+        apiFetch(`/api/auth/tokens/log?id=${encodeURIComponent(id)}`),
+      ]);
+      const envelope = await readEnvelope<unknown, AccessTokenLogRow>(response);
+      if (!envelope.ok) throw new Error(messageText(envelope.messages[0]));
+      this.modelTitle = modelTitle;
+      this.logRows = envelope.data.rows;
+      this.logFor = id;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+    }
   }
 
   private async load(): Promise<void> {

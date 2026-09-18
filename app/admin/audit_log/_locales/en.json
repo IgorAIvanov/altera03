@@ -18,5 +18,12 @@
   "auditLog.cmd.unpost": "Unpost",
   "auditLog.cmd.copy": "Copy",
   "auditLog.cmd.moveToGroup": "Move to group",
-  "auditLog.cmd.setPassword": "Set password"
+  "auditLog.cmd.setPassword": "Set password",
+  "auditLog.token": "Token",
+  "auditLog.actor": "Actor",
+  "auditLog.anyActor": "Anyone",
+  "auditLog.actorAgent": "Agent (token)",
+  "auditLog.actorHuman": "Person",
+  "auditLog.cmd.upload": "File upload",
+  "auditLog.cmd.download": "File download"
 }
