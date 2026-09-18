@@ -78,6 +78,35 @@ The CSS knowledge below still applies to `custom` cells and to fully
 hand-written tables (which remain legal — the primitive is a default, not a
 requirement).
 
+## Something of your own in the toolbar: `toolbarExtra`
+
+A barcode scan field or a «Fill» button belongs in the section's toolbar, next to
+«Add» — not above the tabs. Declare it on the section, not on the tab:
+
+```ts
+private readonly scanStatus = signal("");   // state of the extra lives in a signal
+
+private goods = new TabularSection<Line>(this, {
+  …,
+  toolbarExtra: () => scanField({
+    disabled: this.goods.readonly,
+    status: this.scanStatus.get(),
+    onScan: (code) => this.scan(code),
+  }),
+});
+```
+
+The toolbar draws it to the right of its buttons, wherever the section is shown —
+inside `<ui-form-tabs>` as well, so the tab keeps its row count and error mark.
+Three things the toolbar does NOT do for you:
+
+- **disable it on a read-only form** — read `section.readonly` in your template;
+- **redraw on the form's `@state`** — the toolbar redraws on section changes and on
+  signals it reads, and the form's re-render hands it the same section object; a
+  scan that finds nothing changes no row, so its message must sit in a signal;
+- **swallow `Enter`** — a native input there is a form field for «Enter moves on»;
+  handle `Enter` on `keydown` and call `preventDefault()`.
+
 ## Rows are REPLACED, never edited in place
 
 The table caches what it has already drawn and redraws only the records that

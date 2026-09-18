@@ -5,7 +5,7 @@
  * ставити взагалі — усі дії доступні на секції (`section.addLine()` тощо),
  * кастомний тулбар — це кілька кнопок із цими викликами.
  */
-import { html, type TemplateResult } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { SignalWatcher } from "@lit-labs/signals";
 import { GlobalStyledLitElement } from "../base/gsle.ts";
@@ -86,6 +86,9 @@ export class UiTabularToolbar extends Base {
           title=${t("tabular.down")} @click=${() => section.move(1)}>
           ${icons.moveDown}
         </button>
+        ${section.config.toolbarExtra
+          ? html`<div class="flex items-center gap-2 ml-3">${section.config.toolbarExtra()}</div>`
+          : nothing}
       </div>
     `;
   }
