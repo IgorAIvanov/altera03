@@ -447,8 +447,33 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
     // @types/node `clearTimeout` не приймає ані `undefined`, ані `number`, і
     // пакет не проходить перевірку типів при публікації.
     if (this.#searchTimer !== undefined) clearTimeout(this.#searchTimer);
-    this.#searchTimer = setTimeout(() => this.load(), this.searchDebounceMs);
+    this.#searchTimer = setTimeout(() => {
+      this.#searchTimer = undefined;
+      this.load();
+    }, this.searchDebounceMs);
   }
+
+  /**
+   * Виконати відкладений пошук негайно, якщо він ще чекає своєї паузи.
+   *
+   * Для переходу з поля пошуку в таблицю: набрав і одразу пішов униз — а
+   * рядки на екрані ще від попереднього запиту. Без цього фокус сідав би на
+   * рядок, який за мить заміниться іншим.
+   */
+  /** Чи чекає набраний текст своєї паузи — тоді рядки на екрані ще від попереднього запиту. */
+  protected get searchPending(): boolean {
+    return this.#searchTimer !== undefined;
+  }
+
+  protected async flushSearch() {
+    if (this.#searchTimer === undefined) return;
+    clearTimeout(this.#searchTimer);
+    this.#searchTimer = undefined;
+    await this.load();
+  }
+
+  /** Клавіші в полі пошуку. Основа їх не займає — перехід у таблицю вирішує екран. */
+  protected onSearchKeyDown(_e: KeyboardEvent) {}
 
   /**
    * Перейти на сторінку й повести туди фокус.
@@ -667,7 +692,8 @@ export abstract class QueryTableBase<Row extends { id: string }> extends Filtere
              Плейсхолдер ім'ям не рахується — він зникає з першим символом. -->
         <input type="text" class="grow search-input" placeholder="${t("common.search")}..."
           aria-label=${t("common.search")}
-          .value=${this.search} @input=${this.onSearch} />
+          .value=${this.search} @input=${this.onSearch}
+          @keydown=${(e: KeyboardEvent) => this.onSearchKeyDown(e)} />
       </label>
     `;
   }

@@ -38,6 +38,12 @@ navigation (↑↓, Home/End, Space to select, Enter to activate) and the toolba
 adds only what makes it a *dialog*: autofocus on search, confirm/cancel, and emitting
 `picker.select` / `picker.cancel` on the bus.
 
+Keyboard in the dialog is already complete — do not add your own handlers for it: Tab or ↓ in the
+search box goes straight to the table (flushing a search still waiting for its debounce), ↑ on the
+very first row returns to search, Enter confirms. Refresh and the column headers stay reachable
+with Shift+Tab from the table. A subclass that needs another key hooks `onSearchKeyDown()` /
+`onRowKeyDown()` and calls `super`.
+
 This split matters when you extend it: anything about the **table** belongs in `QueryTableBase`
 and changing it affects the list too; anything about **choosing a value** belongs here.
 

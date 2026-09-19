@@ -88,6 +88,7 @@ export class ContractorPicker extends ModelPickerBase<ContractorLookupRow> {
 | Загрузка            | `bus.request("data.load", { model, command:"lookup", payload })`|
 | Поиск               | поле с иконкой, автофокус, debounce 250 мс, поле `search` в payload |
 | Параметры отбора    | `params` от `<ui-picker fetch-params=…>` подмешиваются в payload |
+| Переход в таблицу   | Tab или ↓ в поиске — сразу на строку (отложенный поиск выполняется немедленно); ↑ с первой строки первой страницы — обратно в поиск. «Обновить» и заголовки — Shift+Tab из таблицы |
 | Выбор строки        | одиночный клик — подсветка; двойной клик или Enter — подтвердить |
 | Подтверждение       | `picker.select` с `{ id, label }` (label — поле `labelField`)   |
 | Отмена              | кнопка «Скасувати», Escape, «×»/клик вне (через `picker-host`)  |

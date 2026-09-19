@@ -133,6 +133,51 @@ export abstract class ModelPickerBase<Row extends { id: string }> extends QueryT
     this._input?.focus();
   }
 
+  /**
+   * З поля пошуку — одразу в таблицю: Tab і стрілка вниз.
+   *
+   * У діалозі вибору людина робить одне: набирає, спускається в перелік, Enter.
+   * Природний порядок Tab вів через «Оновити» й кожен заголовок колонки, тобто
+   * до рядків було п'ять-шість натискань. Ті контроли не зникають із черги —
+   * до них веде Shift+Tab із таблиці (ця клавіша лишається рідною), тож
+   * клавіатурою досяжне все, як і було.
+   *
+   * Порожній перелік — Tab рідний: вести нікуди, а людині, можливо, саме
+   * відбір і треба змінити.
+   */
+  protected override onSearchKeyDown(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const toTable = (e.key === "Tab" && !e.shiftKey) || e.key === "ArrowDown";
+    if (!toTable || this.loading) return;
+    if (this.rows.length === 0 && !this.searchPending) return;
+    e.preventDefault();
+    void this.#enterTable();
+  }
+
+  async #enterTable() {
+    await this.flushSearch();
+    if (this.rows.length === 0) return;
+    // Курсор лишається там, де стояв, якщо рядок ще в переліку; інакше —
+    // перший. Виділяється разом із фокусом: без курсора Enter у діалозі
+    // і кнопка «Вибрати» нічого не підтвердили б.
+    const index = Math.max(0, this.rows.findIndex((r) => r.id === this.selectedId));
+    this.moveSelection(index);
+  }
+
+  /**
+   * Стрілка вгору з першого рядка першої сторінки — назад у пошук, пара до
+   * стрілки вниз із пошуку. Далі вгору основі вести все одно нікуди.
+   */
+  protected override onRowKeyDown(e: KeyboardEvent, row: Row, index: number) {
+    if (e.key === "ArrowUp" && index === 0 && this.page <= 1
+      && !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey)) {
+      e.preventDefault();
+      this._input?.focus();
+      return;
+    }
+    super.onRowKeyDown(e, row, index);
+  }
+
   protected rowLabel(row: Row): string {
     return (row as Record<string, unknown>)[this.labelField] as string ?? row.id;
   }
