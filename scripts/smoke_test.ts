@@ -354,6 +354,93 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    /**
+     * Стейджинг імпорту: сесія, партія, сировина, знесення.
+     *
+     * Каналу приймання ще немає, тож партію й сировину проба кладе прямо в
+     * базу — як і має робити проба СХЕМИ. Перевіряється те, заради чого схема й
+     * така: партія переживає знесення сировини (лишається слід «звідки це
+     * приїхало»), а незворотна команда без названої області відмовляє.
+     */
+    await t.step("імпорт: сировина зноситься, слід лишається", async () => {
+      const session = await withDb(async (sql) => {
+        const rows = await sql<{ id: string }[]>`
+          insert into app.import_session (source, params, created_by)
+          values ('smoke_src', '{"org":"1"}'::jsonb, 1)
+          returning id::text as id
+        `;
+        return rows[0]!.id;
+      });
+
+      try {
+        await withDb(async (sql) => {
+          const batch = await sql<{ id: string }[]>`
+            insert into app.source_batch (session_id, source, query)
+            values (${session}::bigint, 'smoke_src', 'Справочник.Контрагенты')
+            returning id::text as id
+          `;
+          const batchId = batch[0]!.id;
+          await sql`
+            insert into app.source_object (batch_id, source, kind, ref, payload)
+            values (${batchId}::bigint, 'smoke_src', 'Справочник.Контрагенты', 'guid-1', '{}'::jsonb)
+          `;
+          await sql`
+            insert into app.source_row (batch_id, query, line_no, payload)
+            values (${batchId}::bigint, 'Остатки', 1, '{}'::jsonb)
+          `;
+        });
+
+        // Сесія знає про свої партії — це те, на що дивиться екран.
+        const { body: got } = await client.model("import_session", "get", { id: session });
+        assertEquals(got.ok, true);
+        const item = got.data.item as { state: string; batches: { total: number } };
+        assertEquals(item.state, "open");
+        assertEquals(item.batches.total, 1);
+
+        // Обсяг питають перед знесенням: незворотна кнопка без числа поруч —
+        // пропозиція зробити щось наосліп.
+        const { body: volume } = await client.model("import_session", "volume", { id: session });
+        const counts = volume.data.item as { objects: number; rows: number };
+        assertEquals(Number(counts.objects), 1);
+        assertEquals(Number(counts.rows), 1);
+
+        // Без названої області дії команда відмовляє: промах у payload не має
+        // означати найширшу з можливих дій.
+        const { body: blind } = await client.model("import_session", "purge", {});
+        assertEquals(blind.ok, false);
+
+        const { body: purged } = await client.model("import_session", "purge", { id: session });
+        assertEquals(purged.ok, true);
+
+        // Сировини немає, партія лишилась: після прибирання ще можна сказати,
+        // звідки взялися дані, хоч самих даних уже немає.
+        const after = await withDb(async (sql) => {
+          const rows = await sql<{ objects: string; batches: string }[]>`
+            select
+              (select count(*) from app.source_object o
+                 join app.source_batch b on b.id = o.batch_id
+                where b.session_id = ${session}::bigint)::text as objects,
+              (select count(*) from app.source_batch
+                where session_id = ${session}::bigint)::text as batches
+          `;
+          return rows[0]!;
+        });
+        assertEquals(after.objects, "0");
+        assertEquals(after.batches, "1");
+
+        // Закриття каналу — дія, а не позначка: повторне закриття відмовляє.
+        const { body: closed } = await client.model("import_session", "close", { id: session });
+        assertEquals((closed.data.item as { state: string }).state, "closed");
+        const { body: again } = await client.model("import_session", "close", { id: session });
+        assertEquals(again.ok, false);
+      } finally {
+        await withDb((sql) =>
+          sql`delete from app.source_batch where session_id = ${session}::bigint`
+        );
+        await purge("app.import_session", session);
+      }
+    });
+
     await t.step("модель: невідома команда не вдає успіх", async () => {
       const { status, body } = await client.model("bank", "no_such_command");
 

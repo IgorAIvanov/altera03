@@ -88,6 +88,17 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       models: [file("job/db/job.sql")],
     },
   },
+  // import — приймання даних із зовнішнього джерела. Залежності: app.users і
+  // app.access_token (канал тримає виданий собі токен), тож пакет іде за
+  // access. Окремим пакетом, а не частиною base: застосунок без імпорту не
+  // повинен везти сім таблиць, половина з яких на сотні тисяч рядків jsonb.
+  {
+    name: "import",
+    files: {
+      structure: [file("import/db/struc.sql")],
+      models: [file("import/db/import.sql")],
+    },
+  },
   // setting — теж лише за app.users. Сіду в ядрі немає навмисно, як і в меню:
   // ЩО можна налаштувати, називає застосунок, тому каталог (він же умовчання)
   // лежить у нього — app/admin/setting/db/data.sql.
