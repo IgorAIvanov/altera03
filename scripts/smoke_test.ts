@@ -2120,6 +2120,52 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           }
         }
 
+        // Токен з ОБЛАСТЮ ДІЇ — виданий каналу, а не людині.
+        //
+        // Такий токен потрібен чужому процесу, що приходить ззовні (обробка в
+        // базі клієнта, термінал, ваги): йому треба рівно один канал, а не
+        // права людини. Проба стереже саме межу, а не канал (каналів ще немає):
+        // усі ТРИ наявні входи мусять відмовити. Обіцянка тут про ТОКЕН, і
+        // якщо вона тримається лише в одного споживача, то не тримається ніде —
+        // рівно так свого часу байти вкладень обійшли прапорець «тільки
+        // читання».
+        //
+        // Область дії проставляється прямо в базі навмисно: видавця ще немає, а
+        // запобіжник має стояти ДО того, як з'явиться перший такий токен.
+        const scoped = await issue("smoke channel token", false);
+        await withDb((sql) =>
+          sql`update app.access_token set scope = 'smoke:1' where id = ${scoped.id}::bigint`
+        );
+
+        const scopedBearer = { authorization: `Bearer ${scoped.token}` };
+
+        // 1. Команда моделі — звичайним маршрутом.
+        const scopedModel = await client.json<Envelope>("/api/model/bank/list", {
+          method: "POST",
+          headers: { ...scopedBearer, "content-type": "application/json" },
+          body: "{}",
+        });
+        assertEquals(scopedModel.status, 403);
+        assertEquals(scopedModel.body.ok, false);
+
+        // 2. Канал агента — і навіть перелік інструментів: команд він не
+        // викликає, отже й дивитися на них йому нема навіщо.
+        const scopedTools = await client.json<{ ok: boolean }>("/api/agent/tools", {
+          headers: scopedBearer,
+        });
+        assertEquals(scopedTools.status, 403);
+        assertEquals(scopedTools.body.ok, false);
+
+        // 3. Байти вкладень — власний канал повз команди моделей.
+        const scopedUpload = new FormData();
+        scopedUpload.append("file", new File(["x"], "scoped.txt", { type: "text/plain" }));
+        const scopedBlob = await client.fetch("/api/blob/upload", {
+          method: "POST",
+          headers: scopedBearer,
+          body: scopedUpload,
+        });
+        assertEquals(scopedBlob.status, 403);
+
         const revoked = await client.json<Envelope>("/api/auth/tokens/revoke", {
           method: "POST",
           headers: browser,

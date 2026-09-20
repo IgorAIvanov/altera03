@@ -109,3 +109,8 @@ $$;
 -- false: їхні паролі задавала людина, а не оточення.
 alter table app.users
   add column if not exists must_change_password boolean not null default false;
+
+-- Область дії токена (див. struc.sql). Для наявних токенів порожня: вони
+-- видані людям і несуть їхні права, як і доти.
+alter table app.access_token
+  add column if not exists scope varchar(100);

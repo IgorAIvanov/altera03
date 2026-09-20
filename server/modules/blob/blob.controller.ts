@@ -1,10 +1,12 @@
 import { Controller, Get, Param, Post, Req } from "@danet/core";
 import {
   AuthenticationRequiredError,
+  assertTokenHasNoScope,
   assertTokenMayWrite,
   type HttpRequest,
   jsonResponse,
   ReadOnlyTokenError,
+  ScopedTokenError,
   resolveSessionToken,
 } from "../../common/http.ts";
 import { type RequestAuthContext, RequestUserService } from "../../common/request-user.service.ts";
@@ -89,6 +91,7 @@ export class BlobController {
       // Вкладення — це запис, хай і не командою моделі. Перевірка мусить стояти
       // ДО читання тіла: інакше токен для читання змусив би сервер прийняти й
       // розібрати файл на десятки мегабайт, щоб потім його відкинути.
+      assertTokenHasNoScope(auth, "завантаження файлу");
       assertTokenMayWrite(auth, "завантаження файлу");
 
       const form = await req.formData();
@@ -138,7 +141,7 @@ export class BlobController {
       if (error instanceof AuthenticationRequiredError) {
         return jsonResponse(errorEnvelope(error.message), 401);
       }
-      if (error instanceof ReadOnlyTokenError) {
+      if (error instanceof ReadOnlyTokenError || error instanceof ScopedTokenError) {
         return await refuse(jsonResponse(errorEnvelope(error.message), error.status));
       }
       return jsonResponse(

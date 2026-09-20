@@ -73,6 +73,44 @@ export function assertTokenMayWrite(
   if (auth.accessToken?.readOnly) throw new ReadOnlyTokenError(what);
 }
 
+/**
+ * Токен має область дії — тобто він виданий не людині, а каналу.
+ *
+ * 403 з тієї самої причини, що й вище: облікові дані дійсні, але цей токен
+ * тут не вдома.
+ */
+export class ScopedTokenError extends Error {
+  readonly status = 403;
+
+  constructor(what: string, scope: string) {
+    super(
+      `Цей токен доступу виданий каналу «${scope}» і більше нікуди: ${what} заборонено.`,
+    );
+    this.name = "ScopedTokenError";
+  }
+}
+
+/**
+ * Відмовити, якщо запит прийшов токеном, виданим КАНАЛУ, а не людині.
+ *
+ * Правило те саме, що з `assertTokenMayWrite`, і написане воно тут із тієї
+ * самої причини: обіцянка стосується ТОКЕНА, а не одного споживача. Токен з
+ * областю дії не несе прав людини взагалі — він має рівно той вхід, заради
+ * якого виданий. Тому кожен вхід, що обслуговує звичайний трафік (команди
+ * моделей, канал агента, байти вкладень), кличе це, а вхід самого каналу —
+ * навпаки, звіряє область дії зі своєю.
+ *
+ * Fail-closed і саме в цей бік: коли з'явиться новий вхід і про область дії
+ * там забудуть, токен каналу дістане відмову, а не зайвий доступ.
+ */
+export function assertTokenHasNoScope(
+  auth: { accessToken?: { scope?: string | null } },
+  what: string,
+): void {
+  const scope = auth.accessToken?.scope;
+  if (scope) throw new ScopedTokenError(what, scope);
+}
+
 /** Кого клієнт вважає поточним користувачем. Порожній — не перевіряємо. */
 export const SESSION_USER_HEADER = "x-session-user";
 

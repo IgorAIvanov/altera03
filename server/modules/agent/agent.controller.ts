@@ -1,5 +1,11 @@
 import { Controller, Get, Post, Req } from "@danet/core";
-import { AuthenticationRequiredError, type HttpRequest, jsonResponse } from "../../common/http.ts";
+import {
+  AuthenticationRequiredError,
+  assertTokenHasNoScope,
+  type HttpRequest,
+  jsonResponse,
+  ScopedTokenError,
+} from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
 import { AgentService } from "./agent.service.ts";
 import { AgentToolsService } from "./agent-tools.service.ts";
@@ -35,6 +41,10 @@ export class AgentController {
   async tools(@Req() req: HttpRequest) {
     try {
       const auth = await this.requestUserService.resolveAuthContext(req, {});
+      // Перелік інструментів — теж не для токена каналу: він не викликає
+      // команд, отже й дивитися на них йому нема навіщо. Виклик (`call`)
+      // відсікає сам рантайм моделей.
+      assertTokenHasNoScope(auth, "перелік інструментів агента");
       const caller = { accessToken: auth.accessToken };
       const query = new URL(req.url).searchParams;
       const command = query.get("command")?.trim();
@@ -103,6 +113,9 @@ export class AgentController {
       if (error instanceof AuthenticationRequiredError) {
         return jsonResponse(agentError(error.message), 401);
       }
+      if (error instanceof ScopedTokenError) {
+        return jsonResponse(agentError(error.message), error.status);
+      }
       return agentError(error instanceof Error ? error.message : "Помилка переліку інструментів");
     }
   }
@@ -151,6 +164,9 @@ export class AgentController {
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
         return jsonResponse(agentError(error.message), 401);
+      }
+      if (error instanceof ScopedTokenError) {
+        return jsonResponse(agentError(error.message), error.status);
       }
       return agentError(error instanceof Error ? error.message : "Помилка агента");
     }

@@ -296,8 +296,11 @@ export interface ModelCommandCaller {
    * Виклик персональним токеном (агент). Такий виклик журналюється завжди,
    * повз рівні `audit_setting`, і в одній транзакції з командою — див.
    * `server/common/token-audit.ts`.
+   *
+   * `scope` — токен виданий КАНАЛУ, а не людині: команд моделей він не
+   * викликає взагалі (див. нижче).
    */
-  accessToken?: { id: string; readOnly: boolean };
+  accessToken?: { id: string; readOnly: boolean; scope?: string | null };
 }
 
 /**
@@ -320,6 +323,17 @@ function assertCallerMayRun(
 ): void {
   const token = caller.accessToken;
   if (!token) return;
+
+  // Токен з областю дії не несе прав людини взагалі — він виданий одному
+  // каналу (обробка в базі клієнта, термінал, ваги). Відмова стоїть ПЕРЕД
+  // усім іншим, включно з сухим прогоном: питання не в тому, що саме
+  // команда робить, а в тому, що цей токен тут не вдома.
+  if (token.scope) {
+    throw ModelCommandError.forbidden(
+      `Цей токен доступу виданий каналу «${token.scope}» і команд моделей не викликає.`,
+    );
+  }
+
   if (NON_WRITING_COMMANDS.has(command)) return;
 
   if (token.readOnly && CHANGING_ACTIONS.has(action)) {

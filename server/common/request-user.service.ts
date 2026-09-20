@@ -36,7 +36,7 @@ export interface RequestAuthContext {
    * (`app.audit_log.access_token_id`), бо «нічна звірка» і «ноутбук» — різні
    * агенти, і відкликають їх окремо.
    */
-  accessToken?: { id: string; readOnly: boolean };
+  accessToken?: { id: string; readOnly: boolean; scope: string | null };
 }
 
 interface ActiveUserRow {
@@ -118,7 +118,9 @@ export class RequestUserService {
       return null;
     }
 
-    const rows = await this.db.sql<Array<{ id: string; user_id: string; is_read_only: boolean }>>`
+    const rows = await this.db.sql<
+      Array<{ id: string; user_id: string; is_read_only: boolean; scope: string | null }>
+    >`
       UPDATE app.access_token t
          SET last_used_at = NOW(),
              updated_at = NOW()
@@ -128,12 +130,16 @@ export class RequestUserService {
          AND (t.expires_at IS NULL OR t.expires_at > NOW())
          AND u.id = t.user_id
          AND u.is_active = true
-      RETURNING t.id::text AS id, t.user_id::text AS user_id, t.is_read_only
+      RETURNING t.id::text AS id, t.user_id::text AS user_id, t.is_read_only, t.scope
     `;
 
     const row = rows[0];
     return row
-      ? { userId: row.user_id, sessionId: "", accessToken: { id: row.id, readOnly: row.is_read_only } }
+      ? {
+        userId: row.user_id,
+        sessionId: "",
+        accessToken: { id: row.id, readOnly: row.is_read_only, scope: row.scope },
+      }
       : null;
   }
 
