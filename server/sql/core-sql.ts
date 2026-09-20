@@ -77,6 +77,17 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       data: [file("audit/db/data.sql")],
     },
   },
+  // job — довге виконання команди моделі. Залежності дві: app.users (хто
+  // запустив) і app.access_can з access (видимість чужих завдань), тож пакет
+  // стоїть одразу за ними. Даних не сіє: черга наповнюється роботою, а не
+  // деплоєм.
+  {
+    name: "job",
+    files: {
+      structure: [file("job/db/struc.sql")],
+      models: [file("job/db/job.sql")],
+    },
+  },
   // setting — теж лише за app.users. Сіду в ядрі немає навмисно, як і в меню:
   // ЩО можна налаштувати, називає застосунок, тому каталог (він же умовчання)
   // лежить у нього — app/admin/setting/db/data.sql.

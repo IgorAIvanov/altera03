@@ -56,6 +56,15 @@ type ManifestRecord = {
      * команда не виконується взагалі (fail-closed).
      */
     access?: Record<string, string>;
+    /**
+     * Команди, які виконуються У ФОНІ: рантайм одразу віддає завдання
+     * (`app.job`), а роботу доробляє поза запитом.
+     *
+     * Перелік імен, а не прапорець біля команди: довгою є КОМАНДА, а не
+     * модель, і в тій самій моделі поруч живуть `load` на двадцять хвилин і
+     * `get` на мілісекунду.
+     */
+    long?: string[];
   };
   views?: Record<string, { module: string; titleKey?: string }>;
   agent?: {
@@ -80,7 +89,7 @@ const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
  * написали: SQL-функція в базі є й працює, демо-набір кличе її напряму й
  * проходить — тобто проба зелена саме тому, що обходить рантайм.
  */
-const COMMAND_BLOCK_KEYS = ["sql", "ts", "access"];
+const COMMAND_BLOCK_KEYS = ["sql", "ts", "access", "long"];
 
 /**
  * Дії, які рантайм уміє задовольнити правом.
@@ -136,6 +145,30 @@ export function assertCommandsBlock(manifestPath: string, manifest: ManifestReco
         `  "access.${command}": ${JSON.stringify(action)} — такої дії рантайм не знає. ` +
           `Дозволені: ${ACCESS_ACTIONS.join(", ")}.`,
       );
+    }
+  }
+
+  // Довгою можна оголосити лише те, що справді є командою цієї моделі.
+  // Помилка в імені інакше не помітна ніяк: рантайм не знайшов би команду в
+  // переліку й виконав її звичайним шляхом — усередині запиту, який вона й не
+  // мала пережити. На малій базі це ще й працює, тож помилку знайде клієнт.
+  const long = commands.long;
+  if (long !== undefined) {
+    if (!Array.isArray(long)) {
+      problems.push('  "long" — очікувався перелік імен команд, напр. ["load"].');
+    } else {
+      const declared = new Set([
+        ...Object.keys(commands.sql ?? {}),
+        ...Object.keys(commands.ts ?? {}),
+        ...STANDARD_COMMANDS,
+      ]);
+      for (const command of long) {
+        if (typeof command !== "string" || declared.has(command)) continue;
+        problems.push(
+          `  "long": ${JSON.stringify(command)} — модель такої команди не оголошує. ` +
+            `Довгою може бути лише команда з "commands.sql" або "commands.ts".`,
+        );
+      }
     }
   }
 
@@ -449,6 +482,8 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([commandName, action]) => `    ${JSON.stringify(commandName)}: ${JSON.stringify(action)}`);
 
+    const longCommands = [...(manifest.commands?.long ?? [])].sort();
+
     const modelTypeLine = manifest.type ? `    type: ${JSON.stringify(manifest.type)}` : null;
     const modelSchemaLine = manifest.schema ? `    schema: ${JSON.stringify(manifest.schema)}` : null;
     const bodyParts = [
@@ -456,6 +491,7 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
       modelSchemaLine,
       sqlCommandEntries.length ? `    sqlCommands: {\n${sqlCommandEntries.join(",\n")}\n    }` : null,
       accessEntries.length ? `    access: {\n${accessEntries.join(",\n")}\n    }` : null,
+      longCommands.length ? `    longCommands: ${JSON.stringify(longCommands)}` : null,
     ]
       .filter((value): value is string => Boolean(value));
 

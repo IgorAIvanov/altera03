@@ -11,6 +11,7 @@ import type {
   DatabaseConfig,
   DatabaseSslMode,
   DevBypassConfig,
+  JobsConfig,
 } from "./server-config.ts";
 
 /** Блоки конфігурації, які прийнято тримати в оточенні. */
@@ -18,6 +19,7 @@ export interface EnvDerivedConfig {
   database: DatabaseConfig;
   auth: AuthConfig;
   blob: BlobConfig;
+  jobs: Pick<JobsConfig, "background">;
 }
 
 const BIGINT_ID_PATTERN = /^\d+$/;
@@ -74,6 +76,20 @@ export function findProductionMarker(): string | null {
 
 export function isProductionEnvironment(): boolean {
   return findProductionMarker() !== null;
+}
+
+/**
+ * Чи це безсерверна платформа, де процес не переживає відповіді на запит.
+ *
+ * Питання не про продуктив: на власному сервері продуктив довгу роботу
+ * витримує, а тут її не витримує навіть прев'ю-розгортання. Ізолят Deno Deploy
+ * живе рівно стільки, скільки обробляється запит; що станеться з роботою, яку
+ * ми запустили й не дочекалися, платформа не обіцяє — вона може доїхати, а може
+ * обірватися на середині, не лишивши сліду ніде, крім наполовину перенесених
+ * даних. Друге гірше за відмову, тому тут ми просто кажемо «не можна».
+ */
+export function isServerlessEnvironment(): boolean {
+  return !!Deno.env.get("DENO_DEPLOY")?.trim();
 }
 
 /**
@@ -300,5 +316,10 @@ export function configFromEnv(): EnvDerivedConfig {
       tokenTtlHours: readPositiveInt("BLOB_TOKEN_TTL_HOURS", 12),
       maxSizeMb: readPositiveInt("BLOB_MAX_SIZE_MB", 10),
     },
+    // Єдине місце, яке має право дивитися на оточення, — тут воно й вирішує,
+    // чи здатна платформа тримати роботу після відповіді. Застосунок може
+    // перекрити явно (`jobs: { background: true }`), і це свідома заява: він
+    // бере на себе те, чого платформа не обіцяє.
+    jobs: { background: !isServerlessEnvironment() },
   };
 }

@@ -10,6 +10,7 @@
     "@core/base",
     "@core/access",
     "@core/audit",
+    "@core/job",
     "@core/remark",
     "@core/setting",
     "@core/menu",

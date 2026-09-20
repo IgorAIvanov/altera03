@@ -1,5 +1,6 @@
 import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
+import { JobService } from "./job.service.ts";
 import { isMissingDatabaseFunction } from "../../database/database-error.ts";
 import { signEnvelopeTokens } from "../blob/blob-token.ts";
 import { withTokenAudit, writeAuditEntry } from "../../common/token-audit.ts";
@@ -9,6 +10,7 @@ import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import type {
   ModelBackendConfig,
   ModelCommandContext,
+  ModelCommandJob,
   SqlModelCommandDefinition,
   SqlModelCommandConfig,
   TsModelCommandConfig,
@@ -367,7 +369,18 @@ function resolveRequiredAction(
 
 @Injectable()
 export class ModelRuntimeService {
-  constructor(private db: DatabaseService) {}
+  constructor(private db: DatabaseService, private jobs: JobService) {}
+
+  /**
+   * Чи виконується ця команда у фоні.
+   *
+   * Питання ставиться саме про пару «модель + команда», а не про модель:
+   * `import/load` йде хвилинами, `import/get` — мілісекунди, і живуть вони в
+   * одній моделі.
+   */
+  private isLongCommand(command: string, config: ModelBackendConfig | undefined): boolean {
+    return config?.longCommands?.includes(command) === true;
+  }
 
   /**
    * @param sessionId — сесія виклику. Потрібна тільки для токенів вкладень:
@@ -396,8 +409,15 @@ export class ModelRuntimeService {
     const action = resolveRequiredAction(model, command, normalizedPayload, config);
     const token = caller.accessToken;
 
-    const run = (db: DatabaseService) =>
-      this.run(model, command, normalizedPayload, userId, config, action, caller, db);
+    // Розвилка «виконати зараз» / «поставити в чергу» стоїть саме тут, ВИЩЕ за
+    // журнал: постановка в чергу — це дія, і журналюватися має вона, а не
+    // робота, якої ще не було. Далі все спільне: право, запобіжники токена,
+    // конверт відповіді — однакові на обох шляхах.
+    const run = this.isLongCommand(command, config)
+      ? (db: DatabaseService) =>
+        this.startJob(model, command, normalizedPayload, userId, config, action, caller, db)
+      : (db: DatabaseService) =>
+        this.run(model, command, normalizedPayload, userId, config, action, caller, db);
 
     let result: { ok: boolean };
     if (token) {
@@ -452,6 +472,7 @@ export class ModelRuntimeService {
     action: string | null,
     caller: ModelCommandCaller,
     db: DatabaseService,
+    jobId?: string,
   ): Promise<{ ok: boolean }> {
     const tsCommand = config?.tsCommands?.[command];
 
@@ -476,7 +497,7 @@ export class ModelRuntimeService {
     assertCallerMayRun(action, command, normalizedPayload, caller);
 
     const candidate = tsCommand
-      ? await this.executeTsCommand(db, model, command, normalizedPayload, userId, tsCommand, action)
+      ? await this.executeTsCommand(db, model, command, normalizedPayload, userId, tsCommand, action, jobId)
       : await this.executeSqlCommand(db, model, command, normalizedPayload, userId, config, sqlCommand!, action);
 
     // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
@@ -491,6 +512,75 @@ export class ModelRuntimeService {
       throw ModelCommandError.badResponse(model, command);
     }
     return candidate as { ok: boolean };
+  }
+
+  // ── Довге виконання ───────────────────────────────────────────────────────
+
+  /**
+   * Поставити довгу команду в чергу й повернути завдання.
+   *
+   * Порядок перевірок той самий, що у звичайного виклику, і це головне тут:
+   * завдання не повинно стати способом виконати те, чого не можна виконати
+   * прямо. Спершу «чи є така команда», потім «чи оголошене право», потім
+   * запобіжники токена — і лише після цього рядок у черзі.
+   *
+   * Право перевіряється ДВІЧІ: тут, до постановки, і ще раз усередині самої
+   * роботи (там воно в тому ж `select`, що кличе функцію). Це не дубль: перше
+   * не дає покласти в чергу завідомо заборонене — інакше відмова прилітала б
+   * не у відповідь на запуск, а хвилиною пізніше, у стані завдання, де на неї
+   * ніхто не дивиться.
+   */
+  private async startJob(
+    model: string,
+    command: string,
+    payload: Record<string, unknown>,
+    userId: string,
+    config: ModelBackendConfig | undefined,
+    action: string | null,
+    caller: ModelCommandCaller,
+    db: DatabaseService,
+  ): Promise<{ ok: boolean }> {
+    const tsCommand = config?.tsCommands?.[command];
+    const sqlCommand = tsCommand ? null : getSqlCommandConfig(model, command, config);
+
+    if (!tsCommand && !sqlCommand) {
+      throw ModelCommandError.notConfigured(model, command);
+    }
+    if (action === null) {
+      throw ModelCommandError.accessNotDeclared(model, command);
+    }
+
+    assertCallerMayRun(action, command, payload, caller);
+
+    if (action !== AUTHENTICATED) {
+      const denied = await this.assertAccess(db, model, action, userId);
+      if (denied) return denied as { ok: boolean };
+    }
+
+    const envelope = await this.jobs.start(
+      model,
+      command,
+      payload,
+      userId,
+      // Робота отримує ПУЛ (`this.db`), а не `db` цього виклику. Різниця не
+      // косметична: `db` під токеном — транзакція запиту, і вона закінчиться
+      // разом із відповіддю, тобто до того, як робота почнеться. Фонове
+      // завдання, що пише в закриту транзакцію, — помилка, яку видно лише на
+      // живій базі й лише іноді.
+      (jobId) => () =>
+        this.run(model, command, payload, userId, config, action, caller, this.db, jobId),
+    );
+
+    return envelope as { ok: boolean };
+  }
+
+  /** Ручки завдання для TS-хендлера: прогрес і прохання зупинитися. */
+  private jobHandle(jobId: string): ModelCommandJob {
+    return {
+      id: jobId,
+      progress: (value: unknown) => this.jobs.writeProgress(jobId, value),
+      isCancelled: () => this.jobs.isCancelRequested(jobId),
+    };
   }
 
   // ── Журнал змін ───────────────────────────────────────────────────────────
@@ -586,6 +676,7 @@ export class ModelRuntimeService {
     userId: string,
     tsCommand: TsModelCommandConfig,
     action: string,
+    jobId?: string,
   ) {
     if (action !== AUTHENTICATED) {
       const denied = await this.assertAccess(db, model, action, userId);
@@ -614,6 +705,7 @@ export class ModelRuntimeService {
       model,
       command,
       userId,
+      job: jobId ? this.jobHandle(jobId) : undefined,
     };
 
     return await tsCommand.handler(payload, context);

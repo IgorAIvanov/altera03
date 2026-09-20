@@ -197,6 +197,30 @@ export interface ServerOptions {
    * передає згенероване `app/_generated/agent-rules.generated.ts`.
    */
   agentRules?: Record<string, string[]>;
+  /**
+   * Довге виконання команди у фоні (`app.job`).
+   *
+   * Поле існує через одну властивість середовища, якої бібліотека сама знати
+   * не може: чи доживе процес до кінця роботи ПІСЛЯ того, як віддав відповідь
+   * на запит. На машині з бінарем або в Docker — доживе; на безсерверній
+   * платформі (Deno Deploy) гарантії немає жодної, і завдання може обірватися
+   * на середині, не лишивши сліду ніде, крім наполовину перенесених даних.
+   *
+   * Тому рішення приймає `configFromEnv()` — єдине місце, яке має право
+   * дивитися на оточення, — а ядро лише виконує його: відмовою при спробі
+   * запуску, а не мовчанням.
+   */
+  jobs?: Partial<JobsConfig>;
+}
+
+/** Налаштування фонового виконання. */
+export interface JobsConfig {
+  /** Чи можна виконувати довгі команди у фоні. `false` — відмова при запуску. */
+  background: boolean;
+  /** Як часто виконавець підтверджує, що живий (мс). */
+  heartbeatMs: number;
+  /** Після якого мовчання завдання вважається покинутим (мс). */
+  staleMs: number;
 }
 
 /** Повна конфігурація після застосування дефолтів. Такою її бачать сервіси. */
@@ -211,6 +235,7 @@ export interface ServerConfig {
   version: VersionInfo;
   messages: MessagesConfig;
   agentRules: Record<string, string[]>;
+  jobs: JobsConfig;
 }
 
 const DEFAULT_AUTH: AuthConfig = {
@@ -233,6 +258,25 @@ const DEFAULT_MESSAGES: MessagesConfig = {
   dictionaries: {},
   locale: "uk",
   fallback: "en",
+};
+
+/**
+ * Умовчання — фон ДОЗВОЛЕНИЙ.
+ *
+ * Fail-open тут навмисний і протилежний до умовчань у правах: застосунок, що
+ * оновив пакет і нічого не передав, живе на звичайному сервері (саме там його
+ * й запускали досі), а заборона за умовчанням зламала б йому команду, яка
+ * працювала. Безсерверна платформа — випадок, який треба НАЗВАТИ, і називає
+ * його `configFromEnv()`, бо тільки він бачить оточення.
+ *
+ * Інтервали: підтвердження раз на 15 с, покинутим завдання стає після хвилини
+ * мовчання. Хвилина — це чотири пропущені стуки: одиночна затримка на довгому
+ * запиті чи паузі збирача сміття не повинна вбивати живу роботу.
+ */
+const DEFAULT_JOBS: JobsConfig = {
+  background: true,
+  heartbeatMs: 15_000,
+  staleMs: 60_000,
 };
 
 const DEFAULT_BLOB: BlobConfig = {
@@ -261,6 +305,7 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
     version: options.version ?? {},
     messages: { ...DEFAULT_MESSAGES, ...options.messages },
     agentRules: options.agentRules ?? {},
+    jobs: { ...DEFAULT_JOBS, ...options.jobs },
   };
 }
 

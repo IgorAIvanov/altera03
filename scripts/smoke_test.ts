@@ -301,6 +301,59 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       assertEquals((await response.text()).includes("<!doctype html"), true);
     });
 
+    /**
+     * Довге завдання (`app.job`): постановка в чергу, відмова другому запуску,
+     * видимість і зняття.
+     *
+     * Саму ДОВГУ команду проба не запускає навмисно: жодна модель застосунку
+     * довгою себе не оголошує, а оголосити заради проби означало б перевіряти
+     * підроблений випадок. Перевіряється те, що в рантаймі справді є: рядок
+     * черги кладе ядро, команди моделі `job` ходять звичайним маршрутом, і
+     * унікальність активного завдання тримає база, а не домовленість.
+     */
+    await t.step("завдання: черга тримає одне активне на команду", async () => {
+      const enqueue = (params: string) =>
+        withDb(async (sql) => {
+          const rows = await sql<{ result: Envelope }[]>`
+            select app.job_enqueue(1, 'smoke_job', 'load', ${params}::jsonb) as result
+          `;
+          return rows[0]!.result;
+        });
+
+      const first = await enqueue('{"org":"1"}');
+      const jobId = (first.data.item as { id: string }).id;
+
+      try {
+        assertEquals(first.ok, true);
+        assertEquals((first.data.item as { state: string }).state, "queued");
+
+        // Друга постановка тієї самої команди — відмова, і відмова з бази:
+        // перевірка «чи немає активного» перед вставкою була б гонкою.
+        const second = await enqueue('{"org":"1"}');
+        assertEquals(second.ok, false);
+        assertEquals(second.messages.length > 0, true);
+
+        // Стан читається звичайною командою моделі — тим самим маршрутом, що
+        // й усе інше, і з тим самим конвертом.
+        const { body: got } = await client.model("job", "get", { id: jobId });
+        assertEquals(got.ok, true);
+        assertEquals((got.data.item as { command: string }).command, "load");
+
+        // Зняття — прохання: стан `queued` знімається одразу, бо чекати нема
+        // на кого.
+        const { body: cancelled } = await client.model("job", "cancel", { id: jobId });
+        assertEquals(cancelled.ok, true);
+        assertEquals((cancelled.data.item as { state: string }).state, "cancelled");
+
+        // Знята команда більше не тримає чергу.
+        const third = await enqueue('{"org":"1"}');
+        assertEquals(third.ok, true);
+        await purge("app.job", (third.data.item as { id: string }).id);
+      } finally {
+        await purge("app.job", jobId);
+      }
+    });
+
     await t.step("модель: невідома команда не вдає успіх", async () => {
       const { status, body } = await client.model("bank", "no_such_command");
 
