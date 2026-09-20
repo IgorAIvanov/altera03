@@ -96,7 +96,10 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
     name: "import",
     files: {
       structure: [file("import/db/struc.sql")],
-      models: [file("import/db/import.sql")],
+      // Дві частини: команди моделі (їх кличе людина) і машинерія каналу (її
+      // кличе контролер від імені чужого процесу). Різні підписи, різні
+      // читачі — тому й різні файли.
+      models: [file("import/db/import.sql"), file("import/db/channel.sql")],
     },
   },
   // setting — теж лише за app.users. Сіду в ядрі немає навмисно, як і в меню:

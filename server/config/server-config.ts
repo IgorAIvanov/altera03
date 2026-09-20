@@ -18,6 +18,7 @@ import { coreAgentRoutes, coreAgentToolSchemas } from "../modules/agent/core-age
 import type { ViewManifestEntry } from "../modules/model-view/model-view.registry.ts";
 import type { AuthMethod } from "../modules/auth/auth.types.ts";
 import type { MessagesConfig } from "../common/messages.ts";
+import type { ImportConfig } from "../modules/import/import.types.ts";
 
 /**
  * Режим TLS у термінах libpq (`sslmode`). Драйвер окремого `verify-ca` не має,
@@ -211,6 +212,14 @@ export interface ServerOptions {
    * запуску, а не мовчанням.
    */
   jobs?: Partial<JobsConfig>;
+  /**
+   * Канал приймання даних ззовні (`@core/import`).
+   *
+   * Головне тут — `plan`: ЄДИНЕ місце, де застосунок каже, що замовити в
+   * джерела. Ядро возить байти й стереже цілісність, а що саме вивантажувати,
+   * знає тільки той, хто написав набір правил конвертації.
+   */
+  import?: Partial<ImportConfig>;
 }
 
 /** Налаштування фонового виконання. */
@@ -236,6 +245,7 @@ export interface ServerConfig {
   messages: MessagesConfig;
   agentRules: Record<string, string[]>;
   jobs: JobsConfig;
+  import: ImportConfig;
 }
 
 const DEFAULT_AUTH: AuthConfig = {
@@ -279,6 +289,24 @@ const DEFAULT_JOBS: JobsConfig = {
   staleMs: 60_000,
 };
 
+/**
+ * Умовчання каналу приймання.
+ *
+ * `plan: null` — робоча конфігурація, а не заглушка: канал лишається придатним
+ * для джерел, які самі знають, що везти (файл, вивантаження з каси). План
+ * потрібен тому джерелу, яким ми КЕРУЄМО.
+ *
+ * П'ять хвилин на код спарювання — стільки, скільки людина йде до сусіднього
+ * комп'ютера. Доба на токен: перенесення роблять за день-два, і токен, що живе
+ * місяцями в чужій базі, — саме те, чого область дії й уникає.
+ */
+const DEFAULT_IMPORT: ImportConfig = {
+  plan: null,
+  pairingTtlMinutes: 5,
+  tokenTtlHours: 24,
+  maxPartItems: 5_000,
+};
+
 const DEFAULT_BLOB: BlobConfig = {
   tokenSecret: null,
   tokenTtlHours: 12,
@@ -306,6 +334,7 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
     messages: { ...DEFAULT_MESSAGES, ...options.messages },
     agentRules: options.agentRules ?? {},
     jobs: { ...DEFAULT_JOBS, ...options.jobs },
+    import: { ...DEFAULT_IMPORT, ...options.import },
   };
 }
 

@@ -2,6 +2,7 @@ import type { ModelBackendConfig, TsModelCommandConfig } from "./model-runtime.t
 import { printPdfHandler, printPreviewHandler } from "../print/print.handlers.ts";
 import { postPreviewHandler } from "../document/post-preview.handler.ts";
 import { documentLocateHandler } from "../document/document-locate.handler.ts";
+import { importSessionStartHandler } from "../import/import.handlers.ts";
 import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import { getServerConfig, type ModelsConfig } from "../../config/server-config.ts";
 
@@ -25,6 +26,9 @@ const RUNTIME_HANDLERS: Record<string, TsModelCommandConfig["handler"]> = {
  */
 const CORE_TS_COMMANDS: Record<string, { handler: TsModelCommandConfig["handler"]; access: string }> = {
   "document.locate": { handler: documentLocateHandler, access: "authenticated" },
+  // Завести канал перенесення. `create`, як у будь-якого нового запису: сесія
+  // відкриває чужому процесу дорогу в базу, і право на це — не «подивитися».
+  "import_session.start": { handler: importSessionStartHandler, access: "create" },
 };
 
 /**

@@ -76,6 +76,19 @@ function sessionCookie(headers: Headers): string | null {
  * значення тут свої, але правило «жодної конкатенації в SQL» не має винятків
  * навіть у пробах — саме з таких винятків беруться зразки для копіювання.
  */
+/**
+ * sha256 тіла частини пакета — рівно те, що рахує й сам канал.
+ *
+ * По БАЙТАХ, а не по розібраному JSON: відтворити точний текст, який
+ * сформував адаптер, сервер не може, а байти — може.
+ */
+async function sha256Of(body: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function purge(table: string, id: string): Promise<void> {
   await withDb((sql) => sql`delete from ${sql(table)} where id = ${id}`);
 }
@@ -438,6 +451,163 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           sql`delete from app.source_batch where session_id = ${session}::bigint`
         );
         await purge("app.import_session", session);
+      }
+    });
+
+    /**
+     * Канал приймання: код спарювання → токен → партія частинами → підсумок.
+     *
+     * Проба ходить рівно тим шляхом, яким ходитиме чужа обробка з чужої
+     * машини, — включно з тим, що сесію вона називати не може: номер приїжджає
+     * разом із обліковими даними, в області дії токена.
+     */
+    await t.step("імпорт: канал приймає пакет частинами й звіряє цілісність", async () => {
+      const started = await client.model("import_session", "start", {
+        source: "smoke_ch",
+        params: { org: "1" },
+      });
+      assertEquals(started.body.ok, true);
+      const session = started.body.data.item as { id: string; code: string };
+      assertExists(session.code);
+      assertEquals(session.code.length, 6);
+
+      try {
+        // Спарювання: єдиний вхід каналу без автентифікації — інакше його
+        // нічим було б почати.
+        const paired = await client.json<{ ok: boolean; token: string; sessionId: string }>(
+          "/api/import/pair",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ code: session.code, passport: { base: "guid-777" } }),
+          },
+        );
+        assertEquals(paired.status, 200);
+        assertEquals(paired.body.sessionId, session.id);
+        assertExists(paired.body.token);
+
+        // Код ОДНОРАЗОВИЙ: він гасне тим самим запитом, що його й обміняв.
+        // Підглянути шість знаків з екрана найлегше, і саме це тут і не працює.
+        const twice = await client.json<{ ok: boolean }>("/api/import/pair", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code: session.code }),
+        });
+        assertEquals(twice.status, 403);
+
+        const channel = { authorization: `Bearer ${paired.body.token}` };
+
+        // Токен каналу — не токен людини: команд моделей він не викликає.
+        const asHuman = await client.json<Envelope>("/api/model/bank/list", {
+          method: "POST",
+          headers: { ...channel, "content-type": "application/json" },
+          body: "{}",
+        });
+        assertEquals(asHuman.status, 403);
+
+        const opened = await client.json<{ ok: boolean; id: string }>("/api/import/batches", {
+          method: "POST",
+          headers: { ...channel, "content-type": "application/json" },
+          body: JSON.stringify({ query: "Справочник.Контрагенты" }),
+        });
+        assertEquals(opened.status, 200);
+        const batch = opened.body.id;
+
+        const part = JSON.stringify({
+          items: [
+            { ref: "g1", payload: { name: "Ромашка" } },
+            { ref: "g2", payload: { name: "Волошка" } },
+          ],
+        });
+        const sha = await sha256Of(part);
+
+        const put = await client.json<{ ok: boolean; rows: number; repeat: boolean }>(
+          `/api/import/batches/${batch}/parts/1`,
+          {
+            method: "PUT",
+            headers: { ...channel, "content-type": "application/json", "x-part-sha256": sha },
+            body: part,
+          },
+        );
+        assertEquals(put.status, 200);
+        assertEquals(put.body.rows, 2);
+        assertEquals(put.body.repeat, false);
+
+        // Повтор після обриву — звичайна справа на сотнях тисяч рядків, і
+        // подвоїти він не має нічого.
+        const again = await client.json<{ repeat: boolean; rows: number }>(
+          `/api/import/batches/${batch}/parts/1`,
+          {
+            method: "PUT",
+            headers: { ...channel, "content-type": "application/json", "x-part-sha256": sha },
+            body: part,
+          },
+        );
+        assertEquals(again.body.repeat, true);
+        assertEquals(again.body.rows, 2);
+
+        // Тіло, що не сходиться з оголошеним хешем, не приймається: обрізаний
+        // JSON розбирається доти, доки не розбереться, і ловиться саме так.
+        const corrupted = await client.json<{ ok: boolean }>(
+          `/api/import/batches/${batch}/parts/2`,
+          {
+            method: "PUT",
+            headers: { ...channel, "content-type": "application/json", "x-part-sha256": sha },
+            body: JSON.stringify({ items: [{ ref: "g3", payload: {} }] }),
+          },
+        );
+        assertEquals(corrupted.status, 400);
+
+        // Підсумок, який не сходиться, лишає партію зіпсованою — прийнятою
+        // наполовину вона не буває.
+        const wrong = await client.json<{ ok: boolean; state: string }>(
+          `/api/import/batches/${batch}/done`,
+          {
+            method: "POST",
+            headers: { ...channel, "content-type": "application/json" },
+            body: JSON.stringify({ parts: 2, rows: 2 }),
+          },
+        );
+        assertEquals(wrong.body.ok, false);
+        assertEquals(wrong.body.state, "broken");
+
+        // Стан партії каже, ЯКІ частини вже є: після обриву адаптер має знати,
+        // що дослати, а не слати все заново.
+        const state = await client.json<{ received: number[]; rows: number }>(
+          `/api/import/batches/${batch}`,
+          { headers: channel },
+        );
+        assertEquals(state.body.received, [1]);
+        assertEquals(Number(state.body.rows), 2);
+
+        // Закриття сесії — відкликання доступу, а не напис на екрані.
+        const closed = await client.model("import_session", "close", { id: session.id });
+        assertEquals(closed.body.ok, true);
+
+        const afterClose = await client.json<{ ok: boolean }>("/api/import/plan/next", {
+          headers: channel,
+        });
+        assertEquals(afterClose.status, 401);
+      } finally {
+        // Журнал ТРИМАЄ токен (`restrict`), і це правильно: виклик токеном
+        // журналюється завжди, включно з відмовленим — саме такий тут і був,
+        // коли канал спробував команду моделі. Тому спершу свої рядки журналу,
+        // потім токен.
+        await withDb((sql) =>
+          sql`
+            delete from app.audit_log
+             where access_token_id in (
+               select id from app.access_token where scope = ${"import:" + session.id}
+             )
+          `
+        );
+        await withDb((sql) =>
+          sql`delete from app.access_token where scope = ${"import:" + session.id}`
+        );
+        await withDb((sql) =>
+          sql`delete from app.source_batch where session_id = ${session.id}::bigint`
+        );
+        await purge("app.import_session", session.id);
       }
     });
 

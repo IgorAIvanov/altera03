@@ -140,6 +140,7 @@
   "core.jobNotRunning": "The job has already finished — there is nothing to cancel",
   "core.jobRunnerLost": "The job runner was lost: the server restarted in the middle of the work",
   "core.jobNotSupportedHere": "Background execution is not possible on this platform: the environment does not guarantee the process outlives the response",
+  "core.importSourceRequired": "The import source is not named",
   "core.importSessionNotFound": "Import session not found",
   "core.importSessionClosed": "The import session is already closed",
   "core.importPurgeNeedsScope": "Name a session or a source — the command will not purge everything at once",

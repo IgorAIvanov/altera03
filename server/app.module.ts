@@ -6,6 +6,7 @@ import { ModelRuntimeModule } from "./modules/model-runtime/model-runtime.module
 import { ModelViewModule } from "./modules/model-view/model-view.module.ts";
 import { AgentModule } from "./modules/agent/agent.module.ts";
 import { SolutionModule } from "./modules/solution/solution.module.ts";
+import { ImportModule } from "./modules/import/import.module.ts";
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SolutionModule } from "./modules/solution/solution.module.ts";
     BlobModule,
     AgentModule,
     SolutionModule,
+    ImportModule,
   ],
 })
 export class AppModule {}
