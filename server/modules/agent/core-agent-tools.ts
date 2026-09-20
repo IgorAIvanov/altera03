@@ -43,6 +43,37 @@ export const coreAgentToolSchemas: Record<string, unknown> = {
     properties: { id: { type: "string", description: "ID вкладення" } },
     required: ["id"],
   },
+  "job.list": {
+    type: "object",
+    properties: {
+      filters: {
+        type: "object",
+        properties: {
+          model: { type: "string", description: "Модель, чиї завдання цікавлять" },
+          state: {
+            type: "string",
+            description: "queued | running | done | failed | cancelled",
+          },
+          activeOnly: {
+            type: "boolean",
+            description: "Лише ті, що в черзі або виконуються",
+          },
+        },
+      },
+    },
+  },
+  "job.get": {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description:
+          "ID завдання — його віддала команда, яку ти запустив. Коли state стане " +
+          "done, у result лежить звичайний конверт відповіді цієї команди",
+      },
+    },
+    required: ["id"],
+  },
   "agent_note.propose": {
     type: "object",
     properties: {
@@ -109,6 +140,19 @@ export const coreAgentRoutes: Record<string, AgentModelRoute> = {
     type: "system",
     titles: { uk: "Пам'ятка бази", en: "Base memo" },
     aliases: ["пам'ятка", "домовленість", "як у нас прийнято", "memo"],
+  },
+  // Довге завдання. Без цього маршруту агент, який запустив довгу команду,
+  // дізнатися її результат не може НІЯК: у відповідь він дістав id завдання, а
+  // спитати про нього нема чим. Тобто сама можливість запустити таку команду
+  // від імені агента була б беззмістовною.
+  //
+  // Тільки читання. `cancel` сюди не входить свідомо: зупинити чужу роботу —
+  // дія, яку робить людина, що бачить екран, а не крок, зроблений «щоб
+  // подивитися». Знадобиться — це окреме рішення, а не дописаний рядок.
+  job: {
+    type: "system",
+    titles: { uk: "Завдання", en: "Jobs" },
+    aliases: ["завдання", "фонове завдання", "job"],
   },
 };
 
