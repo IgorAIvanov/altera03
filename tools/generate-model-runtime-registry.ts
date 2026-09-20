@@ -2,6 +2,7 @@ import { dirname, join, relative, resolve, SEPARATOR } from "@std/path";
 import { AgentSchemaLoadError, buildAgentToolsForModel, renderAgentTools } from "./agent-tool-schemas.ts";
 import { documentHeaderSpecifier } from "./generate-model-sql.ts";
 import { scanMarkers } from "./scan-translation-markers.ts";
+import { collectImportSets, renderImportSets } from "./import-sets.ts";
 
 type ManifestSqlCommand = string | {
   schema?: string;
@@ -993,6 +994,10 @@ export async function generateModelRuntimeRegistry(
   const agentToolsPath = join(dirname(outputPath), "agent-tools.generated.ts");
   // Те саме міркування: ім'я фіксоване, сусідом реєстру.
   const agentRulesPath = join(dirname(outputPath), "agent-rules.generated.ts");
+  // Набори імпорту — теж сусідом. Файл пишеться завжди, навіть коли наборів
+  // немає: порожній реєстр — це відповідь «наборів немає», а відсутній файл —
+  // помилка імпорту в застосунку, який його вже чекає.
+  const importSetsPath = join(dirname(outputPath), "import-sets.generated.ts");
 
   const writeRegistry = async () => {
     const allManifests = (await Promise.all(appDirs.map(collectManifests))).flat();
@@ -1098,6 +1103,15 @@ export async function generateModelRuntimeRegistry(
 
     const viewManifestSource = `// Generated from model manifests. Do not edit manually.\n\n${renderViewManifest(allManifests, appDirs)}`;
 
+    // Набори правил конвертації: статичні import замість обходу каталогу в
+    // рантаймі. Базою беремо ПЕРШИЙ appDir — там же, де лежить `_generated`.
+    const importSets = (await Promise.all(appDirs.map(collectImportSets))).flat();
+    const importSetsSource = renderImportSets(
+      importSets,
+      dirname(importSetsPath),
+      appDirs[0]!,
+    );
+
     // Записи — усі разом і аж тепер, коли впасти вже нічому. Доти помилка в
     // ОДНОМУ манифесті лишала застосунок із частково оновленою генерацією:
     // реєстр, ts-commands, agent-routes й agent-tools уже на диску, а
@@ -1121,11 +1135,18 @@ export async function generateModelRuntimeRegistry(
     await Deno.mkdir(dirname(viewManifestPath), { recursive: true });
     await Deno.writeTextFile(viewManifestPath, `${viewManifestSource}\n`);
 
+    await Deno.mkdir(dirname(importSetsPath), { recursive: true });
+    await Deno.writeTextFile(importSetsPath, importSetsSource);
+
     if (verboseMode) {
       console.log(`Generated model runtime registry: ${toPosixPath(relative(Deno.cwd(), outputPath))}`);
       console.log(`Generated TS command bindings: ${toPosixPath(relative(Deno.cwd(), tsCommandsPath))}`);
       console.log(`Generated agent routes: ${toPosixPath(relative(Deno.cwd(), agentRoutesPath))}`);
       console.log(`Generated view manifest: ${toPosixPath(relative(Deno.cwd(), viewManifestPath))}`);
+      console.log(
+        `Generated import sets: ${toPosixPath(relative(Deno.cwd(), importSetsPath))}` +
+          ` (наборів: ${importSets.length})`,
+      );
     }
   };
 

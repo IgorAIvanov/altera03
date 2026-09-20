@@ -8,7 +8,8 @@ Deno monorepo. Три workspace-пакети: `app/` (фронтенд-моду�
 deno task dev          # запустити frontend + backend одночасно
 deno task dev:server   # тільки backend (--watch)
 deno task dev:front    # тільки Vite dev server
-deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest) з manifest.json
+deno task sql:registry # згенерувати app/_generated/* (model-registry, agent-routes, view-manifest,
+                       #   import-sets) з manifest.json і app/_import/**
 deno task sql:gen <model>  # перегенерувати CRUD-SQL ОДНІЄЇ моделі: sql:gen catalog/bank
 deno task core:sql     # вбудувати server/sql/**/db/*.sql у core-sql.generated.ts (після правки SQL ядра)
 deno task client:assets    # вбудувати тему й локалі фреймворку (після правки theme.css / client/_locales)
@@ -71,8 +72,11 @@ app/                        # застосунок: фронтенд-модул�
   # ядра не має бути ані коду рахунку конкретного плану, ані імені таблиці
   # застосунку. Порядок у sql.json через це значущий — модель, що оголошує
   # вимір, стоїть ВИЩЕ за план рахунків.
+  _import/<джерело>/        # набір правил конвертації: <модель>.rule.ts, queries/<ім'я>.query.ts
+                            #   плюс не-модулі (еталон метаданих, зібрана обробка) — їх реєстр лише
+                            #   перелічує. Формат правила належить ЗАСТОСУНКУ: ядро його не фіксує
   _generated/               # авто-генерація (deno task sql:registry): model-registry, ts-commands,
-                            #   agent-routes, view-manifest
+                            #   agent-routes, view-manifest, import-sets
                             # model-registry — ЧИСТІ ДАНІ, ts-commands — статичні import модулів
                             #   TS-команд. Розділені навмисно: реєстр читає не лише сервер (екран
                             #   admin/user_group бере з нього перелік моделей для прав), тож поки
@@ -592,7 +596,10 @@ skill — [`model-form-root`](skills/src/model-form-root/SKILL.md). Головн
 `app.access_token` з областю дії. Деталі — [`docs/import.md`](docs/import.md).
 Канал приймання — окремий контролер `/api/import`: `pair` (єдиний вхід без
 автентифікації), `plan/next`, `batches`, частини з хешем у заголовку, підсумок.
-**Сесію адаптер не називає ніколи** — номер приїжджає в області дії токена;
+**Набори правил підключаються статично** — `import-sets.generated.ts`, бо
+`deno compile` і Deploy беруть лише те, що видно в графі модулів (та сама
+пастка, що з TS-командами). **Сесію адаптер не називає ніколи** — номер
+приїжджає в області дії токена;
 **повтор частини безпечний**, а той самий номер з іншим хешем відхиляється;
 **план замовляє застосунок** гаком `import: { plan }` у `bootstrap`. Правил
 конвертації й рушія в ядрі немає свідомо: формат визріває в застосунку.
