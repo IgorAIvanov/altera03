@@ -55,6 +55,17 @@ export const DATABASE_UNAVAILABLE_MESSAGE =
  */
 const MISSING_OBJECT_CODES = new Set(["42883", "3F000"]);
 
+/**
+ * Те саме плюс «немає таблиці» (`42P01`).
+ *
+ * Окремий перелік, а не доданий код до попереднього, і різниця змістовна:
+ * для рантайму моделей відсутня ТАБЛИЦЯ — це зламана схема всередині робочої
+ * функції, тобто справжня поломка, яку не можна видавати за «команду не
+ * опубліковано». А для НЕОБОВ'ЯЗКОВОГО пакета ядра обидва коди означають одне:
+ * установка цього пакета не підключала, і це її право.
+ */
+const MISSING_PACKAGE_CODES = new Set(["42883", "3F000", "42P01"]);
+
 function errorCode(error: unknown): string | null {
   if (typeof error !== "object" || error === null) return null;
   const code = (error as { code?: unknown }).code;
@@ -176,6 +187,20 @@ export function postgresErrorField(error: unknown): string | null {
 export function isMissingDatabaseFunction(error: unknown): boolean {
   const code = errorCode(error);
   return code !== null && MISSING_OBJECT_CODES.has(code);
+}
+
+/**
+ * Чи означає ця помилка «необов'язкового пакета ядра тут немає».
+ *
+ * Потрібне, щоб відрізнити передбачений випадок від аварії. Пакети на кшталт
+ * `@core/job` або `@core/agent_note` підключає застосунок, коли вони йому
+ * потрібні; не підключив — механізм мовчки не працює, і це нормальний стан, а
+ * не збій. Репортувати його ❌ зі стеком означає привчити прогортати консоль
+ * старту — тобто рівно те місце, куди дивляться, коли справді зламалося.
+ */
+export function isMissingCorePackage(error: unknown): boolean {
+  const code = errorCode(error);
+  return code !== null && MISSING_PACKAGE_CODES.has(code);
 }
 
 /**

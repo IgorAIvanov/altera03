@@ -22,6 +22,7 @@
 import { Injectable } from "@danet/core";
 import { DatabaseService } from "../../database/database.service.ts";
 import { getServerConfig } from "../../config/server-config.ts";
+import { isMissingCorePackage } from "../../database/database-error.ts";
 import { ModelCommandError } from "./model-runtime.errors.ts";
 
 /**
@@ -76,6 +77,19 @@ export class JobService {
         console.log(`♻️  Покинутих завдань прибрано: ${reaped}`);
       }
     } catch (error) {
+      // Пакета `@core/job` в установці немає — і це її право, а не поломка:
+      // довгих команд вона не вживає. Один рядок-підказка з ліками, і більше
+      // ніколи; ❌ зі стеком тут привчав би прогортати консоль старту.
+      if (isMissingCorePackage(error)) {
+        console.warn(
+          "⚠ Довгі команди вимкнені: у базі немає app.job_reap. " +
+            'Додайте "@core/job" в app/sql.json і виконайте sql:assemble && sql:publish.',
+        );
+        return;
+      }
+
+      // Усе інше — справжня аварія: немає зв'язку, немає права, впала сама
+      // функція. Тут стек потрібен.
       console.error("❌ job: не вдалося прибрати покинуті завдання:", error);
     }
   }

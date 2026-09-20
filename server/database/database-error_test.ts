@@ -6,6 +6,8 @@
  */
 import { assertEquals } from "@std/assert";
 import {
+  isMissingCorePackage,
+  isMissingDatabaseFunction,
   isPostgresError,
   postgresErrorClientMessage,
   postgresErrorField,
@@ -115,4 +117,38 @@ Deno.test("поле: чужий шаблон констрейнта — null, а
   );
   assertEquals(postgresErrorField(pgError("23505", "duplicate key")), null);
   assertEquals(postgresErrorField(null), null);
+});
+
+/**
+ * «Необов'язкового пакета ядра тут немає» — це не аварія.
+ *
+ * Межа коштувала одного релізу: `@core/job` необов'язковий, а прибирання
+ * завдань при старті репортувало його відсутність через `console.error` зі
+ * стеком — на КОЖНОМУ старті застосунку, який довгих команд не вживає. Сервер
+ * при цьому піднімався, тобто ❌ означав рівно нічого, а привчав прогортати
+ * консоль старту — те саме місце, куди дивляться, коли справді зламалося.
+ */
+Deno.test("відсутній пакет ядра відрізняється від поломки", () => {
+  // Немає функції або схеми — пакет не підключений.
+  assertEquals(isMissingCorePackage(pgError("42883", "function app.job_reap does not exist")), true);
+  assertEquals(isMissingCorePackage(pgError("3F000", "schema app does not exist")), true);
+  // Немає таблиці — теж він: у необов'язковому пакеті таблиця й функції їдуть разом.
+  assertEquals(isMissingCorePackage(pgError("42P01", "relation app.job does not exist")), true);
+
+  // Усе інше — аварія, і про неї треба кричати зі стеком.
+  assertEquals(isMissingCorePackage(pgError("P0001", "справжня поломка")), false);
+  assertEquals(isMissingCorePackage(pgError("42501", "permission denied")), false);
+  assertEquals(isMissingCorePackage(null), false);
+});
+
+/**
+ * А от рантайм моделей ширшого переліку НЕ бере, і це навмисно.
+ *
+ * Для нього відсутня ТАБЛИЦЯ — це зламана схема всередині робочої функції,
+ * тобто справжня поломка; видати її за «команду не опубліковано» (501)
+ * означало б відправити шукати не там.
+ */
+Deno.test("рантайм моделей відсутню таблицю за «немає команди» не рахує", () => {
+  assertEquals(isMissingDatabaseFunction(pgError("42883", "function does not exist")), true);
+  assertEquals(isMissingDatabaseFunction(pgError("42P01", "relation does not exist")), false);
 });
