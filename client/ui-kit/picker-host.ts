@@ -12,9 +12,9 @@ interface ActivePicker {
   element: HTMLElement;
   /**
    * Де стояв фокус, коли діалог відкривали, — туди він повертається при
-   * закритті. Вікно тут не нативний `<dialog>`, а оверлей: сфокусований
-   * усередині елемент при закритті просто зникає з DOM, і фокус падав на
-   * `body` — після вибору по F4 поле, з якого відкривали, лишалося без нього.
+   * закритті. Вікно при закритті зникає з DOM разом зі сфокусованим усередині
+   * елементом, і фокус падав на `body` — після вибору по F4 поле, з якого
+   * відкривали, лишалося без нього.
    */
   returnFocus: HTMLElement | null;
   width?: string;
@@ -48,19 +48,23 @@ async function resolveChunk(route: string): Promise<string | null> {
 @customElement("picker-host")
 export class PickerHost extends LitElement {
   static override styles = css`
-    .overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      background: rgba(0,0,0,0.4);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    /* Нативний <dialog> лише як носій верхнього шару: вигляд дає .dialog.
+       Центрування — margin: auto; правило теми dialog:modal сюди не доходить
+       (хост без спільного листа), тож пишемо його явно. */
+    dialog {
+      border: 0;
+      padding: 0;
+      margin: auto;
+      background: none;
+      overflow: visible;
+      max-width: none;
+      max-height: none;
     }
+    dialog::backdrop { background: rgba(0,0,0,0.4); }
     /* Вкладений діалог затемнює слабше: два шари по 0.4 дають майже чорний
        екран, на якому діалогу-батька вже не видно — а він і є контекст,
        заради якого вкладений відкривали. */
-    .overlay.nested { background: rgba(0,0,0,0.2); }
+    dialog.nested::backdrop { background: rgba(0,0,0,0.2); }
     .dialog {
       background: var(--color-base-100, #fff);
       border-radius: 0.5rem;
@@ -187,10 +191,36 @@ export class PickerHost extends LitElement {
     }
   }
 
+  /** Клік повз картку влучає в сам `<dialog>` (його бокс — лише картка). */
   private _onOverlayClick(e: MouseEvent, picker: ActivePicker) {
     if (e.target === e.currentTarget) {
       bus.emit({ type: "picker.cancel", callbackId: picker.callbackId });
     }
+  }
+
+  /**
+   * Кожне вікно стека — нативний `<dialog>` через `showModal()`, тобто ВЕРХНІЙ
+   * ШАР браузера.
+   *
+   * Доти це був оверлей із `z-index`, і `<ui-picker>` усередині відкритого
+   * `<ui-dialog>` (той теж `showModal()`) відкривав підбір ПІД вікном: над
+   * верхнім шаром `z-index` не діє, а модальний `<dialog>` робить решту
+   * документа інертною. Порядок у верхньому шарі — порядок викликів
+   * `showModal()`, тож обхід у порядку стека кладе вкладений над батьком.
+   */
+  override updated() {
+    for (const el of this.renderRoot.querySelectorAll("dialog")) {
+      if (!el.open) el.showModal();
+    }
+  }
+
+  /**
+   * Esc, який ніхто не забрав (фокус на самому вікні, а не в пікері), —
+   * браузер закрив би `<dialog>` сам, повз стек і повз `bus`. Закриває стек.
+   */
+  private _onCancel(e: Event, picker: ActivePicker) {
+    e.preventDefault();
+    bus.emit({ type: "picker.cancel", callbackId: picker.callbackId });
   }
 
   override render() {
@@ -202,7 +232,8 @@ export class PickerHost extends LitElement {
            сусідній діалог дістав би disconnected+connected — тобто перечитав би
            дані й забув, що в ньому вибрано. -->
       ${repeat(this._stack, (picker) => picker.callbackId, (picker, index) => html`
-        <div class="overlay ${index > 0 ? "nested" : ""}" style=${`z-index:${1000 + index};`}
+        <dialog class=${index > 0 ? "nested" : ""}
+          @cancel=${(e: Event) => this._onCancel(e, picker)}
           @click=${(e: MouseEvent) => this._onOverlayClick(e, picker)}>
           <div class="dialog" style=${`${picker.width ? `width:${picker.width};` : ""}${picker.height ? `height:${picker.height};` : ""}`}>
             <div class="dialog-header">
@@ -214,7 +245,7 @@ export class PickerHost extends LitElement {
               ${picker.element}
             </div>
           </div>
-        </div>
+        </dialog>
       `)}
     `;
   }

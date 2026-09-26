@@ -48,13 +48,24 @@ export class ConfirmHost extends GlobalStyledLitElement {
   // один на всі діалоги застосунку, тут лише :host.
   static override styles: CSSResultGroup = [tw, css`
     :host { display: contents; }
+    /* Нативний <dialog> лише як носій верхнього шару: рамку, фон і розміри
+       дає картка .app-dialog. Центрування — правило теми dialog:modal. */
+    dialog {
+      border: 0;
+      padding: 0;
+      background: none;
+      overflow: visible;
+      max-width: 92vw;
+      max-height: 88vh;
+    }
+    dialog::backdrop { background: rgba(36, 55, 70, .45); }
   `];
 
   @state() private current: PendingDialog | null = null;
 
   /**
-   * Де стояв фокус до відкриття. Вікно — оверлей, а не нативний `<dialog>`:
-   * головна кнопка при закритті зникає з DOM разом із фокусом, і без
+   * Де стояв фокус до відкриття. Вікно зникає з DOM при закритті, а з ним і
+   * головна кнопка разом із фокусом, і без
    * повернення він падав на `body` — «Видалити рядок? Так» лишало таблицю без
    * фокуса, і клавіатура переставала працювати до кліку мишею.
    */
@@ -112,7 +123,26 @@ export class ConfirmHost extends GlobalStyledLitElement {
   /** Вікно, для якого вже поставлено початковий фокус і слухача клавіш. */
   #shown: PendingDialog | null = null;
 
+  /**
+   * Вікно — нативний `<dialog>` через `showModal()`, тобто ВЕРХНІЙ ШАР браузера.
+   *
+   * Доти це був звичайний оверлей із `position: fixed`, і з відкритого
+   * `<ui-dialog>` (той теж `showModal()`) підтвердження з'являлося ПІД вікном:
+   * над верхнім шаром звичайний елемент не піднімає жоден `z-index`, а модальний
+   * `<dialog>` ще й робить решту документа інертною — кнопки підтвердження не
+   * приймали кліку. Новий модальний `<dialog>` стає над уже відкритим і сам
+   * інертним не буває, звідки б його не показали.
+   */
+  #dialog(): HTMLDialogElement | null {
+    return this.renderRoot.querySelector("dialog");
+  }
+
   protected override updated() {
+    // Той самий <dialog> Lit лишає й тоді, коли одне вікно змінюється іншим, —
+    // showModal() на вже відкритому кидає, тож звіряємося з його станом.
+    const el = this.#dialog();
+    if (el && !el.open) el.showModal();
+
     if (this.current === this.#shown) return;
     this.#shown = this.current;
     if (this.current) {
@@ -205,7 +235,8 @@ export class ConfirmHost extends GlobalStyledLitElement {
   override render(): TemplateResult | typeof nothing {
     if (!this.current) return nothing;
     return html`
-      <div class="app-dialog-overlay"
+      <dialog
+        @cancel=${(e: Event) => { e.preventDefault(); this.#finish(null); }}
         @click=${(e: Event) => { if (e.target === e.currentTarget) this.#finish(null); }}>
         <div class="app-dialog">
           <div class="app-dialog-title">
@@ -228,7 +259,7 @@ export class ConfirmHost extends GlobalStyledLitElement {
             `)}
           </div>
         </div>
-      </div>
+      </dialog>
     `;
   }
 }
