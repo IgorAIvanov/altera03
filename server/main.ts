@@ -73,3 +73,13 @@ export type { ModelCommandContext } from "./modules/model-runtime/model-runtime.
 export type { GeneratedTsCommandBinding } from "./modules/model-runtime/model-registry.ts";
 export type { AgentModelRoute } from "./modules/agent/agent-routes.ts";
 export type { ViewManifestEntry } from "./modules/model-view/model-view.registry.ts";
+// Гак плана каналу приймання (`bootstrap({ import: { plan } })`) пише
+// застосунок — отже, і типи його аргументу й результату йому потрібні тут.
+// Без них перший же набір джерела виводив їх із `ServerOptions` через
+// `NonNullable<…>` / `Parameters<…>`.
+export type {
+  ImportConfig,
+  ImportPlanHook,
+  ImportPlanItem,
+  ImportSessionContext,
+} from "./modules/import/import.types.ts";
