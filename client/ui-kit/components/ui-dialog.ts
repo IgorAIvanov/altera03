@@ -46,9 +46,15 @@ export class UiDialog extends GlobalStyledLitElement {
       :host { display: contents; }
       /* Центрування дає правило теми dialog:modal. Тут — лише розміри:
          вікно не має ані виходити за екран, ані стискатися в смужку. */
+      /* Межа ширини в <dialog> і в картки мусить бути ОДНА. Доти тут стояло
+         auto + 92vw, а картка трималася 32rem: без змінної довгий абзац
+         розтягував сам <dialog> на весь екран, браузер центрував ЙОГО, а видима
+         картка стояла біля лівого краю. Короткий текст вікон підтвердження
+         цього не показував. Тепер без змінної вікно так само стискається під
+         вміст, але не ширше за ту саму межу, що й картка. */
       dialog {
-        width: var(--ui-dialog-width, auto);
-        max-width: 92vw;
+        width: var(--ui-dialog-width, fit-content);
+        max-width: min(92vw, var(--ui-dialog-width, 32rem));
         max-height: 88vh;
         border: 0;
         padding: 0;
