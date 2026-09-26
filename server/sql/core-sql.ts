@@ -99,8 +99,13 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       migrations: [file("import/db/migration.sql")],
       // Дві частини: команди моделі (їх кличе людина) і машинерія каналу (її
       // кличе контролер від імені чужого процесу). Різні підписи, різні
-      // читачі — тому й різні файли.
-      models: [file("import/db/import.sql"), file("import/db/channel.sql")],
+      // читачі — тому й різні файли. Третя — рішення про об'єкти джерела:
+      // пропонує агент, підтверджує людина.
+      models: [
+        file("import/db/import.sql"),
+        file("import/db/channel.sql"),
+        file("import/db/decision.sql"),
+      ],
     },
   },
   // setting — теж лише за app.users. Сіду в ядрі немає навмисно, як і в меню:

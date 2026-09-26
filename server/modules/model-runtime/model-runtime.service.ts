@@ -115,6 +115,25 @@ const CONFIRM_REQUIRED_ACTIONS = new Set(["delete", "post", "unpost"]);
  */
 const NON_WRITING_COMMANDS = new Set(["postPreview"]);
 
+/**
+ * Команди, які виконує ЛИШЕ людина — токену вони відмовляють завжди, з
+ * `confirm` чи без.
+ *
+ * `confirm` тут не рятує: його ставить той самий агент, що й пропонує, тож
+ * «підтверджено» означало б лише «агент двічі сказав так». Цінність
+ * підтвердженого рішення рівно в тому, що його бачила людина, — інакше
+ * розділяти `proposed` і `confirmed` не було б сенсу.
+ *
+ * Ключ — `модель.команда`: ім'я `confirm` саме по собі нічого не каже, і в
+ * іншій моделі воно може означати зовсім інше.
+ */
+const HUMAN_ONLY_COMMANDS = new Set([
+  "source_decision.confirm",
+  // Видалення прибирало б і ПІДТВЕРДЖЕНЕ — тобто єдине, що в перенесенні
+  // створила людина. Свою пропозицію агент і так переписує `propose`.
+  "source_decision.delete",
+]);
+
 /** Чи міняє щось ця пара «дія + команда». Одне джерело для всіх трьох перевірок. */
 export function isChangingCall(action: string | null, command: string): boolean {
   return action !== null && CHANGING_ACTIONS.has(action) && !NON_WRITING_COMMANDS.has(command);
@@ -316,6 +335,7 @@ export interface ModelCommandCaller {
  * людина, і `@[core.…]` для нього був би шумом.
  */
 function assertCallerMayRun(
+  model: string,
   action: string,
   command: string,
   payload: Record<string, unknown>,
@@ -331,6 +351,13 @@ function assertCallerMayRun(
   if (token.scope) {
     throw ModelCommandError.forbidden(
       `Цей токен доступу виданий каналу «${token.scope}» і команд моделей не викликає.`,
+    );
+  }
+
+  if (HUMAN_ONLY_COMMANDS.has(`${model}.${command}`)) {
+    throw ModelCommandError.forbidden(
+      `Команду «${model}.${command}» виконує лише людина на екрані — токену вона не доступна. ` +
+        "Запропонуй, а підтвердить людина.",
     );
   }
 
@@ -508,7 +535,7 @@ export class ModelRuntimeService {
       throw ModelCommandError.accessNotDeclared(model, command);
     }
 
-    assertCallerMayRun(action, command, normalizedPayload, caller);
+    assertCallerMayRun(model, action, command, normalizedPayload, caller);
 
     const candidate = tsCommand
       ? await this.executeTsCommand(db, model, command, normalizedPayload, userId, tsCommand, action, jobId)
@@ -564,7 +591,7 @@ export class ModelRuntimeService {
       throw ModelCommandError.accessNotDeclared(model, command);
     }
 
-    assertCallerMayRun(action, command, payload, caller);
+    assertCallerMayRun(model, action, command, payload, caller);
 
     if (action !== AUTHENTICATED) {
       const denied = await this.assertAccess(db, model, action, userId);

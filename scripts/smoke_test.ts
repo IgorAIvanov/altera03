@@ -2446,6 +2446,75 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         });
         assertEquals(scopedBlob.status, 403);
 
+        // Рішення перенесення: агент ПРОПОНУЄ пачкою, підтверджує людина.
+        // Підтвердження й видалення токену не дістаються ні з confirm, ні без
+        // нього: інакше «підтверджено» означало б «агент двічі сказав так».
+        const decisionSource = "smoke-decision";
+        try {
+          const decisionModel = (await catalogOf(full.token))
+            .find((entry) => entry.model === "source_decision");
+          assertExists(decisionModel);
+          assertEquals(decisionModel.commands.includes("propose"), true);
+          assertEquals(decisionModel.commands.includes("confirm"), false);
+          assertEquals(decisionModel.commands.includes("delete"), false);
+
+          const kind = "Справочник.Контрагенты";
+          const proposed = await callModel(full.token, "source_decision", "propose", {
+            reason: "SMOKE: розкладка за ЄДРПОУ",
+            items: [
+              { source: decisionSource, kind, ref: "g1", decision: { bucket: "merge", into: "g2" } },
+              { source: decisionSource, kind, ref: "g3", decision: { bucket: "skip" } },
+              // Той самий об'єкт двічі — виграє останній.
+              { source: decisionSource, kind, ref: "g3", decision: { bucket: "new" }, reason: "SMOKE: передумав" },
+            ],
+          });
+          assertEquals(proposed.body.ok, true, JSON.stringify(proposed.body));
+          const counts = (proposed.body.result as { data: { item: Record<string, unknown> } }).data.item;
+          assertEquals([counts.created, counts.updated], [2, 0]);
+
+          // Пункт без доводу відбиває ВСЮ пачку — з номером пункту.
+          const bad = await callModel(full.token, "source_decision", "propose", {
+            items: [{ source: decisionSource, kind, ref: "g4", decision: { bucket: "skip" } }],
+          });
+          assertEquals(bad.body.ok, false);
+
+          const listed = await client.model("source_decision", "list", {
+            filters: { source: decisionSource, decision: { bucket: "new" } },
+          });
+          const newRows = listed.body.data.rows as Array<{ id: string; ref: string; state: string; reason: string }>;
+          assertEquals(newRows.map((row) => [row.ref, row.state, row.reason]), [["g3", "proposed", "SMOKE: передумав"]]);
+
+          const agentConfirm = await client.json<{ ok: boolean }>(
+            "/api/model/source_decision/confirm",
+            {
+              method: "POST",
+              headers: { authorization: `Bearer ${full.token}`, "content-type": "application/json" },
+              body: JSON.stringify({ ids: [newRows[0].id], confirm: true }),
+            },
+          );
+          assertEquals(agentConfirm.body.ok, false);
+          assertEquals(agentConfirm.status, 403);
+
+          const confirmed = await client.model("source_decision", "confirm", { ids: [newRows[0].id] });
+          assertEquals((confirmed.body.data.item as { confirmed: number }).confirmed, 1);
+
+          // Підтверджене не переписується — пропозиція щодо нього повертається
+          // в skipped, а рішення людини лишається як було.
+          const again = await callModel(full.token, "source_decision", "propose", {
+            reason: "SMOKE: ще раз",
+            items: [{ source: decisionSource, kind, ref: "g3", decision: { bucket: "skip" } }],
+          });
+          const skipped = (again.body.result as { data: { item: { skipped: unknown[] } } }).data.item.skipped;
+          assertEquals(skipped.length, 1);
+          const kept = await client.model("source_decision", "get", { source: decisionSource, kind, ref: "g3" });
+          assertEquals(
+            (kept.body.data.item as { decision: { bucket: string }; state: string }).decision.bucket,
+            "new",
+          );
+        } finally {
+          await withDb((sql) => sql`delete from app.source_decision where source = ${decisionSource}`);
+        }
+
         const revoked = await client.json<Envelope>("/api/auth/tokens/revoke", {
           method: "POST",
           headers: browser,

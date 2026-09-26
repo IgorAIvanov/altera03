@@ -111,6 +111,82 @@ export const coreAgentToolSchemas: Record<string, unknown> = {
     },
     required: ["content"],
   },
+  // Рішення про об'єкти джерела перенесення. Агент читає й ПРОПОНУЄ;
+  // `confirm` і `delete` сюди не входять і токену не дістаються взагалі
+  // (`HUMAN_ONLY_COMMANDS` у рантаймі): підтверджене рішення — єдине в
+  // перенесенні, що створила людина.
+  "source_decision.list": {
+    type: "object",
+    properties: {
+      filters: {
+        type: "object",
+        properties: {
+          source: { type: "string", description: "Джерело: bas, excel…" },
+          kind: {
+            type: "string",
+            description: "Вид об'єкта в термінах ДЖЕРЕЛА: «Справочник.Контрагенты»",
+          },
+          ref: { type: "string", description: "Ключ одного об'єкта джерела (GUID)" },
+          state: { type: "string", enum: ["proposed", "confirmed"] },
+          decision: {
+            type: "object",
+            description:
+              "Відбір за входженням: {\"bucket\": \"skip\"} знайде всі рішення, що " +
+              "кладуть об'єкт у цей кошик",
+          },
+        },
+      },
+      page: { type: "integer", minimum: 1 },
+      pageSize: { type: "integer", minimum: 1, maximum: 500 },
+    },
+  },
+  "source_decision.get": {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "ID рішення" },
+      source: { type: "string" },
+      kind: { type: "string" },
+      ref: { type: "string" },
+    },
+    description: "За id або за ключем об'єкта джерела (source + kind + ref).",
+  },
+  "source_decision.propose": {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        maxItems: 1000,
+        items: {
+          type: "object",
+          properties: {
+            source: { type: "string", maxLength: 50 },
+            kind: { type: "string", description: "«Справочник.Контрагенты»" },
+            ref: { type: "string", description: "Ключ об'єкта в джерелі (GUID)" },
+            decision: {
+              type: "object",
+              description:
+                "Зміст рішення. Форму задає застосунок разом із правилами " +
+                "конвертації — спитай пам'ятку бази, якщо вона не названа",
+            },
+            reason: {
+              type: "string",
+              description: "Чому саме так. Без доводу (свого чи загального) пункт не приймається",
+            },
+          },
+          required: ["source", "kind", "ref", "decision"],
+        },
+      },
+      reason: {
+        type: "string",
+        description: "Довід для пунктів, у яких немає власного",
+      },
+    },
+    required: ["items"],
+    description:
+      "Записати ПРОПОЗИЦІЮ: стан завжди proposed, застосовується лише після підтвердження " +
+      "людиною. Уже підтверджене не переписується — воно повертається в skipped. Пачка " +
+      "атомарна: зіпсований пункт відбиває всю пачку.",
+  },
   "agent_note.topic": {
     type: "object",
     properties: {
@@ -140,6 +216,13 @@ export const coreAgentRoutes: Record<string, AgentModelRoute> = {
     type: "system",
     titles: { uk: "Пам'ятка бази", en: "Base memo" },
     aliases: ["пам'ятка", "домовленість", "як у нас прийнято", "memo"],
+  },
+  // Рішення перенесення: «ці три GUID — один контрагент», «не переносити».
+  // Шляху немає — екран належить застосунку, якщо він його має.
+  source_decision: {
+    type: "system",
+    titles: { uk: "Рішення перенесення", en: "Import decisions" },
+    aliases: ["рішення перенесення", "розкладка", "кошик", "відповідність об'єктів"],
   },
   // Довге завдання. Без цього маршруту агент, який запустив довгу команду,
   // дізнатися її результат не може НІЯК: у відповідь він дістав id завдання, а
@@ -195,4 +278,10 @@ export const coreModelAccess: Record<string, string> = {
   // Знесення сировини — `delete`, і це найсильніше право моделі: команда
   // незворотна й зносить сотні тисяч рядків.
   "import_session.purge": "delete",
+
+  // Рішення. `propose` — `create`: пише рядок, тож токен «тільки читання» його
+  // не має. `confirm` — `edit` людини; токену він відмовляє незалежно від прав
+  // (див. `HUMAN_ONLY_COMMANDS`). `list`/`get`/`delete` виводяться з імені.
+  "source_decision.propose": "create",
+  "source_decision.confirm": "edit",
 };
