@@ -12,6 +12,7 @@ import {
   assertCommandsBlock,
   assertUniqueModels,
   formatAgentSchemaFailures,
+  renderAgentRoutes,
   stripCommentKeys,
 } from "./generate-model-runtime-registry.ts";
 
@@ -332,4 +333,38 @@ Deno.test("правильний allowCommands проходить мовчки", 
   });
   // Моделі без `allowCommands` перевіряти нема чого.
   assertAgentCommands("app/catalog/bank/manifest.json", { model: "bank" });
+});
+
+/**
+ * Модель «лише команди» — без `views`. Запис маршрутів вона мусить мати однаково:
+ * диспетчер агента впізнає модель саме за ним, а тип, назва й синоніми живуть
+ * там само. Доти генератор виходив на відсутності маршрутів, і виклик її
+ * інструмента відбивався як «модель не знайдена» (altera-buh, migration_1c).
+ */
+Deno.test("модель без views лишається в маршрутах агента з назвою й синонімами", () => {
+  const source = renderAgentRoutes(
+    [{
+      manifestPath: "/app/admin/migration_1c/manifest.json",
+      manifest: {
+        model: "migration_1c",
+        type: "admin",
+        agent: {
+          allow: true,
+          allowCommands: ["diff"],
+          aliases: ["перенесення з 1С"],
+          titleKey: "migration_1c.title",
+        },
+      },
+    }],
+    "/app",
+    undefined,
+    { uk: { "migration_1c.title": "Перенесення з 1С" } },
+  );
+
+  assertEquals(source.includes(`"migration_1c": {`), true);
+  assertEquals(source.includes("editPath"), false);
+  assertEquals(source.includes("listPath"), false);
+  assertEquals(source.includes(`type: "admin"`), true);
+  assertEquals(source.includes(`aliases: ["перенесення з 1С"]`), true);
+  assertEquals(source.includes(`titles: {"uk":"Перенесення з 1С"}`), true);
 });

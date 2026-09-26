@@ -10,7 +10,7 @@ import { RequestUserService } from "../../common/request-user.service.ts";
 import { AgentService } from "./agent.service.ts";
 import { AgentToolsService } from "./agent-tools.service.ts";
 import { AgentNoteService } from "./agent-note.service.ts";
-import { getAgentRoutes } from "./agent-routes.ts";
+import { isAgentModel } from "./agent-routes.ts";
 import type { AgentCallRequest } from "./agent.types.ts";
 
 function agentError(message: string) {
@@ -87,8 +87,7 @@ export class AgentController {
       // спитав про конкретне, і «нічого» він прочитав би як «прав немає». У
       // списку відмовляє будь-яка невідома — мовчки віддати решту означало б
       // дати агенту вважати, що він отримав усе, що просив.
-      const routes = getAgentRoutes();
-      const unknown = models.filter((name) => !routes[name]);
+      const unknown = models.filter((name) => !isAgentModel(name));
       if (unknown.length) {
         return agentError(
           `Не знайдено або не підтримується агентом: '${unknown.join("', '")}'`,

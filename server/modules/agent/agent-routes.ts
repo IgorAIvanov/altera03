@@ -25,3 +25,19 @@ export interface AgentModelRoute {
 export function getAgentRoutes(): Record<string, AgentModelRoute> {
   return getServerConfig().agentRoutes;
 }
+
+/**
+ * Чи знає агент таку модель. Знає — якщо вона є в маршрутах АБО має хоч один
+ * інструмент.
+ *
+ * Друге потрібне не для краси: запис маршрутів генератор довго писав лише
+ * моделям з екраном, тож у застосунку, зібраному старшим `@altera/tools`,
+ * модель «лише команди» має інструменти й не має маршруту. Відбивати її
+ * виклик означало б розвести два білі списки — перелік показує інструмент,
+ * диспетчер його не пускає.
+ */
+export function isAgentModel(model: string): boolean {
+  if (getAgentRoutes()[model]) return true;
+  const prefix = `${model}.`;
+  return Object.keys(getServerConfig().agentTools).some((name) => name.startsWith(prefix));
+}

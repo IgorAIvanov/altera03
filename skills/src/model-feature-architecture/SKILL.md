@@ -87,6 +87,7 @@ Agent discovery — `agent.aliases` and `agent.priority`:
 - Three to six per model. A longer list adds nothing: the agent matches, it does not read a dictionary.
 - Do not repeat the title. It is already in the catalog next to the aliases, so `"картка рахунку"` on a model titled «Картка рахунку» buys nothing and costs bytes on every read — measured at a quarter of all aliases on the first solution that filled them. What earns its place is what the title is not: the short form («осв по рахунку»), the other language, the word from habit rather than from the form's caption.
 - `priority` (default 0) orders the catalog. Set it to 10 for the dozen models used daily; leave the rest alone. What the agent sees first should be what people work with most.
+- A model with commands but no screen (a reconciliation, an integration, a service operation) has no `views.*.titleKey` to take its title from. Give it `agent.titleKey` — a locale key like any other; without it the model sits in the catalog under its technical name only.
 - Both fields reach the catalog through `deno task sql:registry` — the generated `agent-routes` file is what the server serves, so a manifest edit without regeneration changes nothing.
 - `schema` identifies the SQL schema that owns the model objects and should normally be `app` unless the feature deliberately lives in another lowercase SQL schema.
 - `type: document` is reserved for true editable document models and must declare `views.edit`.

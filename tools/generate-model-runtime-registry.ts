@@ -73,6 +73,12 @@ type ManifestRecord = {
     allowCommands?: string[];
     aliases?: string[];
     priority?: number;
+    /**
+     * Ключ назви для моделі БЕЗ екрана. Із `views` назва береться з
+     * `titleKey` в'ю; модель «лише команди» (звірка, інтеграція, сервісна
+     * операція) іншого джерела не має.
+     */
+    titleKey?: string;
   };
 };
 
@@ -600,7 +606,8 @@ function titlesFor(
   manifest: ManifestRecord,
   dictionaries: Record<string, Record<string, string>>,
 ): Record<string, string> | null {
-  const key = manifest.views?.list?.titleKey ?? manifest.views?.edit?.titleKey;
+  const key = manifest.views?.list?.titleKey ?? manifest.views?.edit?.titleKey ??
+    manifest.agent?.titleKey;
   if (!key) return null;
 
   const titles: Record<string, string> = {};
@@ -696,12 +703,12 @@ function renderAgentRoutesMulti(
   return renderAgentRoutes(manifests, appDirs[0]!, appDirs, dictionaries);
 }
 
-function renderAgentRoutes(
+export function renderAgentRoutes(
   manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
   appDir: string,
   appDirs?: string[],
   dictionaries: Record<string, Record<string, string>> = {},
-) {
+): string {
   const entries = manifests.flatMap(({ manifestPath, manifest }) => {
     if (!manifest.model) return [];
     const effectiveAppDir = appDirs ? resolveAppDirForManifest(manifestPath, appDirs) : appDir;
@@ -710,7 +717,11 @@ function renderAgentRoutes(
     const hasList = manifest.views && "list" in manifest.views;
     const editPath = hasEdit ? `/${rel}/edit` : null;
     const listPath = hasList ? `/${rel}/list` : null;
-    if (!editPath && !listPath) return [];
+    // Запис пишемо й моделі без екрана. Маршрути тут лише попутні — адреса
+    // вкладки для людини; решта запису (тип, назва, синоніми) і є те, за чим
+    // диспетчер агента модель узагалі впізнає. Доти модель «лише команди»
+    // губила разом із маршрутом усе це: каталог показував її безіменною, а
+    // виклик її ж інструмента відбивався як «модель не знайдена».
     const parts: string[] = [];
     if (editPath) parts.push(`    editPath: ${JSON.stringify(editPath)}`);
     if (listPath) parts.push(`    listPath: ${JSON.stringify(listPath)}`);

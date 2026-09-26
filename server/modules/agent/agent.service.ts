@@ -1,7 +1,7 @@
 import { Injectable } from "@danet/core";
 import { ModelRuntimeService, type ModelCommandCaller } from "../model-runtime/model-runtime.service.ts";
 import { getServerConfig } from "../../config/server-config.ts";
-import { getAgentRoutes } from "./agent-routes.ts";
+import { getAgentRoutes, isAgentModel } from "./agent-routes.ts";
 import type { AgentCallRequest, AgentCommandResult, AgentMessage, AgentResponse } from "./agent.types.ts";
 import { resolveMarker, resolveMessages } from "../../common/messages.ts";
 
@@ -21,8 +21,7 @@ export class AgentService {
     const config = getServerConfig();
     const texts = request.lang ? { ...config.messages, locale: request.lang } : config.messages;
 
-    const routes = getAgentRoutes()[model];
-    if (!routes) {
+    if (!isAgentModel(model)) {
       return this.errorResponse(`Модель '${model}' не знайдена або не підтримується агентом`);
     }
 
@@ -69,7 +68,7 @@ export class AgentService {
       id,
       // Тільки на успіху: посилання на запис, якого не створилося, гірше за
       // його відсутність — людина піде дивитися й побачить порожню форму.
-      route: ok ? this.routeFor(routes, id) : undefined,
+      route: ok ? this.routeFor(getAgentRoutes()[model] ?? {}, id) : undefined,
       messages: envelopeMessages,
       data,
     };
