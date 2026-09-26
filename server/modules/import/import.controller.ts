@@ -20,13 +20,27 @@ import {
   jsonResponse,
 } from "../../common/http.ts";
 import { RequestUserService } from "../../common/request-user.service.ts";
+import { isPostgresError } from "../../database/database-error.ts";
 import { ImportChannelError, ImportService } from "./import.service.ts";
+
+/**
+ * Помилка ДАНИХ (SQLSTATE класу 22: задовге значення, не той формат, число за
+ * межами) — це 400, а не 500. Адресат у неї є — той, хто склав частину, — і
+ * 500 каже йому протилежне: «у вас усе гаразд, зламався сервер». Обробка 1С
+ * на 500 навіть тіла не читала, і причину знайшли лише в лозі PostgreSQL.
+ * Текст — PostgreSQL-ів як є: він описує ЗНАЧЕННЯ, а не будову бази.
+ */
+function isDataError(error: unknown): boolean {
+  return isPostgresError(error) && error.code.startsWith("22");
+}
 
 function fail(error: unknown) {
   const status = error instanceof ImportChannelError
     ? error.status
     : error instanceof AuthenticationRequiredError
     ? 401
+    : isDataError(error)
+    ? 400
     : 500;
   const message = error instanceof Error ? error.message : "помилка каналу перенесення";
   return jsonResponse({ ok: false, error: message }, status);

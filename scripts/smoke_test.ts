@@ -513,10 +513,15 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertEquals(opened.status, 200);
         const batch = opened.body.id;
 
+        // Другий ключ — довший за колишні `varchar(100)`/`varchar(200)`: імена
+        // складає джерело, і в типовій BAS повне ім'я табличної частини вже
+        // 115 знаків, а ключ рішення про її реквізит — ще довший.
+        const longKind = "Документ.НачислениеОценочныхОбязательствПоОтпускам.ТабличнаяЧасть." +
+          "ОценочныеОбязательстваПоВознаграждениямРаботникам.Реквизит." + "Р".repeat(80);
         const part = JSON.stringify({
           items: [
             { ref: "g1", payload: { name: "Ромашка" } },
-            { ref: "g2", payload: { name: "Волошка" } },
+            { kind: longKind, ref: longKind, payload: { name: "Волошка" } },
           ],
         });
         const sha = await sha256Of(part);
@@ -557,6 +562,24 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           },
         );
         assertEquals(corrupted.status, 400);
+
+        // Помилка ДАНИХ — 400, а не 500: адресат у неї той, хто склав частину.
+        // На 500 обробка 1С тіла навіть не читала.
+        const badLinePart = JSON.stringify({ items: [{ line: "x", payload: {} }] });
+        const badLine = await client.json<{ ok: boolean; error: string }>(
+          `/api/import/batches/${batch}/parts/3`,
+          {
+            method: "PUT",
+            headers: {
+              ...channel,
+              "content-type": "application/json",
+              "x-part-sha256": await sha256Of(badLinePart),
+            },
+            body: badLinePart,
+          },
+        );
+        assertEquals(badLine.status, 400);
+        assertEquals(badLine.body.ok, false);
 
         // Підсумок, який не сходиться, лишає партію зіпсованою — прийнятою
         // наполовину вона не буває.

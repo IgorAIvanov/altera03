@@ -96,6 +96,7 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
     name: "import",
     files: {
       structure: [file("import/db/struc.sql")],
+      migrations: [file("import/db/migration.sql")],
       // Дві частини: команди моделі (їх кличе людина) і машинерія каналу (її
       // кличе контролер від імені чужого процесу). Різні підписи, різні
       // читачі — тому й різні файли.
