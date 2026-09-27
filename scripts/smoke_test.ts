@@ -1556,6 +1556,89 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       }
     });
 
+    // Порожнє ОБОВ'ЯЗКОВЕ субконто: відмова за умовчанням, дозвіл — від
+    // документа й лише йому. Перевіряється на рівні функцій ядра, в одній
+    // транзакції з кількома документами — саме так проводить рушій
+    // перенесення, і саме там дозвіл одного документа протік би на наступний.
+    await t.step("проведення: порожнє обов'язкове субконто — лише з дозволу документа", async () => {
+      const before = await numeratorSnapshot("manual_entry");
+      const beforeOrg = await numeratorSnapshot("organization");
+
+      const organization = await client.model("organization", "save", {
+        item: { name: "Smoke субконто організація", prefix: "SMS" },
+      });
+      const org = organization.body.data.item as { id: string } | null;
+      assertExists(org);
+
+      const docs: string[] = [];
+      try {
+        await withDb((sql) => sql`
+          insert into app.chart_of_account (code, name, account_type, is_group)
+          values ('0SMRD', 'Smoke субконто Дт', 'active', false),
+                 ('0SMRC', 'Smoke субконто Кт', 'passive', false)
+          on conflict (code) do nothing`);
+        await withDb((sql) => sql`
+          insert into app.chart_of_account_analytic (account_code, slot_no, dimension_code, is_required)
+          values ('0SMRD', 1, 'counterparty', true)
+          on conflict (account_code, slot_no) do nothing`);
+
+        for (const n of [1, 2]) {
+          const saved = await client.model("manual_entry", "save", {
+            item: { organizationId: org.id, docDate: "2026-08-12T00:00:00", entries: [] },
+          });
+          const doc = saved.body.data.item as { id: string } | null;
+          assertExists(doc, `документ ${n}: ${JSON.stringify(saved.body.messages)}`);
+          docs.push(doc.id);
+        }
+        const [first, second] = docs;
+
+        const outcome: string[] = [];
+        const ROLLBACK = new Error("smoke rollback");
+        await withDb(async (sql) => {
+          try {
+            await sql.begin(async (tx) => {
+              const add = async (label: string, doc: string) => {
+                try {
+                  await tx.savepoint((sp) =>
+                    sp`select app.doc_entry_add(${doc}::bigint, 1, '0SMRD', '0SMRC', 10)`
+                  );
+                  outcome.push(`${label}:ok`);
+                } catch (error) {
+                  const text = error instanceof Error ? error.message : String(error);
+                  outcome.push(`${label}:${text.includes("core.subcontoRequired") ? "refused" : text}`);
+                }
+              };
+
+              await tx`select app.doc_post_begin(1, ${first}::bigint)`;
+              await add("strict", first);
+              await tx`select app.doc_allow_empty_subconto(${first}::bigint)`;
+              await add("allowed", first);
+
+              // Сусідній документ у тій самій транзакції дозволу не має.
+              await tx`select app.doc_post_begin(1, ${second}::bigint)`;
+              await add("neighbour", second);
+
+              // Перепроведення першого — знову строге: дозвіл скинуто.
+              await tx`select app.doc_post_begin(1, ${first}::bigint)`;
+              await add("repost", first);
+
+              throw ROLLBACK;
+            });
+          } catch (error) {
+            if (error !== ROLLBACK) throw error;
+          }
+        });
+
+        assertEquals(outcome, ["strict:refused", "allowed:ok", "neighbour:refused", "repost:refused"]);
+      } finally {
+        for (const id of docs) await purge("app.document", id);
+        await purge("app.organization", org.id);
+        await withDb((sql) => sql`delete from app.chart_of_account where code in ('0SMRD', '0SMRC')`);
+        await numeratorRestore("manual_entry", before);
+        await numeratorRestore("organization", beforeOrg);
+      }
+    });
+
     // Екран нумераторів: прапорець is_editable — не мертвий перемикач, а
     // серверна заборона. Вимкнений — ручний код відхиляється з прив'язкою до
     // поля; запис при цьому не створюється. Знімок правила повертається у

@@ -73,10 +73,41 @@ begin
 end;
 $$;
 
+-- ── Порожнє субконто — свідомо ───────────────────────────────────────────────
+-- Обов'язкове субконто (`chart_of_account_analytic.is_required`) відмовляє
+-- проведенню, якщо порожнє, — і для звичайного документа це правильно: забуте
+-- субконто інакше випливло б у звітах порожнім рядком, коли вже нікому не
+-- видно, звідки воно. Але є документи, чиї дані прийшли з обліку, де субконто
+-- необов'язкове ЗАВЖДИ (1С): залишок 661 загальною сумою, 333 без контрагента.
+-- Там порожнє — це дані, а не помилка, і вигадати значення означало б
+-- зламати звірку.
+--
+-- Тому дозвіл дає ДОКУМЕНТ, явно, у своїй функції проведення — рядком після
+-- `doc_post_begin`:
+--
+--   perform app.doc_post_begin(user_id, v_id);
+--   perform app.doc_allow_empty_subconto(v_id);
+--
+-- Прив'язаний до id документа, а не до транзакції: рушій перенесення проводить
+-- сотні документів в одній, і дозвіл одного протік би на наступні. Скидає його
+-- `doc_post_begin` — тож перепроведення без дозволу знову строге, а виклик ДО
+-- `doc_post_begin` не діє (і це видно одразу — відмовою, а не тихо).
+-- `is_required` при цьому лишається підказкою формам: забуте й свідомо порожнє
+-- — різні речі, і розрізняє їх лише документ.
+
+drop function if exists app.doc_allow_empty_subconto(bigint);
+create function app.doc_allow_empty_subconto(p_document_id bigint)
+returns void
+language sql
+as $$
+  select set_config('app.empty_subconto_doc', p_document_id::text, true);
+$$;
+
 -- ── Аналітика проводки ──────────────────────────────────────────────────────
 -- Розкладає значення субконто по слотах, які веде рахунок, і знімає з
 -- довідника знімок коду та назви. Зайві ключі ігноруються, відсутнє
--- обов'язкове субконто — помилка.
+-- обов'язкове субконто — помилка, якщо документ не дозволив порожнє
+-- (`doc_allow_empty_subconto` вище).
 --
 -- p_values приймає обидві форми запису значення:
 --   {"counterparty": "42"}                       — лише id;
@@ -124,7 +155,9 @@ begin
     end;
 
     if v_id is null then
-      if cfg.is_required then
+      if cfg.is_required and coalesce(current_setting('app.empty_subconto_doc', true), '') is distinct from (
+        select e.document_id::text from app.journal_entry e where e.id = p_entry_id
+      ) then
         raise exception '@[core.subcontoRequired]%',
           jsonb_build_object('dimension', cfg.dimension_name, 'account', p_account, 'side', p_side)::text;
       end if;
@@ -195,6 +228,10 @@ begin
   if v_doc.is_deleted then
     raise exception '@[core.documentDeleted]%', jsonb_build_object('id', p_document_id)::text;
   end if;
+
+  -- Кожне проведення починається строгим: дозвіл порожнього субконто дає
+  -- документ заново, після цього рядка (див. doc_allow_empty_subconto).
+  perform set_config('app.empty_subconto_doc', '', true);
 
   delete from app.journal_entry where document_id = p_document_id;
 end;

@@ -582,6 +582,34 @@ If you write your own `<model>_post_entries`, two consequences:
   turnover sheet they stay as rows but are left out of the sum, because otherwise
   "the balance adds up" stops meaning anything.
 
+## An empty required analytic: only when the document says so
+
+A required analytic slot (`chart_of_account_analytic.is_required`) refuses the
+posting when it is empty — `@[core.subcontoRequired]`. For an ordinary document
+that is right: a forgotten counterparty would otherwise surface months later as an
+empty row in a report, with nobody able to say where it came from.
+
+Some documents carry data from books where the analytic is never required — 1C,
+where a 661 balance posted as one sum and paid out per person is perfectly legal.
+There the empty value is data, and inventing one breaks the reconciliation. Such a
+document grants the permission itself, in its own posting function, **after**
+`doc_post_begin`:
+
+```sql
+perform app.doc_post_begin(user_id, v_id);
+perform app.doc_allow_empty_subconto(v_id);   -- empty required analytics are intended here
+```
+
+- the permission is bound to **this document**, not to the transaction: a
+  migration posts hundreds of documents in one, and one document's permission
+  must not reach the next;
+- `doc_post_begin` clears it, so every posting starts strict, and a call placed
+  **before** `doc_post_begin` does nothing — you will see the refusal, not a
+  silent pass;
+- `is_required` stays what forms and the agent read as "fill this in". Do not
+  turn it off in the chart to get a document through: that removes the guard from
+  every other document on the account.
+
 ## Reading the register: use the ledger layer, do not scan it yourself
 
 Balances and turnovers are not stored anywhere — they are computed by scanning
