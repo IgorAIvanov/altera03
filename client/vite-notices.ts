@@ -75,6 +75,23 @@ function packageFromPath(id: string): string | undefined {
   return scope.startsWith("@") ? (name ? `${scope}/${name}` : undefined) : scope;
 }
 
+/**
+ * Пакет JSR з ідентифікатора модуля: ім'я й версія.
+ *
+ * Гілка потрібна заради самого фреймворку. У встановленому застосунку
+ * `@altera/client` (і `@altera/server/print`, який тягне екран шаблонів друку)
+ * приходять не з `node_modules`, а з JSR, і ідентифікатор має одну з двох форм:
+ * шлях у `vendor/jsr.io/@altera/client/0.16.17/…` (аліас `@client`) або
+ * віртуальний `\0deno::…::https://jsr.io/@altera/client/0.16.17/…` (плагін
+ * deno). Обидві містять `jsr.io/<scope>/<name>/<версія>/`, тож взірець один.
+ * Без цієї гілки фреймворк у нотисах був відсутній узагалі — найбільший
+ * шматок коду в `dist/`, і єдиний, за який відповідаємо ми самі.
+ */
+export function jsrPackageFromId(id: string): { name: string; version: string } | undefined {
+  const match = /jsr\.io[\\/](@[^\\/]+)[\\/]([^\\/]+)[\\/]([^\\/]+)[\\/]/.exec(id);
+  return match ? { name: `${match[1]}/${match[2]}`, version: match[3]! } : undefined;
+}
+
 /** Ім'я пакета з голого специфікатора: `@fontsource/roboto/400.css` → `@fontsource/roboto`. */
 function packageFromSpecifier(specifier: string): string | undefined {
   // Відносні шляхи, URL і аліаси фреймворку пакетами не є.
@@ -137,6 +154,71 @@ async function readNotice(name: string, from: string): Promise<PackageNotice | u
 }
 
 /**
+ * Ліцензія пакетів `@altera/*` — текстом, а не файлом.
+ *
+ * Файл `LICENSE` у публікацію JSR входить, але `"vendor": true` кладе на диск
+ * лише модулі з графа, тож у встановленому застосунку його поруч немає. Мережі
+ * під час збірки ми не чіпаємо, а свою ліцензію знаємо й так. Розійтися з
+ * `client/LICENSE` текстові не дає `vite-notices_test.ts`.
+ */
+export const FRAMEWORK_LICENSE = `MIT License
+
+Copyright (c) 2026 Ihor Ivanov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
+
+/**
+ * Нотис пакета JSR.
+ *
+ * Файл ліцензії шукається у вендорі (раптом він там є), фреймворк без файлу
+ * бере вбудований текст, а чужий пакет без файлу лишається з порожнім текстом —
+ * і про нього попередить той самий `warn`, що й про npm-пакет без ліцензії.
+ */
+async function readJsrNotice(name: string, version: string, from: string): Promise<PackageNotice> {
+  const own = name.startsWith("@altera/");
+  let text = "";
+
+  for (let dir = from;;) {
+    const pkg = join(dir, "vendor", "jsr.io", name, version);
+    if (existsSync(pkg)) {
+      const files = (await readdir(pkg)).filter((file) => LICENSE_FILE.test(file)).sort();
+      for (const file of files) {
+        const content = (await readFile(join(pkg, file), "utf-8")).replaceAll("\r\n", "\n").trim();
+        if (content) text = text ? `${text}\n\n--- ${file} ---\n\n${content}` : content;
+      }
+      break;
+    }
+
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return {
+    name,
+    version,
+    spdx: own ? "MIT" : "не вказана",
+    text: text || (own ? FRAMEWORK_LICENSE : ""),
+  };
+}
+
+/**
  * Складає документ.
  *
  * Однаковий текст ліцензії друкується ОДИН раз на групу пакетів: MIT з тим
@@ -194,13 +276,20 @@ export function noticesPlugin(appRoot: string): Plugin {
 
     async generateBundle(_options, bundle) {
       const names = new Set<string>();
+      // Ім'я → версія: у пакета JSR немає `package.json`, версію несе шлях.
+      const jsr = new Map<string, string>();
 
       // 1. Модулі, що справді потрапили в чанки.
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== "chunk") continue;
         for (const id of Object.keys(chunk.modules ?? {})) {
           const name = packageFromPath(id);
-          if (name) names.add(name);
+          if (name) {
+            names.add(name);
+            continue;
+          }
+          const pkg = jsrPackageFromId(id);
+          if (pkg) jsr.set(pkg.name, pkg.version);
         }
       }
 
@@ -229,6 +318,14 @@ export function noticesPlugin(appRoot: string): Plugin {
           );
         }
 
+        notices.push(notice);
+      }
+
+      for (const [name, version] of jsr) {
+        const notice = await readJsrNotice(name, version, appRoot);
+        if (!notice.text) {
+          this.warn(`${name} ${version}: файла ліцензії у vendor/ немає, у нотисах лишиться порожньо`);
+        }
         notices.push(notice);
       }
 
