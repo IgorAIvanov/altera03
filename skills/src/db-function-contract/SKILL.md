@@ -648,7 +648,9 @@ $$;
   way of copying the basis lines.
 
 On the client the form needs nothing: `BaseUI` takes `params.basis` from the tab and
-calls `fill_basis` itself, leaving the draft unsaved (the tab is dirty). A "Fill from
+calls `fill_basis` itself, leaving the draft unsaved (the tab is dirty). The draft lands
+after the form's `prepareNew()` — so a form with async defaults puts them there (see
+`model-form-root`), and they never overwrite what the basis brought. A "Fill from
 basis" button inside the target form calls `this.fillFromBasis(model, id)` — the same
 path. The "Create on basis ▾" button is the **application's** to draw — in a list
 header, a row or a form — from `basisTargets(model)` and `openOnBasis(target, basis)`

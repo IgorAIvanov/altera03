@@ -964,9 +964,49 @@ export abstract class BaseUI<T extends Record<string, unknown>>
   /** Підстава з `params`, що чекає вставки форми в DOM. */
   #pendingBasis: { model: string; id: string } | null = null;
 
+  /**
+   * Умовчання НОВОГО запису, яким треба на щось чекати (рахунки з облікової
+   * політики, курс на дату). База кличе метод сама — один раз, для форми запису
+   * без `modelId`, — чекає його й ставить `markClean()` після: нова форма
+   * лишається «чистою», хоч умовчання й прийшли пізніше за перший рендер.
+   *
+   * Головне, навіщо він тут, — порядок із чернеткою «на підставі»: її база
+   * кладе лише ПІСЛЯ цього методу. Інакше два запити змагалися б: умовчання
+   * перебивало б реквізит, який принесла підстава, а пізній `markClean()`
+   * оголосив би незбережену чернетку збереженою — і закриття вкладки мовчки
+   * її загубило б.
+   *
+   * Викликається після `connectedCallback` форми (мікрозадачею), тож
+   * синхронне налаштування, зроблене там, уже на місці. Синхронні умовчання
+   * (поточна організація) можна лишити й у `connectedCallback` — чекати на
+   * них нічого.
+   */
+  protected prepareNew(): void | Promise<void> {}
+
+  /** Готовність нового запису: `prepareNew()` завершено й «чистий» знімок знято. */
+  #newReady: Promise<void> = Promise.resolve();
+  #newStarted = false;
+
   override connectedCallback() {
     super.connectedCallback();
+    // Повторна вставка (вкладку перетягли) — не новий запис: умовчання вдруге
+    // перебили б те, що людина вже ввела.
+    if (!this.#newStarted && this.primaryKey !== null && !(this as { modelId?: unknown }).modelId) {
+      this.#newStarted = true;
+      this.#newReady = this.#runPrepareNew();
+    }
     if (this.#pendingBasis) void this.#fillPendingBasis();
+  }
+
+  async #runPrepareNew() {
+    // Мікрозадача: дати форма-нащадку закінчити свій connectedCallback.
+    await null;
+    try {
+      await this.prepareNew();
+    } finally {
+      await this.updateComplete;
+      this.markClean();
+    }
   }
 
   async #fillPendingBasis() {
@@ -995,10 +1035,12 @@ export abstract class BaseUI<T extends Record<string, unknown>>
     const draft = (env.data as Record<string, unknown> | undefined)?.[key];
     if (!env.ok || !env.data || !draft || typeof draft !== "object") return false;
 
-    // Перший рендер знімає «чистий» знімок (firstUpdated → markClean). Чернетка,
-    // що прийшла раніше за нього, виглядала б збереженою — і закриття вкладки
-    // мовчки її втратило б.
+    // «Чистий» знімок нової форми знімають перший рендер (firstUpdated) і
+    // кінець `prepareNew()`. Чернетка, що прийшла раніше за будь-який із них,
+    // виглядала б збереженою — і закриття вкладки мовчки її втратило б; а
+    // асинхронне умовчання, що прийшло пізніше, перебило б принесене підставою.
     await this.updateComplete;
+    await this.#newReady;
     const current = (this.$root as Record<string, unknown>)[key] as Record<string, unknown> | undefined;
     this.assign({
       ...env.data,

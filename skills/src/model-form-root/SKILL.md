@@ -67,6 +67,8 @@ are not filtered.
 | `isRequired(f)` / `fieldError(f)` | For components that draw their own label (`<ui-picker>`): `?required=` / `.invalid=`. |
 | `validate()` | Runs the rules, highlights, scrolls to the first invalid field. Called automatically before save. |
 | `trySave()` | `validate()` + `saveItem()`. **Wire custom save buttons here, not to `saveItem`.** |
+| `prepareNew()` | Override for **async** defaults of a new record (accounts from the accounting policy, a rate on the date). The base calls it once for an edit form without `modelId`, awaits it, then `markClean()`s — and only then lays a "create on basis" draft. |
+| `fillFromBasis(model, id)` | Fill the record from a basis document (`fill_basis`). The base calls it itself for `params.basis`; call it from a "Fill from basis" button. |
 | `t` | Localizer. |
 
 ## Required fields: declare them in the form
@@ -193,6 +195,21 @@ the same:
 
 Without `primaryKey`, the second case would silently send `item.id = null` and **create a duplicate
 record** instead of reporting an error. Always set `primaryKey = "item"` on an edit form.
+
+**Async defaults of a new record go in `prepareNew()`, not in a promise started from
+`connectedCallback`.** The base awaits the method and takes the clean snapshot after it, so
+a form whose defaults arrive after the first render does not look modified. More important
+is the order with a "create on basis" draft: the base lays the draft only after
+`prepareNew()` has finished. A default fetched on your own would race the draft — whichever
+answer comes last wins — and the late `markClean()` of your own code would declare the
+unsaved draft saved, so closing the tab would lose it silently. Synchronous defaults (the
+current organization) may stay in `connectedCallback`: there is nothing to wait for.
+
+```ts
+protected override async prepareNew() {
+  await this.accounts.fillVatFromPolicy();   // no markClean() — the base does it
+}
+```
 
 ## Consequences for SQL
 
