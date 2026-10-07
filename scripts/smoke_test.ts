@@ -18,8 +18,20 @@ import postgres from "postgres";
 import { assertEquals, assertExists } from "@std/assert";
 import { AppClient, type Envelope } from "@altera/tools/app-client";
 import { configFromEnv } from "@altera/server";
+import {
+  constant,
+  type EngineSql,
+  lineNumber,
+  load as loadConversion,
+  lookup,
+  rule,
+  type SourceRow,
+  type TargetModel,
+} from "@altera/server/import";
+import { Type } from "@sinclair/typebox";
 import { createServer } from "../app/server.ts";
 import { viewManifest } from "../app/_generated/view-manifest.generated.ts";
+import { generatedModelRegistry } from "../app/_generated/model-registry.generated.ts";
 
 /** Свідомо неіснуючий користувач: 401 від нього — доказ, що заголовок прочитано. */
 const MISSING_USER_ID = "999999999";
@@ -2903,6 +2915,123 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       const state = response.body.data.item as { supported: boolean | null };
       // У цьому репозиторії app/ не встановлювали пакетом, тож манифесту немає.
       assertEquals(state.supported, null);
+    });
+
+    // Рушій конвертації на справжній базі: `lookup` (запис за значенням поля
+    // рядка) і режим «лише нове». Уся проба — в ОДНІЙ транзакції, що наприкінці
+    // відкочується: рушій працює в тому з'єднанні, яке йому дали, тож прибирати
+    // нічого — ні документів, ні карти, ні зрушених лічильників нумератора.
+    await t.step("конвертація: lookup за полем рядка й режим «лише нове»", async () => {
+      class Rollback extends Error {}
+      const source = `smoke-conv-${crypto.randomUUID().slice(0, 8)}`;
+      const Line = Type.Object({ lineNo: Type.Number(), bankId: Type.String(), qty: Type.Number(), price: Type.Number() });
+      const Invoice = Type.Object({
+        id: Type.Union([Type.String(), Type.Null()]),
+        organizationId: Type.String(),
+        docDate: Type.String(),
+        counterpartyId: Type.String(),
+        isPosted: Type.Boolean(),
+        lines: Type.Array(Line),
+      });
+      const rows = (extra: SourceRow[] = []): SourceRow[] => [
+        { OpId: "A", Date: "2026-09-01", PartyCode: "SMKCONV1", PartyName: "" },
+        { OpId: "B", Date: "2026-09-02", PartyCode: "", PartyName: "Smoke конвертація друга" },
+        { OpId: "C", Date: "2026-09-03", PartyCode: "SMKNOPE", PartyName: "" },
+        { OpId: "D", Date: "2026-09-04", PartyCode: "", PartyName: "Smoke конвертація двійник" },
+        ...extra,
+      ];
+      const lines: SourceRow[] = ["A", "B", "C", "D", "E"].map((op) => ({ Op: op, Mfo: "999123", Qty: 1, Price: 10 }));
+
+      try {
+        await withDb((db) =>
+          db.begin(async (tx) => {
+            const save = async (model: string, item: Record<string, unknown>) => {
+              const [row] = await tx.unsafe<{ r: { ok: boolean; data: { item: { id: string } } } }[]>(
+                `select app.${model}_save(1, $1::jsonb) as r`,
+                [{ item } as never],
+              );
+              assertEquals(row.r.ok, true, `${model}_save: ${JSON.stringify(row.r)}`);
+              return String(row.r.data.item.id);
+            };
+            const org = await save("organization", { name: "Smoke конвертація організація", prefix: "SMC" });
+            const first = await save("counterparty", { code: "SMKCONV1", name: "Smoke конвертація перша" });
+            const second = await save("counterparty", { code: "SMKCONV2", name: "Smoke конвертація друга" });
+            await save("counterparty", { code: "SMKCONV3", name: "Smoke конвертація двійник" });
+            await save("counterparty", { code: "SMKCONV4", name: "Smoke конвертація двійник" });
+            const bank = await save("bank", { mfo: "999123", name: "Smoke конвертація банк" });
+
+            const invoice = rule({
+              source: "smoke",
+              query: "ops",
+              key: "OpId",
+              target: { model: "document/invoice", schema: Invoice },
+              fields: {
+                id: constant(null),
+                organizationId: constant(org),
+                docDate: "Date",
+                counterpartyId: lookup("catalog/counterparty", [{ code: "PartyCode" }, { name: "PartyName" }]),
+                isPosted: constant(false),
+              },
+              tables: {
+                lines: {
+                  query: "op_lines",
+                  section: "Lines",
+                  by: "Op",
+                  fields: { lineNo: lineNumber(), bankId: lookup("catalog/bank", [{ mfo: "Mfo" }]), qty: "Qty", price: "Price" },
+                },
+              },
+            });
+            const run = (mode: "replace" | "append", ops: SourceRow[]) =>
+              loadConversion(tx as unknown as EngineSql, {
+                source,
+                userId: "1",
+                params: {},
+                rules: { invoice },
+                rows: (query) => Promise.resolve(query === "ops" ? ops : query === "op_lines" ? lines : null),
+                accounts: {},
+                model: (name) => (generatedModelRegistry as Record<string, TargetModel>)[name],
+                mode,
+              });
+            const mapped = async () =>
+              Object.fromEntries(
+                (await tx<{ ref: string; id: string }[]>`
+                  select ref, entity_id::text as id from app.source_ref where source = ${source} order by ref
+                `).map((row) => [row.ref, row.id]),
+              );
+
+            // Перший прогін: два ключі по черзі, «не знайдено» й «кілька» — різні відмови.
+            const once = await run("replace", rows());
+            assertEquals(once.rules[0].created, 2);
+            assertEquals(once.errors.map((e) => [e.key, e.message.replace(/\{.*$/, "")]), [
+              ["C", "@[core.conversion.lookupNotFound]"],
+              ["D", "@[core.conversion.lookupAmbiguous]"],
+            ]);
+            const parties = await tx<{ ref: string; party: string; bank: string }[]>`
+              select r.ref, i.counterparty_id::text as party, l.bank_id::text as bank
+                from app.source_ref r
+                join app.invoice i on i.document_id = r.entity_id
+                join app.invoice_line l on l.document_id = i.document_id
+               where r.source = ${source} order by r.ref
+            `;
+            assertEquals(parties.map((p) => [p.ref, p.party, p.bank]), [["A", first, bank], ["B", second, bank]]);
+            const before = await mapped();
+
+            // «Лише нове»: наявне не зноситься й не переписується, нове — заводиться.
+            const appended = await run("append", rows([{ OpId: "E", Date: "2026-09-05", PartyCode: "SMKCONV1", PartyName: "" }]));
+            assertEquals([appended.purged, appended.rules[0].kept, appended.rules[0].created], [0, 2, 1]);
+            const after = await mapped();
+            assertEquals([after.A, after.B], [before.A, before.B]);
+            assertExists(after.E);
+
+            // Перезаливка — як і була: документи минулого завантаження зносяться.
+            const replaced = await run("replace", rows([{ OpId: "E", Date: "2026-09-05", PartyCode: "SMKCONV1", PartyName: "" }]));
+            assertEquals([replaced.purged, replaced.rules[0].created], [3, 3]);
+            throw new Rollback();
+          })
+        );
+      } catch (error) {
+        if (!(error instanceof Rollback)) throw error;
+      }
     });
   } finally {
     await client.close();
