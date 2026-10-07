@@ -146,6 +146,7 @@ function payloadSchemaFor(
   command: string,
   exports: Record<string, unknown>,
   documentHeader: Record<string, unknown> | null,
+  basedOn: string[] = [],
 ): Record<string, unknown> | null {
   const pascal = pascalCase(model);
   const confirmable = CONFIRM_REQUIRED_COMMANDS.has(command);
@@ -236,6 +237,24 @@ function payloadSchemaFor(
         "Пов'язані документи: на які документи цей посилається, які посилаються на нього, і далі " +
         "ланцюжком. data.rows — вузли в порядку обходу від коренів (key, parentKey, depth); " +
         "typeCode — модель вузла, id — для її get. Вузол без права: isAvailable=false, реквізити null.",
+    };
+  }
+
+  // Заповнення з підстави: payload належить рантайму, а не моделі, і перелік
+  // допустимих підстав — той самий `basedOn`, що звіряє рантайм. Перелік у
+  // `enum` і є для агента машиночитаний порядок документів.
+  if (command === "fill_basis") {
+    return {
+      type: "object",
+      properties: {
+        basisModel: { type: "string", enum: basedOn, description: "Модель документа-підстави" },
+        basisId: { type: "string", description: "ID документа-підстави" },
+      },
+      required: ["basisModel", "basisId"],
+      additionalProperties: false,
+      description:
+        "Чернетка НОВОГО запису цієї моделі, заповнена з документа-підстави. Нічого не зберігає: " +
+        "data.item — заповнений запис без id; щоб створити його, передай data.item у save цієї моделі.",
     };
   }
 
@@ -335,6 +354,7 @@ export async function buildAgentToolsForModel(
   schemaPath: string,
   commands: string[],
   documentHeader: Record<string, unknown> | null = null,
+  basedOn: string[] = [],
 ): Promise<AgentToolDescriptor[]> {
   // Наявність питаємо ОКРЕМО, до імпорту: `import()` на обидва випадки кидає
   // однаково, і розрізнити їх за текстом помилки — це вгадувати формулювання
@@ -355,7 +375,7 @@ export async function buildAgentToolsForModel(
 
   const tools: AgentToolDescriptor[] = [];
   for (const command of commands) {
-    const input = payloadSchemaFor(model, command, exports, documentHeader);
+    const input = payloadSchemaFor(model, command, exports, documentHeader, basedOn);
     if (input) tools.push({ model, command, input });
   }
   return tools;

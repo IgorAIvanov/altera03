@@ -5,7 +5,7 @@ import { bus } from "@client/bus/bus.ts";
 import { BaseUI } from "@client/ui-kit/base/base-ui.ts";
 import { dec, TabularSection } from "@client/ui-kit/tabular/tabular-section.ts";
 import { dateFormat } from "@client/shared/datetime.ts";
-import { viewFamily } from "@shared/view-route.ts";
+import { viewFamily, viewRoute } from "@shared/view-route.ts";
 import { currentOrg } from "@shared/current-organization.ts";
 import {
   ManualEntryEditRootSchema,
@@ -163,6 +163,15 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
       this.slotsReady = true;
       return;
     }
+    await this.prepareEntries();
+    this.slotsReady = true;
+    // Нормалізація міняє $root ПІСЛЯ знімка loadInto — перезнімаємо, інакше
+    // щойно відкрита форма виглядала б зміненою.
+    this.markClean();
+  }
+
+  /** Рядки до канонічного вигляду й конфігурації субконто їхніх рахунків. */
+  private async prepareEntries() {
     this.$root.item.entries ??= [];
     this.$root.item = { ...this.$root.item, entries: this.normalizedEntries() };
     // Конфігурації всіх рахунків — паралельно і ДО показу форми (slotsReady).
@@ -172,10 +181,25 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
       if (line.creditAccount) accounts.add(line.creditAccount);
     }
     await Promise.all([...accounts].map((a) => this.ensureSlots(a)));
-    this.slotsReady = true;
-    // Нормалізація міняє $root ПІСЛЯ знімка loadInto — перезнімаємо, інакше
-    // щойно відкрита форма виглядала б зміненою.
-    this.markClean();
+  }
+
+  /**
+   * «Створити на підставі»: чернетку кладе база (`fill_basis` → `$root`), а
+   * рядки проводок треба довести так само, як після `get`, — інакше субконто
+   * рахунків чернетки не мали б слотів і не показалися б. `markClean` тут
+   * свідомо немає: чернетка не збережена.
+   */
+  protected override async fillFromBasis(basisModel: string, basisId: string): Promise<boolean> {
+    if (!await super.fillFromBasis(basisModel, basisId)) return false;
+    await this.prepareEntries();
+    return true;
+  }
+
+  /** Відкрити документ-підставу його формою. */
+  private openBaseDocument() {
+    const base = this.$root.item.baseDocument;
+    const route = base?.typeCode ? viewRoute(base.typeCode) : null;
+    if (base && route) bus.emit({ type: "tab.open", route, id: base.id });
   }
 
   protected override async saveItem(): Promise<boolean> {
@@ -455,6 +479,15 @@ export class ManualEntryEdit extends BaseUI<ManualEntryEditRoot> {
             html`<input class="input input-bordered w-full" .value=${item.description ?? ""}
               @input=${(e: Event) => this.setField("description", (e.target as HTMLInputElement).value)} />`,
           )}
+
+          ${item.baseDocument ? this.renderField(
+            t("manualEntry.baseDocument"),
+            // Посилання, а не кнопка: fieldset[disabled] проведеного документа
+            // гасить кнопки, а відкрити підставу треба й у режимі перегляду.
+            html`<a class="link link-primary py-2" href="#"
+              @click=${(e: Event) => { e.preventDefault(); this.openBaseDocument(); }}
+            >${item.baseDocument.presentation ?? item.baseDocument.id}</a>`,
+          ) : ""}
 
           <!-- Табличная часть: каркас — у примітиві (колонки оголошені в
                конструкторі секції), рахунки/субконто — custom-комірки вище. -->

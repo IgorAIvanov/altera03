@@ -103,9 +103,12 @@ export class AgentController {
       // Записки саме цих моделей — другий рівень пам'ятки, як вкладений
       // CLAUDE.md у підкаталозі.
       const notes = await this.agentNoteService.forScopes(models);
+      // З чого модель вводиться і що вводиться на її підставі — машиночитаний
+      // порядок документів замість здогаду з назв полів.
+      const basis = this.agentToolsService.basis(models);
       return {
         ok: true,
-        data: { rows: tools, extra: { rules, notes }, totals: { count: tools.length } },
+        data: { rows: tools, extra: { rules, notes, basis }, totals: { count: tools.length } },
         messages: [],
       };
     } catch (error) {

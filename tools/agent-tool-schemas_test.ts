@@ -75,3 +75,30 @@ Deno.test("команда без оголошеної схеми лишаєть�
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+// Payload `fill_basis` належить рантайму, а перелік допустимих підстав — той
+// самий `basedOn`, що звіряє рантайм: агент бачить його як `enum`.
+Deno.test("fill_basis: підстави з basedOn — у enum схеми", async () => {
+  const dir = await Deno.makeTempDir();
+  const schemaPath = join(dir, "tax_invoice.schema.ts");
+  try {
+    await Deno.writeTextFile(schemaPath, "export const TaxInvoiceItemSchema = { type: 'object' };\n");
+
+    const tools = await buildAgentToolsForModel(
+      "tax_invoice",
+      schemaPath,
+      ["fill_basis"],
+      null,
+      ["goods_sale", "cash_receipt"],
+    );
+
+    const input = tools[0]?.input as {
+      required?: string[];
+      properties?: { basisModel?: { enum?: string[] } };
+    };
+    assertEquals(input.required, ["basisModel", "basisId"]);
+    assertEquals(input.properties?.basisModel?.enum, ["goods_sale", "cash_receipt"]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

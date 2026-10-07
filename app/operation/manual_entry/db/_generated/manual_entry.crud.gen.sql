@@ -116,6 +116,8 @@ as $$
         'description', h.description,
         'isPosted', h.is_posted,
         'isDeleted', h.is_deleted,
+        'baseDocumentId', t.base_document_id::text,
+        'baseDocument', case when r_baseDocument.id is null then null else jsonb_build_object('id', r_baseDocument.id::text, 'presentation', coalesce(nullif(r_baseDocument.presentation, ''), r_baseDocument.number), 'typeCode', dt_baseDocument.code) end,
         'entries', coalesce((
         select jsonb_agg(jsonb_build_object(
           'id', l.id::text,
@@ -137,6 +139,8 @@ as $$
           from app.document h
     join app.manual_entry t on t.document_id = h.id
           left join app.organization r_organization on r_organization.id = h.organization_id
+          left join app.document r_baseDocument on r_baseDocument.id = t.base_document_id
+          left join app.document_type dt_baseDocument on dt_baseDocument.id = r_baseDocument.document_type_id
           where h.id = (payload->>'id')::bigint
         ),
         'rows',    '[]'::jsonb,
@@ -238,8 +242,17 @@ begin
     values (v_type_id, s.number, s.organization_id, s.doc_date, coalesce(s.total, 0), coalesce(s.presentation, ''), s.description, user_id, user_id)
   returning h.id into v_id;
 
-  insert into app.manual_entry (document_id) values (v_id)
-  on conflict (document_id) do nothing;
+  merge into app.manual_entry t
+  using (
+    select
+      v_id as document_id,
+      nullif(coalesce(v_item->>'baseDocumentId', v_item->'baseDocument'->>'id'), '')::bigint as base_document_id
+  ) s
+    on t.document_id = s.document_id
+  when matched then update set
+    base_document_id = s.base_document_id
+  when not matched then insert (document_id, base_document_id)
+    values (v_id, s.base_document_id);
 
   merge into app.manual_entry_line lt
   using (
@@ -292,6 +305,8 @@ begin
         'description', h.description,
         'isPosted', h.is_posted,
         'isDeleted', h.is_deleted,
+        'baseDocumentId', t.base_document_id::text,
+        'baseDocument', case when r_baseDocument.id is null then null else jsonb_build_object('id', r_baseDocument.id::text, 'presentation', coalesce(nullif(r_baseDocument.presentation, ''), r_baseDocument.number), 'typeCode', dt_baseDocument.code) end,
         'entries', coalesce((
         select jsonb_agg(jsonb_build_object(
           'id', l.id::text,
@@ -313,6 +328,8 @@ begin
   from app.document h
     join app.manual_entry t on t.document_id = h.id
   left join app.organization r_organization on r_organization.id = h.organization_id
+  left join app.document r_baseDocument on r_baseDocument.id = t.base_document_id
+  left join app.document_type dt_baseDocument on dt_baseDocument.id = r_baseDocument.document_type_id
   where h.id = v_id;
 
   return jsonb_build_object(

@@ -522,7 +522,7 @@ export class TabController extends LitElement {
     this.openFromUrl();
 
     this.unsubs.push(
-      bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params)),
+      bus.on("tab.open", (msg) => this.handleOpen(msg.route, msg.id ?? null, msg.params, msg.fresh)),
       bus.on("tab.close", (msg) => this.handleClose(msg.tabId)),
       bus.on("tab.dirty", (msg) => {
         this.tabs = this.tabs.map(t => t.id === msg.tabId ? { ...t, dirty: msg.dirty } : t);
@@ -872,8 +872,13 @@ export class TabController extends LitElement {
     };
   }
 
-  private async handleOpen(route: string, modelId: string | null, params?: Record<string, unknown>) {
-    const existing = this.tabs.find(t => t.route === route && t.modelId === modelId);
+  private async handleOpen(
+    route: string,
+    modelId: string | null,
+    params?: Record<string, unknown>,
+    fresh = false,
+  ) {
+    const existing = fresh ? undefined : this.tabs.find(t => t.route === route && t.modelId === modelId);
     if (existing) {
       // Вкладка вже відкрита: не створюємо другу, але параметри застосовуємо —
       // інакше перехід зі звіту в звіт із іншим рахунком показав би старі дані.

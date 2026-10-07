@@ -4,6 +4,12 @@ export interface TabOpenMessage {
   route: string;
   id?: string | null;
   params?: Record<string, unknown>;
+  /**
+   * Завжди нова вкладка, навіть якщо така (маршрут + id) уже відкрита.
+   * Потрібне чернеткам «на підставі»: друга на іншій підставі не має
+   * затерти першу, ще не збережену.
+   */
+  fresh?: boolean;
 }
 export interface TabCloseMessage {
   type: "tab.close";

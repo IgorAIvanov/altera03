@@ -1102,9 +1102,9 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
     // оголошення в манифесті — і немає ні в кого іншого (інакше `bank.related`
     // кликав би обхід документів із правом на банк).
     //
-    // Сам обхід перевіряється в базі, у транзакції з відкотом: ребра в
-    // altera03 не оголошені жодним документом, тож дерево тут можна побудувати
-    // лише власним представленням, і лишати його не можна — воно чуже.
+    // Сам обхід перевіряється в базі, у транзакції з відкотом: ребро в
+    // altera03 одне (підстава операції), а дерево потрібної глибини можна
+    // побудувати лише власним представленням, і лишати його не можна — воно чуже.
     await t.step("документ: дерево пов'язаних документів", async () => {
       const notDocument = await client.model("bank", "related", { id: "1" });
       assertEquals(notDocument.status, 404);
@@ -1223,6 +1223,57 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
           if (!(error instanceof Rollback)) throw error;
         }
       });
+    });
+
+    // «Створити на підставі». Еталон — операція на підставі накладної
+    // (`manual_entry.basedOn: ["invoice"]`): склад меню з боку джерела, чернетка
+    // без запису, відмова на підставі не з переліку, і ребро дерева пов'язаних
+    // документів зі збереженої чернетки — без жодного коду, з самого `x-ref`.
+    await t.step("на підставі: склад меню, чернетка, ребро дерева", async () => {
+      const targets = await client.model("basis", "targets", { model: "invoice" });
+      assertEquals(targets.body.ok, true);
+      const target = (targets.body.data.rows as Array<{ model: string; route: string }>)
+        .find((row) => row.model === "manual_entry");
+      assertEquals(target?.route, "operation/manual_entry/edit");
+
+      // Підстава не з `basedOn` відбивається рантаймом, до функції застосунку.
+      const foreign = await client.model("manual_entry", "fill_basis", { basisModel: "bank", basisId: "1" });
+      assertEquals(foreign.body.ok, false);
+      assertEquals(String(foreign.body.messages[0]).startsWith("@[core.basis.notAllowed]"), true);
+
+      const [invoice] = await withDb((sql) =>
+        sql<{ id: string }[]>`
+          select d.id::text as id from app.document d
+          join app.document_type dt on dt.id = d.document_type_id and dt.code = 'invoice'
+          where not d.is_deleted
+          limit 1`
+      );
+      if (!invoice) return;
+
+      const countBefore = await withDb((sql) =>
+        sql<{ count: number }[]>`select count(*)::int as count from app.manual_entry`
+      );
+      const fill = await client.model("manual_entry", "fill_basis", { basisModel: "invoice", basisId: invoice.id });
+      assertEquals(fill.body.ok, true);
+      const draft = fill.body.data.item as { id?: string | null; baseDocumentId: string; entries: unknown[] };
+      assertEquals(draft.baseDocumentId, invoice.id);
+      assertEquals(draft.entries.length > 0, true);
+      // Чернетка нічого не записала.
+      const countAfter = await withDb((sql) =>
+        sql<{ count: number }[]>`select count(*)::int as count from app.manual_entry`
+      );
+      assertEquals(countAfter[0].count, countBefore[0].count);
+
+      const saved = await client.model("manual_entry", "save", { item: draft });
+      assertEquals(saved.body.ok, true);
+      const doc = saved.body.data.item as { id: string };
+      try {
+        const tree = await client.model("manual_entry", "related", { id: doc.id });
+        const ids = (tree.body.data.rows as Array<{ id: string | null }>).map((row) => row.id);
+        assertEquals(ids.includes(invoice.id), true);
+      } finally {
+        await purge("app.document", doc.id);
+      }
     });
 
     // Відбір підбору. Половина механізму була давно — параметри доїжджали в

@@ -209,6 +209,8 @@
   "core.documentLocate.hint": "Scan the barcode on the printed form or type the document code and press Enter",
   "core.documentLocate.noAccess": "Document \"{type}\" found, but you are not allowed to view it",
   "core.documentLocate.noForm": "The application has no form for \"{type}\" documents",
+  "core.basis.required": "No basis document given: basisModel and basisId are required",
+  "core.basis.notAllowed": "\"{model}\" cannot be created on the basis of \"{basis}\"",
   "core.agentNoteEmpty": "Empty note: say what the convention actually is",
   "core.agentNoteProposed": "The note is recorded as a draft — it reaches the context once a person confirms it",
   "core.agentNoteTopicIncomplete": "A topic needs a name, a title and a line saying when it is needed — without it nobody will think to open it",

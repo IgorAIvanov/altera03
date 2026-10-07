@@ -946,9 +946,65 @@ export abstract class BaseUI<T extends Record<string, unknown>>
    * одразу після переходу») перевизначає метод.
    */
   applyParams(params: Record<string, unknown>) {
+    // «Створити на підставі» (`openOnBasis`): підстава — не відбір, у `$query`
+    // їй не місце. Береться лише формою запису й лише НОВОЮ — відкритий
+    // наявний запис чернеткою поверх себе не переписується.
+    const { basis, ...rest } = params;
+    const ref = basisRef(basis);
+    if (ref && this.primaryKey !== null && !(this as { modelId?: unknown }).modelId) {
+      this.#pendingBasis = ref;
+      if (this.isConnected) void this.#fillPendingBasis();
+    }
+
     const query = (this.$root as Record<string, unknown>).$query;
     if (!query || typeof query !== "object") return;
-    Object.assign(query as Record<string, unknown>, params);
+    Object.assign(query as Record<string, unknown>, rest);
+  }
+
+  /** Підстава з `params`, що чекає вставки форми в DOM. */
+  #pendingBasis: { model: string; id: string } | null = null;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    if (this.#pendingBasis) void this.#fillPendingBasis();
+  }
+
+  async #fillPendingBasis() {
+    const basis = this.#pendingBasis;
+    this.#pendingBasis = null;
+    if (basis) await this.fillFromBasis(basis.model, basis.id);
+  }
+
+  /**
+   * Заповнити запис форми з документа-підстави — команда моделі `fill_basis`.
+   *
+   * Один шлях на обидва входи: «Створити на підставі» з документа-джерела
+   * (форма відкривається з `params.basis` і кличе це сама) і кнопка
+   * «Заповнити з підстави» всередині форми цілі, яку малює застосунок.
+   *
+   * Чернетка лягає в `$root` НЕзбереженою — форма лишається «зміненою», і
+   * зберігає її людина. Поверх наявного запису, а не замість нього: `id`
+   * лишається своїм (новий запис так і лишається новим), а поля, яких
+   * чернетка не несе, — тими, що були (дефолти форми, організація).
+   *
+   * `true` — заповнено; `false` — відмова, і її текст уже в банері форми.
+   */
+  protected async fillFromBasis(basisModel: string, basisId: string): Promise<boolean> {
+    const key = this.primaryKey ?? "item";
+    const env = await this.run<Partial<T>>("fill_basis", { basisModel, basisId });
+    const draft = (env.data as Record<string, unknown> | undefined)?.[key];
+    if (!env.ok || !env.data || !draft || typeof draft !== "object") return false;
+
+    // Перший рендер знімає «чистий» знімок (firstUpdated → markClean). Чернетка,
+    // що прийшла раніше за нього, виглядала б збереженою — і закриття вкладки
+    // мовчки її втратило б.
+    await this.updateComplete;
+    const current = (this.$root as Record<string, unknown>)[key] as Record<string, unknown> | undefined;
+    this.assign({
+      ...env.data,
+      [key]: { ...current, ...draft, id: current?.id ?? null },
+    } as Partial<T>);
+    return true;
   }
 
   /**
@@ -1122,4 +1178,13 @@ const NOT_FIELD_INPUT = new Set(["button", "submit", "reset", "image", "file", "
 function isPlainField(el: EventTarget | undefined): el is HTMLElement {
   if (el instanceof HTMLSelectElement) return true;
   return el instanceof HTMLInputElement && !NOT_FIELD_INPUT.has(el.type);
+}
+
+/** `params.basis` у формі `{ model, id }` — або `null`, якщо це щось інше. */
+function basisRef(value: unknown): { model: string; id: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const { model, id } = value as Record<string, unknown>;
+  if (typeof model !== "string" || !model) return null;
+  if (typeof id !== "string" && typeof id !== "number") return null;
+  return { model, id: String(id) };
 }

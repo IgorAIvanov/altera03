@@ -89,9 +89,11 @@ export const generatedModelRegistry = {
     type: "document",
     schema: "app",
     access: {
+    "fill_basis": "create",
     "postPreview": "post",
     "related": "view"
-    }
+    },
+    basedOn: ["invoice"]
   },
   "menu": {
     type: "catalog",

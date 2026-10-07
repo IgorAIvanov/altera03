@@ -13,5 +13,7 @@
   "manualEntry.currencyAmount": "Cur. amount",
   "manualEntry.quantity": "Quantity",
   "manualEntry.lineNoAccount": "Line {line}: neither account is filled in",
-  "manualEntry.postNoEntries": "An operation with no entries cannot be posted"
+  "manualEntry.postNoEntries": "An operation with no entries cannot be posted",
+  "manualEntry.basisNotFound": "Basis document not found or marked for deletion",
+  "manualEntry.baseDocument": "Basis"
 }

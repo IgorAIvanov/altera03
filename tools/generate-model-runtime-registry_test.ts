@@ -9,6 +9,7 @@ import { assertEquals, assertThrows } from "@std/assert";
 import {
   agentCommandsFor,
   assertAgentCommands,
+  assertBasedOn,
   assertCommandsBlock,
   assertUniqueModels,
   formatAgentSchemaFailures,
@@ -367,4 +368,48 @@ Deno.test("модель без views лишається в маршрутах а
   assertEquals(source.includes(`type: "admin"`), true);
   assertEquals(source.includes(`aliases: ["перенесення з 1С"]`), true);
   assertEquals(source.includes(`titles: {"uk":"Перенесення з 1С"}`), true);
+});
+
+// «Створити на підставі»: перелік `basedOn` живе в манифесті ЦІЛІ, і з нього
+// виводиться команда `fill_basis`. Нічого не пише, тож агенту — в умовчанні.
+Deno.test("basedOn відкриває агенту fill_basis і на ім'я в allowCommands", () => {
+  assertEquals(
+    agentCommandsFor({ model: "tax_invoice", type: "document", basedOn: ["goods_sale"] })
+      .includes("fill_basis"),
+    true,
+  );
+  // Без basedOn команди немає ніде — і в allowCommands вона валить генерацію.
+  assertEquals(agentCommandsFor({ model: "tax_invoice", type: "document" }).includes("fill_basis"), false);
+  assertThrows(() =>
+    assertAgentCommands("app/document/tax_invoice/manifest.json", {
+      model: "tax_invoice",
+      type: "document",
+      agent: { allowCommands: ["get", "fill_basis"] },
+    })
+  );
+  // З basedOn — приймається: право виводиться (`create`), оголошувати не треба.
+  assertAgentCommands("app/document/tax_invoice/manifest.json", {
+    model: "tax_invoice",
+    type: "document",
+    basedOn: ["goods_sale"],
+    agent: { allowCommands: ["get", "fill_basis"] },
+  });
+});
+
+Deno.test("basedOn з неіснуючою моделлю валить генерацію", () => {
+  const manifests = [
+    { manifestPath: "app/document/goods_sale/manifest.json", manifest: { model: "goods_sale", type: "document" } },
+    {
+      manifestPath: "app/document/tax_invoice/manifest.json",
+      manifest: { model: "tax_invoice", type: "document", basedOn: ["goods_sale", "document/cash_receipt"] },
+    },
+  ];
+  const error = assertThrows(() => assertBasedOn(manifests));
+  const message = error instanceof Error ? error.message : String(error);
+  assertEquals(message.includes('"document/cash_receipt"'), true);
+  assertEquals(message.includes('"goods_sale"'), false);
+
+  // Правильний перелік проходить мовчки.
+  manifests[1]!.manifest.basedOn = ["goods_sale"];
+  assertBasedOn(manifests);
 });

@@ -469,6 +469,8 @@
   "manualEntry.quantity": "Кількість",
   "manualEntry.lineNoAccount": "Рядок {line}: не заповнено жодного рахунку",
   "manualEntry.postNoEntries": "Операція без проводок — проведення неможливе",
+  "manualEntry.basisNotFound": "Документ-підставу не знайдено або позначено на видалення",
+  "manualEntry.baseDocument": "Підстава",
   "accountCard.title": "Картка рахунку",
   "accountCard.account": "Рахунок",
   "accountCard.build": "Сформувати",
@@ -494,5 +496,6 @@
   "common.codeAuto": "авто",
   "document.posted": "Проведено",
   "document.post": "Провести",
-  "document.unpost": "Скасувати проведення"
+  "document.unpost": "Скасувати проведення",
+  "document.createOnBasis": "Створити на підставі"
 }

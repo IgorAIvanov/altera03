@@ -5,6 +5,7 @@ import { isMissingDatabaseFunction } from "../../database/database-error.ts";
 import { signEnvelopeTokens } from "../blob/blob-token.ts";
 import { withTokenAudit, writeAuditEntry } from "../../common/token-audit.ts";
 import { looksLikeEnvelope, ModelCommandError } from "./model-runtime.errors.ts";
+import { err } from "../../common/response.ts";
 import { getModelConfig, isDocumentModel, supportsPosting } from "./model-registry.ts";
 import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import type {
@@ -34,6 +35,17 @@ const STANDARD_DOCUMENT_COMMANDS = new Set(["post", "unpost"]);
  * Шлях SQL, а не TS-хендлер, заради права: перевірка лягає в той самий
  * `select`, що кличе функцію, і відмова не виконує обходу взагалі.
  */
+/**
+ * Заповнення нового запису з документа-підстави («Створити на підставі»).
+ *
+ * Команда є в кожної моделі, що оголосила `basedOn`, — функцію
+ * `<model>_fill_basis(user_id, {basisModel, basisId})` пише застосунок, а
+ * маршрут, право й перевірку підстави дає рантайм. Нічого не пише: віддає
+ * чернетку (`data.item` без id), зберігає її людина чи агент звичайним `save`.
+ * Тому в `NON_WRITING_COMMANDS`, хоч право й `create`.
+ */
+const FILL_BASIS = "fill_basis";
+
 const CORE_DOCUMENT_COMMANDS: Record<string, { functionName: string; action: string }> = {
   related: { functionName: "document_related", action: "view" },
 };
@@ -113,7 +125,7 @@ const CONFIRM_REQUIRED_ACTIONS = new Set(["delete", "post", "unpost"]);
  *   - **у журнал змін не пише.** Інакше «зміни» рясніли б записами, після яких
  *     нічого не змінилося.
  */
-const NON_WRITING_COMMANDS = new Set(["postPreview"]);
+const NON_WRITING_COMMANDS = new Set(["postPreview", FILL_BASIS]);
 
 /**
  * Команди, які виконує ЛИШЕ людина — токену вони відмовляють завжди, з
@@ -292,12 +304,50 @@ function getSqlCommandConfig(
     };
   }
 
+  if (command === FILL_BASIS && config?.basedOn?.length) {
+    return { schema: config.schema, functionName: `${model}_${FILL_BASIS}` };
+  }
+
   const core = CORE_DOCUMENT_COMMANDS[command];
   if (core && isDocumentModel(model)) {
     // Схема — ядра, а не моделі: функція одна на всі документи.
     return { schema: "app", functionName: core.functionName };
   }
 
+  return null;
+}
+
+/**
+ * Підстава названа й дозволена — до виклику функції застосунку.
+ *
+ * Перелік `basedOn` стоїть тут, а не лише в самій функції, бо функція
+ * застосунку звичайно розгалужується за `basisModel` і на незнайому модель
+ * відповідає як прийдеться — порожньою чернеткою чи помилкою без пояснення.
+ * Порожня чернетка тут найгірша: її збережуть. Діє на обох шляхах — і SQL,
+ * і TS-реалізації команди.
+ *
+ * Модель без `basedOn`, яка все ж оголосила `fill_basis` сама, перевірки не
+ * отримує: переліку, з яким звіряти, немає.
+ */
+function checkBasis(
+  model: string,
+  payload: Record<string, unknown>,
+  config: ModelBackendConfig | undefined,
+): { ok: boolean } | null {
+  const basedOn = config?.basedOn;
+  if (!basedOn?.length) return null;
+
+  const basisModel = typeof payload.basisModel === "string" ? payload.basisModel : "";
+  const basisId = typeof payload.basisId === "string" || typeof payload.basisId === "number"
+    ? String(payload.basisId).trim()
+    : "";
+
+  if (!basisModel || !basisId) {
+    return err("@[core.basis.required]");
+  }
+  if (!basedOn.includes(basisModel)) {
+    return err(`@[core.basis.notAllowed]${JSON.stringify({ model, basis: basisModel })}`);
+  }
   return null;
 }
 
@@ -401,6 +451,10 @@ function resolveRequiredAction(
   if (STANDARD_DOCUMENT_COMMANDS.has(command) && !supportsPosting(model)) {
     return null;
   }
+
+  // Реєстр, зібраний `sql:registry`, право вже несе; це — на випадок реєстру,
+  // зібраного руками чи старшим генератором, щоб команда не впиралася в 501.
+  if (command === FILL_BASIS && config?.basedOn?.length) return "create";
 
   const core = CORE_DOCUMENT_COMMANDS[command];
   if (core) return isDocumentModel(model) ? core.action : null;
@@ -536,6 +590,9 @@ export class ModelRuntimeService {
     }
 
     assertCallerMayRun(model, action, command, normalizedPayload, caller);
+
+    const basisRefusal = command === FILL_BASIS ? checkBasis(model, normalizedPayload, config) : null;
+    if (basisRefusal) return basisRefusal;
 
     const candidate = tsCommand
       ? await this.executeTsCommand(db, model, command, normalizedPayload, userId, tsCommand, action, jobId)

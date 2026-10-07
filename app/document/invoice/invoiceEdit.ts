@@ -21,6 +21,7 @@ import "@client/ui-kit/tabular/ui-tabular-toolbar.ts";
 import { icons } from "@client/ui-kit/icons.ts";
 import { movementsButton } from "@shared/document-movements.ts";
 import { relatedDocumentsButton } from "@shared/related-documents.ts";
+import "@shared/create-on-basis.ts";
 
 export const tagName = "invoice-edit";
 
@@ -243,6 +244,9 @@ export class InvoiceEdit extends BaseUI<InvoiceEditRoot> {
       </button>
       ${movementsButton(item.id, item.isPosted, "btn-outline")}
       ${relatedDocumentsButton("invoice", item.id)}
+      <!-- Що вводиться на підставі накладної, оголошують ЦІЛІ своїм basedOn;
+           склад меню кнопка бере з сервера. -->
+      <app-create-on-basis model="invoice" document-id=${item.id ?? ""}></app-create-on-basis>
       <!-- Перегляд вкладення поруч із друком: обидві кнопки нічого не міняють
            у записі, а показують те, що з ним пов'язане. Кнопка сама гасне,
            поки прикріпленого файлу немає. -->

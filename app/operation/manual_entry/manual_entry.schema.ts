@@ -40,6 +40,15 @@ export type AnalyticValue = Static<typeof AnalyticValueSchema>;
 // ── Item — власних реквізитів немає, лише таблична частина ───────────────────
 
 export const ManualEntryItemSchema = Type.Object({
+  // Документ-підстава («Створити на підставі»). Будь-який документ, а не
+  // названа модель: `basedOn` може назвати кілька. Звичайне посилання — тож і
+  // ребро дерева «Пов'язані документи» без жодного коду.
+  baseDocumentId: Type.Optional(Type.Union([Type.String(), Type.Null()], {
+    title: "Підстава",
+    "x-db-type": "bigint",
+    "x-ref": { entity: "document", as: "baseDocument" },
+  })),
+  baseDocument: Type.Optional(Type.Union([Type.Object({}), Type.Null()], { "x-transient": true })),
   entries: Type.Array(ManualEntryLineSchema, {
     "x-table": { table: "manual_entry_line", parentFk: "document_id", orderBy: "line_no" },
   }),
@@ -50,6 +59,16 @@ export type ManualEntryItem = Static<typeof ManualEntryItemSchema>;
 
 const RefSchema = Type.Union([
   Type.Object({ id: Type.String(), name: Type.String() }),
+  Type.Null(),
+], { default: null });
+
+/** Посилання на документ-підставу, як його віддає `get`: подання й модель. */
+const BaseDocumentRefSchema = Type.Union([
+  Type.Object({
+    id: Type.String(),
+    presentation: Type.Optional(Type.String()),
+    typeCode: Type.Optional(Type.String()),
+  }),
   Type.Null(),
 ], { default: null });
 
@@ -75,6 +94,8 @@ export const ManualEntryFormSchema = Type.Composite([
   DocumentHeaderSchema,
   Type.Object({
     organization: Type.Optional(RefSchema),
+    baseDocumentId: Type.Union([Type.String(), Type.Null()], { default: null }),
+    baseDocument:   Type.Optional(BaseDocumentRefSchema),
     entries:      Type.Array(ManualEntryFormLineSchema, { default: [] }),
   }),
 ]);

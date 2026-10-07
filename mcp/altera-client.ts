@@ -103,6 +103,11 @@ export interface AlteraDescription {
   rules: Record<string, AlteraModelRule[]>;
   /** Домовленості ЦЬОГО підприємства щодо названих моделей. */
   notes: Record<string, string[]>;
+  /**
+   * Ланцюжок документів: з чого модель вводиться (`basedOn`) і що вводиться на
+   * її підставі (`basisFor`). Заповнює команда цілі `fill_basis`.
+   */
+  basis: Record<string, { basedOn: string[]; basisFor: string[] }>;
 }
 
 /** Записки за моделями — форма з `data.extra.notes`, обережно розібрана. */
@@ -113,6 +118,20 @@ function asNotes(value: unknown): Record<string, string[]> {
     if (Array.isArray(list)) notes[model] = list.filter((line): line is string => typeof line === "string");
   }
   return notes;
+}
+
+/** Граф «на підставі» — форма з `data.extra.basis`, обережно розібрана. */
+function asBasis(value: unknown): Record<string, { basedOn: string[]; basisFor: string[] }> {
+  if (!value || typeof value !== "object") return {};
+  const names = (list: unknown) =>
+    Array.isArray(list) ? list.filter((name): name is string => typeof name === "string") : [];
+  const basis: Record<string, { basedOn: string[]; basisFor: string[] }> = {};
+  for (const [model, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object") continue;
+    const { basedOn, basisFor } = entry as Record<string, unknown>;
+    basis[model] = { basedOn: names(basedOn), basisFor: names(basisFor) };
+  }
+  return basis;
 }
 
 /** Відмова, яку варто показати агенту словами, а не стеком. */
@@ -257,6 +276,8 @@ export class AlteraClient {
       // «жодна модель нічого не забороняє».
       rules: (rules && typeof rules === "object" ? rules : {}) as Record<string, AlteraModelRule[]>,
       notes: asNotes(envelope.data?.extra?.notes),
+      // Старший сервер графа не віддає — тоді зв'язків просто не видно.
+      basis: asBasis(envelope.data?.extra?.basis),
     };
   }
 

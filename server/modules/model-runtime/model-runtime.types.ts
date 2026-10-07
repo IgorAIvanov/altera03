@@ -81,4 +81,10 @@ export interface ModelBackendConfig {
    * та сама команда.
    */
   longCommands?: string[];
+  /**
+   * Моделі, на підставі яких вводиться ця (`basedOn` манифеста). З нього
+   * рантайм виводить команду `fill_basis` і перевіряє її підставу, а
+   * `basis.targets` — зворотний бік: що можна ввести на підставі моделі.
+   */
+  basedOn?: string[];
 }

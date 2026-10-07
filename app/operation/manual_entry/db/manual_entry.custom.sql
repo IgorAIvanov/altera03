@@ -73,3 +73,73 @@ begin
   end if;
 end;
 $$;
+
+-- ── Заповнення на підставі ───────────────────────────────────────────────────
+-- «Створити на підставі»: чернетка НОВОЇ операції з документа-підстави.
+-- Перелік підстав — `basedOn` у манифесті; рантайм звіряє з ним `basisModel`
+-- ДО виклику, тож незнайома модель сюди не доходить. Нічого не пише: запис
+-- віддається у формі `get` (без id), зберігає його людина чи агент `save`.
+--
+-- Накладна → реалізація: Дт 361 (контрагент накладної) Кт 701 на суму
+-- накладної. Посилання на підставу — `baseDocumentId`, і дерево пов'язаних
+-- документів показує ланцюжок саме з нього.
+drop function if exists app.manual_entry_fill_basis(bigint, jsonb);
+create function app.manual_entry_fill_basis(user_id bigint, payload jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_basis_id bigint := nullif(payload->>'basisId', '')::bigint;
+  v_item     jsonb;
+begin
+  if payload->>'basisModel' = 'invoice' then
+    select jsonb_build_object(
+      'organizationId', h.organization_id::text,
+      'organization', case when o.id is null then null
+                           else jsonb_build_object('id', o.id::text, 'name', o.name) end,
+      'docDate', h.doc_date,
+      'description', h.presentation,
+      'baseDocumentId', h.id::text,
+      'baseDocument', jsonb_build_object(
+        'id', h.id::text,
+        'presentation', coalesce(nullif(h.presentation, ''), h.number),
+        'typeCode', 'invoice'),
+      'entries', jsonb_build_array(jsonb_build_object(
+        'id', null,
+        'lineNo', 1,
+        'debitAccount', '361',
+        'debitAnalytics', jsonb_build_object(
+          'counterparty', jsonb_build_object('id', c.id::text, 'name', c.name)),
+        'creditAccount', '701',
+        'creditAnalytics', '{}'::jsonb,
+        'amount', h.total,
+        'description', h.presentation))
+    )
+    into v_item
+    from app.document h
+    join app.invoice i on i.document_id = h.id
+    join app.counterparty c on c.id = i.counterparty_id
+    left join app.organization o on o.id = h.organization_id
+    where h.id = v_basis_id
+      and not h.is_deleted;
+  end if;
+
+  -- Позначену на видалення підставу не беремо: чернетка з документа, якого
+  -- «немає», виглядала б звичайною.
+  if v_item is null then
+    return jsonb_build_object(
+      'ok', false,
+      'data', jsonb_build_object('item', null, 'rows', '[]'::jsonb, 'options', '{}'::jsonb,
+                                 'totals', '{}'::jsonb, 'extra', '{}'::jsonb),
+      'messages', jsonb_build_array('@[manualEntry.basisNotFound]'),
+      'meta', '{}'::jsonb);
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'data', jsonb_build_object('item', v_item, 'rows', '[]'::jsonb, 'options', '{}'::jsonb,
+                               'totals', '{}'::jsonb, 'extra', '{}'::jsonb),
+    'messages', '[]'::jsonb,
+    'meta', '{}'::jsonb);
+end;
+$$;

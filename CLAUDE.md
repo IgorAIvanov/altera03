@@ -315,6 +315,16 @@ admin-екрані (`app/admin/numerator/`), і деплой правку не �
 в [`docs/related-documents-plan.md`](docs/related-documents-plan.md). Деталі й
 наслідки — skill [`db-function-contract`](skills/src/db-function-contract/SKILL.md).
 
+**«Створити на підставі»** — метадані, а не код форми: ціль оголошує `"basedOn": [моделі]`
+у манифесті (заповнювати вміє ціль), з чого виводиться команда `fill_basis` (право `create`,
+у переліку агента за умовчанням); функцію `<model>_fill_basis(user_id, {basisModel, basisId})`
+пише застосунок, вона віддає чернетку й **нічого не пише**. Рантайм звіряє підставу з
+`basedOn` до виклику; зворотний бік графа — команда ядра `basis.targets` (і `extra.basis` в
+описі агента). `BaseUI` сам заповнює нову форму з `params.basis`; кнопку «на підставі» малює
+**застосунок** (`basisTargets`/`openOnBasis` з `client/tabs/open-on-basis.ts`), прав
+фреймворк тут не фільтрує — відмовить заповнення чи збереження. Деталі — skill
+[`db-function-contract`](skills/src/db-function-contract/SKILL.md).
+
 Відповідь завжди у форматі:
 ```json
 { "ok": true, "data": { "item": {}, "rows": [], "options": {}, "totals": {} }, "messages": [] }

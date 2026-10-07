@@ -4,5 +4,6 @@
   "common.codeAuto": "авто",
   "document.posted": "Проведено",
   "document.post": "Провести",
-  "document.unpost": "Скасувати проведення"
+  "document.unpost": "Скасувати проведення",
+  "document.createOnBasis": "Створити на підставі"
 }

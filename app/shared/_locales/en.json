@@ -4,5 +4,6 @@
   "common.codeAuto": "auto",
   "document.posted": "Posted",
   "document.post": "Post",
-  "document.unpost": "Unpost"
+  "document.unpost": "Unpost",
+  "document.createOnBasis": "Create on basis"
 }

@@ -610,6 +610,51 @@ perform app.doc_allow_empty_subconto(v_id);   -- empty required analytics are in
   turn it off in the chart to get a document through: that removes the guard from
   every other document on the account.
 
+## Create on basis: `basedOn` and `<model>_fill_basis`
+
+"Create a tax invoice on the basis of this sale" is metadata, not form code. The
+**target** declares what it can be created from — the list lives in the target
+because the target is the one that knows how to fill itself:
+
+```json
+{ "model": "tax_invoice", "type": "document", "basedOn": ["goods_sale", "cash_receipt"] }
+```
+
+Names are model names (the `model` field), not routes; an unknown name fails
+`sql:registry`. From the list the framework derives the command `fill_basis` — the
+route, the permission (`create`, because the result is a new record) and the agent's
+default command set. You write only the function:
+
+```sql
+create function app.tax_invoice_fill_basis(user_id bigint, payload jsonb)
+returns jsonb language plpgsql as $$
+-- payload: { "basisModel": "goods_sale", "basisId": "123" }
+-- returns: the envelope, data.item = the filled NEW record (no id), rows inside it
+$$;
+```
+
+- **it writes nothing.** It returns a draft; a person (or the agent) saves it with an
+  ordinary `save`. That is why a read-only token may call it and why it never shows up
+  in the change log — and why the function must not insert anything "to be helpful".
+- **the runtime checks the basis before calling you**: `basisModel` must be in
+  `basedOn`, `basisId` must be present — otherwise `@[core.basis.notAllowed]` /
+  `@[core.basis.required]`. Branch on `basisModel` freely; an unknown one never arrives.
+- **the reference to the basis is an ordinary `x-ref` field** of the target (e.g.
+  `baseDocumentId`), and `fill_basis` fills it. The related-documents tree then shows
+  the chain with no further code.
+- **one name for one meaning.** `fill` in this codebase usually means "fill from
+  balances or registers" (inventory, payroll). Filling from a basis document is
+  `fill_basis` — do not reuse `fill` for it, and do not keep a second, client-side
+  way of copying the basis lines.
+
+On the client the form needs nothing: `BaseUI` takes `params.basis` from the tab and
+calls `fill_basis` itself, leaving the draft unsaved (the tab is dirty). A "Fill from
+basis" button inside the target form calls `this.fillFromBasis(model, id)` — the same
+path. The "Create on basis ▾" button is the **application's** to draw — in a list
+header, a row or a form — from `basisTargets(model)` and `openOnBasis(target, basis)`
+(`@altera/client/tabs/open-on-basis.ts`). Permissions are not filtered there: an item
+the user may not use refuses on fill or on save, with the usual message.
+
 ## Reading the register: use the ledger layer, do not scan it yourself
 
 Balances and turnovers are not stored anywhere — they are computed by scanning

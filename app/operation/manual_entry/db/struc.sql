@@ -3,7 +3,10 @@
 -- Власних реквізитів у шапки немає: усе, що потрібно, вже є в app.document.
 -- Рядок у цій таблиці існує лише як точка кріплення табличної частини.
 create table if not exists app.manual_entry (
-  document_id bigint primary key references app.document (id) on delete cascade
+  document_id      bigint primary key references app.document (id) on delete cascade,
+  -- Документ-підстава («Створити на підставі»): ребро дерева пов'язаних
+  -- документів, тож індекс потрібен — дерево обходить ребра в обидва боки.
+  base_document_id bigint references app.document (id)
 );
 
 -- Рядок проводки, як його ввів користувач.

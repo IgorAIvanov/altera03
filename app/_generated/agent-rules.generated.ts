@@ -5,7 +5,7 @@ export const agentModelRules: Record<string, string[]> = {
   "agent_note": ["core.agentNoteEmpty","core.agentNoteTopicIncomplete"],
   "audit_setting": ["auditSetting.unknownLevel","auditSetting.unknownModel"],
   "invoice": ["invoice.postNoAmount"],
-  "manual_entry": ["manualEntry.lineNoAccount","manualEntry.postNoEntries"],
+  "manual_entry": ["manualEntry.basisNotFound","manualEntry.lineNoAccount","manualEntry.postNoEntries"],
   "numerator": ["common.fieldRequired","numerator.orgPrefixMissing","numerator.unknownStrategy"],
   "print_template": ["common.fieldRequired"],
   "setting": ["setting.unknownKey"],

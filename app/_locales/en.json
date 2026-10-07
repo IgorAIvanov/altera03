@@ -469,6 +469,8 @@
   "manualEntry.quantity": "Quantity",
   "manualEntry.lineNoAccount": "Line {line}: neither account is filled in",
   "manualEntry.postNoEntries": "An operation with no entries cannot be posted",
+  "manualEntry.basisNotFound": "Basis document not found or marked for deletion",
+  "manualEntry.baseDocument": "Basis",
   "accountCard.title": "Account card",
   "accountCard.account": "Account",
   "accountCard.build": "Run",
@@ -494,5 +496,6 @@
   "common.codeAuto": "auto",
   "document.posted": "Posted",
   "document.post": "Post",
-  "document.unpost": "Unpost"
+  "document.unpost": "Unpost",
+  "document.createOnBasis": "Create on basis"
 }

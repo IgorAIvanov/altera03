@@ -3,6 +3,7 @@ import { printPdfHandler, printPreviewHandler } from "../print/print.handlers.ts
 import { postPreviewHandler } from "../document/post-preview.handler.ts";
 import { documentLocateHandler } from "../document/document-locate.handler.ts";
 import { importSessionStartHandler } from "../import/import.handlers.ts";
+import { basisTargetsHandler } from "./basis-targets.handler.ts";
 import { coreModelAccess } from "../agent/core-agent-tools.ts";
 import { getServerConfig, type ModelsConfig } from "../../config/server-config.ts";
 
@@ -29,6 +30,10 @@ const CORE_TS_COMMANDS: Record<string, { handler: TsModelCommandConfig["handler"
   // Завести канал перенесення. `create`, як у будь-якого нового запису: сесія
   // відкриває чужому процесу дорогу в базу, і право на це — не «подивитися».
   "import_session.start": { handler: importSessionStartHandler, access: "create" },
+  // Що можна ввести на підставі моделі — склад меню «Створити на підставі».
+  // Це метадані застосунку, а не дані: права не питаються, пункт без права
+  // відмовить сам на заповненні чи збереженні.
+  "basis.targets": { handler: basisTargetsHandler, access: "authenticated" },
 };
 
 /**

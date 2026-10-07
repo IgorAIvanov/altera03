@@ -185,6 +185,30 @@ export class AgentToolsService {
     return found;
   }
 
+  /**
+   * Ланцюжок документів навколо названих моделей: з чого кожна вводиться
+   * (`basedOn`) і що вводиться на її підставі (`basisFor`).
+   *
+   * Доти агент збирав порядок документів здогадом — з назв вкладок і полів.
+   * Граф оголошений у манифестах ЦІЛЕЙ, тож зворотний бік видно лише з усього
+   * реєстру; модель без жодного зв'язку в перелік не потрапляє.
+   */
+  basis(models: string[]): Record<string, { basedOn: string[]; basisFor: string[] }> {
+    const registry = getServerConfig().models.registry;
+    const found: Record<string, { basedOn: string[]; basisFor: string[] }> = {};
+
+    for (const model of models) {
+      const basedOn = registry[model]?.basedOn ?? [];
+      const basisFor = Object.entries(registry)
+        .filter(([, config]) => config.basedOn?.includes(model))
+        .map(([target]) => target)
+        .sort();
+      if (basedOn.length || basisFor.length) found[model] = { basedOn: [...basedOn], basisFor };
+    }
+
+    return found;
+  }
+
   /** Усе, що цьому користувачу цим викликом дозволено. Спільне для обох режимів. */
   private async permittedTools(
     userId: string,

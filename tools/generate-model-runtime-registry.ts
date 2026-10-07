@@ -47,6 +47,14 @@ type ManifestRecord = {
    * тут його наявність — ознака «ці три команди є», з якої виводяться права.
    */
   periodic?: unknown;
+  /**
+   * Моделі, НА ПІДСТАВІ яких вводиться ця («Створити на підставі» з 1С —
+   * `<BasedOn>`). Перелік живе в ЦІЛІ, бо заповнювати вміє ціль: з нього
+   * виводиться команда `fill_basis` (функцію `<model>_fill_basis` пише
+   * застосунок), а рантайм будує зворотний бік — «що можна ввести на підставі
+   * цього документа» — для меню застосунку й для агента.
+   */
+  basedOn?: string[];
   commands?: {
     sql?: Record<string, ManifestSqlCommand>;
     ts?: Record<string, ManifestTsCommand>;
@@ -262,7 +270,49 @@ function derivedCommands(manifest: ManifestRecord): string[] {
   // причини: воно показує вже наявне (посилання документа), а не додає нове.
   if (manifest.type === "document") commands.push("related");
   if (manifest.periodic) commands.push("at", "history", "set");
+  // Заповнення з підстави — з переліку `basedOn`: оголосила модель, з чого
+  // вводиться, — отже, вміє й заповнити.
+  if (hasBasis(manifest)) commands.push("fill_basis");
   return commands;
+}
+
+function hasBasis(manifest: ManifestRecord): boolean {
+  return Array.isArray(manifest.basedOn) && manifest.basedOn.length > 0;
+}
+
+/**
+ * `basedOn` називає моделі, які справді є.
+ *
+ * Помилка в імені інакше не помітна ніяк: рантайм відмовить підставі, якої
+ * немає в переліку, а меню застосунку просто не покаже пункту — тобто «ввести
+ * накладну на реалізацію» тихо не буде, і дізнається про це користувач.
+ */
+export function assertBasedOn(
+  manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
+): void {
+  const known = new Set(manifests.map(({ manifest }) => manifest.model).filter(Boolean));
+  const problems: string[] = [];
+
+  for (const { manifestPath, manifest } of manifests) {
+    const basedOn = manifest.basedOn;
+    if (basedOn === undefined) continue;
+    const where = toPosixPath(relative(Deno.cwd(), manifestPath));
+
+    if (!Array.isArray(basedOn)) {
+      problems.push(`  ${where}: "basedOn" — очікувався перелік імен моделей, напр. ["goods_sale"].`);
+      continue;
+    }
+    for (const source of basedOn) {
+      if (typeof source === "string" && known.has(source)) continue;
+      problems.push(
+        `  ${where}: "basedOn": ${JSON.stringify(source)} — такої моделі немає. ` +
+          `Тут ім'я моделі (поле "model" її манифеста), а не маршрут.`,
+      );
+    }
+  }
+
+  if (problems.length === 0) return;
+  throw new Error(`"basedOn" називає моделі, яких немає:\n${problems.join("\n")}`);
 }
 
 /**
@@ -326,6 +376,10 @@ export function agentCommandsFor(manifest: ManifestRecord): string[] {
   // після «покажи документ», а відповідь (моделі й id вузлів) одразу веде в
   // `get`. Тільки читання, тож і токену «тільки читання» доступне.
   if (manifest.type === "document") base.push("related");
+  // Заповнення з підстави нічого не пише — віддає чернетку, яку агент потім
+  // зберігає звичайним `save`. «Зроби податкову на цю реалізацію» — це саме
+  // воно, тож команда в умовчанні.
+  if (hasBasis(manifest)) base.push("fill_basis");
 
   if (!Array.isArray(agent.allowCommands)) return base;
 
@@ -461,6 +515,13 @@ function accessFor(manifest: ManifestRecord): Record<string, string> {
     access.related = "view";
   }
 
+  // Заповнення з підстави — початок НОВОГО запису, тож право те саме, що в
+  // створення: хто не може зберегти результат, тому й чернетка ні до чого.
+  // Пише вона нічого (див. NON_WRITING_COMMANDS рантайму).
+  if (hasBasis(manifest) && !access.fill_basis) {
+    access.fill_basis = "create";
+  }
+
   if (manifest.periodic) {
     if (!access.at) access.at = "view";
     if (!access.history) access.history = "view";
@@ -490,6 +551,7 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
       .map(([commandName, action]) => `    ${JSON.stringify(commandName)}: ${JSON.stringify(action)}`);
 
     const longCommands = [...(manifest.commands?.long ?? [])].sort();
+    const basedOn = hasBasis(manifest) ? [...manifest.basedOn!].sort() : [];
 
     const modelTypeLine = manifest.type ? `    type: ${JSON.stringify(manifest.type)}` : null;
     const modelSchemaLine = manifest.schema ? `    schema: ${JSON.stringify(manifest.schema)}` : null;
@@ -499,6 +561,7 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
       sqlCommandEntries.length ? `    sqlCommands: {\n${sqlCommandEntries.join(",\n")}\n    }` : null,
       accessEntries.length ? `    access: {\n${accessEntries.join(",\n")}\n    }` : null,
       longCommands.length ? `    longCommands: ${JSON.stringify(longCommands)}` : null,
+      basedOn.length ? `    basedOn: ${JSON.stringify(basedOn)}` : null,
     ]
       .filter((value): value is string => Boolean(value));
 
@@ -1017,6 +1080,7 @@ export async function generateModelRuntimeRegistry(
     // До будь-якої генерації: далі все ключується іменем моделі, тож дублікат
     // тихо переміг би останнім записом.
     assertUniqueModels(allManifests);
+    assertBasedOn(allManifests);
 
     // Реєстр — ЧИСТІ ДАНІ, окремо від прив'язок TS-команд, і це не косметика.
     // Реєстр читає не лише сервер: екран admin/user_group бере з нього перелік
@@ -1080,6 +1144,7 @@ export async function generateModelRuntimeRegistry(
             join(dirname(manifestPath), `${manifest.model}.schema.ts`),
             agentCommandsFor(manifest),
             manifest.type === "document" ? documentHeader : null,
+            manifest.basedOn ?? [],
           );
         } catch (error) {
           if (error instanceof AgentSchemaLoadError) {
