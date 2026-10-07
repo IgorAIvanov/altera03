@@ -112,6 +112,21 @@ Custom UI annotations (prefix `x-`):
 | `x-readonly` | `true`                          | Display only, not editable           |
 | `x-filter`   | `true` or `{ op, key }`         | Field can filter the list — generates the SQL (see below) |
 | `x-transient`| `true`                          | Field exists in the form type but has no column — the generator ignores it entirely |
+| `x-secret`   | `true`                          | A secret (bank API token, service key): no column, kept encrypted in `app.secret` by the runtime, never returned — see below |
+
+### `x-secret` — a secret the server keeps and never returns
+
+```ts
+token:          Type.Optional(Type.Union([Type.String(), Type.Null()], { "x-secret": true })),
+tokenSet:       Type.Optional(Type.Boolean({ "x-transient": true })),
+tokenChangedAt: Type.Optional(Type.Union([Type.String(), Type.Null()], { "x-transient": true })),
+```
+
+- **There is no column for it** — do not write one in `db/struc.sql`. The generator skips the field; the runtime takes it out of `save` before your SQL function runs and stores it encrypted (`SECRET_KEY`) in the core table `app.secret`. Add `"@core/secret"` to `app/sql.json` — `sql:registry` refuses without it.
+- **The value in the model is an intent, not the secret**: absent or `""` — keep, a string — replace, `null` — clear. `get` and `save` answer with `<field>Set` and `<field>ChangedAt` only; `list`, export, print and the agent channel never see the field at all.
+- **Only a TS command of the same model reads it** — `await ctx.secret(id, "token")`. SQL has no key and cannot decrypt.
+- **A personal token (agent, MCP) cannot write it** — the runtime refuses; the person pastes the token on screen.
+- On the form use `<ui-secret>` (`@client/ui-kit/components/ui-secret.ts`), never an `<input>` bound to the field.
 
 Width values: `"xs"` (60px), `"sm"` (100px), `"md"` (160px), `"lg"` (240px), `"full"` (flex-1).
 

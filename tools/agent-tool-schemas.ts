@@ -129,6 +129,51 @@ function mergeObjectSchemas(
   };
 }
 
+/**
+ * Поля `x-secret` схеми запису — імена, як у payload.
+ *
+ * Секрет агенту не віддається ні на читання (його немає у відповіді), ні на
+ * запис (рантайм відбиває його в токена), тож і в опис інструмента поле не
+ * потрапляє: показати агенту поле, запис у яке гарантовано відмовить, — це
+ * запросити його спробувати.
+ */
+export function secretFieldsOf(schema: unknown): string[] {
+  const properties = (schema as { properties?: Record<string, { "x-secret"?: unknown }> } | null)?.properties ?? {};
+  return Object.entries(properties).filter(([, prop]) => prop?.["x-secret"] === true).map(([field]) => field);
+}
+
+function withoutSecrets(schema: Record<string, unknown>): Record<string, unknown> {
+  // Разом із супутніми `<поле>Set`/`<поле>ChangedAt`: їх дописує рантайм у
+  // відповідь, і в payload запису вони нічого не означають.
+  const secrets = new Set(secretFieldsOf(schema).flatMap((f) => [f, `${f}Set`, `${f}ChangedAt`]));
+  if (!secrets.size) return schema;
+  const properties = Object.fromEntries(
+    Object.entries((schema.properties ?? {}) as Record<string, unknown>).filter(([field]) => !secrets.has(field)),
+  );
+  const required = Array.isArray(schema.required) ? (schema.required as string[]).filter((f) => !secrets.has(f)) : undefined;
+  return { ...schema, properties, ...(required ? { required } : {}) };
+}
+
+/**
+ * Поля-секрети моделі для реєстру (`secrets`). Схеми немає — секретів немає;
+ * схема Є, але не завантажилася, — та сама відмова, що в інструментах агента.
+ */
+export async function loadSecretFields(model: string, schemaPath: string): Promise<string[]> {
+  try {
+    await Deno.stat(schemaPath);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return [];
+    throw new AgentSchemaLoadError(model, schemaPath, error);
+  }
+  let exports: Record<string, unknown>;
+  try {
+    exports = await import(toFileUrl(schemaPath).href) as Record<string, unknown>;
+  } catch (error) {
+    throw new AgentSchemaLoadError(model, schemaPath, error);
+  }
+  return secretFieldsOf(exports[`${pascalCase(model)}ItemSchema`]);
+}
+
 function pascalCase(model: string): string {
   return model.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("");
 }
@@ -153,7 +198,20 @@ function payloadSchemaFor(
 
   const declared = exports[`${pascal}${pascalCase(command)}PayloadSchema`];
   if (declared && typeof declared === "object") {
-    const schema = stripUiAnnotations(declared) as Record<string, unknown>;
+    let source = declared as Record<string, unknown>;
+    // Оголошений `SavePayload` несе `item` тією самою схемою запису — секрети
+    // з неї прибираються так само, як зі складеної нижче.
+    const declaredItem = (source.properties as Record<string, unknown> | undefined)?.item;
+    if (command === "save" && declaredItem && typeof declaredItem === "object") {
+      source = {
+        ...source,
+        properties: {
+          ...(source.properties as Record<string, unknown>),
+          item: withoutSecrets(declaredItem as Record<string, unknown>),
+        },
+      };
+    }
+    const schema = stripUiAnnotations(source) as Record<string, unknown>;
     return confirmable ? withConfirm(schema) : schema;
   }
 
@@ -170,7 +228,7 @@ function payloadSchemaFor(
       : item;
 
     const properties: Record<string, unknown> = {
-      item: stripUiAnnotations(merged),
+      item: stripUiAnnotations(withoutSecrets(merged as Record<string, unknown>)),
     };
 
     // Табличні рядки документа. Ім'я за конвенцією; немає — немає й ключа,

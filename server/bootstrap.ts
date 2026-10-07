@@ -2,6 +2,7 @@ import { DanetApplication } from "@danet/core";
 import { AppModule } from "./app.module.ts";
 import { ApiExceptionFilter } from "./common/api-exception.filter.ts";
 import { resolveServerConfig, setServerConfig, type ServerOptions } from "./config/server-config.ts";
+import { assertSecretsConfigured } from "./modules/secret/secret-store.ts";
 
 /**
  * Піднімає сервер із переданою конфігурацією.
@@ -11,6 +12,8 @@ import { resolveServerConfig, setServerConfig, type ServerOptions } from "./conf
  */
 export async function bootstrap(options: ServerOptions): Promise<DanetApplication> {
   setServerConfig(resolveServerConfig(options));
+  // Модель із секретами без ключа — відмова старту, а не першого запису.
+  assertSecretsConfigured(options.models.registry);
 
   const application = new DanetApplication();
   // До `init()`: фільтр має стояти раніше, ніж з'явиться перший запит, який

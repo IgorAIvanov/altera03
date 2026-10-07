@@ -29,6 +29,8 @@ import {
   type TargetModel,
 } from "@altera/server/import";
 import { Type } from "@sinclair/typebox";
+import { readSecret } from "../server/modules/secret/secret-store.ts";
+import type { DatabaseService } from "../server/database/database.service.ts";
 import { createServer } from "../app/server.ts";
 import { viewManifest } from "../app/_generated/view-manifest.generated.ts";
 import { generatedModelRegistry } from "../app/_generated/model-registry.generated.ts";
@@ -2425,6 +2427,19 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
         assertEquals(write.body.ok, false);
         assertEquals(write.body.messages.join(" ").includes("тільки для читання"), true);
 
+        // Секрет моделі токен не пише навіть повним токеном — облікові дані
+        // зовнішнього сервісу не мусять ходити контекстом агента. Відмова до
+        // запису: рядка не з'являється зовсім.
+        const secretWrite = await callModel(full.token, "external_service", "save", {
+          item: { id: null, name: "Smoke agent secret", token: "agent-token" },
+        });
+        assertEquals(secretWrite.body.ok, false);
+        assertEquals(secretWrite.body.messages.join(" ").includes("секрет"), true);
+        const [agentSecretRow] = await withDb((sql) =>
+          sql`select 1 from app.external_service where name = 'Smoke agent secret'`
+        );
+        assertEquals(agentSecretRow, undefined);
+
         // …і не пише ІНШИМ ВХОДОМ. Байти вкладень ходять власним каналом, повз
         // рантайм моделей, тож перевірка прапорця мусить стояти і там. Доти не
         // стояла: токеном для читання можна було залити в базу будь-який файл,
@@ -2915,6 +2930,62 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       const state = response.body.data.item as { supported: boolean | null };
       // У цьому репозиторії app/ не встановлювали пакетом, тож манифесту немає.
       assertEquals(state.supported, null);
+    });
+
+    // Секрет моделі (`x-secret`): шифрується в окремій таблиці, назовні — лише
+    // «задано» й дата зміни, порожнє не міняє, `null` стирає, розшифровує лише
+    // TS-команда моделі. Відмову токену перевіряє крок агента.
+    await t.step("секрет: запис, опис без значення, заміна, стирання", async () => {
+      const secretOf = async (id: string) => {
+        const [row] = await withDb((sql) =>
+          sql<{ cipher: Uint8Array; updated_at: Date }[]>`
+            select cipher, updated_at from app.secret where owner_model = 'external_service' and owner_id = ${id}::bigint
+          `
+        );
+        return row;
+      };
+      const plainOf = (id: string) =>
+        withDb((sql) => readSecret({ sql } as unknown as DatabaseService, "external_service", id, "token"));
+
+      const saved = await client.model("external_service", "save", {
+        item: { id: null, name: "Smoke секрет", token: "smoke-token-1" },
+      });
+      assertEquals(saved.body.ok, true, JSON.stringify(saved.body.messages));
+      const item = saved.body.data.item as Record<string, unknown>;
+      const id = String(item.id);
+      try {
+        assertEquals([item.token, item.tokenSet], [undefined, true]);
+        const stored = await secretOf(id);
+        assertExists(stored);
+        // Шифротекст — не відкритий текст: байтів токена в ньому немає.
+        assertEquals(new TextDecoder().decode(stored.cipher).includes("smoke-token-1"), false);
+        assertEquals(await plainOf(id), "smoke-token-1");
+
+        const got = await client.model("external_service", "get", { id });
+        const gotItem = got.body.data.item as Record<string, unknown>;
+        assertEquals(["token" in gotItem, gotItem.tokenSet, typeof gotItem.tokenChangedAt], [false, true, "string"]);
+        const listed = await client.model("external_service", "list", { search: "Smoke секрет" });
+        assertEquals(JSON.stringify(listed.body.data.rows).includes("smoke-token"), false);
+        const checked = await client.model("external_service", "check", { id });
+        assertEquals((checked.body.data.item as { configured: boolean }).configured, true);
+
+        // Порожнє й відсутнє — не змінювати; рядок — замінити.
+        await client.model("external_service", "save", { item: { ...gotItem, token: "" } });
+        await client.model("external_service", "save", { item: { id, name: "Smoke секрет 2" } });
+        assertEquals(await plainOf(id), "smoke-token-1");
+        await client.model("external_service", "save", { item: { id, name: "Smoke секрет 2", token: "smoke-token-2" } });
+        assertEquals(await plainOf(id), "smoke-token-2");
+
+        // `null` — стерти.
+        const cleared = await client.model("external_service", "save", { item: { id, name: "Smoke секрет 2", token: null } });
+        assertEquals((cleared.body.data.item as Record<string, unknown>).tokenSet, false);
+        assertEquals(await secretOf(id), undefined);
+        const unchecked = await client.model("external_service", "check", { id });
+        assertEquals((unchecked.body.data.item as { configured: boolean }).configured, false);
+      } finally {
+        await withDb((sql) => sql`delete from app.secret where owner_model = 'external_service' and owner_id = ${id}::bigint`);
+        await purge("app.external_service", id);
+      }
     });
 
     // Рушій конвертації на справжній базі: `lookup` (запис за значенням поля

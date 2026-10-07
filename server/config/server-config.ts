@@ -118,6 +118,20 @@ export interface BlobConfig {
   maxSizeMb: number;
 }
 
+/**
+ * Ключ секретів моделей (поля `x-secret`, таблиця `app.secret`).
+ *
+ * `null` — ключа немає. Сервер із ним стартує лише доти, доки жодна модель
+ * секретів не оголосила: разового ключа на процес, як у `blob`, тут бути не
+ * може — після рестарту записані секрети стали б нечитаними назавжди.
+ */
+export interface SecretsConfig {
+  /** base64 32 байтів (AES-256). Ним шифрується все нове. */
+  key: string | null;
+  /** Попередній ключ — лише читає, на час заміни ключа. */
+  previousKey: string | null;
+}
+
 export interface ModelsConfig {
   registry: Record<string, ModelBackendConfig>;
   tsCommands: GeneratedTsCommandBinding[];
@@ -179,6 +193,7 @@ export interface ServerOptions {
   agentTools?: Record<string, unknown>;
   auth?: Partial<AuthConfig>;
   blob?: Partial<BlobConfig>;
+  secrets?: Partial<SecretsConfig>;
   version?: VersionInfo;
   /**
    * Тексти повідомлень для каналу зовнішнього агента: маркер `@[ключ]` сервер
@@ -241,6 +256,7 @@ export interface ServerConfig {
   agentTools: Record<string, unknown>;
   auth: AuthConfig;
   blob: BlobConfig;
+  secrets: SecretsConfig;
   version: VersionInfo;
   messages: MessagesConfig;
   agentRules: Record<string, string[]>;
@@ -330,6 +346,7 @@ export function resolveServerConfig(options: ServerOptions): ServerConfig {
     agentTools: { ...coreAgentToolSchemas, ...(options.agentTools ?? {}) },
     auth: { ...DEFAULT_AUTH, ...options.auth },
     blob: { ...DEFAULT_BLOB, ...options.blob },
+    secrets: { key: null, previousKey: null, ...options.secrets },
     version: options.version ?? {},
     messages: { ...DEFAULT_MESSAGES, ...options.messages },
     agentRules: options.agentRules ?? {},

@@ -135,6 +135,14 @@ export const CORE_SQL_PACKAGES: CoreSqlPackage[] = [
       models: [file("attachment/db/attachment.sql")],
     },
   },
+  // secret — лише таблиця: шифрує й читає рантайм, SQL-функцій немає свідомо
+  // (ключа база не бачить). Посилається на app.users, тож після access.
+  {
+    name: "secret",
+    files: {
+      structure: [file("secret/db/struc.sql")],
+    },
+  },
   // numerator — перед document_core: doc_next_number став обгорткою над ним.
   // Порядок тут не про FK (їх між пакетами немає), а про читабельність пакета:
   // спершу з'являється механізм номерів, потім ті, хто ним користується.

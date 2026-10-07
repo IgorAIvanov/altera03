@@ -105,6 +105,11 @@ type TSchema = {
   "x-search-via"?: XSearchVia | XSearchVia[];
   /** Поле є в типі форми, але не в таблиці — генератор його не чіпає. */
   "x-transient"?: boolean;
+  /**
+   * Секрет: живе в `app.secret`, шифрує рантайм. Для генератора — те саме, що
+   * `x-transient`: колонки немає, у CRUD поле не потрапляє.
+   */
+  "x-secret"?: boolean;
 };
 
 type SqlManifest = { models?: string[] };
@@ -762,7 +767,8 @@ function parseObject(
   for (const [key, prop] of Object.entries(props)) {
     // Транзієнтне поле живе тільки в типі форми (напр. токен вкладення, який
     // підставляє рантайм) — колонки під нього немає, у SQL воно не потрапляє.
-    if (prop["x-transient"]) continue;
+    // Секрет — так само: він у `app.secret`, а не в таблиці моделі.
+    if (prop["x-transient"] || prop["x-secret"]) continue;
 
     // Об'єкт-ссылка поруч зі своїм id. Звужено до об'єктного типу навмисно:
     // збіг імені ссылки зі СКАЛЯРНОЮ колонкою — це справжня колізія (у `get`
@@ -991,7 +997,7 @@ export function searchViaPredicates(
     // Поле, за яким шукаємо: текстове й не посилання — `ilike` по id означало б
     // «знайти позицію, чий штрихкод має в id цифру 7».
     const field = props[via.field];
-    if (!field || field["x-transient"] || field["x-ref"] || !isStringType(field)) {
+    if (!field || field["x-transient"] || field["x-secret"] || field["x-ref"] || !isStringType(field)) {
       throw new Error(
         `${label}: поле '${via.field}' моделі '${via.model}' мусить бути текстовою ` +
           `колонкою її таблиці (не x-ref і не x-transient)`,
@@ -2755,7 +2761,7 @@ export async function collectDocumentLinks(appRoot: string, models: string[]): P
 
     const visit = (schema: TSchema, table: string, ownerCol: string, prefix: string, owner: string) => {
       for (const [key, prop] of Object.entries(schema.properties ?? {})) {
-        if (prop["x-transient"]) continue;
+        if (prop["x-transient"] || prop["x-secret"]) continue;
         const xt = prop["x-table"];
         if (prop.type === "array" && xt) {
           // Рядок рядка не буває: табличні частини в генераторі однорівневі.

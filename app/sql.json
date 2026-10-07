@@ -9,6 +9,7 @@
   "models": [
     "@core/base",
     "@core/access",
+    "@core/secret",
     "@core/audit",
     "@core/job",
     "@core/import",
@@ -24,6 +25,7 @@
     "@core/attachment",
     "catalog/organization",
     "catalog/bank",
+    "catalog/external_service",
     "catalog/counterparty",
     "catalog/chart_of_account",
     "catalog/currency",

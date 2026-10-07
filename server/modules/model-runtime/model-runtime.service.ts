@@ -8,6 +8,7 @@ import { looksLikeEnvelope, ModelCommandError } from "./model-runtime.errors.ts"
 import { err } from "../../common/response.ts";
 import { getModelConfig, isDocumentModel, supportsPosting } from "./model-registry.ts";
 import { coreModelAccess } from "../agent/core-agent-tools.ts";
+import { describeSecrets, extractSecrets, readSecret, writeSecrets } from "../secret/secret-store.ts";
 import type {
   ModelBackendConfig,
   ModelCommandContext,
@@ -594,9 +595,44 @@ export class ModelRuntimeService {
     const basisRefusal = command === FILL_BASIS ? checkBasis(model, normalizedPayload, config) : null;
     if (basisRefusal) return basisRefusal;
 
-    const candidate = tsCommand
-      ? await this.executeTsCommand(db, model, command, normalizedPayload, userId, tsCommand, action, jobId)
-      : await this.executeSqlCommand(db, model, command, normalizedPayload, userId, config, sqlCommand!, action);
+    // Секрети моделі (`x-secret`) до функції моделі не доходять: рантайм
+    // вилучає їх із `save`, і функція пише запис так, ніби поля немає.
+    // Записуються вони в ТІЙ САМІЙ транзакції, що й запис, — інакше відмова
+    // між двома кроками лишала б або запис без токена, або токен без запису.
+    const secretFields = config?.secrets ?? [];
+    const { payload: commandPayload, changes: secretChanges } = secretFields.length && command === "save"
+      ? extractSecrets(normalizedPayload, secretFields)
+      : { payload: normalizedPayload, changes: [] };
+    if (secretChanges.length && caller.accessToken) {
+      // Облікові дані зовнішнього сервісу не мусять проходити через контекст
+      // агента: їх вставляє людина на екрані. Текст без маркера — його читає
+      // агент (див. assertCallerMayRun).
+      throw ModelCommandError.forbidden(
+        `Поле ${secretChanges.map((change) => `«${change.field}»`).join(", ")} моделі «${model}» — секрет: ` +
+          "його задає лише людина на екрані, токену запис секретів недоступний.",
+      );
+    }
+
+    const execute = (target: DatabaseService) =>
+      tsCommand
+        ? this.executeTsCommand(target, model, command, commandPayload, userId, tsCommand, action, jobId)
+        : this.executeSqlCommand(target, model, command, commandPayload, userId, config, sqlCommand!, action);
+
+    const candidate = secretChanges.length
+      ? await db.transaction(async (tx) => {
+        const bound = db.bound(tx);
+        const result = await execute(bound);
+        const envelope = result as { ok?: boolean; data?: { item?: { id?: unknown } } };
+        if (looksLikeEnvelope(result) && envelope.ok) {
+          const id = envelope.data?.item?.id;
+          if (id === null || id === undefined || id === "") {
+            throw new Error(`${model}/save: запис не повернув id — секрет прив'язати нема до чого`);
+          }
+          await writeSecrets(bound, model, String(id), userId, secretChanges);
+        }
+        return result;
+      })
+      : await execute(db);
 
     // Відповідь мусить бути конвертом. Найчастіша причина, чому вона ним не є —
     // SQL-функція без `return` або з `return null`: клієнт діставав `null`
@@ -608,6 +644,15 @@ export class ModelRuntimeService {
         candidate === undefined ? "undefined" : JSON.stringify(candidate)?.slice(0, 200),
       );
       throw ModelCommandError.badResponse(model, command);
+    }
+
+    // Запис моделі з секретами віддається з ознакою «задано» й датою зміни —
+    // самого значення в ньому немає й бути не може (воно в іншій таблиці).
+    if (secretFields.length && (command === "get" || command === "save")) {
+      const item = (candidate as { ok?: boolean; data?: { item?: unknown } }).data?.item;
+      if ((candidate as { ok?: boolean }).ok && item && typeof item === "object" && !Array.isArray(item)) {
+        await describeSecrets(db, model, item as Record<string, unknown>, secretFields);
+      }
     }
     return candidate as { ok: boolean };
   }
@@ -798,12 +843,19 @@ export class ModelRuntimeService {
       throw new Error(validationError);
     }
 
+    const secrets = getModelConfig(model)?.secrets ?? [];
     const context: ModelCommandContext = {
       db,
       model,
       command,
       userId,
       job: jobId ? this.jobHandle(jobId) : undefined,
+      secret: (id: string, field: string) => {
+        if (!secrets.includes(field)) {
+          return Promise.reject(new Error(`${model}: поле «${field}» не оголошене секретом (x-secret)`));
+        }
+        return readSecret(db, model, id, field);
+      },
     };
 
     return await tsCommand.handler(payload, context);

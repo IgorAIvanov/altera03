@@ -1,5 +1,5 @@
 import { dirname, join, relative, resolve, SEPARATOR } from "@std/path";
-import { AgentSchemaLoadError, buildAgentToolsForModel, renderAgentTools } from "./agent-tool-schemas.ts";
+import { AgentSchemaLoadError, buildAgentToolsForModel, loadSecretFields, renderAgentTools } from "./agent-tool-schemas.ts";
 import { documentHeaderSpecifier } from "./generate-model-sql.ts";
 import { scanMarkers } from "./scan-translation-markers.ts";
 import { collectImportSets, renderImportSets } from "./import-sets.ts";
@@ -531,7 +531,10 @@ function accessFor(manifest: ManifestRecord): Record<string, string> {
   return access;
 }
 
-function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
+function renderModelRegistry(
+  manifests: Array<{ manifest: ManifestRecord }>,
+  secrets: Map<string, string[]> = new Map(),
+) {
   const entries = manifests.flatMap(({ manifest }) => {
     // Періодичні команди рантайм сам не виводить: авто-маршрут є лише в
     // стандартної п'ятірки й у команд документа. Оголошуємо їх ТУТ, з того
@@ -552,6 +555,7 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
 
     const longCommands = [...(manifest.commands?.long ?? [])].sort();
     const basedOn = hasBasis(manifest) ? [...manifest.basedOn!].sort() : [];
+    const secretFields = [...(secrets.get(manifest.model ?? "") ?? [])].sort();
 
     const modelTypeLine = manifest.type ? `    type: ${JSON.stringify(manifest.type)}` : null;
     const modelSchemaLine = manifest.schema ? `    schema: ${JSON.stringify(manifest.schema)}` : null;
@@ -562,6 +566,7 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
       accessEntries.length ? `    access: {\n${accessEntries.join(",\n")}\n    }` : null,
       longCommands.length ? `    longCommands: ${JSON.stringify(longCommands)}` : null,
       basedOn.length ? `    basedOn: ${JSON.stringify(basedOn)}` : null,
+      secretFields.length ? `    secrets: ${JSON.stringify(secretFields)}` : null,
     ]
       .filter((value): value is string => Boolean(value));
 
@@ -573,6 +578,41 @@ function renderModelRegistry(manifests: Array<{ manifest: ManifestRecord }>) {
   });
 
   return `export const generatedModelRegistry = {\n${entries.join(",\n")}\n};\n`;
+}
+
+/**
+ * Поля-секрети кожної моделі. Заразом — вимога `@core/secret` у `sql.json`:
+ * без таблиці `app.secret` модель зібралася б, а відмовила б лише на першому
+ * збереженні токена, у людини на екрані.
+ */
+async function collectSecretFields(
+  manifests: Array<{ manifestPath: string; manifest: ManifestRecord }>,
+  appDirs: string[],
+): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  for (const { manifestPath, manifest } of manifests) {
+    if (!manifest.model) continue;
+    const fields = await loadSecretFields(manifest.model, join(dirname(manifestPath), `${manifest.model}.schema.ts`));
+    if (fields.length) result.set(manifest.model, fields);
+  }
+  if (!result.size) return result;
+
+  for (const appDir of appDirs) {
+    let models: unknown = null;
+    try {
+      models = (JSON.parse(await Deno.readTextFile(join(appDir, "sql.json"))) as { models?: unknown }).models;
+    } catch {
+      continue;
+    }
+    if (Array.isArray(models) && !models.includes("@core/secret")) {
+      throw new Error(
+        `Моделі ${[...result.keys()].join(", ")} оголошують секрети (x-secret), а в ` +
+          `${toPosixPath(relative(Deno.cwd(), join(appDir, "sql.json")))} немає "@core/secret" — ` +
+          `додай його в "models" (після "@core/access"), інакше таблиці app.secret не буде.`,
+      );
+    }
+  }
+  return result;
 }
 
 function resolveAppDirForManifest(manifestPath: string, appDirs: string[]): string {
@@ -1092,7 +1132,12 @@ export async function generateModelRuntimeRegistry(
     // підшляхи пакета резолвить Deno, але не бандлер. Обидва рази винен був не
     // імпорт, а те, що дані й код лежали в одному файлі.
     const tsBindings = renderTsBindings(allManifests, tsCommandsPath);
-    const registrySource = `// Generated from model manifests. Do not edit manually.\n\n${renderModelRegistry(allManifests)}`;
+    // Секрети (`x-secret`) — зі схем моделей: рантайм мусить знати їх ДО
+    // виклику `save`, щоб вилучити, а не дізнатися з відповіді.
+    const secrets = await collectSecretFields(allManifests, appDirs);
+    const registrySource = `// Generated from model manifests. Do not edit manually.\n\n${
+      renderModelRegistry(allManifests, secrets)
+    }`;
 
     const headerImports = tsBindings.imports.join("\n");
     const tsCommandsSource = `${headerImports ? `${headerImports}\n\n` : ""}` +

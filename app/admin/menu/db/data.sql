@@ -68,6 +68,7 @@ from (values
   ('administration', 'audit_log',          '@[auditLog.titleMany]',             'settings',     'admin/audit_log/list',            50),
   ('administration', 'audit_setting',      '@[auditSetting.titleMany]',         'settings',     'admin/audit_setting/list',        55),
   ('administration', 'agent_note',         '@[agentNote.titleMany]',            'settings',     'admin/agent_note/list',           57),
+  ('administration', 'external_service',   '@[externalService.titleMany]',      'settings',     'catalog/external_service/list',   58),
   -- Маршрут веде одразу в форму: запис тут один на установку, списку немає.
   ('administration', 'setting',            '@[setting.titleOne]',               'settings',     'admin/setting/edit',              60),
   ('administration', 'remark',             '@[remark.titleMany]',               'settings',     'admin/remark/list',               70),

@@ -59,6 +59,14 @@ export const agentModelRoutes = {
     type: "report",
     titles: {"en":"Document movements","uk":"Рух документа"}
   },
+  "external_service": {
+    editPath: "/catalog/external_service/edit",
+    listPath: "/catalog/external_service/list",
+    type: "catalog",
+    allow: true,
+    aliases: ["інтеграція","інтеграції","токен API","integration"],
+    titles: {"en":"External services","uk":"Зовнішні сервіси"}
+  },
   "invoice": {
     editPath: "/document/invoice/edit",
     listPath: "/document/invoice/list",

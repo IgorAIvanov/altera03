@@ -12,6 +12,7 @@ import type {
   DatabaseSslMode,
   DevBypassConfig,
   JobsConfig,
+  SecretsConfig,
 } from "./server-config.ts";
 
 /** Блоки конфігурації, які прийнято тримати в оточенні. */
@@ -19,6 +20,7 @@ export interface EnvDerivedConfig {
   database: DatabaseConfig;
   auth: AuthConfig;
   blob: BlobConfig;
+  secrets: SecretsConfig;
   jobs: Pick<JobsConfig, "background">;
 }
 
@@ -270,6 +272,29 @@ function readBlobTokenSecret(): string | null {
   return secret;
 }
 
+/**
+ * Ключ секретів моделей. Форму перевіряємо ТУТ, при старті: зіпсований ключ
+ * (обрізаний при копіюванні в панель) інакше вилазив би на першому записі
+ * секрету — тобто в людини на екрані, а не в того, хто розгортав.
+ */
+function readSecretKey(name: string): string | null {
+  const value = readTrimmed(name);
+  if (value === null) return null;
+  let bytes = -1;
+  try {
+    bytes = atob(value).length;
+  } catch {
+    // нижче
+  }
+  if (bytes !== 32) {
+    throw new Error(
+      `${name} мусить бути base64 рівно 32 байтів — згенеруй: ` +
+        `deno eval "console.log(btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))))"`,
+    );
+  }
+  return value;
+}
+
 function readBootstrapUser(): AuthConfig["bootstrapUser"] {
   const login = readTrimmed("BOOTSTRAP_LOGIN");
   const password = Deno.env.get("BOOTSTRAP_PASSWORD") || null;
@@ -315,6 +340,10 @@ export function configFromEnv(): EnvDerivedConfig {
       tokenSecret: readBlobTokenSecret(),
       tokenTtlHours: readPositiveInt("BLOB_TOKEN_TTL_HOURS", 12),
       maxSizeMb: readPositiveInt("BLOB_MAX_SIZE_MB", 10),
+    },
+    secrets: {
+      key: readSecretKey("SECRET_KEY"),
+      previousKey: readSecretKey("SECRET_KEY_PREVIOUS"),
     },
     // Єдине місце, яке має право дивитися на оточення, — тут воно й вирішує,
     // чи здатна платформа тримати роботу після відповіді. Застосунок може

@@ -20,6 +20,7 @@ export { isLocalDatabaseHost } from "./config/config-from-env.ts";
 export type {
   AuthConfig,
   BlobConfig,
+  SecretsConfig,
   BootstrapUserConfig,
   DatabaseConfig,
   DevBypassConfig,

@@ -1,0 +1,10 @@
+{
+  "externalService.titleMany": "Зовнішні сервіси",
+  "externalService.titleOne": "Зовнішній сервіс",
+  "externalService.url": "Адреса API",
+  "externalService.login": "Логін",
+  "externalService.token": "Токен",
+  "externalService.check": "Перевірити токен",
+  "externalService.checkSet": "Токен задано й розшифровується на сервері",
+  "externalService.checkNotSet": "Токен не задано"
+}

@@ -1,0 +1,29 @@
+{
+  "model": "external_service",
+  "type": "catalog",
+  "schema": "app",
+  "commands": {
+    "ts": {
+      "check": {
+        "module": "./db/external_service.commands.ts"
+      }
+    },
+    "access": {
+      "check": "view"
+    }
+  },
+  "views": {
+    "list": {
+      "module": "./externalServiceList.ts",
+      "titleKey": "externalService.titleMany"
+    },
+    "edit": {
+      "module": "./externalServiceEdit.ts",
+      "titleKey": "externalService.titleOne"
+    }
+  },
+  "agent": {
+    "allow": true,
+    "aliases": ["інтеграція", "інтеграції", "токен API", "integration"]
+  }
+}

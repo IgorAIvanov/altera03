@@ -22,6 +22,8 @@ export const viewManifest = [
   { route: "data/currency_rate/list", moduleFile: "app/data/currency_rate/currencyRateList.ts", titleKey: "currencyRate.titleMany" },
   { route: "data/currency_rate/edit", moduleFile: "app/data/currency_rate/currencyRateEdit.ts", titleKey: "currencyRate.titleOne" },
   { route: "report/document_movements/list", moduleFile: "app/report/document_movements/documentMovementsReport.ts", titleKey: "documentMovements.title" },
+  { route: "catalog/external_service/list", moduleFile: "app/catalog/external_service/externalServiceList.ts", titleKey: "externalService.titleMany" },
+  { route: "catalog/external_service/edit", moduleFile: "app/catalog/external_service/externalServiceEdit.ts", titleKey: "externalService.titleOne" },
   { route: "document/invoice/list", moduleFile: "app/document/invoice/invoiceList.ts", titleKey: "invoice.titleMany" },
   { route: "document/invoice/edit", moduleFile: "app/document/invoice/invoiceEdit.ts", titleKey: "invoice.titleOne" },
   { route: "operation/manual_entry/list", moduleFile: "app/operation/manual_entry/manualEntryList.ts", titleKey: "manualEntry.titleMany" },

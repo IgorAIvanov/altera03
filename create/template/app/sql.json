@@ -10,6 +10,7 @@
   "models": [
     "@core/base",
     "@core/access",
+    "@core/secret",
     "@core/audit",
     "@core/agent_note",
     "@core/remark",

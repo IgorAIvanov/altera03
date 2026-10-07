@@ -1,0 +1,10 @@
+{
+  "externalService.titleMany": "External services",
+  "externalService.titleOne": "External service",
+  "externalService.url": "API URL",
+  "externalService.login": "Login",
+  "externalService.token": "Token",
+  "externalService.check": "Check token",
+  "externalService.checkSet": "The token is set and decrypts on the server",
+  "externalService.checkNotSet": "The token is not set"
+}

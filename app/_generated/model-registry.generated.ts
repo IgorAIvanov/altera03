@@ -72,6 +72,14 @@ export const generatedModelRegistry = {
     "index": "view"
     }
   },
+  "external_service": {
+    type: "catalog",
+    schema: "app",
+    access: {
+    "check": "view"
+    },
+    secrets: ["token"]
+  },
   "invoice": {
     type: "document",
     schema: "app",

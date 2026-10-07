@@ -208,7 +208,8 @@ const application = await bootstrap({
 `AUTH_SESSION_TTL_HOURS`, `BOOTSTRAP_LOGIN/PASSWORD/FULL_NAME`,
 `DEV_AUTH_BYPASS`, `DEV_AUTH_USER_ID`, `DEFAULT_USER_ID`, `AUTH_PUBLIC_BASE_URL`,
 `NODE_ENV`/`APP_ENV`/`DENO_ENV`, `DENO_DEPLOY`,
-`BLOB_TOKEN_SECRET`, `JWT_SECRET`, `BLOB_TOKEN_TTL_HOURS`, `BLOB_MAX_SIZE_MB`.
+`BLOB_TOKEN_SECRET`, `JWT_SECRET`, `BLOB_TOKEN_TTL_HOURS`, `BLOB_MAX_SIZE_MB`,
+`SECRET_KEY`, `SECRET_KEY_PREVIOUS`.
 
 **Підключення до бази — імена libpq** (`PGHOST`/`PGDATABASE`/…, або `DATABASE_URL`):
 `psql` без аргументів іде туди ж, куди застосунок. Джерело вибирається **ціле**, а
@@ -591,6 +592,22 @@ skill — [`model-form-root`](skills/src/model-form-root/SKILL.md). Головн
 контрагентами, AI-розпізнавання вхідних). Гіпотези, прийняті рішення й план —
 [`docs/doc-exchange-plan.md`](docs/doc-exchange-plan.md); коду ще немає.
 
+## Секрети моделей
+
+Токен API банку чи ключ зовнішнього сервісу — поле схеми з `"x-secret": true`.
+**Колонки під нього немає**: рантайм вилучає поле з `save` до виклику функції
+моделі й тримає його зашифрованим (`SECRET_KEY`, AES-256-GCM) в `app.secret`
+(пакет ядра `@core/secret`), у тій самій транзакції. Окрема таблиця — головне
+рішення: рядок моделі секрету не містить, тож його не віддасть жоден шлях
+читання — ні згенерований чи рукописний SQL, ні вивантаження, ні агент. Значення
+в payload — **намір**: відсутнє чи `""` — не змінювати, рядок — записати,
+`null` — стерти; у відповідь `get`/`save` іде лише `<поле>Set` і
+`<поле>ChangedAt`. Відкрите значення бачить тільки TS-команда тієї ж моделі —
+`ctx.secret(id, field)`; **токен (агент) секрет не пише** взагалі. Модель із
+секретом без `SECRET_KEY` — відмова старту; без `@core/secret` у `sql.json` —
+відмова `sql:registry`. На формі — `<ui-secret>`. Еталон —
+`app/catalog/external_service`; деталі — [`docs/secret.md`](docs/secret.md).
+
 ## Приймання даних ззовні
 
 Дані приносить чужа програма з чужої машини (обробка в базі клієнта, касове ПЗ,
@@ -934,6 +951,8 @@ DB_CONTAINER_NAME=altera-pg-03  # ім'я контейнера глобальн�
 PORT=3000                   # читає app/server.ts і vite.config.ts, не configFromEnv
 BLOB_TOKEN_SECRET=change-me-in-production  # підпис токенів вкладень; JWT_SECRET — legacy-фолбек;
                             # з плейсхолдером у продуктиві сервер не стартує
+SECRET_KEY=                 # base64 32 байтів — ключ секретів моделей (x-secret); загублений
+                            # ключ = загублені токени; SECRET_KEY_PREVIOUS — на час заміни
 AUTH_SESSION_TTL_HOURS=720
 AUTH_COOKIE_NAME=altera_session  # унікальне на машину, якщо екземплярів кілька
 BOOTSTRAP_LOGIN=            # логін+пароль разом → створюється адміністратор на старті

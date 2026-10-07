@@ -14,6 +14,13 @@ export interface ModelCommandContext {
    * `ctx.job?.progress(...)` — необов'язковою дією, а не обов'язковим кроком.
    */
   job?: ModelCommandJob;
+  /**
+   * Розшифрований секрет ЦІЄЇ моделі (поле `x-secret`) для запису `id`;
+   * не задано — `null`. Єдиний шлях до відкритого значення: SQL ключа не
+   * бачить, у відповіді моделі секрет не їде ніколи. Чужої моделі не читає —
+   * токен банку бачить лише команда тієї моделі, що його зберігає.
+   */
+  secret(id: string, field: string): Promise<string | null>;
 }
 
 /** Ручки довгого завдання, доступні хендлеру. */
@@ -87,4 +94,11 @@ export interface ModelBackendConfig {
    * `basis.targets` — зворотний бік: що можна ввести на підставі моделі.
    */
   basedOn?: string[];
+  /**
+   * Поля `x-secret` схеми запису (`sql:registry` бере їх зі схеми). Рантайм
+   * вилучає їх із `save` до виклику функції моделі й тримає в `app.secret`
+   * зашифрованими; у `get`/`save` віддає лише `<поле>Set` і
+   * `<поле>ChangedAt`. Див. `server/modules/secret/`.
+   */
+  secrets?: string[];
 }
