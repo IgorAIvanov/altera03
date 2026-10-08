@@ -207,6 +207,7 @@ const application = await bootstrap({
 `PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE`, `DB_POOL_SIZE`,
 `AUTH_SESSION_TTL_HOURS`, `BOOTSTRAP_LOGIN/PASSWORD/FULL_NAME`,
 `DEV_AUTH_BYPASS`, `DEV_AUTH_USER_ID`, `DEFAULT_USER_ID`, `AUTH_PUBLIC_BASE_URL`,
+`AUTH_CLIENT_IP_HEADER`,
 `NODE_ENV`/`APP_ENV`/`DENO_ENV`, `DENO_DEPLOY`,
 `BLOB_TOKEN_SECRET`, `JWT_SECRET`, `BLOB_TOKEN_TTL_HOURS`, `BLOB_MAX_SIZE_MB`,
 `SECRET_KEY`, `SECRET_KEY_PREVIOUS`.
@@ -565,7 +566,10 @@ skill — [`model-form-root`](skills/src/model-form-root/SKILL.md). Головн
 самому `select`, що викликає команду; дія виводиться з імені (`save` → `create`/`edit` за
 `item.id`), а **нестандартна команда мусить оголосити право** в `manifest.commands.access`
 — інакше 501, свідомо fail-closed. Сесія — httpOnly-cookie (`SameSite=Strict` +
-`X-Requested-With`); тимчасовий пароль вимагає зміни; екран входу належить застосунку.
+`X-Requested-With`); тимчасовий пароль вимагає зміни; екран входу належить застосунку. **Підбір пароля
+обмежує лічильник у базі** (не в пам'яті — ізолятів на Deploy кілька): логін+адреса,
+адреса, логін; адресу з'єднання віддає composition root (`rememberClientAddress`),
+без неї рахується лише логін.
 Права → [`docs/access-control.md`](docs/access-control.md); вхід і сесія →
 [`docs/authentication.md`](docs/authentication.md); skill —
 [`model-command-access`](skills/src/model-command-access/SKILL.md).

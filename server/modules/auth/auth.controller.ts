@@ -15,6 +15,8 @@ import { err, ok, rows } from "../../common/response.ts";
 import { hashPassword, MIN_PASSWORD_LENGTH, verifyPassword } from "./password-hash.ts";
 import { type HttpRequest, jsonResponse } from "../../common/http.ts";
 import { getServerConfig } from "../../config/server-config.ts";
+import { clientAddress } from "../../common/client-address.ts";
+import { AuthLoginThrottleService, tooManyAttemptsMessage } from "./auth-login-throttle.service.ts";
 import type { AuthLoginRequest, AuthSessionInfo } from "./auth.types.ts";
 
 /**
@@ -32,6 +34,16 @@ function publicSession(session: AuthSessionInfo): Omit<AuthSessionInfo, "token">
 /** Query-параметри запиту плоским об'єктом: провайдери додають свої поля. */
 function queryParams(request: HttpRequest): Record<string, string> {
   return Object.fromEntries(new URL(request.url).searchParams);
+}
+
+/**
+ * Відмова за обмеженням спроб: 429 і `Retry-After` — щоб і скрипт, і людина
+ * знали, скільки чекати.
+ */
+function tooManyAttempts(retryAfterSeconds: number): Response {
+  return jsonResponse(err(tooManyAttemptsMessage(retryAfterSeconds)), 429, {
+    "retry-after": String(retryAfterSeconds),
+  });
 }
 
 /** Шлях повернення з причиною відмови — її покаже екран входу. */
@@ -56,6 +68,7 @@ export class AuthController {
     private authSessionService: AuthSessionService,
     private authService: AuthService,
     private authRedirectService: AuthRedirectService,
+    private loginThrottle: AuthLoginThrottleService,
   ) {}
 
   @Get("bootstrap-state")
@@ -80,11 +93,14 @@ export class AuthController {
   }
 
   @Post("login")
-  async login(@Body() body: AuthLoginRequest) {
-    const result = await this.authFlowService.login(body);
-    if (!result) {
-      return jsonResponse(err("Невірний логін або пароль"), 401);
+  async login(@Req() req: HttpRequest, @Body() body: AuthLoginRequest) {
+    const outcome = await this.authFlowService.login(body, clientAddress(req));
+    if (!outcome.ok) {
+      return outcome.retryAfterSeconds === null
+        ? jsonResponse(err("Невірний логін або пароль"), 401)
+        : tooManyAttempts(outcome.retryAfterSeconds);
     }
+    const { result } = outcome;
 
     return jsonResponse(
       ok({ user: result.user, method: result.method, session: publicSession(result.session) }),
@@ -209,10 +225,19 @@ export class AuthController {
       return jsonResponse(err("Новий пароль збігається з поточним"), 400);
     }
 
+    // Той самий лічильник, що й на вході: чужа відкрита сесія інакше була б
+    // способом перебрати пароль без жодного обмеження — а він потрібен і для
+    // входу з інших місць.
+    const throttle = await this.loginThrottle.begin(sessionUser.user.login, clientAddress(req));
+    if (!throttle.allowed) {
+      return tooManyAttempts(throttle.retryAfterSeconds);
+    }
+
     const stored = await this.authService.findUserByLogin(sessionUser.user.login);
     if (!stored?.password_hash || !await verifyPassword(currentPassword, stored.password_hash)) {
       return jsonResponse(err("Поточний пароль невірний"), 400);
     }
+    await this.loginThrottle.succeeded(throttle.id);
 
     await this.authService.changeOwnPassword(sessionUser.user.id, await hashPassword(newPassword));
     return ok({ changed: true });

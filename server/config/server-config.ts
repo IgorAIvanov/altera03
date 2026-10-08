@@ -106,6 +106,41 @@ export interface AuthConfig {
    * будується адреса, на яку прилетить код авторизації.
    */
   publicBaseUrl: string | null;
+  /**
+   * Обмеження спроб входу. `null` вимикає його — для тестового стенда, а не для
+   * продуктиву: без нього пароль можна перебирати з швидкістю мережі.
+   */
+  loginThrottle: LoginThrottleConfig | null;
+  /**
+   * Заголовок, з якого брати адресу клієнта, — лише за власним зворотним
+   * проксі, що цей заголовок ПЕРЕЗАПИСУЄ (`X-Real-IP` у nginx). `null` —
+   * адреса з'єднання (`rememberClientAddress` у composition root).
+   *
+   * Умовчання — не вірити заголовкам з тієї ж причини, що й у `publicBaseUrl`:
+   * `X-Forwarded-For` підставляє хто завгодно, і атака ставила б у нього нову
+   * адресу на кожну спробу. Береться ПЕРШЕ значення списку.
+   */
+  clientAddressHeader: string | null;
+}
+
+/**
+ * Межі обмеження спроб входу. Рахуються лише невдачі за останні
+ * `windowMinutes`; досягнута межа відмовляє без перевірки пароля, доки
+ * найстаріша з урахованих невдач не вийде з вікна.
+ */
+export interface LoginThrottleConfig {
+  windowMinutes: number;
+  /** Один логін з однієї адреси — підбір пароля однією машиною. */
+  maxPerLoginAddress: number;
+  /** Одна адреса, будь-які логіни — перебір логінів із типовим паролем. */
+  maxPerAddress: number;
+  /**
+   * Один логін, будь-які адреси — розподілений підбір. Не діє на адресу, з якої
+   * під цим логіном успішно входили за останні `knownAddressDays`: інакше
+   * будь-хто, знаючи логін, тримав би користувача за дверима.
+   */
+  maxPerLogin: number;
+  knownAddressDays: number;
 }
 
 export interface BlobConfig {
@@ -264,6 +299,19 @@ export interface ServerConfig {
   import: ImportConfig;
 }
 
+/**
+ * Умовчання обмеження спроб. П'ять — більше, ніж помиляється людина, що
+ * забула пароль, і ще не досить для перебору; на адресу — з запасом на офіс за
+ * одним NAT.
+ */
+export const DEFAULT_LOGIN_THROTTLE: LoginThrottleConfig = {
+  windowMinutes: 15,
+  maxPerLoginAddress: 5,
+  maxPerAddress: 30,
+  maxPerLogin: 20,
+  knownAddressDays: 30,
+};
+
 const DEFAULT_AUTH: AuthConfig = {
   sessionTtlHours: 24 * 30,
   cookie: { name: "altera_session", secure: false, sameSite: "Strict", path: "/" },
@@ -272,6 +320,8 @@ const DEFAULT_AUTH: AuthConfig = {
   passwordEnabled: true,
   methods: [],
   publicBaseUrl: null,
+  loginThrottle: DEFAULT_LOGIN_THROTTLE,
+  clientAddressHeader: null,
 };
 
 /**

@@ -14,6 +14,7 @@ import type {
   JobsConfig,
   SecretsConfig,
 } from "./server-config.ts";
+import { DEFAULT_LOGIN_THROTTLE } from "./server-config.ts";
 
 /** Блоки конфігурації, які прийнято тримати в оточенні. */
 export interface EnvDerivedConfig {
@@ -335,6 +336,9 @@ export function configFromEnv(): EnvDerivedConfig {
       // Потрібна лише за зворотним проксі: без неї redirect_uri будується з
       // походження запиту, а це `http://localhost:3000`, а не публічна адреса.
       publicBaseUrl: readTrimmed("AUTH_PUBLIC_BASE_URL")?.replace(/\/+$/, "") ?? null,
+      loginThrottle: DEFAULT_LOGIN_THROTTLE,
+      // Лише за власним проксі, що заголовок перезаписує; див. AuthConfig.
+      clientAddressHeader: readTrimmed("AUTH_CLIENT_IP_HEADER")?.toLowerCase() ?? null,
     },
     blob: {
       tokenSecret: readBlobTokenSecret(),

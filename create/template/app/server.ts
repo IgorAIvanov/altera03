@@ -5,7 +5,13 @@
 import { fromFileUrl } from "jsr:@std/path@^1.1.2";
 import { serveDir } from "jsr:@std/http@^1.0.18/file-server";
 
-import { bootstrap, configFromEnv, mergeMessageDictionaries, type VersionInfo } from "@altera/server";
+import {
+  bootstrap,
+  configFromEnv,
+  mergeMessageDictionaries,
+  rememberClientAddress,
+  type VersionInfo,
+} from "@altera/server";
 import { CLIENT_LOCALES } from "@client/locales.ts";
 
 // Тексти повідомлень для каналу зовнішнього агента. Обидва словники є тільки
@@ -112,7 +118,10 @@ export async function createServer() {
   const apiHandler = hono.fetch.bind(hono);
   const hasFrontendDist = await pathExists(frontendDistDir);
 
-  const handler = async (request: Request): Promise<Response> => {
+  const handler = async (request: Request, info?: Deno.ServeHandlerInfo): Promise<Response> => {
+    // Адреса з'єднання — для обмеження спроб входу. `Deno.serve` належить
+    // застосунку, тож віддає її фреймворку він.
+    if (info) rememberClientAddress(request, info);
     const pathname = new URL(request.url).pathname;
 
     if (!pathname.startsWith("/api") && hasFrontendDist) {

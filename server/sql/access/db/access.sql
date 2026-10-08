@@ -819,3 +819,146 @@ begin
   );
 end;
 $$;
+
+-- ── Обмеження спроб входу ──────────────────────────────────────────────────
+--
+-- Три лічильники в одному вікні, бо підбір буває трьох родів:
+--   · логін + адреса — одна машина перебирає паролі одного користувача.
+--     Найсуворіший: людина, що забула пароль, стільки разів не помиляється;
+--   · адреса — одна машина перебирає логіни (типовий пароль до всіх підряд);
+--   · логін — багато машин на одного користувача. Цей ліміт сам є зброєю:
+--     будь-хто, знаючи логін, може тримати його закритим. Тому на адресу, з
+--     якої під цим логіном недавно вже входили успішно, він не діє — свій
+--     комп'ютер користувача не замикається чужою атакою.
+--
+-- Відмова не перевіряє пароль узагалі: інакше вгаданий під час замка пароль
+-- було б видно з часу відповіді, а сам замок нічого б не коштував атаці.
+-- Відхилена спроба не записується — замок минає через вікно після останньої
+-- врахованої невдачі, а не продовжується кожним наступним стуком.
+
+/**
+ * Через скільки секунд лічильник опуститься нижче межі.
+ * `p_times` — моменти невдач у вікні за зростанням; 0 — межу не досягнуто.
+ */
+drop function if exists app.auth_attempt_retry(timestamptz[], int, interval);
+create function app.auth_attempt_retry(p_times timestamptz[], p_limit int, p_window interval)
+returns int
+language sql
+stable
+as $$
+  select case
+    when p_limit is null or p_limit <= 0 or coalesce(cardinality(p_times), 0) < p_limit then 0
+    else greatest(1, ceil(extract(epoch from
+      p_times[cardinality(p_times) - p_limit + 1] + p_window - now()))::int)
+  end;
+$$;
+
+/**
+ * Початок спроби входу.
+ *
+ * Відповідь: `{ allowed, id, retryAfter }`. Дозволено — рядок уже записаний
+ * невдачею, і `id` треба віддати `auth_attempt_succeeded`, якщо вхід вдасться.
+ * Відмовлено — нічого не записано, `retryAfter` — секунди до зняття замка.
+ *
+ * `p_limits`: `windowMinutes`, `maxPerLoginAddress`, `maxPerAddress`,
+ * `maxPerLogin`, `knownAddressDays`.
+ *
+ * Перевірка й запис — під advisory-блокуванням логіна й адреси: інакше
+ * паралельні запити бачили б лічильник до записів одне одного.
+ */
+drop function if exists app.auth_attempt_begin(text, text, jsonb);
+create function app.auth_attempt_begin(p_login text, p_ip text, p_limits jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_login   text := left(lower(btrim(coalesce(p_login, ''))), 200);
+  v_ip      text := nullif(btrim(coalesce(p_ip, '')), '');
+  v_window  interval := make_interval(mins => coalesce((p_limits->>'windowMinutes')::int, 15));
+  v_known   interval := make_interval(days => coalesce((p_limits->>'knownAddressDays')::int, 30));
+  v_since   timestamptz := now() - v_window;
+  v_is_known boolean := false;
+  v_times   timestamptz[];
+  v_retry   int := 0;
+  v_id      bigint;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('auth_login:' || v_login, 0));
+  if v_ip is not null then
+    perform pg_advisory_xact_lock(hashtextextended('auth_ip:' || v_ip, 0));
+  end if;
+
+  -- Прибирання тут, а не окремим завданням: таблиця росте лише від спроб, тож
+  -- і чиститься ними. Індекс за часом робить це дешевим навіть під атакою.
+  delete from app.auth_login_attempt
+   where created_at < now() - greatest(v_window, v_known);
+
+  if v_ip is not null then
+    select array_agg(a.created_at order by a.created_at) into v_times
+      from app.auth_login_attempt a
+     where a.login_key = v_login and a.client_ip = v_ip
+       and not a.succeeded and a.created_at > v_since;
+    v_retry := greatest(v_retry, app.auth_attempt_retry(
+      v_times, (p_limits->>'maxPerLoginAddress')::int, v_window));
+
+    select array_agg(a.created_at order by a.created_at) into v_times
+      from app.auth_login_attempt a
+     where a.client_ip = v_ip
+       and not a.succeeded and a.created_at > v_since;
+    v_retry := greatest(v_retry, app.auth_attempt_retry(
+      v_times, (p_limits->>'maxPerAddress')::int, v_window));
+
+    select exists(
+      select 1 from app.auth_login_attempt a
+       where a.login_key = v_login and a.client_ip = v_ip and a.succeeded
+         and a.created_at > now() - v_known
+    ) into v_is_known;
+  end if;
+
+  if not v_is_known then
+    select array_agg(a.created_at order by a.created_at) into v_times
+      from app.auth_login_attempt a
+     where a.login_key = v_login
+       and not a.succeeded and a.created_at > v_since;
+    v_retry := greatest(v_retry, app.auth_attempt_retry(
+      v_times, (p_limits->>'maxPerLogin')::int, v_window));
+  end if;
+
+  if v_retry > 0 then
+    return jsonb_build_object('allowed', false, 'id', null, 'retryAfter', v_retry);
+  end if;
+
+  insert into app.auth_login_attempt (login_key, client_ip)
+  values (v_login, v_ip)
+  returning id into v_id;
+
+  return jsonb_build_object('allowed', true, 'id', v_id::text, 'retryAfter', 0);
+end;
+$$;
+
+/**
+ * Спроба вдалася: рядок стає позначкою «звідси входили», а невдачі цієї пари
+ * логін + адреса гасяться — помилився двічі й увійшов, це не підбір.
+ * Невдачі з інших адрес лишаються: успіх тут не скасовує атаку звідти.
+ */
+drop function if exists app.auth_attempt_succeeded(bigint);
+create function app.auth_attempt_succeeded(p_id bigint)
+returns void
+language plpgsql
+as $$
+declare
+  v_row app.auth_login_attempt;
+begin
+  update app.auth_login_attempt set succeeded = true
+   where id = p_id
+  returning * into v_row;
+
+  if v_row.id is null then
+    return;
+  end if;
+
+  delete from app.auth_login_attempt a
+   where a.login_key = v_row.login_key
+     and a.client_ip is not distinct from v_row.client_ip
+     and a.id <> v_row.id;
+end;
+$$;

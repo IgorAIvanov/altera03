@@ -1,6 +1,7 @@
 import { Injectable } from "@danet/core";
 import { AuthSessionService } from "./auth-session.service.ts";
 import { PasswordAuthMethod } from "./password-auth.method.ts";
+import { AuthLoginThrottleService } from "./auth-login-throttle.service.ts";
 import { getServerConfig } from "../../config/server-config.ts";
 import {
   AuthLoginRequest,
@@ -13,11 +14,21 @@ import {
   isRedirectMethod,
 } from "./auth.types.ts";
 
+/**
+ * Чим закінчився вхід. Відмову за обмеженням спроб відрізняємо від невірного
+ * пароля: їй потрібні 429 і `Retry-After`, а людині — знати, що чекати, а не
+ * перевіряти розкладку.
+ */
+export type AuthLoginOutcome =
+  | { ok: true; result: AuthLoginResult }
+  | { ok: false; retryAfterSeconds: number | null };
+
 @Injectable()
 export class AuthFlowService {
   constructor(
     private passwordAuthMethod: PasswordAuthMethod,
     private authSessionService: AuthSessionService,
+    private loginThrottle: AuthLoginThrottleService,
   ) {}
 
   /**
@@ -44,7 +55,11 @@ export class AuthFlowService {
     return method && isRedirectMethod(method) ? method : null;
   }
 
-  async login(request: AuthLoginRequest): Promise<AuthLoginResult | null> {
+  /**
+   * `address` — адреса клієнта (`clientAddress`), `null` — невідома; тоді
+   * обмеження спроб діє лише за логіном.
+   */
+  async login(request: AuthLoginRequest, address: string | null): Promise<AuthLoginOutcome> {
     const attempt = this.resolveAttempt(request);
     const method = this.methods.find((item) => item.key === attempt.method);
     // Redirect-метод сюди не ходить: у нього немає облікових даних, які можна
@@ -52,20 +67,33 @@ export class AuthFlowService {
     // невірний пароль, але назовні різниці немає навмисно: підказувати, який
     // саме метод існує, ні до чого.
     if (!method || isRedirectMethod(method)) {
-      return null;
+      return { ok: false, retryAfterSeconds: null };
+    }
+
+    // Лічильник ведеться на кожен direct-метод, не лише на пароль: PIN чи
+    // одноразовий код перебираються так само. Метод без логіна рахується
+    // своїм ключем — інакше лишався б без лічильника за логіном зовсім.
+    const login = typeof attempt.payload.login === "string" ? attempt.payload.login : "";
+    const throttle = await this.loginThrottle.begin(login.trim() || `@${method.key}`, address);
+    if (!throttle.allowed) {
+      return { ok: false, retryAfterSeconds: throttle.retryAfterSeconds };
     }
 
     const user = await method.authenticate(attempt.payload);
     if (!user) {
-      return null;
+      return { ok: false, retryAfterSeconds: null };
     }
 
+    await this.loginThrottle.succeeded(throttle.id);
     const session = await this.authSessionService.createSession(user, method.key);
 
     return {
-      user,
-      method: method.key,
-      session,
+      ok: true,
+      result: {
+        user,
+        method: method.key,
+        session,
+      },
     };
   }
 

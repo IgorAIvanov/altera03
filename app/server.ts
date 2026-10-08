@@ -5,7 +5,13 @@
 import { fromFileUrl } from "jsr:@std/path@^1.1.2";
 import { serveDir } from "jsr:@std/http@^1.0.18/file-server";
 
-import { bootstrap, configFromEnv, mergeMessageDictionaries, type VersionInfo } from "@altera/server";
+import {
+  bootstrap,
+  configFromEnv,
+  mergeMessageDictionaries,
+  rememberClientAddress,
+  type VersionInfo,
+} from "@altera/server";
 import { CLIENT_LOCALES } from "@client/locales.ts";
 
 // Тексти повідомлень для каналу зовнішнього агента. Обидва словники є тільки
@@ -54,8 +60,11 @@ const projectRoot = await resolveProjectRoot();
 const frontendDistDir = `${projectRoot}/dist/`;
 const frontendIndexFile = `${frontendDistDir}index.html`;
 
-/** Обробник запиту — те саме, що бачить `Deno.serve`. */
-export type AppHandler = (request: Request) => Promise<Response>;
+/**
+ * Обробник запиту — те саме, що бачить `Deno.serve`. `info` — від `Deno.serve`;
+ * у проб у процесі (`smoke`, `api`) його немає, і адреса клієнта невідома.
+ */
+export type AppHandler = (request: Request, info?: Deno.ServeHandlerInfo) => Promise<Response>;
 
 /** Піднятий застосунок без прив'язки до порту: обробник + коректне згортання. */
 export interface AppServer {
@@ -160,7 +169,10 @@ export async function createServer(): Promise<AppServer> {
   const apiHandler = hono.fetch.bind(hono);
   const hasFrontendDist = await pathExists(frontendDistDir);
 
-  const handler: AppHandler = async (request: Request) => {
+  const handler: AppHandler = async (request: Request, info?: Deno.ServeHandlerInfo) => {
+    // Адреса з'єднання — для обмеження спроб входу. Є лише тут: `Deno.serve`
+    // належить застосунку, а не фреймворку.
+    if (info) rememberClientAddress(request, info);
     const url = new URL(request.url);
     const pathname = url.pathname;
 

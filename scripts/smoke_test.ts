@@ -261,6 +261,65 @@ Deno.test("smoke: HTTP-межа застосунку", async (t) => {
       assertEquals(body.messages.length > 0, true);
     });
 
+    // Проба в процесі адреси з'єднання не має, тож тут діє лише лічильник за
+    // логіном (20 за умовчанням). Логін унікальний на прогін, а рядки спроб
+    // прибираються: інакше другий прогін поспіль упирався б у замок першого.
+    await t.step("auth: підбір пароля впирається в 429 з Retry-After", async () => {
+      const login = `smoke-throttle-${crypto.randomUUID().slice(0, 8)}`;
+      const attempt = () =>
+        client.json<Envelope>("/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ login, password: "wrong-password" }),
+        });
+      try {
+        for (let i = 0; i < 20; i++) {
+          assertEquals((await attempt()).status, 401);
+        }
+        const { status, body, headers } = await attempt();
+        assertEquals(status, 429);
+        assertEquals(body.ok, false);
+        assertEquals(Number(headers.get("retry-after")) > 0, true);
+      } finally {
+        await withDb((sql) =>
+          sql`delete from app.auth_login_attempt where login_key in (${login}, 'no-such-user')`
+        );
+      }
+    });
+
+    // Лічильники за адресою HTTP-проба не дістане (адреси немає) — тому
+    // прямо функцією бази, з тими самими межами, що в умовчанні.
+    await t.step("auth: межа логін+адреса, успіх гасить невдачі, своя адреса не замикається", async () => {
+      const login = `smoke-throttle-${crypto.randomUUID().slice(0, 8)}`;
+      const limits = { windowMinutes: 15, maxPerLoginAddress: 5, maxPerAddress: 30, maxPerLogin: 20, knownAddressDays: 30 };
+      await withDb(async (sql) => {
+        type Begin = { allowed: boolean; id: string | null; retryAfter: number };
+        const begin = async (ip: string) =>
+          (await sql<{ r: Begin }[]>`select app.auth_attempt_begin(${login}, ${ip}, ${sql.json(limits)}::jsonb) as r`)[0].r;
+        try {
+          // Своя адреса: увійшли раз — вона «знайома».
+          const ok = await begin("198.51.100.1");
+          await sql`select app.auth_attempt_succeeded(${ok.id}::bigint)`;
+
+          // Чужа адреса: п'ять невдач — і шоста не перевіряється.
+          for (let i = 0; i < 5; i++) assertEquals((await begin("203.0.113.9")).allowed, true);
+          const blocked = await begin("203.0.113.9");
+          assertEquals(blocked.allowed, false);
+          assertEquals(blocked.retryAfter > 0, true);
+
+          // Розподілений підбір: до межі за логіном з різних адрес.
+          for (let i = 0; i < 15; i++) await begin(`203.0.113.${100 + i}`);
+          assertEquals((await begin("203.0.113.200")).allowed, false);
+          // …а власник зі своєї адреси входить і далі.
+          const own = await begin("198.51.100.1");
+          assertEquals(own.allowed, true);
+          await sql`select app.auth_attempt_succeeded(${own.id}::bigint)`;
+        } finally {
+          await sql`delete from app.auth_login_attempt where login_key = ${login}`;
+        }
+      });
+    });
+
     // Регресія на HttpRequest: якщо `req.header()` перестане віддавати значення
     // (а мовчки поверне undefined), обидві проби нижче зійдуться в 200 — і різниця
     // між «заголовок прочитано» та «заголовка ніби немає» зникне непоміченою.

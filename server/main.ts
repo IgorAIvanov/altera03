@@ -24,6 +24,7 @@ export type {
   BootstrapUserConfig,
   DatabaseConfig,
   DevBypassConfig,
+  LoginThrottleConfig,
   ModelsConfig,
   ServerConfig,
   ServerOptions,
@@ -55,6 +56,11 @@ export type {
   AuthSessionInfo,
   AuthUserDto,
 } from "./modules/auth/auth.types.ts";
+
+// Адреса з'єднання для обмеження спроб входу: `Deno.serve` належить
+// застосунку, тож адресу приносить він — див. client-address.ts.
+export { rememberClientAddress } from "./common/client-address.ts";
+export type { ClientConnectionInfo } from "./common/client-address.ts";
 
 // Спільний конверт відповіді — один на команди моделей і на авторизацію.
 export type { Envelope, EnvelopeData } from "./common/response.ts";
