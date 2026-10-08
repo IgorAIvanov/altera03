@@ -67,6 +67,7 @@ jobs:
           PGPASSWORD=altera_ci
           PORT=3000
           JWT_SECRET=ci-only-secret
+          SECRET_KEY=Y2ktb25seS1zZWNyZXQta2V5LW5vdC1mb3ItcHJvZCE=
           AUTH_SESSION_TTL_HOURS=720
           DEV_AUTH_BYPASS=1
           DEV_AUTH_USER_ID=1
