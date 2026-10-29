@@ -1,128 +1,135 @@
 # Altera
 
-**Altera — це harness для AI-агента, призначений для побудови бізнес-застосунків.**
-Облікову систему тут пише агент (Claude Code), а фреймворк дає йому рейки: модель
-описується декларативно, рутина (CRUD, списки, форми, друк, права, журнал) береться з
-ядра, а правила того, як писати кожен шар, агент читає зі скілів, що їдуть разом із
-застосунком. Брак можливості фреймворку не обходиться в застосунку, а усувається в ядрі —
-тому код, який пише агент, лишається одноманітним і передбачуваним.
+**English** | [Українська](README.uk.md)
 
-Перший прикладний домен — бухгалтерський облік для України (план рахунків, проводки з
-субконто, первинні документи, звіти), але механізм загальний: довідники, документи з
-проведенням, регістри, звіти.
+**Altera is a harness for an AI agent, built for creating business applications.**
+The agent (Claude Code) writes the accounting system; the framework keeps it on rails:
+models are declared rather than coded, the routine parts (CRUD, lists, forms, printing,
+permissions, audit) come from the core, and the rules for writing each layer reach the
+agent as skills shipped with the application. A missing framework capability is not
+worked around in the application — it is fixed in the core, so the code the agent writes
+stays uniform and predictable.
 
-## Демо
+The first application domain is Ukrainian accounting (chart of accounts, double-entry
+postings with analytics, source documents, reports), but the mechanism is general:
+catalogs, posted documents, registers, reports.
 
-Розгорнутий приклад бухгалтерії на Altera — **<https://altera-ai.com.ua>**
-(вхід: `admin` / `DemoAdmin`).
+## Demo
 
-## Натхнення
+A deployed accounting application built on Altera — **<https://altera-ai.com.ua>**
+(login: `admin` / `DemoAdmin`).
 
-Ідеї й словник Altera походять від платформи **A2v10**
-[Олександра Кухтіна (Alex Kukhtin)](https://github.com/alex-kukhtin): модель як основна одиниця, логіка в SQL-функціях
-бази, один конверт відповіді на весь API, шаблони друку як дані. Altera переносить цей
-підхід на сучасний веб-стек і робить головним «розробником» агента.
+## Inspiration
 
-## Стек
+Altera's ideas and vocabulary come from the **A2v10** platform by
+[Alex Kukhtin](https://github.com/alex-kukhtin): the model as the basic unit, logic in
+database SQL functions, a single response envelope across the whole API, print templates
+as data. Altera carries that approach over to a modern web stack and makes the agent the
+main "developer".
 
-| Шар | Технології |
+## Stack
+
+| Layer | Technology |
 |---|---|
-| Рантайм | [Deno](https://deno.com) 2.9+, монорепозиторій із workspace-пакетами |
-| База даних | PostgreSQL 15+ — функції `{schema}.{model}_{command}(user_id, payload jsonb)` |
-| Backend | [Danet](https://danet.land) — один HTTP-рантайм моделей, без контролера на модель |
+| Runtime | [Deno](https://deno.com) 2.9+, monorepo of workspace packages |
+| Database | PostgreSQL 15+ — functions `{schema}.{model}_{command}(user_id, payload jsonb)` |
+| Backend | [Danet](https://danet.land) — one HTTP model runtime, no controller per model |
 | Frontend | Lit Web Components, Vite, Tailwind CSS v4, daisyUI v5 |
-| Контракти | TypeBox — одна схема на модель для сервера, SQL і форми |
-| Друк | власний рендерер PDF (pdf-lib), шаблони — дані в базі |
-| Агент | HTTP-API для зовнішнього агента, MCP-обгортка `@altera/mcp`, персональні токени |
+| Contracts | TypeBox — one schema per model for the server, SQL and forms |
+| Printing | built-in PDF renderer (pdf-lib), templates stored as data |
+| Agent | HTTP API for an external agent, MCP wrapper `@altera/mcp`, personal tokens |
 
-Фреймворк публікується на [JSR](https://jsr.io/@altera) пакетами `@altera/server`,
+The framework is published on [JSR](https://jsr.io/@altera) as `@altera/server`,
 `@altera/client`, `@altera/tools`, `@altera/create`, `@altera/skills`.
 
-## Що потрібно заздалегідь
+## Prerequisites
 
 - **Deno 2.9+** — <https://docs.deno.com/runtime/getting_started/installation/>.
-  Node.js не потрібен: npm-залежності ставить Deno.
-- **PostgreSQL 15+** — або **Docker** (застосунок піднімає базу сам, `deno task startdb`),
-  або наявний сервер, на якому можна створити окрему базу.
-- **Claude Code** — CLI, десктопний застосунок або розширення IDE:
+  Node.js is not needed: Deno installs the npm dependencies.
+- **PostgreSQL 15+** — either **Docker** (the application brings the database up itself,
+  `deno task startdb`) or an existing server where you can create a separate database.
+- **Claude Code** — CLI, desktop app or IDE extension:
   <https://docs.claude.com/en/docs/claude-code>.
-- `curl` (на Windows — вбудований `curl.exe`) і, за бажанням, `git`.
+- `curl` (on Windows, the built-in `curl.exe`) and, optionally, `git`.
 
-## Встановлення за допомогою Claude
+## Installing with Claude
 
-Застосунок розгортає сам агент — скілом `altera-new-app`: від scaffold до екрана входу,
-з перевіркою кожного кроку (порти, `.env`, база, залежності, публікація схеми, перший
-адміністратор). Потрібно лише покласти скіл у порожню папку.
+The agent deploys the application itself, using the `altera-new-app` skill: from the
+scaffold to the login screen, verifying each step (ports, `.env`, database, dependencies,
+schema publishing, first administrator). All you do is put the skill into an empty folder.
 
-**1. Порожня папка і скіл у ній**
+**1. An empty folder with the skill in it**
 
 ```bash
 mkdir myerp && cd myerp && curl --create-dirs -o .claude/skills/altera-new-app/SKILL.md https://raw.githubusercontent.com/IgorAIvanov/altera03/master/skills/src/altera-new-app/SKILL.md
 ```
 
-У PowerShell:
+In PowerShell:
 
 ```powershell
 mkdir myerp; cd myerp; curl.exe --create-dirs -o .claude/skills/altera-new-app/SKILL.md https://raw.githubusercontent.com/IgorAIvanov/altera03/master/skills/src/altera-new-app/SKILL.md
 ```
 
-**2. Запустити Claude Code у цій папці й попросити**
+**2. Start Claude Code in that folder and ask**
 
-> Розгорни застосунок Altera. PostgreSQL — у Docker.
+> Deploy an Altera application. PostgreSQL in Docker.
 
-Агент спитає те, чого не можна вигадати (ім'я проєкту, звідки брати PostgreSQL), і доведе
-до відкритого в браузері екрана входу. Ім'я проєкту — латиниця в нижньому регістрі: з нього
-виводяться ім'я бази, роль і cookie сесії, тож два застосунки на одній машині мусять мати
-різні імена.
+The agent asks for what it cannot invent (the project name, where PostgreSQL comes from)
+and takes you to a login screen open in the browser. The project name is lowercase latin:
+the database name, role and session cookie are derived from it, so two applications on one
+machine must have different names.
 
-**3. Далі — розробка**
+**3. Then — development**
 
-Scaffold розкладає в застосунок прикладні скіли (`.claude/skills`) і `CLAUDE.md`, тож
-подальші прохання — «додай довідник складів», «зроби документ надходження з табличною
-частиною», «додай друковану форму» — агент виконує за правилами фреймворку. Що змінилося
-між версіями фреймворку, лежить у застосунку файлом `FRAMEWORK-CHANGELOG.md`.
+The scaffold puts the application skills (`.claude/skills`) and a `CLAUDE.md` into the
+application, so further requests — "add a warehouse catalog", "make a goods receipt
+document with a tabular section", "add a printed form" — the agent carries out by the
+framework's rules. What changed between framework versions lands in the application as
+`FRAMEWORK-CHANGELOG.md`.
 
-### Без агента
+### Without the agent
 
-Ті самі кроки руками — [`docs/deployment.md`](docs/deployment.md): `deno run -A
-jsr:@altera/create myerp`, `.env`, база, `deno install`, публікація SQL, перший
-адміністратор. Розгортання на Deno Deploy — [`docs/deno-deploy.md`](docs/deno-deploy.md).
+The same steps by hand — [`docs/deployment.md`](docs/deployment.md): `deno run -A
+jsr:@altera/create myerp`, `.env`, database, `deno install`, SQL publishing, first
+administrator. Deploying to Deno Deploy — [`docs/deno-deploy.md`](docs/deno-deploy.md).
+The documentation in `docs/` is in Ukrainian.
 
-## Підключити агента до працюючої бази
+## Connecting an agent to a running database
 
-Крім розробки, агент може працювати **в** обліковій системі від імені користувача:
-переглядати довідники, створювати й проводити документи, друкувати. Для цього —
-персональний токен (видається з браузера) і MCP-обгортка: [`mcp/README.md`](mcp/README.md).
+Besides development, an agent can work **inside** the accounting system on behalf of a
+user: browse catalogs, create and post documents, print. That takes a personal token
+(issued from the browser) and the MCP wrapper: [`mcp/README.md`](mcp/README.md).
 
-## Цей репозиторій
+## This repository
 
-Тут живуть фреймворк і демонстраційний застосунок, на якому він перевіряється:
+It holds the framework and the demo application it is tested against:
 
 ```
-app/      демо-застосунок: моделі, SQL, екрани
-client/   ui-kit і клієнтський рантайм (@altera/client)
-server/   backend-бібліотека та SQL ядра (@altera/server)
-tools/    codegen, збірка й публікація SQL (@altera/tools)
-create/   scaffold нового застосунку (@altera/create)
-skills/   скіли агента (@altera/skills)
-mcp/      MCP-обгортка над HTTP-API (@altera/mcp)
-docs/     рішення, плани й пояснення
+app/      demo application: models, SQL, screens
+client/   ui-kit and client runtime (@altera/client)
+server/   backend library and core SQL (@altera/server)
+tools/    codegen, SQL assembly and publishing (@altera/tools)
+create/   new-application scaffold (@altera/create)
+skills/   agent skills (@altera/skills)
+mcp/      MCP wrapper over the HTTP API (@altera/mcp)
+docs/     decisions, plans and explanations
 ```
 
-Запуск у репозиторії:
+Running from the repository:
 
 ```bash
-cp .env.example .env        # і заповнити паролі та секрети
+cp .env.example .env        # then fill in passwords and secrets
 deno task startdb
 deno install
 deno task sql:assemble && deno task sql:publish
 deno task dev
 ```
 
-Карта репозиторію, команди й інваріанти — у [`CLAUDE.md`](CLAUDE.md); план розвитку —
+Repository map, commands and invariants — [`CLAUDE.md`](CLAUDE.md); roadmap —
 [`docs/development-plan.md`](docs/development-plan.md).
 
-## Ліцензія
+## License
 
-[MIT](LICENSE). Ліцензії сторонніх компонентів, що потрапляють у збірку, виводяться
-автоматично — `THIRD-PARTY-NOTICES.md` поруч із бандлом і в пакеті `@altera/server`.
+[MIT](LICENSE). Licenses of third-party components that end up in a build are derived
+automatically — `THIRD-PARTY-NOTICES.md` next to the bundle and inside the
+`@altera/server` package.
